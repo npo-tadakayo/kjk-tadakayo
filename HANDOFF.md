@@ -6,68 +6,39 @@
 
 ## 現在の状態
 
-index.html 本体は完成。Firebase Hosting にデプロイ済み。
-カスタムドメイン `kjk.tadakayo.jp` の CNAME 設定・Firebase 登録が完了し、SSL 証明書発行中（数時間で完了）。
-プレースホルダー3箇所（Formspree / Clarity / GA4）が未差し替え。
+index.html 本体は完成・本番稼働中。SEO基盤・フォーム・OGP・Search Console すべて設定済み。
+カスタムドメイン `kjk.tadakayo.jp` は稼働中（SSL証明書有効）。
+フォーム送信テストも完了（2026-05-08 確認）。
 
 ---
 
 ## 今セッションでやったこと
 
-| 作業 | 内容 |
-|---|---|
-| WCAG 2.1 AA アクセシビリティ修正 | スキップリンク・`<main>`・`<nav>`・`:focus-visible`・`aria-invalid`・`aria-live`・`scope="col"`・`role="status"` |
-| タダカヨ認定事業所セクション追加 | `#certified` セクション新設・株式会社２７９（#001）カード追加 |
-| Firebase Hosting デプロイ | コミット `d0c02c` にて本番反映済み |
-| カスタムドメイン DNS 設定 | GMO レンタルサーバー CP（cp.onamae.ne.jp）で CNAME 追加：`kjk.tadakayo.jp → kjk-tadakayo.web.app` |
-| Firebase カスタムドメイン登録 | Firebase Console でクイックセットアップ完了・SSL 証明書発行中 |
+| 作業 | 内容 | コミット |
+|---|---|---|
+| Formspree フォーム設定 | form ID `xjglevjk` を index.html に設定、送信先 kjk@tadakayo.jp | - |
+| Clarity / GA4 差し替え | `wax7x03bg8` / `G-0NZY6PM3FG` に設定済み | - |
+| OGP 画像生成・タグ追加 | images/ogp.png（1200×630px）生成・og:image/twitter:card タグ追加 | - |
+| SEO 基盤整備 | sitemap.xml / robots.txt 追加・canonical タグ追加 | - |
+| Google Search Console 登録 | kjk.tadakayo.jp 認証完了（HTML ファイル方式）・sitemap.xml 送信済み | - |
+| フォームメールフィールド修正 | name="メールアドレス" → name="email"（Formspree が認識できなかった） | 2b6beb2 |
+| フォーム送信テスト完了 | 「送信できました！」表示確認（2026-05-08） | - |
 
 ---
 
 ## 残タスク（優先順）
 
-### 🔴 必須（フォームが機能しない）
+### 🟢 軽微な改善（任意）
 
-- [ ] **Formspree**: https://formspree.io でフォームを作成 → `index.html` の `PLACEHOLDER` を実IDに差し替え
-  ```bash
-  grep -n "PLACEHOLDER" index.html
-  # → action="https://formspree.io/f/PLACEHOLDER" の箇所
-  ```
-
-- [ ] **Microsoft Clarity**: `CLARITY_PROJECT_ID` を `wax7x03bg8` に差し替え
-  ```bash
-  sed -i '' 's/CLARITY_PROJECT_ID/wax7x03bg8/g' index.html
-  ```
-
-- [ ] **GA4**: `G-XXXXXXXXXX` を `G-0NZY6PM3FG` に差し替え
-  ```bash
-  sed -i '' 's/G-XXXXXXXXXX/G-0NZY6PM3FG/g' index.html
-  ```
-
-### 🟡 SSL（自動完了待ち）
-
-- [ ] **SSL 証明書**: Firebase が自動発行中。完了すると `kjk.tadakayo.jp` で🔒マーク表示。確認コマンド：
-  ```bash
-  curl -I https://kjk.tadakayo.jp
-  # → HTTP/2 200 になれば完了
-  ```
-
-### 🟠 次セッション最初に着手
-
-- [ ] **OGP 画像 クラウドデザイン依頼**
-  - 依頼書: [`OGP_DESIGN_BRIEF.md`](./OGP_DESIGN_BRIEF.md) を開いてそのまま貼り付ける
-  - 仕様: 1200×630px / `images/ogp.png`
-  - キャラクター: `images/chara_11.png`（背景透過済み）
-  - ロゴ: `images/tadakayo_logo.png`（背景透過済み）
-  - 納品後: `index.html` に OGP タグを追加してデプロイ
-
-### 🟢 あとで
-
-- [ ] ENGINEERING_NOTES.md の §13 進捗・§16 変更履歴を更新
 - [ ] alt plans（居住・入所系 / その他）のプランカードをタダサポ本体カードと同様の詳細度に仕上げる
-- [ ] mitsumori.html を Firebase Hosting にデプロイして本番URLで動作確認
-- [ ] canonical / sitemap.xml / robots.txt 追加（SEO 基盤整備）
-- [ ] Google Search Console に `kjk.tadakayo.jp` を登録・インデックス申請
+- [ ] ENGINEERING_NOTES.md の §13 進捗・§16 変更履歴を更新
+
+### 📊 運用・モニタリング
+
+- [ ] Clarity（wax7x03bg8）でヒートマップ確認（数日後以降）
+- [ ] GA4（G-0NZY6PM3FG）でアクセス確認
+- [ ] Search Console でインデックス状況確認（1〜数日後）
+- [ ] Formspree（xjglevjk）で問い合わせ受信確認
 
 ---
 
@@ -100,12 +71,19 @@ bash deploy.sh
 git push "https://<PAT>@github.com/tsuku-29/kjk-tadakayo.git" main
 ```
 
+### Formspree フォーム
+- フォーム ID: `xjglevjk`
+- 送信先: kjk@tadakayo.jp（yoshinao-tsukuda@tadakayo.jp で管理）
+- 注意: email フィールドは必ず `name="email"` にする（日本語名だと Formspree が認識しない）
+
+### Google Search Console
+- 認証方法: HTML ファイル（`google1d7d28761b295e68.html`）→ Firebase に永続配置
+- 認証ファイルを削除しないこと
+
 ### 画像背景透過処理（Pillow）
 ```python
-# 白背景（RGB > 235）を透明化する共通レシピ
 from PIL import Image
 import numpy as np
-
 img = Image.open("target.png").convert("RGBA")
 data = np.array(img)
 white = (data[:,:,0] > 235) & (data[:,:,1] > 235) & (data[:,:,2] > 235)
@@ -119,18 +97,16 @@ Image.fromarray(data).save("target.png")
 
 | 項目 | 値 |
 |---|---|
-| 本番 URL | https://kjk-tadakayo.web.app |
-| カスタムドメイン | https://kjk.tadakayo.jp（SSL証明書発行中・まもなく有効） |
+| 本番 URL | https://kjk.tadakayo.jp |
 | Firebase プロジェクト | kjk-tadakayo（yoshinao-tsukuda@tadakayo.jp） |
 | GitHub | https://github.com/tsuku-29/kjk-tadakayo（tsuku-29） |
+| Formspree | xjglevjk（yoshinao-tsukuda@tadakayo.jp） |
+| Microsoft Clarity | wax7x03bg8 |
+| GA4 | G-0NZY6PM3FG |
+| Search Console | 登録・認証済み・sitemap 送信済み |
 | ブランドカラー | #E33535（赤）/ #FFE4EC（ピンク） |
 | フォント | Noto Sans JP |
 | アイコン | Tabler Icons v3.24.0+ |
-| キャラクター | images/chara_1〜11.png（背景透過済み） |
-| ロゴ | images/tadakayo_logo.png（背景透過済み） |
-| 製品画像 | images/cir415a_product/scene.webp, cir315a_product/scene.webp |
-| 印鑑 | images/hanko.png（黒背景透過済み） |
-| 見積書ツール | mitsumori.html（サーバー不要・静的HTML） |
 
 ---
 
@@ -149,4 +125,5 @@ cd ~/Projects/tadakayo/tadakiayo-kiban
 - 料金設計書: [PRICING.md](./PRICING.md)
 - エンジニアノート: [ENGINEERING_NOTES.md](./ENGINEERING_NOTES.md)
 - Firebase Console: https://console.firebase.google.com/project/kjk-tadakayo/overview
-- AB Circle 製品ページ: 参照資料は `ABサークル様資料/` フォルダ内
+- Formspree: https://formspree.io/forms/xjglevjk
+- Search Console: https://search.google.com/search-console?resource_id=https%3A%2F%2Fkjk.tadakayo.jp%2F
