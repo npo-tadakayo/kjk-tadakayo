@@ -1,4 +1,4 @@
-# タダサポ 介護情報基盤版 LP 申し送り — 2026-05-07（継続中）
+# タダサポ 介護情報基盤版 LP 申し送り — 2026-05-08（継続中）
 
 > handoff-id: tadakayo
 
@@ -7,31 +7,26 @@
 ## 現在の状態
 
 index.html 本体は完成。Firebase Hosting にデプロイ済み。
-mitsumori.html（見積書作成ツール）を新規追加。
-プレースホルダー3箇所（Formspree / Clarity / GA4）が未差し替えで、カスタムドメインのDNS設定待ち。
+カスタムドメイン `kjk.tadakayo.jp` の CNAME 設定・Firebase 登録が完了し、SSL 証明書発行中（数時間で完了）。
+プレースホルダー3箇所（Formspree / Clarity / GA4）が未差し替え。
 
 ---
 
 ## 今セッションでやったこと
 
-| コミット | 内容 |
+| 作業 | 内容 |
 |---|---|
-| `70b1bd3` | PRICING.md 作成（全6パターン自己負担¥0） |
-| `72536ed` | サービス名を「タダサポ 介護情報基盤版」にリブランド・価格を¥57,000(税別)に更新 |
-| `a482372` | 製品写真を images/ フォルダに追加（CIR415A・CIR315A 各2枚 WebP） |
-| `e664c3d` | キャラクター画像（chara_1〜11）追加・製品スペック修正（唯一の認定モデルバッジ等） |
-| `1f12a22` | ヘッダーロゴを tadakayo_logo.png に差し替え（赤い「タ」バッジを廃止） |
-| `7ba3c5b` | ロゴ画像の白背景を透過処理（Pillow） |
-| `74a72d1` | キャラクター画像11枚の白背景を透過処理（Pillow） |
-| `eda5676` | 助成金早見表：居住・入所系/その他にBT/USB両プランと¥0バッジを追加 |
-| `39d9f31` | 助成金早見表：訪問・通所系にもBT/USB両プランを追加（3行統一） |
-| `151c829` | 見積書作成ツール（mitsumori.html）追加・ヘッダーに「見積書を作成」ボタン追加・印鑑画像（背景透過）追加 |
+| WCAG 2.1 AA アクセシビリティ修正 | スキップリンク・`<main>`・`<nav>`・`:focus-visible`・`aria-invalid`・`aria-live`・`scope="col"`・`role="status"` |
+| タダカヨ認定事業所セクション追加 | `#certified` セクション新設・株式会社２７９（#001）カード追加 |
+| Firebase Hosting デプロイ | コミット `d0c02c` にて本番反映済み |
+| カスタムドメイン DNS 設定 | GMO レンタルサーバー CP（cp.onamae.ne.jp）で CNAME 追加：`kjk.tadakayo.jp → kjk-tadakayo.web.app` |
+| Firebase カスタムドメイン登録 | Firebase Console でクイックセットアップ完了・SSL 証明書発行中 |
 
 ---
 
 ## 残タスク（優先順）
 
-### 🔴 必須（公開前）
+### 🔴 必須（フォームが機能しない）
 
 - [ ] **Formspree**: https://formspree.io でフォームを作成 → `index.html` の `PLACEHOLDER` を実IDに差し替え
   ```bash
@@ -49,11 +44,13 @@ mitsumori.html（見積書作成ツール）を新規追加。
   sed -i '' 's/G-XXXXXXXXXX/G-0NZY6PM3FG/g' index.html
   ```
 
-### 🟡 DNS（藤田さん対応待ち）
+### 🟡 SSL（自動完了待ち）
 
-- [ ] **カスタムドメイン**: お名前.com で `kjk.tadakayo.jp` に CNAME レコードを追加
-  - TYPE: CNAME / ホスト: `kjk` / VALUE: `kjk-tadakayo.web.app`
-  - 担当: h.fujita@tadakayo.jp に依頼中
+- [ ] **SSL 証明書**: Firebase が自動発行中。完了すると `kjk.tadakayo.jp` で🔒マーク表示。確認コマンド：
+  ```bash
+  curl -I https://kjk.tadakayo.jp
+  # → HTTP/2 200 になれば完了
+  ```
 
 ### 🟢 あとで
 
@@ -113,7 +110,7 @@ Image.fromarray(data).save("target.png")
 | 項目 | 値 |
 |---|---|
 | 本番 URL | https://kjk-tadakayo.web.app |
-| カスタムドメイン | https://kjk.tadakayo.jp（DNS設定待ち） |
+| カスタムドメイン | https://kjk.tadakayo.jp（SSL証明書発行中・まもなく有効） |
 | Firebase プロジェクト | kjk-tadakayo（yoshinao-tsukuda@tadakayo.jp） |
 | GitHub | https://github.com/tsuku-29/kjk-tadakayo（tsuku-29） |
 | ブランドカラー | #E33535（赤）/ #FFE4EC（ピンク） |
