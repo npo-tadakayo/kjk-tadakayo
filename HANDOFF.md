@@ -52,12 +52,22 @@ index.html 本体は完成。Firebase Hosting にデプロイ済み。
   # → HTTP/2 200 になれば完了
   ```
 
+### 🟠 次セッション最初に着手
+
+- [ ] **OGP 画像 クラウドデザイン依頼**
+  - 依頼書: [`OGP_DESIGN_BRIEF.md`](./OGP_DESIGN_BRIEF.md) を開いてそのまま貼り付ける
+  - 仕様: 1200×630px / `images/ogp.png`
+  - キャラクター: `images/chara_11.png`（背景透過済み）
+  - ロゴ: `images/tadakayo_logo.png`（背景透過済み）
+  - 納品後: `index.html` に OGP タグを追加してデプロイ
+
 ### 🟢 あとで
 
 - [ ] ENGINEERING_NOTES.md の §13 進捗・§16 変更履歴を更新
 - [ ] alt plans（居住・入所系 / その他）のプランカードをタダサポ本体カードと同様の詳細度に仕上げる
-- [ ] OGP画像（og:image）の作成・設定
 - [ ] mitsumori.html を Firebase Hosting にデプロイして本番URLで動作確認
+- [ ] canonical / sitemap.xml / robots.txt 追加（SEO 基盤整備）
+- [ ] Google Search Console に `kjk.tadakayo.jp` を登録・インデックス申請
 
 ---
 
