@@ -369,6 +369,63 @@
       display: block;
     }
 
+    /* ======== Character Mascot ======== */
+    .chara-bubble {
+      display: flex;
+      align-items: flex-end;
+      gap: 16px;
+      max-width: 680px;
+      margin: 32px auto 0;
+    }
+    .chara-bubble.right { flex-direction: row-reverse; }
+    .chara-bubble img {
+      width: 100px;
+      height: auto;
+      filter: drop-shadow(0 2px 10px rgba(0,0,0,0.12));
+      flex-shrink: 0;
+    }
+    .chara-speech {
+      background: var(--color-primary-light);
+      border: 2px solid var(--color-primary);
+      border-radius: 14px;
+      padding: 14px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--color-text);
+      line-height: 1.6;
+      position: relative;
+    }
+    .chara-speech::before {
+      content: '';
+      position: absolute;
+      bottom: 22px;
+      left: -13px;
+      border: 7px solid transparent;
+      border-right-color: var(--color-primary);
+    }
+    .chara-speech::after {
+      content: '';
+      position: absolute;
+      bottom: 23px;
+      left: -10px;
+      border: 6px solid transparent;
+      border-right-color: var(--color-primary-light);
+    }
+    .chara-bubble.right .chara-speech::before {
+      left: auto; right: -13px;
+      border-right-color: transparent;
+      border-left-color: var(--color-primary);
+    }
+    .chara-bubble.right .chara-speech::after {
+      left: auto; right: -10px;
+      border-right-color: transparent;
+      border-left-color: var(--color-primary-light);
+    }
+    @media (max-width: 600px) {
+      .chara-bubble img { width: 72px; }
+      .chara-speech { font-size: 13px; padding: 10px 14px; }
+    }
+
     /* ======== PLAN ======== */
     .plan-section { background: var(--color-primary-light); }
     .plan-card {
@@ -667,6 +724,9 @@
             </div>
             <p class="subsidy-note">※税込価格で計算。助成金は2026/5/7〜2027/3/12申請受付中。</p>
           </div>
+          <div style="text-align:center;margin-top:20px;">
+            <img src="images/chara_11.png" alt="" role="presentation" style="height:170px;width:auto;filter:drop-shadow(0 4px 14px rgba(0,0,0,0.10));">
+          </div>
         </div>
       </div>
     </div>
@@ -713,6 +773,11 @@
             訪問・通所系なら自己負担¥0で整います。
           </p>
         </div>
+      </div>
+
+      <div class="chara-bubble">
+        <img src="images/chara_6.png" alt="">
+        <div class="chara-speech">「まだカードリーダーが用意できていない…」という事業所さん、ご安心ください。助成金を使えば、タダサポで¥0から始められます！</div>
       </div>
     </div>
   </section>
@@ -931,22 +996,23 @@
           <div class="product-img-wrap">
             <img src="images/cir415a_product.webp" alt="AB Circle CIR415A Bluetoothカードリーダー 製品写真">
           </div>
+          <span style="display:inline-block;background:var(--color-success);color:#fff;font-size:11px;font-weight:700;padding:3px 12px;border-radius:100px;margin-bottom:10px;">マイナ資格確認アプリ向け 唯一の認定モデル</span>
           <p class="product-model">AB Circle CIR415A</p>
-          <h3 class="product-name">Bluetooth接続モデル</h3>
+          <h3 class="product-name">Bluetooth + USB Type-C 接続モデル</h3>
           <div class="product-price">¥9,000</div>
           <p class="product-price-note">税別 / 1台あたり</p>
           <ul class="product-features">
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
-              <span>ワイヤレス接続でケーブル不要</span>
+              <span><strong>マイナ資格確認アプリ向け唯一の認定モデル</strong></span>
             </li>
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
-              <span>iPhone / Android スマホ対応</span>
+              <span>Bluetooth ＋ USB Type-C のデュアル接続対応</span>
             </li>
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
-              <span>マイナ資格確認アプリ対応</span>
+              <span>iPhone / Android スマホ・タブレット対応</span>
             </li>
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
@@ -962,20 +1028,20 @@
         <!-- CIR315A: USB -->
         <div class="product-card">
           <div class="product-img-wrap">
-            <img src="images/cir315a_product.webp" alt="AB Circle CIR315A USB-A/Cカードリーダー 製品写真">
+            <img src="images/cir315a_product.webp" alt="AB Circle CIR315A USB接続カードリーダー 製品写真">
           </div>
           <p class="product-model">AB Circle CIR315A</p>
-          <h3 class="product-name">USB-A/C接続モデル</h3>
+          <h3 class="product-name">USB接続モデル（Type-A / Type-C）</h3>
           <div class="product-price">¥5,000</div>
           <p class="product-price-note">税別 / 1台あたり</p>
           <ul class="product-features">
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
-              <span>USB-A/Cで安定した有線接続</span>
+              <span>USB Type-A（-02）/ Type-C（-04）を選択可</span>
             </li>
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
-              <span>PC・タブレット接続に最適</span>
+              <span>PC・タブレットへの有線接続で安定動作</span>
             </li>
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
@@ -991,6 +1057,11 @@
             </li>
           </ul>
         </div>
+      </div>
+
+      <div class="chara-bubble right" style="margin-top:40px;">
+        <img src="images/chara_9.png" alt="">
+        <div class="chara-speech">スマホ・タブレット中心ならBluetooth（CIR415A）、PCメインなら有線USB（CIR315A）がおすすめ。迷ったらご相談ください！</div>
       </div>
     </div>
   </section>
@@ -1212,6 +1283,11 @@
           </p>
         </div>
       </div>
+
+      <div class="chara-bubble" style="margin-top:40px;">
+        <img src="images/chara_8.png" alt="">
+        <div class="chara-speech">「タダでカイゴをヨクしよう」を掲げるNPO法人タダカヨが、最後まで一緒に伴走します。安心してお任せください！</div>
+      </div>
     </div>
   </section>
 
@@ -1222,6 +1298,12 @@
         <span class="section-label">よくある質問</span>
         <h2 class="section-title" id="faq-heading">疑問にお答えします</h2>
       </div>
+
+      <div class="chara-bubble right" style="margin-bottom:8px;">
+        <img src="images/chara_2.png" alt="">
+        <div class="chara-speech">よくいただくご質問をまとめました。解決しない場合はお気軽にお問い合わせください！</div>
+      </div>
+
       <div class="faq-list" role="list">
 
         <div class="faq-item" role="listitem">
