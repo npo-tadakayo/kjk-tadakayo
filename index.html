@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3,100円で整う、介護情報基盤 | NPO法人タダカヨ</title>
+  <meta name="description" content="助成金¥64,000を活用すれば、自己負担わずか3,100円。カードリーダー3台＋1年間の伴走サポートがまるごと揃う「介護情報基盤 おまかせパック」。NPO法人タダカヨが申請から導入まで一緒に進めます。">
+
+  <!-- Microsoft Clarity -->
+  <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})(window,document,"clarity","script","CLARITY_PROJECT_ID");
+  </script>
+
+  <!-- Google Analytics 4 -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-XXXXXXXXXX"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-XXXXXXXXXX');
+  </script>
+
+  <!-- Google Fonts: Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+
+  <!-- Tabler Icons v3.24.0 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+
+  <style>
+    /* ======== CSS Variables ======== */
+    :root {
+      --color-primary:       #E33535;
+      --color-primary-dark:  #c02828;
+      --color-primary-light: #FFE4EC;
+      --color-text:          #1a1a1a;
+      --color-text-muted:    #555555;
+      --color-bg:            #FFFFFF;
+      --color-neutral:       #F5F5F5;
+      --color-border:        #e4e4e4;
+      --color-success:       #2a7a3b;
+      --shadow-sm: 0 1px 4px rgba(0,0,0,0.08);
+      --shadow-md: 0 4px 16px rgba(0,0,0,0.10);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.12);
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 20px;
+      --font-base: 'Noto Sans JP', sans-serif;
+    }
+
+    /* ======== Reset & Base ======== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-base);
+      font-size: 16px;
+      line-height: 1.7;
+      color: var(--color-text);
+      background: var(--color-bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+    button { cursor: pointer; font-family: inherit; }
+
+    /* ======== Layout Utilities ======== */
+    .container { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    .section { padding: 80px 0; }
+    .section-sm { padding: 56px 0; }
+    .text-center { text-align: center; }
+    .text-red { color: var(--color-primary); }
+    .bold { font-weight: 700; }
+
+    /* ======== Buttons ======== */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      min-height: 48px; padding: 12px 28px;
+      border: none; border-radius: var(--radius-sm);
+      font-size: 15px; font-weight: 700; line-height: 1;
+      transition: all 0.18s ease;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--color-primary); color: #fff;
+    }
+    .btn-primary:hover { background: var(--color-primary-dark); transform: translateY(-1px); box-shadow: var(--shadow-md); }
+    .btn-outline {
+      background: transparent; color: var(--color-primary);
+      border: 2px solid var(--color-primary);
+    }
+    .btn-outline:hover { background: var(--color-primary-light); }
+    .btn-white {
+      background: #fff; color: var(--color-primary);
+    }
+    .btn-white:hover { background: var(--color-primary-light); }
+    .btn-lg { min-height: 56px; padding: 16px 36px; font-size: 17px; border-radius: 8px; }
+
+    /* ======== Section Header ======== */
+    .section-label {
+      display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+      color: var(--color-primary); text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+    .section-title {
+      font-size: clamp(26px, 4vw, 38px); font-weight: 900; line-height: 1.3;
+      margin-bottom: 16px;
+    }
+    .section-desc {
+      font-size: 16px; color: var(--color-text-muted); max-width: 640px;
+    }
+    .section-desc.center { margin: 0 auto; }
+
+    /* ======== HEADER ======== */
+    .site-header {
+      position: sticky; top: 0; z-index: 100;
+      background: #fff; border-bottom: 1px solid var(--color-border);
+      height: 64px;
+    }
+    .header-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 64px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .logo-badge {
+      width: 36px; height: 36px; background: var(--color-primary);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center;
+      color: #fff; font-size: 14px; font-weight: 900; flex-shrink: 0;
+    }
+    .logo-text { font-size: 16px; font-weight: 700; }
+    .logo-sub { font-size: 11px; color: var(--color-text-muted); line-height: 1.2; margin-top: 2px; }
+    .header-cta { display: flex; align-items: center; gap: 12px; }
+
+    /* ======== ALERT BANNER ======== */
+    .alert-banner {
+      background: var(--color-primary); color: #fff;
+      padding: 12px 0; text-align: center;
+    }
+    .alert-inner {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; flex-wrap: wrap;
+    }
+    .alert-icon { font-size: 18px; flex-shrink: 0; }
+    .alert-text { font-size: 14px; font-weight: 600; line-height: 1.5; }
+    .alert-badge {
+      background: #fff; color: var(--color-primary);
+      font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 100px;
+      flex-shrink: 0;
+    }
+
+    /* ======== HERO ======== */
+    .hero {
+      background: linear-gradient(135deg, #fff 0%, var(--color-primary-light) 100%);
+      padding: 80px 0 72px;
+    }
+    .hero-inner {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--color-primary); color: #fff;
+      font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+      padding: 5px 12px; border-radius: 100px; margin-bottom: 20px;
+    }
+    .hero-title {
+      font-size: clamp(32px, 5vw, 52px); font-weight: 900; line-height: 1.2;
+      margin-bottom: 12px;
+    }
+    .hero-title-accent {
+      color: var(--color-primary);
+    }
+    .hero-price-note {
+      font-size: 14px; color: var(--color-text-muted);
+      margin-bottom: 20px; padding-left: 4px;
+    }
+    .hero-sub {
+      font-size: 17px; line-height: 1.8; color: var(--color-text-muted);
+      margin-bottom: 32px;
+    }
+    .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    /* Hero visual */
+    .hero-visual {
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hero-card {
+      background: #fff; border-radius: var(--radius-lg); padding: 32px;
+      box-shadow: var(--shadow-lg); width: 100%; max-width: 380px;
+    }
+    .hero-card-title {
+      font-size: 13px; font-weight: 700; color: var(--color-text-muted);
+      margin-bottom: 16px; text-align: center;
+    }
+    .subsidy-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 0; border-bottom: 1px solid var(--color-border);
+    }
+    .subsidy-row:last-of-type { border-bottom: none; }
+    .subsidy-label { font-size: 14px; }
+    .subsidy-amount { font-size: 16px; font-weight: 700; }
+    .subsidy-amount.negative { color: var(--color-primary); }
+    .subsidy-divider { border: none; border-top: 2px solid var(--color-primary); margin: 12px 0; }
+    .subsidy-total-row {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      margin-top: 8px;
+    }
+    .subsidy-total-label { font-size: 15px; font-weight: 700; }
+    .subsidy-total-amount {
+      font-size: 40px; font-weight: 900; color: var(--color-primary); line-height: 1;
+    }
+    .subsidy-total-unit { font-size: 18px; font-weight: 700; }
+    .subsidy-note {
+      font-size: 12px; color: var(--color-text-muted); margin-top: 12px; text-align: center;
+    }
+    .subsidy-tag {
+      background: var(--color-primary-light); color: var(--color-primary);
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+    }
+
+    /* ======== WHY SECTION ======== */
+    .why-section { background: var(--color-neutral); }
+    .why-grid {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 48px;
+    }
+    .why-card {
+      background: #fff; border-radius: var(--radius-md); padding: 32px 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    .why-num {
+      font-size: 42px; font-weight: 900; color: var(--color-primary);
+      opacity: 0.15; line-height: 1; margin-bottom: 8px;
+    }
+    .why-icon {
+      width: 48px; height: 48px; background: var(--color-primary-light);
+      border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      color: var(--color-primary); font-size: 24px; margin-bottom: 16px;
+    }
+    .why-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .why-text { font-size: 14px; color: var(--color-text-muted); line-height: 1.7; }
+
+    /* ======== SUBSIDY TABLE ======== */
+    .subsidy-section { background: #fff; }
+    .subsidy-table-wrap { margin-top: 40px; overflow-x: auto; }
+    .subsidy-table {
+      width: 100%; border-collapse: separate; border-spacing: 0;
+      border-radius: var(--radius-md); overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+    .subsidy-table th {
+      background: var(--color-primary); color: #fff;
+      padding: 14px 20px; font-size: 14px; font-weight: 700; text-align: left;
+    }
+    .subsidy-table td {
+      padding: 18px 20px; font-size: 15px; border-bottom: 1px solid var(--color-border);
+      vertical-align: middle;
+    }
+    .subsidy-table tr:last-child td { border-bottom: none; }
+    .subsidy-table .row-highlight { background: #fff9f9; }
+    .subsidy-table .row-highlight td:first-child { border-left: 4px solid var(--color-primary); }
+    .amount-large { font-size: 22px; font-weight: 900; color: var(--color-primary); }
+    .service-tag {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: var(--color-primary-light); color: var(--color-primary);
+      font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px;
+      margin-top: 4px;
+    }
+    .units-tag {
+      display: inline-block; font-size: 12px; color: var(--color-text-muted);
+      margin-top: 4px;
+    }
+    .pack-fit-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: #e8f5e9; color: var(--color-success);
+      font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 4px;
+    }
+    .subsidy-note-box {
+      margin-top: 20px; background: var(--color-primary-light);
+      border-left: 4px solid var(--color-primary);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding: 14px 20px;
+    }
+    .subsidy-note-box p { font-size: 14px; line-height: 1.7; }
+    .subsidy-note-box strong { color: var(--color-primary); }
+
+    /* ======== LOGIC BOX ======== */
+    .logic-section { background: var(--color-primary-light); }
+    .logic-box {
+      background: #fff; border-radius: var(--radius-lg); padding: 40px;
+      box-shadow: var(--shadow-md); max-width: 800px; margin: 40px auto 0;
+    }
+    .logic-title {
+      font-size: 20px; font-weight: 900; margin-bottom: 28px;
+      padding-bottom: 16px; border-bottom: 2px solid var(--color-border);
+    }
+    .logic-row {
+      display: flex; align-items: flex-start; gap: 16px;
+      padding: 16px 0; border-bottom: 1px solid var(--color-border);
+    }
+    .logic-row:last-of-type { border-bottom: none; }
+    .logic-step {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: var(--color-primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+    }
+    .logic-content h4 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .logic-content p { font-size: 14px; color: var(--color-text-muted); line-height: 1.6; }
+    .logic-content p em { color: var(--color-primary); font-style: normal; font-weight: 700; }
+    .logic-result {
+      margin-top: 24px; background: var(--color-primary); color: #fff;
+      border-radius: var(--radius-md); padding: 24px 28px;
+      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    }
+    .logic-result-label { font-size: 15px; font-weight: 600; flex-shrink: 0; }
+    .logic-result-amount {
+      font-size: 52px; font-weight: 900; line-height: 1;
+    }
+    .logic-result-unit { font-size: 22px; font-weight: 700; }
+    .logic-result-note { font-size: 12px; opacity: 0.8; margin-top: 4px; }
+
+    /* ======== PRODUCTS ======== */
+    .products-section { background: #fff; }
+    .products-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 48px;
+    }
+    .product-card {
+      border: 2px solid var(--color-border); border-radius: var(--radius-md);
+      padding: 32px; position: relative; transition: border-color 0.2s;
+    }
+    .product-card.featured { border-color: var(--color-primary); }
+    .product-badge {
+      position: absolute; top: -14px; left: 24px;
+      background: var(--color-primary); color: #fff;
+      font-size: 12px; font-weight: 700; padding: 4px 14px; border-radius: 100px;
+    }
+    .product-model { font-size: 12px; color: var(--color-text-muted); margin-bottom: 8px; font-family: monospace; }
+    .product-name { font-size: 22px; font-weight: 900; margin-bottom: 16px; }
+    .product-price {
+      font-size: 32px; font-weight: 900; color: var(--color-primary);
+      margin-bottom: 4px; line-height: 1;
+    }
+    .product-price-note { font-size: 12px; color: var(--color-text-muted); margin-bottom: 24px; }
+    .product-features { list-style: none; }
+    .product-features li {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--color-border);
+    }
+    .product-features li:last-child { border-bottom: none; }
+    .product-features li .ti {
+      color: var(--color-primary); font-size: 16px; flex-shrink: 0; margin-top: 2px;
+    }
+    .product-icon-wrap {
+      width: 80px; height: 80px; background: var(--color-neutral);
+      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px;
+    }
+    .product-icon-wrap .ti { font-size: 40px; color: var(--color-primary); }
+
+    /* ======== PLAN ======== */
+    .plan-section { background: var(--color-primary-light); }
+    .plan-card {
+      background: #fff; border-radius: var(--radius-lg); padding: 48px;
+      box-shadow: var(--shadow-lg); max-width: 860px; margin: 40px auto 0;
+      position: relative; overflow: hidden;
+    }
+    .plan-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 6px;
+      background: var(--color-primary);
+    }
+    .plan-header { margin-bottom: 36px; }
+    .plan-name { font-size: 28px; font-weight: 900; margin-bottom: 8px; }
+    .plan-tagline { font-size: 15px; color: var(--color-text-muted); }
+    .plan-breakdown {
+      background: var(--color-neutral); border-radius: var(--radius-md);
+      padding: 24px; margin-bottom: 32px;
+    }
+    .plan-breakdown-title { font-size: 13px; font-weight: 700; color: var(--color-text-muted); margin-bottom: 16px; }
+    .plan-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 0; border-bottom: 1px solid var(--color-border);
+    }
+    .plan-item:last-child { border-bottom: none; }
+    .plan-item-left { display: flex; align-items: center; gap: 10px; }
+    .plan-item-icon { color: var(--color-primary); font-size: 20px; }
+    .plan-item-label { font-size: 15px; font-weight: 600; }
+    .plan-item-sub { font-size: 12px; color: var(--color-text-muted); margin-top: 2px; }
+    .plan-item-price { font-size: 17px; font-weight: 700; }
+    .plan-total-row {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      padding: 20px 0; border-top: 2px solid var(--color-primary);
+      margin-top: 8px;
+    }
+    .plan-total-label { font-size: 18px; font-weight: 700; }
+    .plan-total-price {
+      display: flex; align-items: baseline; gap: 4px;
+    }
+    .plan-total-amount { font-size: 44px; font-weight: 900; color: var(--color-primary); line-height: 1; }
+    .plan-total-unit { font-size: 18px; font-weight: 700; }
+    .plan-total-note { font-size: 12px; color: var(--color-text-muted); margin-top: 4px; }
+
+    /* Subsidy calc display */
+    .plan-subsidy-calc {
+      border: 2px solid var(--color-primary); border-radius: var(--radius-md);
+      padding: 24px; margin-bottom: 32px;
+      background: #fff9f9;
+    }
+    .calc-title {
+      font-size: 14px; font-weight: 700; color: var(--color-primary);
+      margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+    }
+    .calc-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0;
+    }
+    .calc-label { font-size: 14px; }
+    .calc-value { font-size: 16px; font-weight: 700; }
+    .calc-value.minus { color: var(--color-primary); }
+    .calc-divider { border: none; border-top: 1px dashed var(--color-border); margin: 8px 0; }
+    .calc-result-row {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      padding-top: 12px;
+    }
+    .calc-result-label { font-size: 16px; font-weight: 700; }
+    .calc-result-value {
+      display: flex; align-items: baseline; gap: 4px;
+    }
+    .calc-result-num { font-size: 48px; font-weight: 900; color: var(--color-primary); line-height: 1; }
+    .calc-result-unit { font-size: 20px; font-weight: 700; color: var(--color-primary); }
+    .calc-result-note { font-size: 12px; color: var(--color-text-muted); margin-top: 6px; }
+
+    /* Alt plans */
+    .alt-plans { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px; }
+    .alt-card {
+      border: 1px solid var(--color-border); border-radius: var(--radius-md);
+      padding: 20px;
+    }
+    .alt-title { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .alt-item { font-size: 13px; color: var(--color-text-muted); line-height: 1.8; }
+    .alt-self-pay { font-size: 18px; font-weight: 700; color: var(--color-primary); margin-top: 8px; }
+
+    /* ======== STRENGTHS ======== */
+    .strengths-section { background: #fff; }
+    .strengths-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; margin-top: 48px;
+    }
+    .strength-card {
+      text-align: center; padding: 32px 20px;
+      background: var(--color-neutral); border-radius: var(--radius-md);
+    }
+    .strength-icon {
+      width: 64px; height: 64px; margin: 0 auto 20px;
+      background: var(--color-primary-light);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      color: var(--color-primary); font-size: 30px;
+    }
+    .strength-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+    .strength-text { font-size: 13px; color: var(--color-text-muted); line-height: 1.7; }
+
+    /* ======== FAQ ======== */
+    .faq-section { background: var(--color-neutral); }
+    .faq-list { max-width: 800px; margin: 40px auto 0; }
+    .faq-item {
+      background: #fff; border-radius: var(--radius-md); margin-bottom: 12px;
+      box-shadow: var(--shadow-sm); overflow: hidden;
+    }
+    .faq-question {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; padding: 20px 24px;
+      background: none; border: none; text-align: left;
+      font-size: 15px; font-weight: 700; cursor: pointer; color: var(--color-text);
+      min-height: 44px;
+    }
+    .faq-question:hover { background: var(--color-primary-light); }
+    .faq-q-icon { color: var(--color-primary); font-size: 18px; flex-shrink: 0; }
+    .faq-arrow {
+      color: var(--color-text-muted); font-size: 18px; flex-shrink: 0;
+      transition: transform 0.2s;
+    }
+    .faq-item.open .faq-arrow { transform: rotate(180deg); }
+    .faq-answer {
+      display: none; padding: 0 24px 20px;
+      font-size: 14px; color: var(--color-text-muted); line-height: 1.8;
+      border-top: 1px solid var(--color-border);
+    }
+    .faq-answer p { padding-top: 16px; }
+    .faq-item.open .faq-answer { display: block; }
+
+    /* ======== CONTACT FORM ======== */
+    .contact-section { background: #fff; }
+    .form-wrap { max-width: 640px; margin: 40px auto 0; }
+    .form-group { margin-bottom: 20px; }
+    .form-label {
+      display: block; font-size: 14px; font-weight: 700; margin-bottom: 6px;
+    }
+    .form-label .required {
+      color: var(--color-primary); font-size: 11px; margin-left: 4px;
+    }
+    .form-input, .form-select, .form-textarea {
+      width: 100%; padding: 12px 16px;
+      border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+      font-family: var(--font-base); font-size: 15px; color: var(--color-text);
+      background: #fff; transition: border-color 0.2s;
+      min-height: 44px;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus {
+      outline: none; border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(227,53,53,0.12);
+    }
+    .form-textarea { min-height: 120px; resize: vertical; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-submit-wrap { text-align: center; margin-top: 32px; }
+    .form-note { font-size: 12px; color: var(--color-text-muted); margin-top: 12px; }
+    #form-success {
+      display: none; background: #e8f5e9; border: 1px solid #a5d6a7;
+      border-radius: var(--radius-md); padding: 24px; text-align: center;
+      color: var(--color-success);
+    }
+    #form-success .ti { font-size: 40px; margin-bottom: 12px; display: block; }
+    #form-success h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    #form-success p { font-size: 14px; }
+
+    /* ======== FOOTER ======== */
+    .site-footer {
+      background: var(--color-text); color: rgba(255,255,255,0.7);
+      padding: 40px 0;
+    }
+    .footer-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 16px;
+    }
+    .footer-logo { font-size: 16px; font-weight: 700; color: #fff; }
+    .footer-logo-sub { font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px; }
+    .footer-links { display: flex; gap: 20px; }
+    .footer-links a { font-size: 13px; color: rgba(255,255,255,0.6); }
+    .footer-links a:hover { color: #fff; }
+    .footer-copy { font-size: 12px; width: 100%; margin-top: 8px; }
+
+    /* ======== RESPONSIVE ======== */
+    @media (max-width: 1024px) {
+      .hero-inner { grid-template-columns: 1fr; }
+      .hero-visual { display: none; }
+      .strengths-grid { grid-template-columns: repeat(2, 1fr); }
+      .why-grid { grid-template-columns: 1fr; }
+      .products-grid { grid-template-columns: 1fr; }
+      .alt-plans { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .section { padding: 56px 0; }
+      .container { padding: 0 16px; }
+      .plan-card { padding: 28px 20px; }
+      .logic-box { padding: 24px 20px; }
+      .hero { padding: 56px 0 48px; }
+      .form-row { grid-template-columns: 1fr; }
+      .footer-inner { flex-direction: column; align-items: flex-start; }
+      .strengths-grid { grid-template-columns: 1fr 1fr; }
+      .header-cta .btn-outline { display: none; }
+      .logic-result { flex-direction: column; align-items: flex-start; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ======== HEADER ======== -->
+  <header class="site-header">
+    <div class="container">
+      <div class="header-inner">
+        <a href="#" class="logo" aria-label="NPO法人タダカヨ トップ">
+          <div class="logo-badge" aria-hidden="true">タ</div>
+          <div>
+            <div class="logo-text">NPO法人タダカヨ</div>
+            <div class="logo-sub">介護情報基盤 おまかせパック</div>
+          </div>
+        </a>
+        <div class="header-cta">
+          <a href="#logic" class="btn btn-outline">
+            <i class="ti ti-calculator" aria-hidden="true"></i>
+            助成金を確認
+          </a>
+          <a href="#contact" class="btn btn-primary">
+            <i class="ti ti-message-circle" aria-hidden="true"></i>
+            無料相談する
+          </a>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======== ALERT BANNER ======== -->
+  <div class="alert-banner" role="alert">
+    <div class="container">
+      <div class="alert-inner">
+        <i class="ti ti-calendar-check alert-icon" aria-hidden="true"></i>
+        <p class="alert-text">
+          <strong>2026年5月7日（本日）から助成金の申請受付がスタートしました！</strong>
+          　申請期限：2027年3月12日
+        </p>
+        <span class="alert-badge">今すぐ申請OK</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======== HERO ======== -->
+  <section class="hero" aria-labelledby="hero-heading">
+    <div class="container">
+      <div class="hero-inner">
+        <div class="hero-content">
+          <div class="hero-eyebrow">
+            <i class="ti ti-sparkles" aria-hidden="true"></i>
+            助成金活用で驚きの自己負担
+          </div>
+          <h1 class="hero-title" id="hero-heading">
+            <span class="hero-title-accent">3,100円</span>で整う、<br>
+            介護情報基盤。
+          </h1>
+          <p class="hero-price-note">※訪問・通所・短期滞在系の場合。税込¥67,100 − 助成金¥64,000 = 自己負担¥3,100</p>
+          <p class="hero-sub">
+            カードリーダー3台＋1年間の伴走サポートがまるごと揃う「おまかせパック」。
+            NPO法人タダカヨが、助成金申請から端末設定まで一緒に進めます。
+          </p>
+          <div class="hero-actions">
+            <a href="#plan" class="btn btn-primary btn-lg">
+              <i class="ti ti-package" aria-hidden="true"></i>
+              おまかせパックを見る
+            </a>
+            <a href="#logic" class="btn btn-outline btn-lg">
+              <i class="ti ti-calculator" aria-hidden="true"></i>
+              助成金を計算する
+            </a>
+          </div>
+        </div>
+
+        <!-- Hero visual: mini subsidy calc -->
+        <div class="hero-visual" aria-hidden="true">
+          <div class="hero-card">
+            <p class="hero-card-title">助成金シミュレーション（訪問・通所系 / 3台）</p>
+            <div class="subsidy-row">
+              <span class="subsidy-label">おまかせパック合計（税込）</span>
+              <span class="subsidy-amount">¥67,100</span>
+            </div>
+            <div class="subsidy-row">
+              <span class="subsidy-label">
+                介護情報基盤 助成金<br>
+                <span class="subsidy-tag">定額・上限¥64,000</span>
+              </span>
+              <span class="subsidy-amount negative">−¥64,000</span>
+            </div>
+            <hr class="subsidy-divider">
+            <div class="subsidy-total-row">
+              <span class="subsidy-total-label">実質の自己負担</span>
+              <div>
+                <span class="subsidy-total-amount">3,100</span>
+                <span class="subsidy-total-unit">円</span>
+              </div>
+            </div>
+            <p class="subsidy-note">※税込価格で計算。助成金は2026/5/7〜2027/3/12申請受付中。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== WHY ======== -->
+  <section class="why-section section" aria-labelledby="why-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">介護情報基盤とは</span>
+        <h2 class="section-title" id="why-heading">2026年4月から変わったこと</h2>
+        <p class="section-desc center">
+          マイナンバーカードで介護保険の資格確認ができる仕組みが始まりました。
+          対応するには、カードリーダーの導入が必要です。
+        </p>
+      </div>
+      <div class="why-grid">
+        <div class="why-card">
+          <div class="why-icon" aria-hidden="true"><i class="ti ti-id-badge-2"></i></div>
+          <h3 class="why-title">マイナ資格確認が始まった</h3>
+          <p class="why-text">
+            これまで紙や証明書で確認していた介護保険の資格確認が、
+            マイナンバーカードのICチップで即座に行えるようになりました。
+            書類の転記ミスや確認の手間が大幅に減ります。
+          </p>
+        </div>
+        <div class="why-card">
+          <div class="why-icon" aria-hidden="true"><i class="ti ti-device-laptop"></i></div>
+          <h3 class="why-title">カードリーダーが必要</h3>
+          <p class="why-text">
+            マイナ資格確認のためには、ICカードを読み取れるカードリーダーと
+            「マイナ資格確認アプリ」のセットアップが必要です。
+            機種選定から設定まで、慣れない方も多いのが現状です。
+          </p>
+        </div>
+        <div class="why-card">
+          <div class="why-icon" aria-hidden="true"><i class="ti ti-coin-yen"></i></div>
+          <h3 class="why-title">助成金で費用がほぼカバーされる</h3>
+          <p class="why-text">
+            カードリーダーの購入費と設定サポート費は、
+            国の「介護情報基盤 助成金」の対象です。
+            訪問・通所系なら最大¥64,000（税込）が支給され、
+            自己負担は3,100円に抑えられます。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== LOGIC: 補助金フレームの分析 ======== -->
+  <section id="logic" class="logic-section section" aria-labelledby="logic-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">補助金フレーム分析</span>
+        <h2 class="section-title" id="logic-heading">なぜ6.1万円が助成金に最も有利なのか</h2>
+        <p class="section-desc center">
+          介護事業所が活用できる補助金プログラムはいくつかありますが、
+          おまかせパックは最も有利な枠に最適化されています。
+        </p>
+      </div>
+      <div class="logic-box">
+        <h3 class="logic-title">
+          <i class="ti ti-analyze" style="color:var(--color-primary);margin-right:8px;" aria-hidden="true"></i>
+          補助金プログラム比較と、¥61,000という価格の意味
+        </h3>
+
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">1</div>
+          <div class="logic-content">
+            <h4>「介護情報基盤 助成金」は定額型で、最も有利な構造</h4>
+            <p>
+              介護事業所向けの「介護情報基盤 助成金」は、
+              <em>補助率の定めがなく上限額まで実費全額を助成する「定額型」</em>です。
+              （※医療機関は補助率1/2〜3/4と異なる）。
+              これに対し「介護テクノロジー導入支援事業（ICT補助金）」は
+              最大3/4補助の割合型で、同額の費用に対して助成額が少なくなります。
+            </p>
+          </div>
+        </div>
+
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">2</div>
+          <div class="logic-content">
+            <h4>カードリーダー費＋サポート費の両方が対象（①②合算）</h4>
+            <p>
+              この助成金は「①カードリーダー購入経費」と
+              「②介護情報基盤との接続サポート等経費」の合計で上限額を設定しています。
+              おまかせパックの内訳（機器代＋サポート費）は
+              <em>まさにこの①②の構成と完全に一致します。</em>
+            </p>
+          </div>
+        </div>
+
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">3</div>
+          <div class="logic-content">
+            <h4>訪問・通所系3台の上限¥64,000（税込）に対し、パックは¥67,100（税込）</h4>
+            <p>
+              おまかせパックの税込価格は¥67,100。助成金上限は¥64,000（税込）。
+              その差は<em>たった¥3,100</em>。
+              上限以下に価格を下げると助成金が余り（実質損）、
+              大幅に超えると自己負担が増える。
+              ¥61,000（税別）という価格は、上限に対して最小限のはみ出しに収まるよう設計されています。
+            </p>
+          </div>
+        </div>
+
+        <!-- 比較表 -->
+        <div style="margin:24px 0;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <thead>
+              <tr style="background:var(--color-neutral);">
+                <th style="padding:10px 14px;text-align:left;border-bottom:2px solid var(--color-border);">比較項目</th>
+                <th style="padding:10px 14px;text-align:center;border-bottom:2px solid var(--color-border);background:var(--color-primary-light);color:var(--color-primary);">介護情報基盤 助成金（本命）</th>
+                <th style="padding:10px 14px;text-align:center;border-bottom:2px solid var(--color-border);">ICT補助金（比較）</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:10px 14px;border-bottom:1px solid var(--color-border);">補助の種類</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:700;color:var(--color-primary);border-bottom:1px solid var(--color-border);">定額型（上限まで全額）</td>
+                <td style="padding:10px 14px;text-align:center;border-bottom:1px solid var(--color-border);">割合型（最大3/4）</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 14px;border-bottom:1px solid var(--color-border);">サポート費の対象</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:700;color:var(--color-primary);border-bottom:1px solid var(--color-border);">○（①②合算で明示）</td>
+                <td style="padding:10px 14px;text-align:center;border-bottom:1px solid var(--color-border);">△（カードリーダー対象外の可能性）</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 14px;border-bottom:1px solid var(--color-border);">パック税込¥67,100への助成額</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:700;color:var(--color-primary);font-size:18px;border-bottom:1px solid var(--color-border);">¥64,000</td>
+                <td style="padding:10px 14px;text-align:center;border-bottom:1px solid var(--color-border);">¥50,325（3/4換算）</td>
+              </tr>
+              <tr>
+                <td style="padding:10px 14px;">自己負担</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:900;color:var(--color-primary);font-size:20px;">¥3,100</td>
+                <td style="padding:10px 14px;text-align:center;font-weight:700;">¥16,775</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="logic-result" role="region" aria-label="計算結果">
+          <span class="logic-result-label">訪問・通所系3台の場合<br>あなたの実質負担</span>
+          <div>
+            <div style="display:flex;align-items:baseline;gap:4px;">
+              <span class="logic-result-amount">3,100</span>
+              <span class="logic-result-unit">円</span>
+            </div>
+            <p class="logic-result-note">（税込¥67,100 − 助成金¥64,000）</p>
+          </div>
+          <div style="margin-left:auto;font-size:13px;opacity:0.9;line-height:1.7;">
+            カードリーダー3台<br>
+            ＋アプリ設定・申請サポート<br>
+            ＋1年間の伴走サポート付き
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== SUBSIDY TABLE ======== -->
+  <section class="subsidy-section section" aria-labelledby="subsidy-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">助成金上限額</span>
+        <h2 class="section-title" id="subsidy-heading">サービス種別ごとの助成上限一覧</h2>
+        <p class="section-desc center">
+          同一事業所で複数サービスを提供している場合は、
+          各種別の上限を<strong>合算</strong>できます。
+        </p>
+      </div>
+      <div class="subsidy-table-wrap">
+        <table class="subsidy-table" aria-label="助成金上限額一覧">
+          <thead>
+            <tr>
+              <th scope="col" style="width:36%">サービス種別</th>
+              <th scope="col">対象台数</th>
+              <th scope="col">助成上限額（税込）</th>
+              <th scope="col">おまかせパックとの相性</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="row-highlight">
+              <td>
+                <strong>訪問・通所・短期滞在系</strong>
+                <div>
+                  <span class="service-tag"><i class="ti ti-home" aria-hidden="true"></i>訪問介護</span>
+                  <span class="service-tag"><i class="ti ti-building" aria-hidden="true"></i>通所介護</span>
+                </div>
+              </td>
+              <td><strong>3台まで</strong></td>
+              <td><span class="amount-large">¥64,000</span></td>
+              <td>
+                <span class="pack-fit-badge">
+                  <i class="ti ti-check" aria-hidden="true"></i>
+                  自己負担¥3,100
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>居住・入所系</strong>
+                <div>
+                  <span class="service-tag"><i class="ti ti-bed" aria-hidden="true"></i>グループホーム</span>
+                  <span class="service-tag">特養 等</span>
+                </div>
+              </td>
+              <td><strong>2台まで</strong></td>
+              <td><span class="amount-large">¥55,000</span></td>
+              <td>
+                <span style="font-size:13px;color:var(--color-text-muted);">
+                  BT×2台＋サポート<br>プランでご相談
+                </span>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>その他</strong>
+                <div>
+                  <span class="service-tag">居宅介護支援</span>
+                  <span class="service-tag">地域包括支援センター 等</span>
+                </div>
+              </td>
+              <td><strong>1台まで</strong></td>
+              <td><span class="amount-large">¥42,000</span></td>
+              <td>
+                <span style="font-size:13px;color:var(--color-text-muted);">
+                  BT×1台＋USB<br>＋サポートプランでご相談
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="subsidy-note-box">
+        <p>
+          <strong>合算のポイント：</strong>
+          訪問介護と通所介護を同一事業所で提供している場合、¥64,000＋¥64,000＝<strong>最大¥128,000</strong>が助成対象になります。
+          複数サービス提供事業所の方は、ぜひご相談ください。<br>
+          <strong>申請期間：</strong>2026年5月7日〜2027年3月12日　|　<strong>申請先：</strong>介護情報基盤ポータル（国民健康保険中央会）
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== PRODUCTS ======== -->
+  <section class="products-section section" aria-labelledby="products-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">AB Circle カードリーダー</span>
+        <h2 class="section-title" id="products-heading">マイナ資格確認に対応したカードリーダー</h2>
+        <p class="section-desc center">
+          iPhone・Androidスマホ、タブレットに対応。
+          マイナ資格確認アプリと組み合わせてすぐに使えます。
+        </p>
+      </div>
+      <div class="products-grid">
+        <!-- CIR415A: Bluetooth -->
+        <div class="product-card featured">
+          <span class="product-badge">おまかせパック採用</span>
+          <div class="product-icon-wrap" aria-hidden="true">
+            <i class="ti ti-bluetooth"></i>
+          </div>
+          <p class="product-model">AB Circle CIR415A</p>
+          <h3 class="product-name">Bluetooth接続モデル</h3>
+          <div class="product-price">¥9,000</div>
+          <p class="product-price-note">税別 / 1台あたり</p>
+          <ul class="product-features">
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>ワイヤレス接続でケーブル不要</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>iPhone / Android スマホ対応</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>マイナ資格確認アプリ対応</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>持ち運びやすいコンパクト設計</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>2025年6月〜スマホへのマイナ格納に対応</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- CIR315A: USB -->
+        <div class="product-card">
+          <div class="product-icon-wrap" aria-hidden="true">
+            <i class="ti ti-usb"></i>
+          </div>
+          <p class="product-model">AB Circle CIR315A</p>
+          <h3 class="product-name">USB-A/C接続モデル</h3>
+          <div class="product-price">¥5,000</div>
+          <p class="product-price-note">税別 / 1台あたり</p>
+          <ul class="product-features">
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>USB-A/Cで安定した有線接続</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>PC・タブレット接続に最適</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>マイナ資格確認アプリ対応</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>コスト重視のスタンダードモデル</span>
+            </li>
+            <li>
+              <i class="ti ti-check" aria-hidden="true"></i>
+              <span>光と音でカード検知をお知らせ</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== PLAN ======== -->
+  <section id="plan" class="plan-section section" aria-labelledby="plan-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">メインプラン</span>
+        <h2 class="section-title" id="plan-heading">介護情報基盤 おまかせパック</h2>
+        <p class="section-desc center">
+          助成金の対象経費（①カードリーダー代＋②サポート費）を1パッケージに。
+          訪問・通所系なら自己負担わずか3,100円です。
+        </p>
+      </div>
+
+      <div class="plan-card">
+        <div class="plan-header">
+          <h3 class="plan-name">介護情報基盤 おまかせパック</h3>
+          <p class="plan-tagline">カードリーダー3台＋導入設定＋助成金申請サポート＋1年間サポート</p>
+        </div>
+
+        <!-- Breakdown -->
+        <div class="plan-breakdown">
+          <p class="plan-breakdown-title">パック内訳（助成金対象経費の①②合算構成）</p>
+          <div class="plan-item">
+            <div class="plan-item-left">
+              <i class="ti ti-bluetooth plan-item-icon" aria-hidden="true"></i>
+              <div>
+                <div class="plan-item-label">AB Circle CIR415A（Bluetooth）× 3台</div>
+                <div class="plan-item-sub">助成対象① カードリーダー購入経費</div>
+              </div>
+            </div>
+            <div class="plan-item-price">¥27,000</div>
+          </div>
+          <div class="plan-item">
+            <div class="plan-item-left">
+              <i class="ti ti-headset plan-item-icon" aria-hidden="true"></i>
+              <div>
+                <div class="plan-item-label">導入設定・申請サポート費</div>
+                <div class="plan-item-sub">助成対象② 接続サポート等経費（設定・申請・1年サポート含む）</div>
+              </div>
+            </div>
+            <div class="plan-item-price">¥34,000</div>
+          </div>
+          <div class="plan-total-row">
+            <span class="plan-total-label">パック合計（税別）</span>
+            <div>
+              <div class="plan-total-price">
+                <span class="plan-total-amount">61,000</span>
+                <span class="plan-total-unit">円</span>
+              </div>
+              <p class="plan-total-note">税込¥67,100</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subsidy calc -->
+        <div class="plan-subsidy-calc" id="subsidy-calc">
+          <p class="calc-title">
+            <i class="ti ti-calculator" aria-hidden="true"></i>
+            助成金を使った場合の自己負担（訪問・通所・短期滞在系 / 3台）
+          </p>
+          <div class="calc-row">
+            <span class="calc-label">パック合計（税込）</span>
+            <span class="calc-value">¥67,100</span>
+          </div>
+          <div class="calc-row">
+            <span class="calc-label">介護情報基盤 助成金（定額型 / 上限¥64,000）</span>
+            <span class="calc-value minus">−¥64,000</span>
+          </div>
+          <hr class="calc-divider">
+          <div class="calc-result-row">
+            <div>
+              <p class="calc-result-label">実質の自己負担</p>
+              <p style="font-size:12px;color:var(--color-text-muted);margin-top:4px;">カードリーダー3台＋1年間サポート込みで</p>
+            </div>
+            <div>
+              <div class="calc-result-value">
+                <span class="calc-result-num">3,100</span>
+                <span class="calc-result-unit">円</span>
+              </div>
+            </div>
+          </div>
+          <p class="calc-result-note" style="margin-top:12px;">
+            ※助成金の上限額には消費税分（10%）が含まれます。
+            ICT補助金（補助率3/4型）に比べ、約13,675円もお得な結果になります。
+          </p>
+        </div>
+
+        <!-- Include features -->
+        <div style="margin-bottom:32px;">
+          <p style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--color-text-muted);">パックに含まれるサポート内容</p>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-device-tablet" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">カードリーダー接続確認</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">機器のペアリングと動作確認</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-apps" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">マイナ資格確認アプリ設定</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">インストールと初期設定</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-file-certificate" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">介護DX証明書インストール</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">クライアント証明書の設定</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-world" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">ポータルアカウント作成</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">介護情報基盤ポータル設定</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-coin" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">助成金申請サポート</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">書類準備と申請方法のご案内</p>
+              </div>
+            </div>
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <i class="ti ti-message-2" style="color:var(--color-primary);font-size:20px;flex-shrink:0;margin-top:2px;" aria-hidden="true"></i>
+              <div>
+                <p style="font-size:14px;font-weight:700;">1年間の伴走サポート</p>
+                <p style="font-size:12px;color:var(--color-text-muted);">チャット・メール・電話で対応</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align:center;">
+          <a href="#contact" class="btn btn-primary btn-lg">
+            <i class="ti ti-message-circle" aria-hidden="true"></i>
+            このパックについて相談する（無料）
+          </a>
+        </div>
+
+        <!-- Alt plans -->
+        <div style="margin-top:40px;padding-top:32px;border-top:1px solid var(--color-border);">
+          <p style="font-size:14px;font-weight:700;margin-bottom:16px;">その他のプラン（サービス種別に合わせてご相談ください）</p>
+          <div class="alt-plans">
+            <div class="alt-card">
+              <p class="alt-title">居住・入所系プラン（2台構成）</p>
+              <p class="alt-item">
+                CIR415A × 2台 ¥18,000<br>
+                サポート費 ¥28,000〜<br>
+                助成金上限 ¥55,000（税込）
+              </p>
+              <p class="alt-self-pay">自己負担：応相談</p>
+            </div>
+            <div class="alt-card">
+              <p class="alt-title">その他・居宅介護支援等（1台構成）</p>
+              <p class="alt-item">
+                CIR415A × 1台 ¥9,000<br>
+                または CIR315A × 1台 ¥5,000<br>
+                サポート費 ¥28,000〜<br>
+                助成金上限 ¥42,000（税込）
+              </p>
+              <p class="alt-self-pay">自己負担：応相談</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== STRENGTHS ======== -->
+  <section class="strengths-section section" aria-labelledby="strengths-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">タダカヨを選ぶ理由</span>
+        <h2 class="section-title" id="strengths-heading">NPO法人だから、できること</h2>
+        <p class="section-desc center">
+          「変わりたい人のいつもそばに」をフィロソフィーに、
+          テクノロジーに、人の温もりを添えてサポートします。
+        </p>
+      </div>
+      <div class="strengths-grid">
+        <div class="strength-card">
+          <div class="strength-icon" aria-hidden="true"><i class="ti ti-building-community"></i></div>
+          <h3 class="strength-title">非営利・中立な立場</h3>
+          <p class="strength-text">
+            NPO法人として製品の販売利益に依存しない立場から、
+            事業所に最適な方法をご提案します。
+          </p>
+        </div>
+        <div class="strength-card">
+          <div class="strength-icon" aria-hidden="true"><i class="ti ti-school"></i></div>
+          <h3 class="strength-title">介護DX専門の知識</h3>
+          <p class="strength-text">
+            介護現場のICT化・DX推進を専門にしてきたタダカヨが、
+            現場に合わせた丁寧なサポートをします。
+          </p>
+        </div>
+        <div class="strength-card">
+          <div class="strength-icon" aria-hidden="true"><i class="ti ti-walk"></i></div>
+          <h3 class="strength-title">1年間の伴走サポート</h3>
+          <p class="strength-text">
+            導入して終わりではありません。困ったときに
+            いつでも相談できる環境を1年間維持します。
+          </p>
+        </div>
+        <div class="strength-card">
+          <div class="strength-icon" aria-hidden="true"><i class="ti ti-file-invoice"></i></div>
+          <h3 class="strength-title">助成金申請もサポート</h3>
+          <p class="strength-text">
+            申請書類の準備から提出方法まで一緒に進めます。
+            補助金手続きが初めての方も大丈夫です。
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== FAQ ======== -->
+  <section class="faq-section section" aria-labelledby="faq-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">よくある質問</span>
+        <h2 class="section-title" id="faq-heading">疑問にお答えします</h2>
+      </div>
+      <div class="faq-list" role="list">
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a1">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>マイナンバーカードを持っていない利用者はどうなりますか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a1" role="region">
+            <p>
+              マイナンバーカードをお持ちでない利用者の方は、引き続き介護保険証（被保険者証）でのご対応が可能です。
+              カードリーダーはマイナ資格確認に対応した際に使用するもので、
+              すべての利用者に必須というわけではありません。安心してご導入ください。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a2">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>訪問介護と通所介護の両方を提供しています。助成金は合算できますか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a2" role="region">
+            <p>
+              はい、合算できます。同一事業所で複数のサービスを提供している場合は、
+              サービス種別ごとの助成限度額を合算することができます。
+              訪問介護＋通所介護の場合は¥64,000＋¥64,000＝最大¥128,000が助成対象になります。
+              詳しくは介護情報基盤ポータル（国保中央会）でご確認いただくか、タダカヨへご相談ください。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a3">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>BluetoothモデルとUSBモデル、どちらを選ぶべきですか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a3" role="region">
+            <p>
+              スマートフォンやタブレットをメインで使う場合は<strong>Bluetoothモデル（CIR415A）</strong>がおすすめです。
+              ケーブル不要で持ち運びやすく、訪問先での利用にも適しています。
+              PCや固定端末に接続する場合は<strong>USB接続モデル（CIR315A）</strong>が安定していてコスト面でも有利です。
+              どちらにするか迷う場合はお気軽にご相談ください。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a4">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>助成金の申請書類は自分で準備する必要がありますか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a4" role="region">
+            <p>
+              おまかせパックには助成金の申請サポートが含まれています。
+              必要な書類の準備や申請方法のご案内を一緒に進めますので、
+              初めての方でも安心してお任せください。
+              申請は介護情報基盤ポータル（国保中央会）でオンライン申請となります。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a5">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>ICT補助金（介護テクノロジー導入支援事業）と介護情報基盤の助成金は違うものですか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a5" role="region">
+            <p>
+              はい、別々の制度です。「介護テクノロジー導入支援事業（ICT補助金）」は都道府県を通じた
+              補助率型（最大3/4）の補助金で、介護ソフトやタブレット等が対象です。
+              「介護情報基盤 助成金」は国保中央会ポータルを通じた定額型の助成金で、
+              カードリーダーと接続サポート費が対象です。
+              カードリーダー導入には「介護情報基盤 助成金」の方が有利ですので、タダカヨではこちらを活用したプランをご提案しています。
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== CONTACT FORM ======== -->
+  <section id="contact" class="contact-section section" aria-labelledby="contact-heading">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">無料相談</span>
+        <h2 class="section-title" id="contact-heading">まずは気軽にご相談ください</h2>
+        <p class="section-desc center">
+          「うちの事業所はいくらになる？」「本当に3,100円で済む？」
+          どんな疑問でも、NPO法人タダカヨのスタッフが丁寧にお答えします。
+        </p>
+      </div>
+
+      <div class="form-wrap">
+        <div id="form-success" role="alert" aria-live="polite">
+          <i class="ti ti-circle-check" aria-hidden="true"></i>
+          <h3>送信できました！</h3>
+          <p>担当スタッフから2営業日以内にご連絡いたします。少しお待ちください。</p>
+        </div>
+
+        <form id="contact-form" action="https://formspree.io/f/PLACEHOLDER" method="POST" novalidate>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="org-name">
+                事業所名<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="text" id="org-name" name="事業所名"
+                placeholder="例：タダカヨ介護センター" required autocomplete="organization">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="person-name">
+                担当者名<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="text" id="person-name" name="担当者名"
+                placeholder="例：山田 太郎" required autocomplete="name">
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="phone">電話番号</label>
+              <input class="form-input" type="tel" id="phone" name="電話番号"
+                placeholder="例：03-1234-5678" autocomplete="tel">
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="email">
+                メールアドレス<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="email" id="email" name="メールアドレス"
+                placeholder="例：info@example.jp" required autocomplete="email">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="service-type">主なサービス種別</label>
+            <select class="form-select" id="service-type" name="サービス種別">
+              <option value="">選択してください</option>
+              <option value="訪問介護">訪問介護</option>
+              <option value="通所介護（デイサービス）">通所介護（デイサービス）</option>
+              <option value="訪問＋通所（複数）">訪問＋通所（複数）</option>
+              <option value="グループホーム">グループホーム</option>
+              <option value="特別養護老人ホーム">特別養護老人ホーム</option>
+              <option value="居宅介護支援（ケアマネ）">居宅介護支援（ケアマネ）</option>
+              <option value="その他">その他</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="message">ご相談内容</label>
+            <textarea class="form-textarea" id="message" name="ご相談内容"
+              placeholder="例：助成金の計算方法を知りたい、複数サービスの場合の相談がしたい、など"></textarea>
+          </div>
+
+          <div class="form-submit-wrap">
+            <button type="submit" class="btn btn-primary btn-lg">
+              <i class="ti ti-send" aria-hidden="true"></i>
+              無料で相談する
+            </button>
+            <p class="form-note">
+              送信後、2営業日以内にご連絡いたします。
+              情報は相談対応のみに使用し、第三者への提供はいたしません。
+            </p>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======== FOOTER ======== -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-inner">
+        <div>
+          <p class="footer-logo">NPO法人タダカヨ</p>
+          <p class="footer-logo-sub">テクノロジーに、人の温もりを。</p>
+        </div>
+        <div class="footer-links">
+          <a href="https://tadakayo.jp" target="_blank" rel="noopener noreferrer">tadakayo.jp</a>
+          <a href="https://kaigo-abcircle.com/" target="_blank" rel="noopener noreferrer">AB Circle Japan</a>
+          <a href="https://www.kaigo-kiban-portal.jp/" target="_blank" rel="noopener noreferrer">介護情報基盤ポータル</a>
+        </div>
+        <p class="footer-copy">
+          © 2026 NPO法人タダカヨ　|　本LPに記載の助成金情報は2026年5月時点のものです。最新情報は介護情報基盤ポータル（国保中央会）でご確認ください。
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // FAQ accordion
+    document.querySelectorAll('.faq-question').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const item = btn.closest('.faq-item');
+        const isOpen = item.classList.contains('open');
+        document.querySelectorAll('.faq-item').forEach(el => {
+          el.classList.remove('open');
+          el.querySelector('.faq-question').setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen) {
+          item.classList.add('open');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+
+    // Header scroll effect
+    const header = document.querySelector('.site-header');
+    window.addEventListener('scroll', () => {
+      header.style.boxShadow = window.scrollY > 8
+        ? '0 2px 12px rgba(0,0,0,0.10)'
+        : '';
+    }, { passive: true });
+
+    // Form: AJAX submit via Formspree
+    const form = document.getElementById('contact-form');
+    const success = document.getElementById('form-success');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = new FormData(form);
+
+      // Basic validation
+      const required = form.querySelectorAll('[required]');
+      let valid = true;
+      required.forEach(el => {
+        el.style.borderColor = '';
+        if (!el.value.trim()) {
+          el.style.borderColor = 'var(--color-primary)';
+          valid = false;
+        }
+      });
+      if (!valid) {
+        const first = form.querySelector('[required][style*="var(--color-primary)"]');
+        if (first) first.focus();
+        return;
+      }
+
+      const submitBtn = form.querySelector('[type="submit"]');
+      submitBtn.disabled = true;
+      submitBtn.textContent = '送信中...';
+
+      try {
+        const res = await fetch(form.action, {
+          method: 'POST',
+          body: data,
+          headers: { 'Accept': 'application/json' }
+        });
+        if (res.ok) {
+          form.style.display = 'none';
+          success.style.display = 'block';
+          success.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          if (typeof gtag !== 'undefined') {
+            gtag('event', 'form_submit', { event_category: 'contact', event_label: 'omakase_pack' });
+          }
+        } else {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 無料で相談する';
+          alert('送信中にエラーが発生しました。お手数ですが、しばらくしてから再度お試しください。');
+        }
+      } catch {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 無料で相談する';
+        alert('送信中にエラーが発生しました。お手数ですが、しばらくしてから再度お試しください。');
+      }
+    });
+  </script>
+</body>
+</html>
