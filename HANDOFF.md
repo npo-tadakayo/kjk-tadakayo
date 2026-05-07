@@ -7,6 +7,7 @@
 ## 現在の状態
 
 index.html 本体は完成。Firebase Hosting にデプロイ済み。
+mitsumori.html（見積書作成ツール）を新規追加。
 プレースホルダー3箇所（Formspree / Clarity / GA4）が未差し替えで、カスタムドメインのDNS設定待ち。
 
 ---
@@ -24,6 +25,7 @@ index.html 本体は完成。Firebase Hosting にデプロイ済み。
 | `74a72d1` | キャラクター画像11枚の白背景を透過処理（Pillow） |
 | `eda5676` | 助成金早見表：居住・入所系/その他にBT/USB両プランと¥0バッジを追加 |
 | `39d9f31` | 助成金早見表：訪問・通所系にもBT/USB両プランを追加（3行統一） |
+| `151c829` | 見積書作成ツール（mitsumori.html）追加・ヘッダーに「見積書を作成」ボタン追加・印鑑画像（背景透過）追加 |
 
 ---
 
@@ -58,6 +60,7 @@ index.html 本体は完成。Firebase Hosting にデプロイ済み。
 - [ ] ENGINEERING_NOTES.md の §13 進捗・§16 変更履歴を更新
 - [ ] alt plans（居住・入所系 / その他）のプランカードをタダサポ本体カードと同様の詳細度に仕上げる
 - [ ] OGP画像（og:image）の作成・設定
+- [ ] mitsumori.html を Firebase Hosting にデプロイして本番URLで動作確認
 
 ---
 
@@ -68,7 +71,9 @@ index.html 本体は完成。Firebase Hosting にデプロイ済み。
 - 価格設計: CIR415A ¥9,000/台 × 3台 ＋ サポート費 ¥30,000 = **¥57,000（税別）= ¥62,700（税込）**
 - 助成金枠: 介護情報基盤助成金（定額型）を使用。ICT補助金（割合型）は不採用。
 - 全6パターンすべて自己負担¥0設計（PRICING.md 参照）
-- 単一HTMLファイル構成（index.html のみ）
+- 単一HTMLファイル構成（LP は index.html のみ）
+- 見積書ツール: mitsumori.html（スタンドアロン・サーバー不要）
+- 補助金申請サポートは¥0（無料）、伴走支援費は事業所種別別（¥28,000〜¥31,000税別）
 
 ---
 
@@ -117,6 +122,8 @@ Image.fromarray(data).save("target.png")
 | キャラクター | images/chara_1〜11.png（背景透過済み） |
 | ロゴ | images/tadakayo_logo.png（背景透過済み） |
 | 製品画像 | images/cir415a_product/scene.webp, cir315a_product/scene.webp |
+| 印鑑 | images/hanko.png（黒背景透過済み） |
+| 見積書ツール | mitsumori.html（サーバー不要・静的HTML） |
 
 ---
 
