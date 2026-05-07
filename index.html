@@ -357,6 +357,17 @@
       margin-bottom: 20px;
     }
     .product-icon-wrap .ti { font-size: 40px; color: var(--color-primary); }
+    .product-img-wrap {
+      width: calc(100% + 64px); margin: -32px -32px 24px -32px;
+      height: 220px; overflow: hidden;
+      border-radius: var(--radius-md) var(--radius-md) 0 0;
+      background: var(--color-neutral);
+    }
+    .product-img-wrap img {
+      width: 100%; height: 100%;
+      object-fit: cover; object-position: center;
+      display: block;
+    }
 
     /* ======== PLAN ======== */
     .plan-section { background: var(--color-primary-light); }
@@ -917,8 +928,8 @@
         <!-- CIR415A: Bluetooth -->
         <div class="product-card featured">
           <span class="product-badge">タダサポ標準採用</span>
-          <div class="product-icon-wrap" aria-hidden="true">
-            <i class="ti ti-bluetooth"></i>
+          <div class="product-img-wrap">
+            <img src="images/cir415a_product.webp" alt="AB Circle CIR415A Bluetoothカードリーダー 製品写真">
           </div>
           <p class="product-model">AB Circle CIR415A</p>
           <h3 class="product-name">Bluetooth接続モデル</h3>
@@ -950,8 +961,8 @@
 
         <!-- CIR315A: USB -->
         <div class="product-card">
-          <div class="product-icon-wrap" aria-hidden="true">
-            <i class="ti ti-usb"></i>
+          <div class="product-img-wrap">
+            <img src="images/cir315a_product.webp" alt="AB Circle CIR315A USB-A/Cカードリーダー 製品写真">
           </div>
           <p class="product-model">AB Circle CIR315A</p>
           <h3 class="product-name">USB-A/C接続モデル</h3>
