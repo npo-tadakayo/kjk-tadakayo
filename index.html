@@ -21,6 +21,62 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:image" content="https://kjk.tadakayo.jp/images/ogp.png">
 
+  <!-- 構造化データ（JSON-LD） -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://tadakayo.jp/#organization",
+        "name": "NPO法人タダカヨ",
+        "url": "https://tadakayo.jp",
+        "logo": {
+          "@type": "ImageObject",
+          "url": "https://kjk.tadakayo.jp/images/tadakayo_logo.png"
+        },
+        "description": "テクノロジーに、人の道もりを。介護事業所のDX推進を支援するNPO法人。"
+      },
+      {
+        "@type": "Service",
+        "@id": "https://kjk.tadakayo.jp/#service",
+        "name": "タダサポ 介護情報基盤版",
+        "description": "NPO法人タダカヨが、介護情報基盤への対応をまるごと伴走。助成金を活用すれば自己負担¥0。カードリーダー導入・アプリ設定・助成金申請まで対応。",
+        "url": "https://kjk.tadakayo.jp/",
+        "provider": {
+          "@id": "https://tadakayo.jp/#organization"
+        },
+        "areaServed": {
+          "@type": "Country",
+          "name": "日本"
+        },
+        "serviceType": "介護情報基盤対応サポート",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "JPY",
+          "description": "助成金活用により自己負担¥0"
+        }
+      },
+      {
+        "@type": "WebPage",
+        "@id": "https://kjk.tadakayo.jp/#webpage",
+        "url": "https://kjk.tadakayo.jp/",
+        "name": "タダサポ 介護情報基盤版 | NPO法人タダカヨ",
+        "description": "NPO法人タダカヨが、介護情報基盤への対応をまるごと伴走。助成金を活用すれば自己負担¥0。",
+        "isPartOf": {
+          "@type": "WebSite",
+          "url": "https://kjk.tadakayo.jp/",
+          "name": "タダサポ 介護情報基盤版"
+        },
+        "about": {
+          "@id": "https://kjk.tadakayo.jp/#service"
+        }
+      }
+    ]
+  }
+  </script>
+
   <!-- Microsoft Clarity -->
   <script type="text/javascript">
     (function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y)})(window,document,"clarity","script","wax7x03bg8");
