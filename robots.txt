@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /mitsumori
+
+Sitemap: https://kjk.tadakayo.jp/sitemap.xml

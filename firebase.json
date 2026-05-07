@@ -8,7 +8,11 @@
       ".git/**",
       ".claude/**",
       "CNAME",
-      "deploy.sh"
+      "deploy.sh",
+      "*.md",
+      "*.py",
+      "PRICING.md",
+      "ABサークル様資料/**"
     ],
     "cleanUrls": true,
     "trailingSlash": false,
