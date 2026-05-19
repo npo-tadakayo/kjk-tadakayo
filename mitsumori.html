@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>見積書作成 | タダサポ 介護情報基盤版</title>
+  <title>見積書作成 | タダサポ＋</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -490,44 +490,11 @@
     </span>
   </div>
   <div class="app-header-actions">
-    <button class="hdr-btn hdr-btn-mail" onclick="openEmailModal()">
-      <i class="ti ti-mail"></i>メールで送信
-    </button>
     <button class="hdr-btn hdr-btn-pdf" onclick="downloadPDF()">
       <i class="ti ti-download"></i>PDFダウンロード
     </button>
   </div>
 </header>
-
-<!-- ======== メール送信モーダル ======== -->
-<div class="modal-overlay" id="emailModal" onclick="closeEmailModalIfOutside(event)">
-  <div class="modal-box">
-    <div class="modal-close-row">
-      <button class="modal-close-btn" onclick="closeEmailModal()" aria-label="閉じる">×</button>
-    </div>
-    <div class="modal-title"><i class="ti ti-mail" style="color:#E33535;margin-right:6px"></i>メールで送信</div>
-    <div class="modal-desc">
-      下の「メールを開く」ボタンでメールアプリが起動します。<br>
-      送信前にPDFをダウンロードして添付してください。
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">件名</span>
-      <div class="modal-value" id="mailSubject"></div>
-    </div>
-    <div class="modal-field">
-      <span class="modal-label">本文（コピーしてお使いください）</span>
-      <div class="modal-value" id="mailBody"></div>
-    </div>
-    <div class="modal-actions">
-      <button class="modal-btn modal-btn-secondary" onclick="copyMailBody()">
-        <i class="ti ti-copy"></i>本文をコピー
-      </button>
-      <button class="modal-btn modal-btn-primary" id="mailtoBtn" onclick="openMailto()">
-        <i class="ti ti-mail-forward"></i>メールを開く
-      </button>
-    </div>
-  </div>
-</div>
 
 <div class="app-body">
 
@@ -535,11 +502,31 @@
   <div class="form-panel" id="formPanel">
 
     <div class="form-sec">
-      <div class="form-sec-title">宛先情報</div>
+      <div class="form-sec-title">宛先情報（すべて必須）</div>
       <div class="form-group">
         <label class="form-label" for="clientName">法人名・事業所名<span class="req">*</span></label>
-        <input type="text" id="clientName" placeholder="例: 社会福祉法人〇〇 △△苑" oninput="render()">
+        <input type="text" id="clientName" placeholder="例: 社会福祉法人〇〇 △△苑" required oninput="render()">
       </div>
+      <div class="form-group">
+        <label class="form-label" for="contactName">ご担当者名<span class="req">*</span></label>
+        <input type="text" id="contactName" placeholder="例: 山田 太郎" required autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactTel">電話番号<span class="req">*</span></label>
+        <input type="tel" id="contactTel" placeholder="例: 03-1234-5678" required autocomplete="tel">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactEmail">メールアドレス<span class="req">*</span></label>
+        <input type="email" id="contactEmail" placeholder="例: info@example.jp" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactAddress">住所</label>
+        <input type="text" id="contactAddress" placeholder="例: 東京都〇〇区〇〇1-2-3" autocomplete="street-address">
+      </div>
+      <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:-4px;">
+        ※ 必須項目を入力するとPDFをダウンロードできます。<br>
+        ※ 入力情報はタダカヨへ自動連絡され、担当者からフォローのご連絡を差し上げる場合があります。
+      </p>
     </div>
 
     <div class="form-sec">
@@ -576,14 +563,14 @@
           <input type="radio" name="reader" value="bt" checked>
           <div>
             <div class="card-name">CIR415A（Bluetooth 無線）</div>
-            <div class="card-desc">¥9,000/台（税別）</div>
+            <div class="card-desc">¥14,500/台（税込）</div>
           </div>
         </label>
         <label class="radio-card" data-val="usb">
           <input type="radio" name="reader" value="usb">
           <div>
             <div class="card-name">CIR315A（USB-A/C 有線）</div>
-            <div class="card-desc">¥5,000/台（税別）</div>
+            <div class="card-desc">¥5,000/台（税込）</div>
           </div>
         </label>
       </div>
@@ -594,7 +581,7 @@
       <div class="form-group">
         <label class="form-label">補助金対象台数</label>
         <div class="qty-row">
-          <select id="subsidyQty" onchange="render()">
+          <select id="subsidyQty">
             <option value="3" selected>3台</option>
             <option value="2">2台</option>
             <option value="1">1台</option>
@@ -612,20 +599,27 @@
     </div>
 
     <div class="form-sec">
-      <div class="form-sec-title">サポートオプション</div>
+      <div class="form-sec-title">パック内容</div>
       <div class="check-group">
-        <label class="check-card on" id="supportCard">
-          <input type="checkbox" id="supportCheck" checked onchange="syncCard('supportCard','supportCheck'); render()">
+        <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
+          <input type="checkbox" checked disabled>
           <div>
             <div class="card-name">補助金申請サポート<span class="badge-free">無料</span></div>
             <div class="card-desc">介護情報基盤助成金の申請代行（タダカヨが完全無料でサポート）</div>
           </div>
         </label>
-        <label class="check-card on" id="accompanyCard">
-          <input type="checkbox" id="accompanyCheck" checked onchange="syncCard('accompanyCard','accompanyCheck'); render()">
+        <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
+          <input type="checkbox" checked disabled>
           <div>
-            <div class="card-name">伴走支援費（1年間）<span class="badge-rec">推奨</span></div>
-            <div class="card-desc" id="accompanyNote">¥30,000（税別）— 導入後1年間の伴走サポート</div>
+            <div class="card-name">伴走支援費（1年間）<span class="badge-rec">必須</span></div>
+            <div class="card-desc" id="accompanyNote">¥50,000（税込・3台構成時）— 導入設定・申請サポート・1年間サポート</div>
+          </div>
+        </label>
+        <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
+          <input type="checkbox" checked disabled>
+          <div>
+            <div class="card-name">特別割引（出精値引き）<span class="badge-rec">自動適用</span></div>
+            <div class="card-desc">合計を助成金上限ぴったりに調整 ― 自己負担¥0を実現</div>
           </div>
         </label>
       </div>
@@ -635,10 +629,7 @@
       <i class="ti ti-download"></i>
       PDFダウンロード
     </button>
-    <button class="print-btn" onclick="openEmailModal()" style="margin-top:8px;background:white;color:var(--primary);border:1.5px solid var(--primary);">
-      <i class="ti ti-mail"></i>
-      メールで送信
-    </button>
+    <p id="formError" style="display:none;color:var(--primary);font-size:12px;margin-top:8px;text-align:center;line-height:1.6;"></p>
     <button class="renew-btn" onclick="renewEstNo()">見積番号を更新する</button>
 
   </div><!-- /form-panel -->
@@ -667,6 +658,7 @@
         <div>
           <div class="est-to-name" id="prevClient">（法人名・事業所名を入力）</div>
           <div class="est-to-honorific">御中</div>
+          <div id="prevContact" style="font-size:10pt;color:var(--muted);margin-top:6px;line-height:1.7;"></div>
         </div>
         <table class="est-info-table">
           <tr><td class="lbl">見積番号</td><td class="val" id="prevEstNo">—</td></tr>
@@ -711,27 +703,37 @@
 </div><!-- /app-body -->
 
 <script>
-  /* ──────── 定数 ──────── */
+  /* ──────── 定数（すべて税込価格） ──────── */
   const PLANS = {
-    houmon: { label: '訪問・通所系', maxQty: 3, limit: 64000, accompany: 30000 },
-    kyojyu: { label: '居住・入所系', maxQty: 2, limit: 55000, accompany: 31000 },
-    other:  { label: 'その他',       maxQty: 1, limit: 42000, accompany: 28000 },
+    houmon: { label: '訪問・通所系', maxQty: 3, limit: 64000 },
+    kyojyu: { label: '居住・入所系', maxQty: 2, limit: 55000 },
+    other:  { label: 'その他',       maxQty: 1, limit: 42000 },
   };
   const READERS = {
-    bt:  { label: 'CIR415A カードリーダー（Bluetooth）', unitPrice: 9000 },
-    usb: { label: 'CIR315A カードリーダー（USB-A/C）',  unitPrice: 5000 },
+    bt:  { label: 'AB Circle CIR415A カードリーダー（Bluetooth）', unitPrice: 14500 },
+    usb: { label: 'AB Circle CIR315A カードリーダー（USB-A/C）',   unitPrice: 5000 },
   };
+  // 伴走支援費（税込・台数別）
+  const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
+
+  // Google Chat Webhook（見積書ダウンロード通知用）
+  const WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQAkcdopcA/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=tYNefDlxe-fhdm-2yORV-tayo_u-iylTTd6eo_LE_u4';
 
   let estNo = '';
 
   /* ──────── 初期化 ──────── */
   window.addEventListener('DOMContentLoaded', () => {
     estNo = genEstNo();
-    initRadios('planGroup',  'plan',   v => { syncPlanQty(v); syncAccompanyNote(v); render(); });
+    initRadios('planGroup',  'plan',   v => { syncPlanQty(v); syncAccompanyNote(); render(); });
     initRadios('readerGroup','reader', () => render());
+    document.getElementById('subsidyQty').addEventListener('change', () => { syncAccompanyNote(); render(); });
+    ['contactName','contactTel','contactEmail','contactAddress'].forEach(id => {
+      document.getElementById(id).addEventListener('input', render);
+    });
     document.getElementById('prevEstNo').textContent = estNo;
     setDates();
     syncPlanQty('houmon');
+    syncAccompanyNote();
     render();
   });
 
@@ -748,11 +750,6 @@
     });
   }
 
-  /* ──────── チェックカード同期 ──────── */
-  function syncCard(cardId, checkId) {
-    document.getElementById(cardId).classList.toggle('on', document.getElementById(checkId).checked);
-  }
-
   /* ──────── 台数セレクト更新 ──────── */
   function syncPlanQty(planKey) {
     const plan = PLANS[planKey];
@@ -767,10 +764,11 @@
     }
     document.getElementById('maxNote').textContent = `（最大${plan.maxQty}台）`;
   }
-  function syncAccompanyNote(planKey) {
-    const plan = PLANS[planKey];
+  function syncAccompanyNote() {
+    const subsidyQty = parseInt(document.getElementById('subsidyQty').value) || 1;
+    const fee = ACCOMPANY_FEE[subsidyQty] || ACCOMPANY_FEE[3];
     document.getElementById('accompanyNote').textContent =
-      `¥${plan.accompany.toLocaleString()}（税別）— 導入後1年間の伴走サポート`;
+      `¥${fee.toLocaleString()}（税込・${subsidyQty}台構成時）— 導入設定・申請サポート・1年間サポート`;
   }
 
   /* ──────── 日付 ──────── */
@@ -799,137 +797,166 @@
     document.getElementById('prevEstNo').textContent = estNo;
   }
 
+  /* ──────── 必須項目バリデーション ──────── */
+  function validateContact() {
+    const fields = [
+      { id: 'clientName',   label: '法人名・事業所名' },
+      { id: 'contactName',  label: 'ご担当者名' },
+      { id: 'contactTel',   label: '電話番号' },
+      { id: 'contactEmail', label: 'メールアドレス' },
+    ];
+    const missing = [];
+    for (const f of fields) {
+      const v = (document.getElementById(f.id).value || '').trim();
+      if (!v) missing.push(f.label);
+    }
+    // メール形式チェック
+    const emailVal = (document.getElementById('contactEmail').value || '').trim();
+    if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+      missing.push('メールアドレス（形式が正しくありません）');
+    }
+    const err = document.getElementById('formError');
+    if (missing.length) {
+      err.style.display = 'block';
+      err.innerHTML = '<i class="ti ti-alert-triangle"></i> 必須項目をご入力ください：<br>' + missing.join(' ／ ');
+      return false;
+    }
+    err.style.display = 'none';
+    return true;
+  }
+
+  /* ──────── Google Chat Webhook 通知 ──────── */
+  async function notifyWebhook(payload) {
+    try {
+      await fetch(WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      // 通知失敗してもPDFダウンロードは継続
+      console.warn('Webhook送信に失敗しました', e);
+    }
+  }
+
+  function buildNotifyPayload() {
+    const planKey   = document.querySelector('input[name="plan"]:checked').value;
+    const rdKey     = document.querySelector('input[name="reader"]:checked').value;
+    const plan      = PLANS[planKey];
+    const reader    = READERS[rdKey];
+    const clientName  = document.getElementById('clientName').value.trim();
+    const contactName = document.getElementById('contactName').value.trim();
+    const contactTel  = document.getElementById('contactTel').value.trim();
+    const contactEmail= document.getElementById('contactEmail').value.trim();
+    const contactAddr = (document.getElementById('contactAddress').value || '').trim();
+    const subsidyQty  = parseInt(document.getElementById('subsidyQty').value) || 1;
+    const extraQty    = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
+
+    const calc = computeAmounts(planKey, rdKey, subsidyQty, extraQty);
+
+    const text = [
+      '📄 *タダサポ＋ 見積書ダウンロード通知*',
+      '',
+      `見積番号：${estNo}`,
+      `事業所名：${clientName}`,
+      `ご担当者：${contactName}`,
+      `電話：${contactTel}`,
+      `メール：${contactEmail}`,
+      contactAddr ? `住所：${contactAddr}` : null,
+      '',
+      `事業所種別：${plan.label}（上限 ${yen(plan.limit)}）`,
+      `機器：${reader.label} × ${subsidyQty + extraQty}台（補助対象 ${subsidyQty}台${extraQty > 0 ? ` ／ 対象外 ${extraQty}台` : ''}）`,
+      `合計（税込）：${yen(calc.totalIncl)}`,
+      `特別割引：−${yen(calc.discount)}`,
+      `助成金充当：−${yen(calc.grantAmt)}`,
+      `自己負担：${yen(calc.selfPay)}${calc.selfPay === 0 ? '（自己負担¥0達成）' : ''}`,
+    ].filter(Boolean).join('\n');
+
+    return { text };
+  }
+
   /* ──────── PDFダウンロード ──────── */
-  function downloadPDF() {
+  async function downloadPDF() {
+    if (!validateContact()) {
+      document.getElementById('formError').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // Webhook通知（非同期で投げて完了を待つ）
+    await notifyWebhook(buildNotifyPayload());
+
     const clientName = document.getElementById('clientName').value.trim();
     const today = new Date();
     const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
     const orig = document.title;
     document.title = clientName
-      ? `見積書_タダサポ_${clientName}_${dateStr}`
-      : `見積書_タダサポ_${dateStr}`;
+      ? `見積書_タダサポ＋_${clientName}_${dateStr}`
+      : `見積書_タダサポ＋_${dateStr}`;
     window.print();
     setTimeout(() => { document.title = orig; }, 1500);
-  }
-
-  /* ──────── メール送信モーダル ──────── */
-  function openEmailModal() {
-    const planKey   = document.querySelector('input[name="plan"]:checked').value;
-    const rdKey     = document.querySelector('input[name="reader"]:checked').value;
-    const plan      = PLANS[planKey];
-    const reader    = READERS[rdKey];
-    const clientName = document.getElementById('clientName').value.trim() || '貴事業所';
-    const subsidyQty = parseInt(document.getElementById('subsidyQty').value) || 1;
-    const extraQty   = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
-    const withAccompany = document.getElementById('accompanyCheck').checked;
-
-    const totalQty  = subsidyQty + extraQty;
-    const devExcl   = reader.unitPrice * totalQty;
-    const accExcl   = withAccompany ? plan.accompany : 0;
-    const totalExcl = devExcl + accExcl;
-    const totalTax  = Math.floor(devExcl * 0.1) + Math.floor(accExcl * 0.1);
-    const totalIncl = totalExcl + totalTax;
-    const grantAmt  = Math.min(plan.limit, totalIncl);
-    const selfPay   = Math.max(0, totalIncl - grantAmt);
-
-    const today  = new Date();
-    const expiry = new Date(today); expiry.setMonth(expiry.getMonth() + 1);
-
-    const subject = `【タダサポ 介護情報基盤版】お見積書のご案内 — ${clientName} 御中`;
-
-    const body = `${clientName} ご担当者様
-
-お世話になっております。
-NPO法人タダカヨ（タダサポ 介護情報基盤版）です。
-
-この度は介護情報基盤への対応について、お見積書をご用意いたしました。
-
-━━━━━━━━━━━━━━━━━━━━━
-　お見積書 概要（${fmtDate(today)}付）
-━━━━━━━━━━━━━━━━━━━━━
-  見積番号　：${estNo}
-  事業所種別：${plan.label}
-  機器　　　：${reader.label}（${totalQty}台）
-  合計金額　：${yen(totalIncl)}（税込）
-  介護情報基盤助成金：−${yen(grantAmt)}
-  お客様ご負担額：${yen(selfPay)}${selfPay === 0 ? '（自己負担 ¥0）' : ''}
-
-  有効期限：${fmtDate(expiry)}まで
-━━━━━━━━━━━━━━━━━━━━━
-
-詳細はPDFの見積書をご確認ください。
-ご不明な点はお気軽にお問い合わせください。
-
-─────────────────────
-特定非営利活動法人タダカヨ
-TEL: 050-6872-9884
-https://tadakayo.jp/
-─────────────────────`;
-
-    document.getElementById('mailSubject').textContent = subject;
-    document.getElementById('mailBody').textContent    = body;
-    document.getElementById('emailModal').classList.add('open');
-  }
-
-  function closeEmailModal() {
-    document.getElementById('emailModal').classList.remove('open');
-  }
-  function closeEmailModalIfOutside(e) {
-    if (e.target === document.getElementById('emailModal')) closeEmailModal();
-  }
-
-  function openMailto() {
-    const subject = document.getElementById('mailSubject').textContent;
-    const body    = document.getElementById('mailBody').textContent;
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  }
-
-  function copyMailBody() {
-    const body = document.getElementById('mailBody').textContent;
-    navigator.clipboard.writeText(body).then(() => {
-      const btn = event.currentTarget;
-      const orig = btn.innerHTML;
-      btn.innerHTML = '<i class="ti ti-check"></i>コピーしました';
-      btn.style.background = '#d4edda';
-      setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; }, 2000);
-    });
   }
 
   /* ──────── 金額フォーマット ──────── */
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
+  /* ──────── 金額計算（税込ベース・特別割引算出） ──────── */
+  function computeAmounts(planKey, rdKey, subsidyQty, extraQty) {
+    const plan   = PLANS[planKey];
+    const reader = READERS[rdKey];
+
+    // 補助対象台数の機器小計（税込・定価）
+    const devSubsidyIncl = reader.unitPrice * subsidyQty;
+    // 補助対象外の機器小計（税込・定価）— そのまま自己負担
+    const devExtraIncl   = reader.unitPrice * extraQty;
+    // 伴走支援費（税込・補助対象台数別）
+    const accFeeIncl     = ACCOMPANY_FEE[subsidyQty] || ACCOMPANY_FEE[3];
+    // 補助金対象パートの定価合計
+    const subsidyGroupSubtotal = devSubsidyIncl + accFeeIncl;
+    // 特別割引（補助金上限ぴったりに収めるための調整）
+    const discount       = Math.max(0, subsidyGroupSubtotal - plan.limit);
+    // 補助対象パートの請求合計
+    const subsidyGroupTotal = subsidyGroupSubtotal - discount;
+    // 全体合計（税込）
+    const totalIncl      = subsidyGroupTotal + devExtraIncl;
+    // 助成金充当
+    const grantAmt       = Math.min(plan.limit, subsidyGroupTotal);
+    // 自己負担
+    const selfPay        = Math.max(0, totalIncl - grantAmt);
+
+    return {
+      plan, reader,
+      devSubsidyIncl, devExtraIncl, accFeeIncl,
+      subsidyGroupSubtotal, discount, subsidyGroupTotal,
+      totalIncl, grantAmt, selfPay,
+    };
+  }
+
   /* ──────── メインレンダリング ──────── */
   function render() {
     const planKey  = document.querySelector('input[name="plan"]:checked').value;
     const rdKey    = document.querySelector('input[name="reader"]:checked').value;
-    const plan     = PLANS[planKey];
-    const reader   = READERS[rdKey];
 
-    const clientName   = document.getElementById('clientName').value.trim() || '（法人名・事業所名を入力）';
-    const subsidyQty   = parseInt(document.getElementById('subsidyQty').value)  || 1;
-    const extraQty     = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
-    const withSupport  = document.getElementById('supportCheck').checked;
-    const withAccompany= document.getElementById('accompanyCheck').checked;
+    const clientName = document.getElementById('clientName').value.trim() || '（法人名・事業所名を入力）';
+    const subsidyQty = parseInt(document.getElementById('subsidyQty').value)  || 1;
+    const extraQty   = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
 
     /* 宛先 */
     document.getElementById('prevClient').textContent = clientName;
+    const contactName = (document.getElementById('contactName').value || '').trim();
+    const contactTel  = (document.getElementById('contactTel').value || '').trim();
+    const contactEmail= (document.getElementById('contactEmail').value || '').trim();
+    const contactAddr = (document.getElementById('contactAddress').value || '').trim();
+    const contactLines = [];
+    if (contactAddr) contactLines.push(contactAddr);
+    if (contactName) contactLines.push(`ご担当：${contactName} 様`);
+    const tellinks = [];
+    if (contactTel) tellinks.push(`TEL: ${contactTel}`);
+    if (contactEmail) tellinks.push(contactEmail);
+    if (tellinks.length) contactLines.push(tellinks.join(' ／ '));
+    document.getElementById('prevContact').innerHTML = contactLines.join('<br>');
 
-    /* 計算 */
-    const totalQty   = subsidyQty + extraQty;
-    const devExcl    = reader.unitPrice * totalQty;
-    const devTax     = Math.floor(devExcl * 0.1);
-    const devIncl    = devExcl + devTax;
-
-    const accExcl    = withAccompany ? plan.accompany : 0;
-    const accTax     = Math.floor(accExcl * 0.1);
-    const accIncl    = accExcl + accTax;
-
-    const totalExcl  = devExcl + accExcl;
-    const totalTax   = devTax  + accTax;
-    const totalIncl  = devIncl + accIncl;
-
-    const grantAmt   = Math.min(plan.limit, totalIncl);
-    const selfPay    = Math.max(0, totalIncl - grantAmt);
+    const c = computeAmounts(planKey, rdKey, subsidyQty, extraQty);
+    const totalQty = subsidyQty + extraQty;
 
     /* ── 明細テーブル ── */
     const tbody = document.getElementById('itemsBody');
@@ -937,34 +964,32 @@ https://tadakayo.jp/
 
     const extraNote = extraQty > 0
       ? `<div class="est-sub-note">補助金対象 ${subsidyQty}台　補助金対象外 ${extraQty}台（自己負担）</div>`
-      : `<div class="est-sub-note">補助金対象 ${subsidyQty}台</div>`;
+      : `<div class="est-sub-note">補助金対象 ${subsidyQty}台（タダサポ＋パック構成）</div>`;
 
     tbody.innerHTML += `<tr>
-      <td>${reader.label}${extraNote}</td>
+      <td>${c.reader.label}${extraNote}</td>
       <td>${totalQty}台</td>
-      <td>${yen(reader.unitPrice)}</td>
-      <td>${yen(devExcl)}</td>
+      <td>${yen(c.reader.unitPrice)}</td>
+      <td>${yen(c.reader.unitPrice * totalQty)}</td>
     </tr>`;
 
-    if (withSupport) {
-      tbody.innerHTML += `<tr>
-        <td>補助金申請サポート<span class="est-badge-free">無料</span>
-          <div class="est-sub-note">介護情報基盤助成金の申請代行をタダカヨが全面サポート</div>
-        </td>
-        <td>1式</td>
-        <td>¥0</td>
-        <td>¥0</td>
-      </tr>`;
-    }
+    tbody.innerHTML += `<tr>
+      <td>伴走支援費（1年間）<span class="est-badge-free">補助金申請サポート含む</span>
+        <div class="est-sub-note">導入設定・マイナ資格確認アプリ設定・介護DX証明書設定・申請代行・1年間サポート</div>
+      </td>
+      <td>1式</td>
+      <td>${yen(c.accFeeIncl)}</td>
+      <td>${yen(c.accFeeIncl)}</td>
+    </tr>`;
 
-    if (withAccompany) {
-      tbody.innerHTML += `<tr>
-        <td>伴走支援費（1年間）
-          <div class="est-sub-note">導入設定・マイナ資格確認アプリ設定・導入後1年間サポート</div>
+    if (c.discount > 0) {
+      tbody.innerHTML += `<tr style="color:#c02828;">
+        <td><strong>特別割引（出精値引き）</strong>
+          <div class="est-sub-note">合計を助成金上限ぴったりに収めるための調整</div>
         </td>
         <td>1式</td>
-        <td>${yen(plan.accompany)}</td>
-        <td>${yen(accExcl)}</td>
+        <td>−${yen(c.discount)}</td>
+        <td>−${yen(c.discount)}</td>
       </tr>`;
     }
 
@@ -973,39 +998,43 @@ https://tadakayo.jp/
     const expiry = new Date(today);
     expiry.setMonth(expiry.getMonth() + 1);
 
-    const zeroBadge = selfPay === 0 ? `<span class="badge-zero">自己負担 ¥0</span>` : '';
+    const zeroBadge = c.selfPay === 0 ? `<span class="badge-zero">自己負担 ¥0</span>` : '';
 
     document.getElementById('totalsArea').innerHTML = `
       <div class="est-total-row sub">
-        <span>小計（税別）</span><span>${yen(totalExcl)}</span>
+        <span>機器小計（税込・定価）</span><span>${yen(c.reader.unitPrice * totalQty)}</span>
       </div>
       <div class="est-total-row sub">
-        <span>消費税（10%）</span><span>${yen(totalTax)}</span>
+        <span>伴走支援費（税込）</span><span>${yen(c.accFeeIncl)}</span>
       </div>
+      ${c.discount > 0 ? `
+      <div class="est-total-row sub" style="color:#c02828;">
+        <span>特別割引（出精値引き）</span><span>−${yen(c.discount)}</span>
+      </div>` : ''}
       <div class="est-total-row grand">
-        <span>合計（税込）</span><span>${yen(totalIncl)}</span>
+        <span>合計（税込）</span><span>${yen(c.totalIncl)}</span>
       </div>
       <div class="est-total-row sub-grant">
-        <span>介護情報基盤助成金（${plan.label} 上限${yen(plan.limit)}）</span>
-        <span>−${yen(grantAmt)}</span>
+        <span>介護情報基盤助成金（${c.plan.label} 上限${yen(c.plan.limit)}）</span>
+        <span>−${yen(c.grantAmt)}</span>
       </div>
       <div class="est-total-row self">
         <span>お客様ご負担額</span>
-        <span>${yen(selfPay)}${zeroBadge}</span>
+        <span>${yen(c.selfPay)}${zeroBadge}</span>
       </div>
     `;
 
     /* ── 備考 ── */
     const extraNote2 = extraQty > 0
-      ? `<br>・補助金対象外${extraQty}台分（${yen(reader.unitPrice * extraQty + Math.floor(reader.unitPrice * extraQty * 0.1))}税込）はお客様のご負担となります。`
+      ? `<br>・補助金対象外${extraQty}台分（${yen(c.devExtraIncl)}税込）はお客様のご負担となります。`
       : '';
 
     document.getElementById('notesArea').innerHTML = `
       <strong>備考・ご案内</strong><br>
+      ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
       ・本見積書の有効期限は<strong>${fmtDate(expiry)}</strong>までです。<br>
-      ・助成金は介護情報基盤整備助成金（定額型・${plan.label}区分）を適用した場合の金額です。<br>
-      ・助成金の支給には事業所様の申請要件の充足が必要です。詳細はお問い合わせください。<br>
-      ・本見積書の金額は消費税10%を含む税込金額で算出しています。${extraNote2}
+      ・「特別割引（出精値引き）」は、合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
+      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。${extraNote2}
     `;
   }
 </script>
