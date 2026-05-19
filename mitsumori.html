@@ -838,6 +838,7 @@
   const WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQAkcdopcA/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=tYNefDlxe-fhdm-2yORV-tayo_u-iylTTd6eo_LE_u4';
 
   let estNo = '';
+  let webhookSent = false; // 連絡先Webhookの二重送信防止フラグ
 
   /* ──────── 初期化 ──────── */
   window.addEventListener('DOMContentLoaded', () => {
@@ -879,6 +880,13 @@
       li.classList.toggle('done', !!req[key]);
     });
     document.getElementById('previewLock').hidden = unlocked;
+
+    // 「成約（必須入力＋同意誓約）と同時に」Webhook送信
+    // 1セッション1回のみ送信
+    if (unlocked && !webhookSent) {
+      webhookSent = true;
+      notifyWebhook(buildNotifyPayload());
+    }
   }
 
   /* ──────── ラジオ初期化 ──────── */
@@ -1006,7 +1014,7 @@
     const calc = computeAmounts(planKey, rdKey, subsidyQty, extraQty);
 
     const text = [
-      '📄 *タダサポ＋ 見積書ダウンロード通知*',
+      '📩 *タダサポ＋ 新規見積もり成約通知*',
       `🕒 ${new Date().toLocaleString('ja-JP')}`,
       '',
       `*見積番号*：${estNo}`,
@@ -1036,14 +1044,12 @@
   }
 
   /* ──────── PDFダウンロード ──────── */
-  async function downloadPDF() {
+  function downloadPDF() {
     if (!validateContact()) {
       document.getElementById('formError').scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    // Webhook通知（非同期で投げて完了を待つ）
-    await notifyWebhook(buildNotifyPayload());
-
+    // Webhook通知はロック解除時に既に送信済み（updateLock内）
     const clientName = document.getElementById('clientName').value.trim();
     const today = new Date();
     const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
