@@ -612,30 +612,19 @@
         <input type="url" id="contactWebsite" placeholder="例: https://www.example.jp" autocomplete="url">
       </div>
       <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:-4px;">
-        ※ 必須項目をすべて入力し、下記の同意にチェックすると見積もり内容が表示され、PDFをダウンロードできます。<br>
+        ※ 必須項目（事業所情報＋カードリーダー構成）すべて入力し、最後に同意にチェックすると<br>
+        　 見積もり内容が表示され、PDFをダウンロードできます。<br>
         ※ ご入力いただいた内容は、NPO法人タダカヨへ自動連絡されます。
       </p>
-
-      <!-- 同意チェック -->
-      <div class="consent-box">
-        <label>
-          <input type="checkbox" id="consentCheck">
-          <span>
-            <strong>介護事業所さまへ：</strong>
-            私は介護事業所の関係者（職員・経営者・運営委託者など）であり、タダサポ＋の見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
-            ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。
-          </span>
-        </label>
-      </div>
     </div>
 
     <div class="form-sec">
-      <div class="form-sec-title">補助金プラン（事業所種別）</div>
+      <div class="form-sec-title">補助金プラン（事業所種別）<span class="req">*</span></div>
       <div class="radio-group" id="planGroup">
         <label class="radio-card on" data-val="houmon">
           <input type="radio" name="plan" value="houmon" checked>
           <div>
-            <div class="card-name">訪問・通所系</div>
+            <div class="card-name">訪問・通所・短期滞在系</div>
             <div class="card-desc">助成金上限 ¥64,000 ／ 最大3台</div>
           </div>
         </label>
@@ -649,7 +638,7 @@
         <label class="radio-card" data-val="other">
           <input type="radio" name="plan" value="other">
           <div>
-            <div class="card-name">その他</div>
+            <div class="card-name">その他（居宅介護支援等）</div>
             <div class="card-desc">助成金上限 ¥42,000 ／ 最大1台</div>
           </div>
         </label>
@@ -657,44 +646,55 @@
     </div>
 
     <div class="form-sec">
-      <div class="form-sec-title">カードリーダー種別</div>
-      <div class="radio-group" id="readerGroup">
-        <label class="radio-card on" data-val="bt">
-          <input type="radio" name="reader" value="bt" checked>
-          <div>
-            <div class="card-name">CIR415A（Bluetooth 無線）</div>
-            <div class="card-desc">¥14,500/台（税込）</div>
-          </div>
+      <div class="form-sec-title">カードリーダー構成（合計1台以上 必須）<span class="req">*</span></div>
+      <div class="form-group">
+        <label class="form-label" for="btQty">
+          <strong>CIR415A</strong>（Bluetooth 無線）<span class="qty-note">¥14,500/台 税込</span>
         </label>
-        <label class="radio-card" data-val="usb">
-          <input type="radio" name="reader" value="usb">
-          <div>
-            <div class="card-name">CIR315A（USB-A/C 有線）</div>
-            <div class="card-desc">¥5,000/台（税込）</div>
-          </div>
-        </label>
+        <div class="qty-row">
+          <select id="btQty">
+            <option value="0">0台</option>
+            <option value="1">1台</option>
+            <option value="2">2台</option>
+            <option value="3" selected>3台</option>
+          </select>
+          <span class="qty-note">スマホ・タブレット対応・標準採用</span>
+        </div>
       </div>
+      <div class="form-group">
+        <label class="form-label" for="usbQty">
+          <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥5,000/台 税込</span>
+        </label>
+        <div class="qty-row">
+          <select id="usbQty">
+            <option value="0" selected>0台</option>
+            <option value="1">1台</option>
+            <option value="2">2台</option>
+            <option value="3">3台</option>
+          </select>
+          <span class="qty-note">PC・有線接続向け</span>
+        </div>
+      </div>
+      <div style="background:var(--neutral);padding:8px 12px;border-radius:6px;font-size:12px;margin-top:4px;">
+        補助対象 合計台数：<strong id="totalQtyDisplay" style="color:var(--primary);font-size:14px;">3</strong>台
+        ／ <span id="planMaxDisplay">最大3台</span>
+      </div>
+      <p id="qtyError" style="display:none;color:var(--primary);font-size:11px;margin-top:4px;"></p>
     </div>
 
+    <!-- 同意チェック（必須項目入力後にチェックすると見積もりが見える） -->
     <div class="form-sec">
-      <div class="form-sec-title">台数</div>
-      <div class="form-group">
-        <label class="form-label">補助金対象台数</label>
-        <div class="qty-row">
-          <select id="subsidyQty">
-            <option value="3" selected>3台</option>
-            <option value="2">2台</option>
-            <option value="1">1台</option>
-          </select>
-          <span class="qty-note" id="maxNote">（最大3台）</span>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">補助金対象外の追加台数</label>
-        <div class="qty-row">
-          <input type="number" id="extraQty" value="0" min="0" max="99" oninput="render()">
-          <span class="qty-note">台（自己負担）</span>
-        </div>
+      <div class="form-sec-title">最終確認・同意<span class="req">*</span></div>
+      <div class="consent-box">
+        <label>
+          <input type="checkbox" id="consentCheck">
+          <span>
+            <strong>介護事業所さまへ：</strong>
+            私は介護事業所の関係者（職員・経営者・運営委託者など）であり、タダサポ＋の見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
+            ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。<br>
+            ※ チェックすると見積もり内容が表示され、タダカヨへ自動連絡されます。
+          </span>
+        </label>
       </div>
     </div>
 
@@ -750,6 +750,7 @@
         <li data-key="contactName">ご担当者名</li>
         <li data-key="contactTel">電話番号</li>
         <li data-key="contactEmail">メールアドレス</li>
+        <li data-key="readerQty">カードリーダー構成（1台以上）</li>
         <li data-key="consentCheck">同意（介護事業所関係者である旨）</li>
       </ul>
     </div>
@@ -823,15 +824,15 @@
 <script>
   /* ──────── 定数（すべて税込価格） ──────── */
   const PLANS = {
-    houmon: { label: '訪問・通所系', maxQty: 3, limit: 64000 },
-    kyojyu: { label: '居住・入所系', maxQty: 2, limit: 55000 },
-    other:  { label: 'その他',       maxQty: 1, limit: 42000 },
+    houmon: { label: '訪問・通所・短期滞在系', maxQty: 3, limit: 64000 },
+    kyojyu: { label: '居住・入所系',           maxQty: 2, limit: 55000 },
+    other:  { label: 'その他',                 maxQty: 1, limit: 42000 },
   };
-  const READERS = {
-    bt:  { label: 'AB Circle CIR415A カードリーダー（Bluetooth）', unitPrice: 14500 },
-    usb: { label: 'AB Circle CIR315A カードリーダー（USB-A/C）',   unitPrice: 5000 },
-  };
-  // 伴走支援費（税込・台数別）
+  const BT_LABEL  = 'AB Circle CIR415A カードリーダー（Bluetooth）';
+  const USB_LABEL = 'AB Circle CIR315A カードリーダー（USB-A/C）';
+  const BT_PRICE  = 14500;  // 税込
+  const USB_PRICE = 5000;   // 税込
+  // 伴走支援費（税込・補助対象台数別）
   const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
 
   // Google Chat Webhook（見積書ダウンロード通知用）
@@ -843,42 +844,73 @@
   /* ──────── 初期化 ──────── */
   window.addEventListener('DOMContentLoaded', () => {
     estNo = genEstNo();
-    initRadios('planGroup',  'plan',   v => { syncPlanQty(v); syncAccompanyNote(); render(); });
-    initRadios('readerGroup','reader', () => render());
-    document.getElementById('subsidyQty').addEventListener('change', () => { syncAccompanyNote(); render(); });
+    initRadios('planGroup', 'plan', v => { syncPlanQty(v); render(); updateLock(); });
+    ['btQty','usbQty'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => { render(); updateLock(); });
+    });
     ['clientName','contactName','contactTel','contactEmail','contactAddress','contactWebsite'].forEach(id => {
       document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
     });
     document.getElementById('consentCheck').addEventListener('change', updateLock);
-    document.getElementById('extraQty').addEventListener('input', () => { render(); });
     document.getElementById('prevEstNo').textContent = estNo;
     setDates();
     syncPlanQty('houmon');
-    syncAccompanyNote();
     render();
     updateLock();
   });
 
   /* ──────── 必須項目＋同意のロック解除チェック ──────── */
   function getLockState() {
+    const planKey = document.querySelector('input[name="plan"]:checked').value;
+    const plan = PLANS[planKey];
+    const bt  = parseInt(document.getElementById('btQty').value)  || 0;
+    const usb = parseInt(document.getElementById('usbQty').value) || 0;
+    const totalQty = bt + usb;
+    const readerQtyOK = totalQty >= 1 && totalQty <= plan.maxQty;
+
     const req = {
       clientName:   !!(document.getElementById('clientName').value || '').trim(),
       contactName:  !!(document.getElementById('contactName').value || '').trim(),
       contactTel:   !!(document.getElementById('contactTel').value || '').trim(),
       contactEmail: !!((document.getElementById('contactEmail').value || '').trim()) &&
                     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((document.getElementById('contactEmail').value || '').trim()),
+      readerQty:    readerQtyOK,
       consentCheck: document.getElementById('consentCheck').checked,
     };
     const unlocked = Object.values(req).every(Boolean);
-    return { req, unlocked };
+    return { req, unlocked, totalQty, plan, bt, usb };
   }
   function updateLock() {
-    const { req, unlocked } = getLockState();
+    const { req, unlocked, totalQty, plan, bt, usb } = getLockState();
     // チェックリストの状態更新
     document.querySelectorAll('#lockChecklist li').forEach(li => {
       const key = li.dataset.key;
       li.classList.toggle('done', !!req[key]);
     });
+
+    // 台数表示・エラー表示
+    document.getElementById('totalQtyDisplay').textContent = totalQty;
+    document.getElementById('planMaxDisplay').textContent = `最大${plan.maxQty}台`;
+    const qtyErr = document.getElementById('qtyError');
+    if (totalQty === 0) {
+      qtyErr.style.display = 'block';
+      qtyErr.innerHTML = '<i class="ti ti-alert-triangle"></i> カードリーダーを最低1台ご選択ください';
+    } else if (totalQty > plan.maxQty) {
+      qtyErr.style.display = 'block';
+      qtyErr.innerHTML = `<i class="ti ti-alert-triangle"></i> ${plan.label}の補助対象は最大${plan.maxQty}台です（現在${totalQty}台）`;
+    } else {
+      qtyErr.style.display = 'none';
+    }
+
+    // 同意チェックは「他の必須項目すべてOK」の時のみ意味を持つ
+    // 同意が早すぎる場合に視覚で警告
+    const consentBox = document.querySelector('.consent-box');
+    const otherReqOK = req.clientName && req.contactName && req.contactTel && req.contactEmail && req.readerQty;
+    if (consentBox) {
+      consentBox.style.opacity = otherReqOK ? '1' : '0.5';
+      consentBox.title = otherReqOK ? '' : '事業所情報とカードリーダー構成をすべてご入力ください';
+    }
+
     document.getElementById('previewLock').hidden = unlocked;
 
     // 「成約（必須入力＋同意誓約）と同時に」Webhook送信
@@ -902,25 +934,41 @@
     });
   }
 
-  /* ──────── 台数セレクト更新 ──────── */
+  /* ──────── プラン変更時：BT/USB台数セレクトの最大値を反映 ──────── */
   function syncPlanQty(planKey) {
     const plan = PLANS[planKey];
-    const sel  = document.getElementById('subsidyQty');
-    const cur  = parseInt(sel.value) || plan.maxQty;
-    sel.innerHTML = '';
-    for (let i = plan.maxQty; i >= 1; i--) {
-      const o = document.createElement('option');
-      o.value = i; o.text = `${i}台`;
-      if (i === Math.min(cur, plan.maxQty)) o.selected = true;
-      sel.appendChild(o);
+    ['btQty','usbQty'].forEach(id => {
+      const sel = document.getElementById(id);
+      const cur = parseInt(sel.value) || 0;
+      sel.innerHTML = '';
+      for (let i = 0; i <= plan.maxQty; i++) {
+        const o = document.createElement('option');
+        o.value = i; o.text = `${i}台`;
+        if (i === Math.min(cur, plan.maxQty)) o.selected = true;
+        sel.appendChild(o);
+      }
+    });
+    // 合計が最大を超える場合はBT/USBを丸める（最初にBTを優先）
+    let bt  = parseInt(document.getElementById('btQty').value)  || 0;
+    let usb = parseInt(document.getElementById('usbQty').value) || 0;
+    if (bt + usb > plan.maxQty) {
+      if (bt > plan.maxQty) { bt = plan.maxQty; usb = 0; }
+      else { usb = plan.maxQty - bt; }
+      document.getElementById('btQty').value  = bt;
+      document.getElementById('usbQty').value = usb;
     }
-    document.getElementById('maxNote').textContent = `（最大${plan.maxQty}台）`;
-  }
-  function syncAccompanyNote() {
-    const subsidyQty = parseInt(document.getElementById('subsidyQty').value) || 1;
-    const fee = ACCOMPANY_FEE[subsidyQty] || ACCOMPANY_FEE[3];
-    document.getElementById('accompanyNote').textContent =
-      `¥${fee.toLocaleString()}（税込・${subsidyQty}台構成時）— 導入設定・申請サポート・1年間サポート`;
+    // 0台ならBTを1台プリセット（少なくとも1台選択を促す）
+    if (bt + usb === 0) {
+      document.getElementById('btQty').value = Math.min(1, plan.maxQty);
+    }
+    // accompanyNoteの表示を更新
+    const note = document.getElementById('accompanyNote');
+    if (note) {
+      const total = (parseInt(document.getElementById('btQty').value) || 0) +
+                    (parseInt(document.getElementById('usbQty').value) || 0);
+      const fee = ACCOMPANY_FEE[total] || ACCOMPANY_FEE[plan.maxQty];
+      note.textContent = `¥${fee.toLocaleString()}（税込・${total}台構成時）— 導入設定・申請サポート・1年間サポート`;
+    }
   }
 
   /* ──────── 日付 ──────── */
@@ -967,6 +1015,14 @@
     if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
       missing.push('メールアドレス（形式が正しくありません）');
     }
+    // カードリーダー台数チェック
+    const btQ  = parseInt(document.getElementById('btQty').value)  || 0;
+    const usbQ = parseInt(document.getElementById('usbQty').value) || 0;
+    const planK = document.querySelector('input[name="plan"]:checked').value;
+    const planMax = PLANS[planK].maxQty;
+    const totalQ = btQ + usbQ;
+    if (totalQ < 1) missing.push('カードリーダー（1台以上）');
+    if (totalQ > planMax) missing.push(`カードリーダー台数を${planMax}台以下に`);
     // 同意チェック
     if (!document.getElementById('consentCheck').checked) {
       missing.push('「介護事業所関係者である」同意チェック');
@@ -997,10 +1053,9 @@
   }
 
   function buildNotifyPayload() {
-    const planKey   = document.querySelector('input[name="plan"]:checked').value;
-    const rdKey     = document.querySelector('input[name="reader"]:checked').value;
-    const plan      = PLANS[planKey];
-    const reader    = READERS[rdKey];
+    const planKey     = document.querySelector('input[name="plan"]:checked').value;
+    const btQty       = parseInt(document.getElementById('btQty').value)  || 0;
+    const usbQty      = parseInt(document.getElementById('usbQty').value) || 0;
     const clientName  = document.getElementById('clientName').value.trim();
     const contactName = document.getElementById('contactName').value.trim();
     const contactTel  = document.getElementById('contactTel').value.trim();
@@ -1008,10 +1063,8 @@
     const contactAddr = (document.getElementById('contactAddress').value || '').trim();
     const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
     const consented   = document.getElementById('consentCheck').checked;
-    const subsidyQty  = parseInt(document.getElementById('subsidyQty').value) || 1;
-    const extraQty    = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
 
-    const calc = computeAmounts(planKey, rdKey, subsidyQty, extraQty);
+    const calc = computeAmounts(planKey, btQty, usbQty);
 
     const text = [
       '📩 *タダサポ＋ 新規見積もり成約通知*',
@@ -1029,10 +1082,10 @@
       `同意：${consented ? '✅ 介護事業所関係者として同意済み' : '❌'}`,
       '',
       '*【見積もり内容】*',
-      `事業所種別：${plan.label}（上限 ${yen(plan.limit)}）`,
-      `機器：${reader.label}`,
-      `台数：${subsidyQty + extraQty}台（補助対象 ${subsidyQty}台${extraQty > 0 ? ` ／ 対象外 ${extraQty}台` : ''}）`,
-      `機器小計（税込・定価）：${yen(calc.reader.unitPrice * (subsidyQty + extraQty))}`,
+      `事業所種別：${calc.plan.label}（上限 ${yen(calc.plan.limit)}）`,
+      `機器構成：${configLabel(btQty, usbQty)}（合計 ${calc.totalQty}台）`,
+      btQty  > 0 ? `　・CIR415A（BT）×${btQty}台：${yen(calc.btSubtotal)}` : null,
+      usbQty > 0 ? `　・CIR315A（USB）×${usbQty}台：${yen(calc.usbSubtotal)}` : null,
       `伴走支援費（税込）：${yen(calc.accFeeIncl)}`,
       calc.discount > 0 ? `特別割引：−${yen(calc.discount)}` : null,
       `*合計（税込）：${yen(calc.totalIncl)}*`,
@@ -1065,45 +1118,49 @@
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
   /* ──────── 金額計算（税込ベース・特別割引算出） ──────── */
-  function computeAmounts(planKey, rdKey, subsidyQty, extraQty) {
-    const plan   = PLANS[planKey];
-    const reader = READERS[rdKey];
+  function computeAmounts(planKey, btQty, usbQty) {
+    const plan = PLANS[planKey];
+    const totalQty = btQty + usbQty;
 
-    // 補助対象台数の機器小計（税込・定価）
-    const devSubsidyIncl = reader.unitPrice * subsidyQty;
-    // 補助対象外の機器小計（税込・定価）— そのまま自己負担
-    const devExtraIncl   = reader.unitPrice * extraQty;
+    // 機器小計（税込・定価）
+    const btSubtotal  = BT_PRICE  * btQty;
+    const usbSubtotal = USB_PRICE * usbQty;
+    const devIncl = btSubtotal + usbSubtotal;
     // 伴走支援費（税込・補助対象台数別）
-    const accFeeIncl     = ACCOMPANY_FEE[subsidyQty] || ACCOMPANY_FEE[3];
+    const accFeeIncl = ACCOMPANY_FEE[totalQty] || ACCOMPANY_FEE[plan.maxQty] || 0;
     // 補助金対象パートの定価合計
-    const subsidyGroupSubtotal = devSubsidyIncl + accFeeIncl;
+    const subtotal = devIncl + accFeeIncl;
     // 特別割引（補助金上限ぴったりに収めるための調整）
-    const discount       = Math.max(0, subsidyGroupSubtotal - plan.limit);
-    // 補助対象パートの請求合計
-    const subsidyGroupTotal = subsidyGroupSubtotal - discount;
-    // 全体合計（税込）
-    const totalIncl      = subsidyGroupTotal + devExtraIncl;
+    const discount = Math.max(0, subtotal - plan.limit);
+    // 請求合計（税込）
+    const totalIncl = subtotal - discount;
     // 助成金充当
-    const grantAmt       = Math.min(plan.limit, subsidyGroupTotal);
+    const grantAmt = Math.min(plan.limit, totalIncl);
     // 自己負担
-    const selfPay        = Math.max(0, totalIncl - grantAmt);
+    const selfPay = Math.max(0, totalIncl - grantAmt);
 
     return {
-      plan, reader,
-      devSubsidyIncl, devExtraIncl, accFeeIncl,
-      subsidyGroupSubtotal, discount, subsidyGroupTotal,
-      totalIncl, grantAmt, selfPay,
+      plan, btQty, usbQty, totalQty,
+      btSubtotal, usbSubtotal, devIncl, accFeeIncl,
+      subtotal, discount, totalIncl, grantAmt, selfPay,
     };
+  }
+
+  /* ──────── 構成ラベル生成（例: "BT×2 + USB×1"） ──────── */
+  function configLabel(btQty, usbQty) {
+    const parts = [];
+    if (btQty > 0)  parts.push(`BT×${btQty}`);
+    if (usbQty > 0) parts.push(`USB×${usbQty}`);
+    return parts.join(' + ') || '（未選択）';
   }
 
   /* ──────── メインレンダリング ──────── */
   function render() {
-    const planKey  = document.querySelector('input[name="plan"]:checked').value;
-    const rdKey    = document.querySelector('input[name="reader"]:checked').value;
+    const planKey = document.querySelector('input[name="plan"]:checked').value;
+    const btQty   = parseInt(document.getElementById('btQty').value)  || 0;
+    const usbQty  = parseInt(document.getElementById('usbQty').value) || 0;
 
     const clientName = document.getElementById('clientName').value.trim() || '（法人名・事業所名を入力）';
-    const subsidyQty = parseInt(document.getElementById('subsidyQty').value)  || 1;
-    const extraQty   = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
 
     /* 宛先 */
     document.getElementById('prevClient').textContent = clientName;
@@ -1120,23 +1177,38 @@
     if (tellinks.length) contactLines.push(tellinks.join(' ／ '));
     document.getElementById('prevContact').innerHTML = contactLines.join('<br>');
 
-    const c = computeAmounts(planKey, rdKey, subsidyQty, extraQty);
-    const totalQty = subsidyQty + extraQty;
+    const c = computeAmounts(planKey, btQty, usbQty);
+
+    // accompanyNote 更新
+    const note = document.getElementById('accompanyNote');
+    if (note) {
+      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.totalQty}台構成時）— 導入設定・申請サポート・1年間サポート`;
+    }
 
     /* ── 明細テーブル ── */
     const tbody = document.getElementById('itemsBody');
     tbody.innerHTML = '';
 
-    const extraNote = extraQty > 0
-      ? `<div class="est-sub-note">補助金対象 ${subsidyQty}台　補助金対象外 ${extraQty}台（自己負担）</div>`
-      : `<div class="est-sub-note">補助金対象 ${subsidyQty}台（タダサポ＋パック構成）</div>`;
-
-    tbody.innerHTML += `<tr>
-      <td>${c.reader.label}${extraNote}</td>
-      <td>${totalQty}台</td>
-      <td>${yen(c.reader.unitPrice)}</td>
-      <td>${yen(c.reader.unitPrice * totalQty)}</td>
-    </tr>`;
+    if (btQty > 0) {
+      tbody.innerHTML += `<tr>
+        <td>${BT_LABEL}
+          <div class="est-sub-note">補助対象 ${btQty}台（タダサポ＋パック構成）</div>
+        </td>
+        <td>${btQty}台</td>
+        <td>${yen(BT_PRICE)}</td>
+        <td>${yen(c.btSubtotal)}</td>
+      </tr>`;
+    }
+    if (usbQty > 0) {
+      tbody.innerHTML += `<tr>
+        <td>${USB_LABEL}
+          <div class="est-sub-note">補助対象 ${usbQty}台（タダサポ＋パック構成）</div>
+        </td>
+        <td>${usbQty}台</td>
+        <td>${yen(USB_PRICE)}</td>
+        <td>${yen(c.usbSubtotal)}</td>
+      </tr>`;
+    }
 
     tbody.innerHTML += `<tr>
       <td>伴走支援費（1年間）<span class="est-badge-free">補助金申請サポート含む</span>
@@ -1167,7 +1239,7 @@
 
     document.getElementById('totalsArea').innerHTML = `
       <div class="est-total-row sub">
-        <span>機器小計（税込・定価）</span><span>${yen(c.reader.unitPrice * totalQty)}</span>
+        <span>機器小計（税込・定価）</span><span>${yen(c.devIncl)}</span>
       </div>
       <div class="est-total-row sub">
         <span>伴走支援費（税込）</span><span>${yen(c.accFeeIncl)}</span>
@@ -1190,16 +1262,13 @@
     `;
 
     /* ── 備考 ── */
-    const extraNote2 = extraQty > 0
-      ? `<br>・補助金対象外${extraQty}台分（${yen(c.devExtraIncl)}税込）はお客様のご負担となります。`
-      : '';
-
     document.getElementById('notesArea').innerHTML = `
       <strong>備考・ご案内</strong><br>
+      ・カードリーダー構成：<strong>${configLabel(btQty, usbQty)}</strong>（合計 ${c.totalQty}台）<br>
       ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
       ・本見積書の有効期限は<strong>${fmtDate(expiry)}</strong>までです。<br>
       ・「特別割引（出精値引き）」は、合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
-      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。${extraNote2}
+      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。
     `;
   }
 </script>
