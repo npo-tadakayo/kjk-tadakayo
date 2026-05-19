@@ -588,8 +588,12 @@
     <div class="form-sec">
       <div class="form-sec-title">事業所さま情報（*は必須）</div>
       <div class="form-group">
-        <label class="form-label" for="clientName">法人名・事業所名<span class="req">*</span></label>
-        <input type="text" id="clientName" placeholder="例: 社会福祉法人〇〇 △△苑" required>
+        <label class="form-label" for="corpName">法人名<span class="req">*</span></label>
+        <input type="text" id="corpName" placeholder="例: 社会福祉法人〇〇" required autocomplete="organization">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="officeName">事業所名<span class="req">*</span></label>
+        <input type="text" id="officeName" placeholder="例: △△苑（つなぐ手ケアマネセンター 等）" required>
       </div>
       <div class="form-group">
         <label class="form-label" for="contactName">ご担当者名<span class="req">*</span></label>
@@ -646,38 +650,82 @@
     </div>
 
     <div class="form-sec">
-      <div class="form-sec-title">カードリーダー構成（合計1台以上 必須）<span class="req">*</span></div>
+      <div class="form-sec-title">カードリーダー構成（補助対象 合計1台以上 必須）<span class="req">*</span></div>
+
+      <!-- BT -->
       <div class="form-group">
-        <label class="form-label" for="btQty">
+        <label class="form-label">
           <strong>CIR415A</strong>（Bluetooth 無線）<span class="qty-note">¥14,500/台 税込</span>
         </label>
-        <div class="qty-row">
-          <select id="btQty">
-            <option value="0">0台</option>
-            <option value="1">1台</option>
-            <option value="2">2台</option>
-            <option value="3" selected>3台</option>
-          </select>
-          <span class="qty-note">スマホ・タブレット対応・標準採用</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
+            <select id="btQty" style="width:100%;">
+              <option value="0">0台</option>
+              <option value="1">1台</option>
+              <option value="2">2台</option>
+              <option value="3" selected>3台</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
+            <select id="btExtraQty" style="width:100%;">
+              <option value="0" selected>0台</option>
+              <option value="1">1台</option>
+              <option value="2">2台</option>
+              <option value="3">3台</option>
+              <option value="4">4台</option>
+              <option value="5">5台</option>
+              <option value="6">6台</option>
+              <option value="7">7台</option>
+              <option value="8">8台</option>
+              <option value="9">9台</option>
+              <option value="10">10台</option>
+            </select>
+          </div>
         </div>
+        <div class="qty-note" style="margin-top:3px;">スマホ・タブレット対応・標準採用</div>
       </div>
+
+      <!-- USB -->
       <div class="form-group">
-        <label class="form-label" for="usbQty">
+        <label class="form-label">
           <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥5,000/台 税込</span>
         </label>
-        <div class="qty-row">
-          <select id="usbQty">
-            <option value="0" selected>0台</option>
-            <option value="1">1台</option>
-            <option value="2">2台</option>
-            <option value="3">3台</option>
-          </select>
-          <span class="qty-note">PC・有線接続向け</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
+            <select id="usbQty" style="width:100%;">
+              <option value="0" selected>0台</option>
+              <option value="1">1台</option>
+              <option value="2">2台</option>
+              <option value="3">3台</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
+            <select id="usbExtraQty" style="width:100%;">
+              <option value="0" selected>0台</option>
+              <option value="1">1台</option>
+              <option value="2">2台</option>
+              <option value="3">3台</option>
+              <option value="4">4台</option>
+              <option value="5">5台</option>
+              <option value="6">6台</option>
+              <option value="7">7台</option>
+              <option value="8">8台</option>
+              <option value="9">9台</option>
+              <option value="10">10台</option>
+            </select>
+          </div>
         </div>
+        <div class="qty-note" style="margin-top:3px;">PC・有線接続向け</div>
       </div>
-      <div style="background:var(--neutral);padding:8px 12px;border-radius:6px;font-size:12px;margin-top:4px;">
-        補助対象 合計台数：<strong id="totalQtyDisplay" style="color:var(--primary);font-size:14px;">3</strong>台
-        ／ <span id="planMaxDisplay">最大3台</span>
+
+      <div style="background:var(--neutral);padding:10px 12px;border-radius:6px;font-size:12px;margin-top:4px;line-height:1.8;">
+        補助対象 合計：<strong id="totalQtyDisplay" style="color:var(--primary);font-size:14px;">3</strong>台
+        ／ <span id="planMaxDisplay">最大3台</span><br>
+        補助対象外 合計：<strong id="totalExtraDisplay" style="font-size:14px;">0</strong>台（自己負担）
       </div>
       <p id="qtyError" style="display:none;color:var(--primary);font-size:11px;margin-top:4px;"></p>
     </div>
@@ -746,7 +794,8 @@
         同意にチェックを入れると、お見積もり内容がこちらに表示され、PDFをダウンロードいただけます。
       </div>
       <ul class="preview-lock-checklist" id="lockChecklist">
-        <li data-key="clientName">法人名・事業所名</li>
+        <li data-key="corpName">法人名</li>
+        <li data-key="officeName">事業所名</li>
         <li data-key="contactName">ご担当者名</li>
         <li data-key="contactTel">電話番号</li>
         <li data-key="contactEmail">メールアドレス</li>
@@ -845,10 +894,10 @@
   window.addEventListener('DOMContentLoaded', () => {
     estNo = genEstNo();
     initRadios('planGroup', 'plan', v => { syncPlanQty(v); render(); updateLock(); });
-    ['btQty','usbQty'].forEach(id => {
+    ['btQty','usbQty','btExtraQty','usbExtraQty'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => { render(); updateLock(); });
     });
-    ['clientName','contactName','contactTel','contactEmail','contactAddress','contactWebsite'].forEach(id => {
+    ['corpName','officeName','contactName','contactTel','contactEmail','contactAddress','contactWebsite'].forEach(id => {
       document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
     });
     document.getElementById('consentCheck').addEventListener('change', updateLock);
@@ -863,13 +912,17 @@
   function getLockState() {
     const planKey = document.querySelector('input[name="plan"]:checked').value;
     const plan = PLANS[planKey];
-    const bt  = parseInt(document.getElementById('btQty').value)  || 0;
-    const usb = parseInt(document.getElementById('usbQty').value) || 0;
-    const totalQty = bt + usb;
-    const readerQtyOK = totalQty >= 1 && totalQty <= plan.maxQty;
+    const bt       = parseInt(document.getElementById('btQty').value)       || 0;
+    const usb      = parseInt(document.getElementById('usbQty').value)      || 0;
+    const btExtra  = parseInt(document.getElementById('btExtraQty').value)  || 0;
+    const usbExtra = parseInt(document.getElementById('usbExtraQty').value) || 0;
+    const subsidyTotal = bt + usb;
+    const extraTotal   = btExtra + usbExtra;
+    const readerQtyOK = subsidyTotal >= 1 && subsidyTotal <= plan.maxQty;
 
     const req = {
-      clientName:   !!(document.getElementById('clientName').value || '').trim(),
+      corpName:     !!(document.getElementById('corpName').value || '').trim(),
+      officeName:   !!(document.getElementById('officeName').value || '').trim(),
       contactName:  !!(document.getElementById('contactName').value || '').trim(),
       contactTel:   !!(document.getElementById('contactTel').value || '').trim(),
       contactEmail: !!((document.getElementById('contactEmail').value || '').trim()) &&
@@ -878,10 +931,10 @@
       consentCheck: document.getElementById('consentCheck').checked,
     };
     const unlocked = Object.values(req).every(Boolean);
-    return { req, unlocked, totalQty, plan, bt, usb };
+    return { req, unlocked, subsidyTotal, extraTotal, plan, bt, usb, btExtra, usbExtra };
   }
   function updateLock() {
-    const { req, unlocked, totalQty, plan, bt, usb } = getLockState();
+    const { req, unlocked, subsidyTotal, extraTotal, plan } = getLockState();
     // チェックリストの状態更新
     document.querySelectorAll('#lockChecklist li').forEach(li => {
       const key = li.dataset.key;
@@ -889,23 +942,23 @@
     });
 
     // 台数表示・エラー表示
-    document.getElementById('totalQtyDisplay').textContent = totalQty;
+    document.getElementById('totalQtyDisplay').textContent = subsidyTotal;
     document.getElementById('planMaxDisplay').textContent = `最大${plan.maxQty}台`;
+    document.getElementById('totalExtraDisplay').textContent = extraTotal;
     const qtyErr = document.getElementById('qtyError');
-    if (totalQty === 0) {
+    if (subsidyTotal === 0) {
       qtyErr.style.display = 'block';
-      qtyErr.innerHTML = '<i class="ti ti-alert-triangle"></i> カードリーダーを最低1台ご選択ください';
-    } else if (totalQty > plan.maxQty) {
+      qtyErr.innerHTML = '<i class="ti ti-alert-triangle"></i> 補助対象のカードリーダーを最低1台ご選択ください';
+    } else if (subsidyTotal > plan.maxQty) {
       qtyErr.style.display = 'block';
-      qtyErr.innerHTML = `<i class="ti ti-alert-triangle"></i> ${plan.label}の補助対象は最大${plan.maxQty}台です（現在${totalQty}台）`;
+      qtyErr.innerHTML = `<i class="ti ti-alert-triangle"></i> ${plan.label}の補助対象は最大${plan.maxQty}台です（現在${subsidyTotal}台）`;
     } else {
       qtyErr.style.display = 'none';
     }
 
     // 同意チェックは「他の必須項目すべてOK」の時のみ意味を持つ
-    // 同意が早すぎる場合に視覚で警告
     const consentBox = document.querySelector('.consent-box');
-    const otherReqOK = req.clientName && req.contactName && req.contactTel && req.contactEmail && req.readerQty;
+    const otherReqOK = req.corpName && req.officeName && req.contactName && req.contactTel && req.contactEmail && req.readerQty;
     if (consentBox) {
       consentBox.style.opacity = otherReqOK ? '1' : '0.5';
       consentBox.title = otherReqOK ? '' : '事業所情報とカードリーダー構成をすべてご入力ください';
@@ -934,9 +987,10 @@
     });
   }
 
-  /* ──────── プラン変更時：BT/USB台数セレクトの最大値を反映 ──────── */
+  /* ──────── プラン変更時：補助対象セレクトの最大値を反映 ──────── */
   function syncPlanQty(planKey) {
     const plan = PLANS[planKey];
+    // 補助対象セレクトのみ最大値を反映（補助対象外は最大10台のまま）
     ['btQty','usbQty'].forEach(id => {
       const sel = document.getElementById(id);
       const cur = parseInt(sel.value) || 0;
@@ -957,11 +1011,11 @@
       document.getElementById('btQty').value  = bt;
       document.getElementById('usbQty').value = usb;
     }
-    // 0台ならBTを1台プリセット（少なくとも1台選択を促す）
+    // 0台ならBTを1台プリセット
     if (bt + usb === 0) {
       document.getElementById('btQty').value = Math.min(1, plan.maxQty);
     }
-    // accompanyNoteの表示を更新
+    // accompanyNote 表示を更新
     const note = document.getElementById('accompanyNote');
     if (note) {
       const total = (parseInt(document.getElementById('btQty').value) || 0) +
@@ -1000,7 +1054,8 @@
   /* ──────── 必須項目バリデーション ──────── */
   function validateContact() {
     const fields = [
-      { id: 'clientName',   label: '法人名・事業所名' },
+      { id: 'corpName',     label: '法人名' },
+      { id: 'officeName',   label: '事業所名' },
       { id: 'contactName',  label: 'ご担当者名' },
       { id: 'contactTel',   label: '電話番号' },
       { id: 'contactEmail', label: 'メールアドレス' },
@@ -1054,9 +1109,12 @@
 
   function buildNotifyPayload() {
     const planKey     = document.querySelector('input[name="plan"]:checked').value;
-    const btQty       = parseInt(document.getElementById('btQty').value)  || 0;
-    const usbQty      = parseInt(document.getElementById('usbQty').value) || 0;
-    const clientName  = document.getElementById('clientName').value.trim();
+    const btQty       = parseInt(document.getElementById('btQty').value)       || 0;
+    const usbQty      = parseInt(document.getElementById('usbQty').value)      || 0;
+    const btExtra     = parseInt(document.getElementById('btExtraQty').value)  || 0;
+    const usbExtra    = parseInt(document.getElementById('usbExtraQty').value) || 0;
+    const corp        = document.getElementById('corpName').value.trim();
+    const office      = document.getElementById('officeName').value.trim();
     const contactName = document.getElementById('contactName').value.trim();
     const contactTel  = document.getElementById('contactTel').value.trim();
     const contactEmail= document.getElementById('contactEmail').value.trim();
@@ -1064,7 +1122,7 @@
     const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
     const consented   = document.getElementById('consentCheck').checked;
 
-    const calc = computeAmounts(planKey, btQty, usbQty);
+    const calc = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
 
     const text = [
       '📩 *タダサポ＋ 新規見積もり成約通知*',
@@ -1073,7 +1131,8 @@
       `*見積番号*：${estNo}`,
       '',
       '*【事業所さま情報】*',
-      `事業所名：${clientName}`,
+      `法人名：${corp}`,
+      `事業所名：${office}`,
       `ご担当者：${contactName}`,
       `電話：${contactTel}`,
       `メール：${contactEmail}`,
@@ -1083,10 +1142,12 @@
       '',
       '*【見積もり内容】*',
       `事業所種別：${calc.plan.label}（上限 ${yen(calc.plan.limit)}）`,
-      `機器構成：${configLabel(btQty, usbQty)}（合計 ${calc.totalQty}台）`,
-      btQty  > 0 ? `　・CIR415A（BT）×${btQty}台：${yen(calc.btSubtotal)}` : null,
-      usbQty > 0 ? `　・CIR315A（USB）×${usbQty}台：${yen(calc.usbSubtotal)}` : null,
-      `伴走支援費（税込）：${yen(calc.accFeeIncl)}`,
+      `機器構成：${configFullLabel(btQty, usbQty, btExtra, usbExtra)}`,
+      btQty    > 0 ? `　・CIR415A（BT）補助対象 ×${btQty}台：${yen(calc.btSubtotal)}` : null,
+      usbQty   > 0 ? `　・CIR315A（USB）補助対象 ×${usbQty}台：${yen(calc.usbSubtotal)}` : null,
+      btExtra  > 0 ? `　・CIR415A（BT）補助対象外 ×${btExtra}台：${yen(calc.btExtraSubtotal)}` : null,
+      usbExtra > 0 ? `　・CIR315A（USB）補助対象外 ×${usbExtra}台：${yen(calc.usbExtraSubtotal)}` : null,
+      calc.subsidyTotal > 0 ? `伴走支援費（税込）：${yen(calc.accFeeIncl)}` : null,
       calc.discount > 0 ? `特別割引：−${yen(calc.discount)}` : null,
       `*合計（税込）：${yen(calc.totalIncl)}*`,
       `助成金充当：−${yen(calc.grantAmt)}`,
@@ -1103,12 +1164,14 @@
       return;
     }
     // Webhook通知はロック解除時に既に送信済み（updateLock内）
-    const clientName = document.getElementById('clientName').value.trim();
+    const corp   = document.getElementById('corpName').value.trim();
+    const office = document.getElementById('officeName').value.trim();
+    const nameForFile = [corp, office].filter(Boolean).join('_');
     const today = new Date();
     const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
     const orig = document.title;
-    document.title = clientName
-      ? `見積書_タダサポ＋_${clientName}_${dateStr}`
+    document.title = nameForFile
+      ? `見積書_タダサポ＋_${nameForFile}_${dateStr}`
       : `見積書_タダサポ＋_${dateStr}`;
     window.print();
     setTimeout(() => { document.title = orig; }, 1500);
@@ -1118,31 +1181,46 @@
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
   /* ──────── 金額計算（税込ベース・特別割引算出） ──────── */
-  function computeAmounts(planKey, btQty, usbQty) {
+  function computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra) {
     const plan = PLANS[planKey];
-    const totalQty = btQty + usbQty;
+    btExtra  = btExtra  || 0;
+    usbExtra = usbExtra || 0;
+    const subsidyTotal = btQty + usbQty;
+    const extraTotal   = btExtra + usbExtra;
 
-    // 機器小計（税込・定価）
+    // 補助対象パート（税込・定価）
     const btSubtotal  = BT_PRICE  * btQty;
     const usbSubtotal = USB_PRICE * usbQty;
-    const devIncl = btSubtotal + usbSubtotal;
+    const devSubsidyIncl = btSubtotal + usbSubtotal;
     // 伴走支援費（税込・補助対象台数別）
-    const accFeeIncl = ACCOMPANY_FEE[totalQty] || ACCOMPANY_FEE[plan.maxQty] || 0;
-    // 補助金対象パートの定価合計
-    const subtotal = devIncl + accFeeIncl;
+    const accFeeIncl = subsidyTotal > 0
+      ? (ACCOMPANY_FEE[subsidyTotal] || ACCOMPANY_FEE[plan.maxQty] || 0)
+      : 0;
+    // 補助対象パート 小計
+    const subsidyPartSubtotal = devSubsidyIncl + accFeeIncl;
     // 特別割引（補助金上限ぴったりに収めるための調整）
-    const discount = Math.max(0, subtotal - plan.limit);
-    // 請求合計（税込）
-    const totalIncl = subtotal - discount;
+    const discount = Math.max(0, subsidyPartSubtotal - plan.limit);
+    // 補助対象パート 請求額（= 補助金で全額カバー）
+    const subsidyPartTotal = subsidyPartSubtotal - discount;
     // 助成金充当
-    const grantAmt = Math.min(plan.limit, totalIncl);
-    // 自己負担
-    const selfPay = Math.max(0, totalIncl - grantAmt);
+    const grantAmt = Math.min(plan.limit, subsidyPartTotal);
+
+    // 補助対象外パート（税込・定価・そのまま自己負担）
+    const btExtraSubtotal  = BT_PRICE  * btExtra;
+    const usbExtraSubtotal = USB_PRICE * usbExtra;
+    const extraPartTotal   = btExtraSubtotal + usbExtraSubtotal;
+
+    // 全体合計（税込）
+    const totalIncl = subsidyPartTotal + extraPartTotal;
+    // 自己負担 = 補助対象パートの未充当分 + 補助対象外パート
+    const selfPay = Math.max(0, subsidyPartTotal - grantAmt) + extraPartTotal;
 
     return {
-      plan, btQty, usbQty, totalQty,
-      btSubtotal, usbSubtotal, devIncl, accFeeIncl,
-      subtotal, discount, totalIncl, grantAmt, selfPay,
+      plan, btQty, usbQty, btExtra, usbExtra, subsidyTotal, extraTotal,
+      btSubtotal, usbSubtotal, devSubsidyIncl, accFeeIncl,
+      subsidyPartSubtotal, discount, subsidyPartTotal,
+      btExtraSubtotal, usbExtraSubtotal, extraPartTotal,
+      totalIncl, grantAmt, selfPay,
     };
   }
 
@@ -1153,17 +1231,33 @@
     if (usbQty > 0) parts.push(`USB×${usbQty}`);
     return parts.join(' + ') || '（未選択）';
   }
+  function configFullLabel(btQty, usbQty, btExtra, usbExtra) {
+    const subsidy = configLabel(btQty, usbQty);
+    const extras = [];
+    if (btExtra > 0)  extras.push(`BT×${btExtra}`);
+    if (usbExtra > 0) extras.push(`USB×${usbExtra}`);
+    return extras.length
+      ? `補助対象 ${subsidy} ／ 補助対象外 ${extras.join(' + ')}`
+      : `補助対象 ${subsidy}`;
+  }
 
   /* ──────── メインレンダリング ──────── */
   function render() {
-    const planKey = document.querySelector('input[name="plan"]:checked').value;
-    const btQty   = parseInt(document.getElementById('btQty').value)  || 0;
-    const usbQty  = parseInt(document.getElementById('usbQty').value) || 0;
+    const planKey  = document.querySelector('input[name="plan"]:checked').value;
+    const btQty    = parseInt(document.getElementById('btQty').value)       || 0;
+    const usbQty   = parseInt(document.getElementById('usbQty').value)      || 0;
+    const btExtra  = parseInt(document.getElementById('btExtraQty').value)  || 0;
+    const usbExtra = parseInt(document.getElementById('usbExtraQty').value) || 0;
 
-    const clientName = document.getElementById('clientName').value.trim() || '（法人名・事業所名を入力）';
+    const corp   = (document.getElementById('corpName').value   || '').trim();
+    const office = (document.getElementById('officeName').value || '').trim();
+    let displayName = '（法人名・事業所名を入力）';
+    if (corp && office) displayName = `${corp}　${office}`;
+    else if (corp)      displayName = corp;
+    else if (office)    displayName = office;
 
     /* 宛先 */
-    document.getElementById('prevClient').textContent = clientName;
+    document.getElementById('prevClient').textContent = displayName;
     const contactName = (document.getElementById('contactName').value || '').trim();
     const contactTel  = (document.getElementById('contactTel').value || '').trim();
     const contactEmail= (document.getElementById('contactEmail').value || '').trim();
@@ -1177,12 +1271,12 @@
     if (tellinks.length) contactLines.push(tellinks.join(' ／ '));
     document.getElementById('prevContact').innerHTML = contactLines.join('<br>');
 
-    const c = computeAmounts(planKey, btQty, usbQty);
+    const c = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
 
     // accompanyNote 更新
     const note = document.getElementById('accompanyNote');
     if (note) {
-      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.totalQty}台構成時）— 導入設定・申請サポート・1年間サポート`;
+      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.subsidyTotal}台構成時）— 導入設定・申請サポート・1年間サポート`;
     }
 
     /* ── 明細テーブル ── */
@@ -1210,14 +1304,16 @@
       </tr>`;
     }
 
-    tbody.innerHTML += `<tr>
-      <td>伴走支援費（1年間）<span class="est-badge-free">補助金申請サポート含む</span>
-        <div class="est-sub-note">導入設定・マイナ資格確認アプリ設定・介護DX証明書設定・申請代行・1年間サポート</div>
-      </td>
-      <td>1式</td>
-      <td>${yen(c.accFeeIncl)}</td>
-      <td>${yen(c.accFeeIncl)}</td>
-    </tr>`;
+    if (c.subsidyTotal > 0) {
+      tbody.innerHTML += `<tr>
+        <td>伴走支援費（1年間）<span class="est-badge-free">補助金申請サポート含む</span>
+          <div class="est-sub-note">導入設定・マイナ資格確認アプリ設定・介護DX証明書設定・申請代行・1年間サポート</div>
+        </td>
+        <td>1式</td>
+        <td>${yen(c.accFeeIncl)}</td>
+        <td>${yen(c.accFeeIncl)}</td>
+      </tr>`;
+    }
 
     if (c.discount > 0) {
       tbody.innerHTML += `<tr style="color:#c02828;">
@@ -1230,6 +1326,28 @@
       </tr>`;
     }
 
+    // 補助対象外パート（自己負担で積算）
+    if (btExtra > 0) {
+      tbody.innerHTML += `<tr style="background:#fff8e1;">
+        <td>${BT_LABEL}
+          <div class="est-sub-note" style="color:#b27800;">補助対象外 ${btExtra}台（自己負担で追加）</div>
+        </td>
+        <td>${btExtra}台</td>
+        <td>${yen(BT_PRICE)}</td>
+        <td>${yen(c.btExtraSubtotal)}</td>
+      </tr>`;
+    }
+    if (usbExtra > 0) {
+      tbody.innerHTML += `<tr style="background:#fff8e1;">
+        <td>${USB_LABEL}
+          <div class="est-sub-note" style="color:#b27800;">補助対象外 ${usbExtra}台（自己負担で追加）</div>
+        </td>
+        <td>${usbExtra}台</td>
+        <td>${yen(USB_PRICE)}</td>
+        <td>${yen(c.usbExtraSubtotal)}</td>
+      </tr>`;
+    }
+
     /* ── 合計 ── */
     const today = new Date();
     const expiry = new Date(today);
@@ -1237,17 +1355,24 @@
 
     const zeroBadge = c.selfPay === 0 ? `<span class="badge-zero">自己負担 ¥0</span>` : '';
 
+    const extraRow = c.extraPartTotal > 0 ? `
+      <div class="est-total-row sub" style="color:#b27800;">
+        <span>補助対象外（自己負担）合計</span><span>${yen(c.extraPartTotal)}</span>
+      </div>` : '';
+
     document.getElementById('totalsArea').innerHTML = `
       <div class="est-total-row sub">
-        <span>機器小計（税込・定価）</span><span>${yen(c.devIncl)}</span>
+        <span>補助対象パート 機器小計（税込・定価）</span><span>${yen(c.devSubsidyIncl)}</span>
       </div>
+      ${c.subsidyTotal > 0 ? `
       <div class="est-total-row sub">
         <span>伴走支援費（税込）</span><span>${yen(c.accFeeIncl)}</span>
-      </div>
+      </div>` : ''}
       ${c.discount > 0 ? `
       <div class="est-total-row sub" style="color:#c02828;">
         <span>特別割引（出精値引き）</span><span>−${yen(c.discount)}</span>
       </div>` : ''}
+      ${extraRow}
       <div class="est-total-row grand">
         <span>合計（税込）</span><span>${yen(c.totalIncl)}</span>
       </div>
@@ -1262,13 +1387,17 @@
     `;
 
     /* ── 備考 ── */
+    const extraNote = c.extraPartTotal > 0
+      ? `<br>・補助対象外 ${c.extraTotal}台 分（${yen(c.extraPartTotal)}）は補助金の対象外のためお客様のご負担となります。`
+      : '';
+
     document.getElementById('notesArea').innerHTML = `
       <strong>備考・ご案内</strong><br>
-      ・カードリーダー構成：<strong>${configLabel(btQty, usbQty)}</strong>（合計 ${c.totalQty}台）<br>
+      ・カードリーダー構成：<strong>${configFullLabel(btQty, usbQty, btExtra, usbExtra)}</strong><br>
       ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
       ・本見積書の有効期限は<strong>${fmtDate(expiry)}</strong>までです。<br>
-      ・「特別割引（出精値引き）」は、合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
-      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。
+      ・「特別割引（出精値引き）」は、補助対象パートの合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
+      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。${extraNote}
     `;
   }
 </script>
