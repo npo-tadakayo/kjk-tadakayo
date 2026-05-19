@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>見積書作成 | タダサポ＋</title>
+  <title>見積書作成 | タダカヨの介護情報基盤伴走支援</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -570,7 +570,7 @@
     <div class="app-header-divider"></div>
     <span class="app-header-title">
       <i class="ti ti-file-invoice" style="font-size:16px;vertical-align:-2px;margin-right:4px;color:#E33535"></i>
-      タダサポ＋ お見積りご依頼フォーム
+      介護情報基盤伴走支援 お見積りご依頼フォーム
     </span>
   </div>
   <div class="app-header-actions">
@@ -738,7 +738,7 @@
           <input type="checkbox" id="consentCheck">
           <span>
             <strong>介護事業所さまへ：</strong>
-            私は介護事業所の関係者（職員・経営者・運営委託者など）であり、タダサポ＋の見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
+            私は介護事業所の関係者（職員・経営者・運営委託者など）であり、本サービスのお見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
             ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。<br>
             ※ チェックすると見積もり内容が表示され、タダカヨへ自動連絡されます。
           </span>
@@ -1125,7 +1125,7 @@
     const calc = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
 
     const text = [
-      '📩 *タダサポ＋ 新規見積もり成約通知*',
+      '📩 *タダカヨ 介護情報基盤伴走支援 新規見積もり成約通知*',
       `🕒 ${new Date().toLocaleString('ja-JP')}`,
       '',
       `*見積番号*：${estNo}`,
@@ -1171,8 +1171,8 @@
     const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
     const orig = document.title;
     document.title = nameForFile
-      ? `見積書_タダサポ＋_${nameForFile}_${dateStr}`
-      : `見積書_タダサポ＋_${dateStr}`;
+      ? `見積書_介護情報基盤伴走支援_${nameForFile}_${dateStr}`
+      : `見積書_介護情報基盤伴走支援_${dateStr}`;
     window.print();
     setTimeout(() => { document.title = orig; }, 1500);
   }
@@ -1286,7 +1286,7 @@
     if (btQty > 0) {
       tbody.innerHTML += `<tr>
         <td>${BT_LABEL}
-          <div class="est-sub-note">補助対象 ${btQty}台（タダサポ＋パック構成）</div>
+          <div class="est-sub-note">補助対象 ${btQty}台（伴走支援パック構成）</div>
         </td>
         <td>${btQty}台</td>
         <td>${yen(BT_PRICE)}</td>
@@ -1296,7 +1296,7 @@
     if (usbQty > 0) {
       tbody.innerHTML += `<tr>
         <td>${USB_LABEL}
-          <div class="est-sub-note">補助対象 ${usbQty}台（タダサポ＋パック構成）</div>
+          <div class="est-sub-note">補助対象 ${usbQty}台（伴走支援パック構成）</div>
         </td>
         <td>${usbQty}台</td>
         <td>${yen(USB_PRICE)}</td>
