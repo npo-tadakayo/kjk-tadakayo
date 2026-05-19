@@ -302,7 +302,91 @@
       display: flex;
       flex-direction: column;
       align-items: center;
+      position: relative;
     }
+
+    /* ── 入力前オーバーレイ（必須項目未入力時にプレビューを覆う） ── */
+    .preview-lock {
+      position: absolute;
+      inset: 0;
+      background: rgba(232, 232, 232, 0.92);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .preview-lock[hidden] { display: none; }
+    .preview-lock-icon {
+      font-size: 56px;
+      color: var(--primary);
+      margin-bottom: 14px;
+    }
+    .preview-lock-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #1a1a1a;
+    }
+    .preview-lock-body {
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.8;
+      max-width: 380px;
+    }
+    .preview-lock-checklist {
+      margin-top: 16px;
+      text-align: left;
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 340px;
+    }
+    .preview-lock-checklist li {
+      list-style: none;
+      padding: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .preview-lock-checklist li.done { color: var(--success); text-decoration: line-through; opacity: 0.7; }
+    .preview-lock-checklist li::before {
+      content: '○';
+      color: var(--primary);
+      font-weight: 700;
+    }
+    .preview-lock-checklist li.done::before {
+      content: '✓';
+      color: var(--success);
+    }
+
+    /* 同意チェックエリア */
+    .consent-box {
+      background: #FFF8E1;
+      border: 1.5px solid #E8B900;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 14px;
+    }
+    .consent-box label {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      line-height: 1.7;
+      color: #1a1a1a;
+    }
+    .consent-box input[type=checkbox] {
+      width: auto;
+      margin-top: 3px;
+      accent-color: var(--primary);
+      flex-shrink: 0;
+    }
+    .consent-box strong { color: var(--primary); }
 
     /* ── 見積書ドキュメント ── */
     .est-doc {
@@ -486,7 +570,7 @@
     <div class="app-header-divider"></div>
     <span class="app-header-title">
       <i class="ti ti-file-invoice" style="font-size:16px;vertical-align:-2px;margin-right:4px;color:#E33535"></i>
-      見積書作成
+      タダサポ＋ お見積りご依頼フォーム
     </span>
   </div>
   <div class="app-header-actions">
@@ -502,10 +586,10 @@
   <div class="form-panel" id="formPanel">
 
     <div class="form-sec">
-      <div class="form-sec-title">宛先情報（すべて必須）</div>
+      <div class="form-sec-title">事業所さま情報（*は必須）</div>
       <div class="form-group">
         <label class="form-label" for="clientName">法人名・事業所名<span class="req">*</span></label>
-        <input type="text" id="clientName" placeholder="例: 社会福祉法人〇〇 △△苑" required oninput="render()">
+        <input type="text" id="clientName" placeholder="例: 社会福祉法人〇〇 △△苑" required>
       </div>
       <div class="form-group">
         <label class="form-label" for="contactName">ご担当者名<span class="req">*</span></label>
@@ -520,13 +604,29 @@
         <input type="email" id="contactEmail" placeholder="例: info@example.jp" required autocomplete="email">
       </div>
       <div class="form-group">
-        <label class="form-label" for="contactAddress">住所</label>
+        <label class="form-label" for="contactAddress">住所（任意）</label>
         <input type="text" id="contactAddress" placeholder="例: 東京都〇〇区〇〇1-2-3" autocomplete="street-address">
       </div>
+      <div class="form-group">
+        <label class="form-label" for="contactWebsite">ホームページURL（任意）</label>
+        <input type="url" id="contactWebsite" placeholder="例: https://www.example.jp" autocomplete="url">
+      </div>
       <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:-4px;">
-        ※ 必須項目を入力するとPDFをダウンロードできます。<br>
-        ※ 入力情報はタダカヨへ自動連絡され、担当者からフォローのご連絡を差し上げる場合があります。
+        ※ 必須項目をすべて入力し、下記の同意にチェックすると見積もり内容が表示され、PDFをダウンロードできます。<br>
+        ※ ご入力いただいた内容は、NPO法人タダカヨへ自動連絡されます。
       </p>
+
+      <!-- 同意チェック -->
+      <div class="consent-box">
+        <label>
+          <input type="checkbox" id="consentCheck">
+          <span>
+            <strong>介護事業所さまへ：</strong>
+            私は介護事業所の関係者（職員・経営者・運営委託者など）であり、タダサポ＋の見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
+            ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。
+          </span>
+        </label>
+      </div>
     </div>
 
     <div class="form-sec">
@@ -636,6 +736,24 @@
 
   <!-- ======== プレビューパネル ======== -->
   <div class="preview-panel">
+
+    <!-- 入力前ロック画面（必須未入力時にプレビューを覆う） -->
+    <div class="preview-lock" id="previewLock">
+      <i class="ti ti-lock preview-lock-icon" aria-hidden="true"></i>
+      <div class="preview-lock-title">必要事項のご入力をお願いします</div>
+      <div class="preview-lock-body">
+        左のフォームに事業所さま情報をご入力いただき、<br>
+        同意にチェックを入れると、お見積もり内容がこちらに表示され、PDFをダウンロードいただけます。
+      </div>
+      <ul class="preview-lock-checklist" id="lockChecklist">
+        <li data-key="clientName">法人名・事業所名</li>
+        <li data-key="contactName">ご担当者名</li>
+        <li data-key="contactTel">電話番号</li>
+        <li data-key="contactEmail">メールアドレス</li>
+        <li data-key="consentCheck">同意（介護事業所関係者である旨）</li>
+      </ul>
+    </div>
+
     <div class="est-doc" id="estDoc">
 
       <!-- ヘッダー -->
@@ -727,15 +845,41 @@
     initRadios('planGroup',  'plan',   v => { syncPlanQty(v); syncAccompanyNote(); render(); });
     initRadios('readerGroup','reader', () => render());
     document.getElementById('subsidyQty').addEventListener('change', () => { syncAccompanyNote(); render(); });
-    ['contactName','contactTel','contactEmail','contactAddress'].forEach(id => {
-      document.getElementById(id).addEventListener('input', render);
+    ['clientName','contactName','contactTel','contactEmail','contactAddress','contactWebsite'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
     });
+    document.getElementById('consentCheck').addEventListener('change', updateLock);
+    document.getElementById('extraQty').addEventListener('input', () => { render(); });
     document.getElementById('prevEstNo').textContent = estNo;
     setDates();
     syncPlanQty('houmon');
     syncAccompanyNote();
     render();
+    updateLock();
   });
+
+  /* ──────── 必須項目＋同意のロック解除チェック ──────── */
+  function getLockState() {
+    const req = {
+      clientName:   !!(document.getElementById('clientName').value || '').trim(),
+      contactName:  !!(document.getElementById('contactName').value || '').trim(),
+      contactTel:   !!(document.getElementById('contactTel').value || '').trim(),
+      contactEmail: !!((document.getElementById('contactEmail').value || '').trim()) &&
+                    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((document.getElementById('contactEmail').value || '').trim()),
+      consentCheck: document.getElementById('consentCheck').checked,
+    };
+    const unlocked = Object.values(req).every(Boolean);
+    return { req, unlocked };
+  }
+  function updateLock() {
+    const { req, unlocked } = getLockState();
+    // チェックリストの状態更新
+    document.querySelectorAll('#lockChecklist li').forEach(li => {
+      const key = li.dataset.key;
+      li.classList.toggle('done', !!req[key]);
+    });
+    document.getElementById('previewLock').hidden = unlocked;
+  }
 
   /* ──────── ラジオ初期化 ──────── */
   function initRadios(groupId, name, onChange) {
@@ -815,10 +959,14 @@
     if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
       missing.push('メールアドレス（形式が正しくありません）');
     }
+    // 同意チェック
+    if (!document.getElementById('consentCheck').checked) {
+      missing.push('「介護事業所関係者である」同意チェック');
+    }
     const err = document.getElementById('formError');
     if (missing.length) {
       err.style.display = 'block';
-      err.innerHTML = '<i class="ti ti-alert-triangle"></i> 必須項目をご入力ください：<br>' + missing.join(' ／ ');
+      err.innerHTML = '<i class="ti ti-alert-triangle"></i> 以下にチェック／ご入力をお願いします：<br>' + missing.join(' ／ ');
       return false;
     }
     err.style.display = 'none';
@@ -850,6 +998,8 @@
     const contactTel  = document.getElementById('contactTel').value.trim();
     const contactEmail= document.getElementById('contactEmail').value.trim();
     const contactAddr = (document.getElementById('contactAddress').value || '').trim();
+    const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
+    const consented   = document.getElementById('consentCheck').checked;
     const subsidyQty  = parseInt(document.getElementById('subsidyQty').value) || 1;
     const extraQty    = Math.max(0, parseInt(document.getElementById('extraQty').value) || 0);
 
@@ -857,20 +1007,29 @@
 
     const text = [
       '📄 *タダサポ＋ 見積書ダウンロード通知*',
+      `🕒 ${new Date().toLocaleString('ja-JP')}`,
       '',
-      `見積番号：${estNo}`,
+      `*見積番号*：${estNo}`,
+      '',
+      '*【事業所さま情報】*',
       `事業所名：${clientName}`,
       `ご担当者：${contactName}`,
       `電話：${contactTel}`,
       `メール：${contactEmail}`,
       contactAddr ? `住所：${contactAddr}` : null,
+      contactWeb  ? `HP：${contactWeb}` : null,
+      `同意：${consented ? '✅ 介護事業所関係者として同意済み' : '❌'}`,
       '',
+      '*【見積もり内容】*',
       `事業所種別：${plan.label}（上限 ${yen(plan.limit)}）`,
-      `機器：${reader.label} × ${subsidyQty + extraQty}台（補助対象 ${subsidyQty}台${extraQty > 0 ? ` ／ 対象外 ${extraQty}台` : ''}）`,
-      `合計（税込）：${yen(calc.totalIncl)}`,
-      `特別割引：−${yen(calc.discount)}`,
+      `機器：${reader.label}`,
+      `台数：${subsidyQty + extraQty}台（補助対象 ${subsidyQty}台${extraQty > 0 ? ` ／ 対象外 ${extraQty}台` : ''}）`,
+      `機器小計（税込・定価）：${yen(calc.reader.unitPrice * (subsidyQty + extraQty))}`,
+      `伴走支援費（税込）：${yen(calc.accFeeIncl)}`,
+      calc.discount > 0 ? `特別割引：−${yen(calc.discount)}` : null,
+      `*合計（税込）：${yen(calc.totalIncl)}*`,
       `助成金充当：−${yen(calc.grantAmt)}`,
-      `自己負担：${yen(calc.selfPay)}${calc.selfPay === 0 ? '（自己負担¥0達成）' : ''}`,
+      `*自己負担：${yen(calc.selfPay)}*${calc.selfPay === 0 ? '（自己負担¥0達成）' : ''}`,
     ].filter(Boolean).join('\n');
 
     return { text };
