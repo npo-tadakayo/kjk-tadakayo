@@ -1958,9 +1958,49 @@
         : '';
     }, { passive: true });
 
-    // Form: AJAX submit via Formspree
+    // Form: AJAX submit via Formspree + Google Chat Webhook 並行通知
     const form = document.getElementById('contact-form');
     const success = document.getElementById('form-success');
+
+    // Google Chat Webhook（タダサポ＋ お問い合わせ通知用）
+    const CONTACT_WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQAkcdopcA/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=tYNefDlxe-fhdm-2yORV-tayo_u-iylTTd6eo_LE_u4';
+
+    async function notifyContactWebhook(data) {
+      const orgName    = data.get('事業所名') || '';
+      const personName = data.get('担当者名') || '';
+      const phone      = data.get('電話番号') || '';
+      const email      = data.get('email')   || '';
+      const serviceType= data.get('サービス種別') || '';
+      const message    = data.get('ご相談内容') || '';
+
+      const lines = [
+        '📞 *タダサポ＋ お問い合わせ受信*',
+        `🕒 ${new Date().toLocaleString('ja-JP')}`,
+        '',
+        '*【お問い合わせ内容】*',
+        `事業所名：${orgName}`,
+        `ご担当者：${personName}`,
+        phone ? `電話：${phone}` : null,
+        `メール：${email}`,
+        serviceType ? `サービス種別：${serviceType}` : null,
+      ];
+      if (message) {
+        lines.push('', '*【ご相談内容】*', message);
+      }
+      const text = lines.filter(l => l !== null).join('\n');
+
+      try {
+        await fetch(CONTACT_WEBHOOK_URL, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+          body: JSON.stringify({ text }),
+        });
+      } catch (e) {
+        // Webhook失敗してもFormspreeメール送信があるので致命的ではない
+        console.warn('Webhook送信に失敗しました', e);
+      }
+    }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1995,11 +2035,16 @@
       submitBtn.textContent = '送信中...';
 
       try {
-        const res = await fetch(form.action, {
+        // Formspreeへのメール送信 と Google Chat Webhook通知 を並行実行
+        const formspreePromise = fetch(form.action, {
           method: 'POST',
           body: data,
           headers: { 'Accept': 'application/json' }
         });
+        const webhookPromise = notifyContactWebhook(data);
+
+        const [res] = await Promise.all([formspreePromise, webhookPromise]);
+
         if (res.ok) {
           form.style.display = 'none';
           success.style.display = 'block';
