@@ -312,6 +312,33 @@
     }
     .hero-title-accent {
       color: var(--color-primary);
+      white-space: nowrap;
+    }
+    /* 「タダサポ＋」シリーズ識別チップ（共通スタイル） */
+    .tdkplus-chip {
+      display: inline-block;
+      padding: 5px 14px;
+      background: var(--color-primary);
+      color: #fff;
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      vertical-align: middle;
+      line-height: 1.4;
+    }
+    .tdkplus-chip.sm {
+      padding: 3px 10px;
+      font-size: 12px;
+    }
+    .tdkplus-chip.with-icon::before {
+      content: '✦';
+      margin-right: 6px;
+      opacity: 0.85;
+    }
+    .show-mobile-only { display: none; }
+    @media (max-width: 600px) {
+      .show-mobile-only { display: inline; }
     }
     .hero-price-note {
       font-size: 14px; color: var(--color-text-muted);
@@ -901,17 +928,15 @@
     <div class="container">
       <div class="hero-inner">
         <div class="hero-content">
-          <div class="hero-eyebrow">
-            <i class="ti ti-sparkles" aria-hidden="true"></i>
-            NPO法人タダカヨのサポートサービス
+          <div style="margin-bottom:20px;">
+            <span class="tdkplus-chip with-icon">タダサポ＋</span>
           </div>
           <h1 class="hero-title" id="hero-heading">
-            タダカヨの<br>
+            NPO法人タダカヨの<br>
             <span class="hero-title-accent">介護情報基盤伴走支援。</span>
           </h1>
           <p class="hero-price-note">
             助成金活用で自己負担¥0
-            <span style="display:inline-block;margin-left:8px;padding:2px 8px;background:var(--color-primary-light);color:var(--color-primary);border-radius:100px;font-size:11px;font-weight:700;vertical-align:middle;">タダサポ＋ シリーズ</span>
           </p>
           <p class="hero-sub">
             NPO法人タダカヨが、介護情報基盤への対応をまるごと伴走。<br>
@@ -1370,9 +1395,12 @@
     <div class="container">
       <div class="text-center">
         <span class="section-label">タダカヨのサポートサービス</span>
+        <div style="margin-bottom:8px;">
+          <span class="tdkplus-chip with-icon">タダサポ＋</span>
+        </div>
         <h2 class="section-title" id="plan-heading">
-          タダカヨの介護情報基盤伴走支援
-          <span style="display:inline-block;margin-left:8px;padding:3px 10px;background:var(--color-primary-light);color:var(--color-primary);border-radius:100px;font-size:12px;font-weight:700;vertical-align:middle;">タダサポ＋ シリーズ</span>
+          NPO法人タダカヨの<br class="show-mobile-only">
+          <span style="white-space:nowrap;">介護情報基盤伴走支援</span>
         </h2>
         <p class="section-desc center">
           助成金の対象経費（①カードリーダー代＋②サポート費）を1パッケージに。
@@ -1556,7 +1584,9 @@
   <section class="strengths-section section" aria-labelledby="strengths-heading">
     <div class="container">
       <div class="text-center">
-        <span class="section-label">タダカヨのサポートだから</span>
+        <div style="margin-bottom:8px;">
+          <span class="tdkplus-chip with-icon sm">タダサポ＋</span>
+        </div>
         <h2 class="section-title" id="strengths-heading">タダカヨの伴走支援が選ばれる理由</h2>
         <p class="section-desc center">
           「タダでカイゴをヨクしよう」を掲げるNPO法人タダカヨだから、
@@ -1828,7 +1858,9 @@
   <section id="contact" class="contact-section section" aria-labelledby="contact-heading">
     <div class="container">
       <div class="text-center">
-        <span class="section-label">無料相談</span>
+        <div style="margin-bottom:8px;">
+          <span class="tdkplus-chip with-icon sm">タダサポ＋</span>
+        </div>
         <h2 class="section-title" id="contact-heading">介護情報基盤伴走支援を相談する</h2>
         <p class="section-desc center">
           「うちの事業所は何台必要？」「本当に自己負担¥0になる？」<br>
