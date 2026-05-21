@@ -629,21 +629,21 @@
           <input type="radio" name="plan" value="houmon" checked>
           <div>
             <div class="card-name">訪問・通所・短期滞在系</div>
-            <div class="card-desc">助成金上限 ¥64,000 ／ 最大3台</div>
+            <div class="card-desc">訪問介護・通所介護・<strong>居宅介護支援</strong>・短期滞在 等<br>助成金上限 ¥64,000 ／ 最大3台</div>
           </div>
         </label>
         <label class="radio-card" data-val="kyojyu">
           <input type="radio" name="plan" value="kyojyu">
           <div>
             <div class="card-name">居住・入所系</div>
-            <div class="card-desc">助成金上限 ¥55,000 ／ 最大2台</div>
+            <div class="card-desc">グループホーム・特養 等<br>助成金上限 ¥55,000 ／ 最大2台</div>
           </div>
         </label>
         <label class="radio-card" data-val="other">
           <input type="radio" name="plan" value="other">
           <div>
-            <div class="card-name">その他（居宅介護支援等）</div>
-            <div class="card-desc">助成金上限 ¥42,000 ／ 最大1台</div>
+            <div class="card-name">その他</div>
+            <div class="card-desc">上記いずれにも該当しないサービス<br>助成金上限 ¥42,000 ／ 最大1台</div>
           </div>
         </label>
       </div>
@@ -690,7 +690,7 @@
       <!-- USB -->
       <div class="form-group">
         <label class="form-label">
-          <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥5,000/台 税込</span>
+          <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥6,500/台 税込</span>
         </label>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
           <div>
@@ -873,14 +873,14 @@
 <script>
   /* ──────── 定数（すべて税込価格） ──────── */
   const PLANS = {
-    houmon: { label: '訪問・通所・短期滞在系', maxQty: 3, limit: 64000 },
-    kyojyu: { label: '居住・入所系',           maxQty: 2, limit: 55000 },
-    other:  { label: 'その他',                 maxQty: 1, limit: 42000 },
+    houmon: { label: '訪問・通所・短期滞在系（居宅介護支援を含む）', maxQty: 3, limit: 64000 },
+    kyojyu: { label: '居住・入所系',                                  maxQty: 2, limit: 55000 },
+    other:  { label: 'その他',                                        maxQty: 1, limit: 42000 },
   };
   const BT_LABEL  = 'AB Circle CIR415A カードリーダー（Bluetooth）';
   const USB_LABEL = 'AB Circle CIR315A カードリーダー（USB-A/C）';
   const BT_PRICE  = 14500;  // 税込
-  const USB_PRICE = 5000;   // 税込
+  const USB_PRICE = 6500;   // 税込
   // 伴走支援費（税込・補助対象台数別）
   const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
 
