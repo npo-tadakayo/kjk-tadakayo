@@ -507,10 +507,22 @@
     .product-model { font-size: 12px; color: var(--color-text-muted); margin-bottom: 8px; font-family: monospace; }
     .product-name { font-size: 22px; font-weight: 900; margin-bottom: 16px; }
     .product-price {
-      font-size: 32px; font-weight: 900; color: var(--color-primary);
-      margin-bottom: 4px; line-height: 1;
+      font-size: 26px; font-weight: 900; color: var(--color-text); /* メーカー公式販売店価格 */
+      margin-bottom: 2px; line-height: 1.1;
     }
+    .product-price .product-price-unit { font-size: 13px; font-weight: 700; color: var(--color-text-muted); margin-left: 4px; }
+    .product-price-label { font-size: 11px; color: var(--color-text-muted); margin-bottom: 4px; letter-spacing: 0.05em; }
     .product-price-note { font-size: 12px; color: var(--color-text-muted); margin-bottom: 24px; }
+    .product-pack-price {
+      background: var(--color-primary-light);
+      color: var(--color-primary);
+      font-size: 13px;
+      font-weight: 700;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin: 8px 0 18px 0;
+      display: inline-block;
+    }
     .product-features { list-style: none; }
     .product-features li {
       display: flex; align-items: flex-start; gap: 8px;
@@ -1347,8 +1359,9 @@
           <span style="display:inline-block;background:var(--color-success);color:#fff;font-size:11px;font-weight:700;padding:3px 12px;border-radius:100px;margin-bottom:10px;">マイナ資格確認アプリ向け 唯一の認定モデル</span>
           <p class="product-model">AB Circle CIR415A</p>
           <h3 class="product-name">Bluetooth + USB Type-C 接続モデル</h3>
-          <div class="product-price">¥14,500<span class="product-price-unit">/台（税込）</span></div>
-          <p class="product-price-note">本サービスでは特別割引で助成上限内に</p>
+          <p class="product-price-label">メーカー公式販売店価格</p>
+          <div class="product-price">¥17,380<span class="product-price-unit">/台（税込）</span></div>
+          <p class="product-pack-price">本サービスでは特別価格にてご提供 → 助成上限内に</p>
           <ul class="product-features">
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
@@ -1380,8 +1393,9 @@
           </div>
           <p class="product-model">AB Circle CIR315A</p>
           <h3 class="product-name">USB接続モデル（Type-A / Type-C）</h3>
-          <div class="product-price">¥6,500<span class="product-price-unit">/台（税込）</span></div>
-          <p class="product-price-note">本サービスでは特別割引で助成上限内に</p>
+          <p class="product-price-label">メーカー公式販売店価格</p>
+          <div class="product-price">¥7,150<span class="product-price-unit">/台（税込）</span></div>
+          <p class="product-pack-price">本サービスでは特別価格にてご提供 → 助成上限内に</p>
           <ul class="product-features">
             <li>
               <i class="ti ti-check" aria-hidden="true"></i>
@@ -1457,10 +1471,13 @@
               <i class="ti ti-bluetooth plan-item-icon" aria-hidden="true"></i>
               <div>
                 <div class="plan-item-label">AB Circle CIR415A（Bluetooth）× 3台</div>
-                <div class="plan-item-sub">¥14,500 × 3台（助成対象① カードリーダー購入経費）</div>
+                <div class="plan-item-sub">本サービス特別価格 × 3台（助成対象① カードリーダー購入経費）<br><span style="font-size:11px;color:var(--color-text-muted);">※ メーカー公式販売店価格 ¥17,380/台 のところを、本サービスでは特別価格でご提供</span></div>
               </div>
             </div>
-            <div class="plan-item-price">¥43,500</div>
+            <div class="plan-item-price">
+              <div>¥43,500</div>
+              <div style="font-size:10px;font-weight:400;color:var(--color-text-muted);margin-top:2px;">本サービス特別価格 / 3台合計</div>
+            </div>
           </div>
           <div class="plan-item">
             <div class="plan-item-left">
