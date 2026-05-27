@@ -488,17 +488,49 @@ erDiagram
 
 ## 8. 技術スタック・アーキテクチャ
 
+### URL設計（確定）
+
+| URL | 公開範囲 | 用途 |
+|---|---|---|
+| `kjk.tadakayo.jp` | **全員**（一般公開） | LP・補助金説明 |
+| `kjk.tadakayo.jp/mitsumori.html` | **全員**（一般公開） | 見積もりツール |
+| `admin.kjk.tadakayo.jp` | **@tadakayo.jpのみ** | CRM管理画面 |
+
+### アクセス制御の構造（二重防御）
+
+```
+【一般ユーザー】
+インターネット → kjk.tadakayo.jp（Firebase Hosting）
+                  LP・見積もりツール → 誰でもアクセス可
+
+【タダカヨスタッフ】
+インターネット → Cloudflare Access（第1層：ネットワーク防御）
+                  @tadakayo.jp でないと遮断・DDoS/ボット防御
+              → admin.kjk.tadakayo.jp（Firebase Hosting）
+              → Firebase Auth（第2層：アプリ防御）
+                  @tadakayo.jp のGoogle認証
+              → CRM管理画面
+```
+
+### アーキテクチャ図
+
 ```mermaid
 flowchart LR
-    LP[LP問い合わせフォーム] -->|Webhook| CF1[Cloud Functions: webhook]
-    M[見積もりツール] -->|Webhook| CF1
-    CF1 --> FS[(Firestore)]
-    FS <--> ADMIN[/admin 管理画面]
-    ADMIN <--> AUTH[Firebase Auth]
+    PUB[一般ユーザー] --> LP[kjk.tadakayo.jp\nLP・見積もりツール]
+    LP -->|Formspree| EMAIL[メール通知]
+    LP -->|Webhook| CF1[Cloud Functions: webhook]
+
+    STAFF[スタッフ @tadakayo.jp] --> CFA[Cloudflare Access\n第1層: ネットワーク防御]
+    CFA -->|@tadakayo.jp のみ通過| ADMIN[admin.kjk.tadakayo.jp\nCRM管理画面]
+    ADMIN <--> AUTH[Firebase Auth\n第2層: アプリ防御]
+    ADMIN <--> FS[(Firestore)]
     ADMIN --> CF2[Cloud Functions: Gmail送信]
     CF2 --> GMAIL[Gmail API]
-    ADMIN --> CS[Cloud Storage 写真/PDF]
+    ADMIN --> CS[Cloud Storage\n写真/PDF]
+
+    CF1 --> FS
     CF1 --> CHAT[Google Chat Webhook]
+
     SCH[Cloud Scheduler] -->|定期実行| CF3[Cloud Functions: スケジュール]
     CF3 --> FS
     CF3 --> GMAIL
@@ -507,30 +539,56 @@ flowchart LR
     style FS fill:#e8f5ec
     style ADMIN fill:#e5edf5
     style CS fill:#fef3e6
+    style CFA fill:#fff3cd
 ```
 
-| 層 | 技術 |
-|---|---|
-| ホスティング | Firebase Hosting（既存 kjk-tadakayo プロジェクト） |
-| 管理画面 | `/admin/` 配下に追加・Vanilla JS + Firebase SDK v10 CDN |
-| データベース | Cloud Firestore |
-| バックエンドAPI | Cloud Functions for Firebase (Node.js 20) |
-| ファイル保管 | Cloud Storage for Firebase |
-| 認証 | Firebase Authentication (Google) |
-| 定期実行 | Cloud Scheduler + Pub/Sub |
-| メール送信 | Gmail API（OAuth・タダカヨアカウントから送信） |
-| PDF生成 | Cloud Functions + Puppeteer or marked |
-| スタッフ通知 | Google Chat Webhook（既存スペース AAQAkcdopcA 拡張） |
+### 技術スタック
+
+| 層 | 技術 | 備考 |
+|---|---|---|
+| ネットワーク防御（第1層） | **Cloudflare Access**（Zero Trust） | @tadakayo.jp のみ通過・無料50名まで |
+| ホスティング（LP） | Firebase Hosting（既存 kjk-tadakayo） | 一般公開 |
+| ホスティング（管理画面） | Firebase Hosting（サブドメイン） | `admin.kjk.tadakayo.jp` |
+| フロントエンド | Vanilla JS + Firebase SDK v10 CDN | |
+| アプリ認証（第2層） | **Firebase Authentication (Google)** | @tadakayo.jp ドメイン制限 |
+| データベース | Cloud Firestore | |
+| バックエンドAPI | Cloud Functions for Firebase (Node.js 20) | |
+| ファイル保管 | Cloud Storage for Firebase | |
+| 定期実行 | Cloud Scheduler + Pub/Sub | |
+| メール送信 | Gmail API（OAuth・タダカヨアカウントから送信） | |
+| PDF生成 | Cloud Functions + marked | |
+| スタッフ通知 | Google Chat Webhook（既存スペース AAQAkcdopcA 拡張） | |
+
+### 月額コスト（20名・日5件）
+
+| サービス | 無料枠 | 月額 |
+|---|---|---|
+| Cloudflare Access | 50名まで無料 | **¥0** |
+| Firebase Hosting | 10GB / 360MB/日 | **¥0** |
+| Cloud Firestore | 50,000読取/日・20,000書込/日 | **¥0** |
+| Cloud Functions | 125,000回/月 | **¥0** |
+| Cloud Storage | 5GB | **¥0** |
+| Firebase Auth | 無制限 | **¥0** |
+| **合計** | | **¥0** |
 
 ---
 
 ## 9. セキュリティ・コンプライアンス
 
-### 9-1. 認証
+### 9-1. アクセス制御（二重防御）
 
+**第1層：Cloudflare Access（ネットワーク層）**
+- `admin.kjk.tadakayo.jp` へのアクセスをCloudflareで制御
+- @tadakayo.jp のGoogleアカウントでログインした人のみ通過
+- ページHTMLすら攻撃者に届かない
+- DDoS・ボット・スキャンをCloudflareが自動遮断
+- 設定：Cloudflare Zero Trust ダッシュボード → Access → Applications
+
+**第2層：Firebase Authentication（アプリ層）**
 - Firebase Authentication（Google プロバイダ）
 - メールドメイン制限: `@tadakayo.jp` のみ許可
 - セッション期限: 24時間
+- Cloudflare突破後の最終防衛線
 
 ### 9-2. Firestore セキュリティルール
 
@@ -595,10 +653,32 @@ service firebase.storage {
 
 ## 10. Phase 別実装計画
 
+### Phase 0: インフラ準備（次セッション最初に実施・30分）
+
+CRM実装前に必ず完了させる前提作業。
+
+#### Step 1: Cloudflare Access 設定（次田さん作業・15分）
+1. [Cloudflare](https://dash.cloudflare.com/) にログイン（アカウントがなければ無料登録）
+2. `tadakayo.jp` ドメインをCloudflareに追加（DNS管理をCloudflareに移管）
+3. Zero Trust → Access → Applications → 「Add an application」
+4. 設定内容：
+   - Application name: `タダカヨ CRM`
+   - Application domain: `admin.kjk.tadakayo.jp`
+   - Policy: `@tadakayo.jp` のGoogleアカウントのみ許可
+5. DNSに `admin.kjk.tadakayo.jp` の CNAME レコードを追加（Firebase Hosting向け）
+
+#### Step 2: Firebase Hosting サブドメイン設定（Claude作業・15分）
+1. `firebase.json` に `admin` ターゲットを追加
+2. Firebase Console でカスタムドメイン `admin.kjk.tadakayo.jp` を登録
+3. SSL証明書の自動発行確認
+
+> ⚠️ **現在の `kjk.tadakayo.jp` のDNS管理先を確認してから着手すること**
+> DNS管理先によってCloudflare移管の手順が異なる
+
 ### Phase 1: MVP — 受信＋案件管理＋書類チェック＋申請追跡（1日）
 
 含めるもの：
-- `/admin` ルート作成、Firebase Auth (Google・@tadakayo.jp限定)
+- `admin.kjk.tadakayo.jp` ルート作成、Firebase Auth (Google・@tadakayo.jp限定)
 - Firestore セキュリティルール
 - Cloud Functions: LP/見積もりツールWebhook受信 → Firestore保存
 - 案件一覧ページ（テーブル形式）

@@ -8,7 +8,16 @@
 ## 現在の状態
 
 LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html）は本番稼働中。
-**CRM（案件管理＋サプライチェーン）の詳細仕様書を CRM_DESIGN.md（v0.2）として確定済。**実装はPhase 1から段階的に着手予定。
+**CRM設計確定済（CRM_DESIGN.md）。次セッションでPhase 0（Cloudflare Access設定）から実装開始予定。**
+
+### 次セッションの最優先タスク（Phase 0）
+
+1. **次田さん作業（事前）**: `kjk.tadakayo.jp` の現在のDNS管理先を確認する
+2. **次田さん作業**: Cloudflare にアカウント登録 → `tadakayo.jp` を追加 → Zero Trust → Access でポリシー設定（@tadakayo.jp のみ）
+3. **Claude作業**: `firebase.json` に `admin` サブドメインターゲット追加・Firebase Console でカスタムドメイン設定
+4. **Claude作業**: Phase 1（案件一覧・詳細・Webhook受信）の実装
+
+> ⚠️ Phase 0 の Cloudflare 設定は次田さんのブラウザ操作が必要。セッション開始時に「Cloudflare設定できてますか？」と確認してから着手する。
 
 LP・見積もりツール最新状態：
 - **令和8年度 申請期間: 2026年5月7日〜2027年3月12日（予定）** ← 2026-05-27更新
@@ -34,6 +43,7 @@ LP・見積もりツール最新状態：
 | 認定事業所向け発注仕様書 | 商品マスタ・発注CSV/JSON仕様・フロー図を作成（MD+PDF+CSVテンプレート） | ✅ |
 | 商品マスタ訂正 | USB品番がCIR315A-02（Type-A）とCIR315A-04（Type-C）の2種類と判明・修正 | ✅ |
 | AB Circle 確認依頼文 | JANコード確認項目を追加・野田様へメール送信済（2026-05-27） | ✅ |
+| CRM設計更新 | Cloudflare Access + Firebase Auth 二重防御構成に設計変更・Phase 0を追加 | ✅ |
 
 ## 今セッションでやったこと（2026-05-22）
 
