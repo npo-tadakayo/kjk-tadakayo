@@ -8,17 +8,20 @@
 ## 現在の状態
 
 LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html）は本番稼働中。
-**CRM設計確定済（CRM_DESIGN.md）。次セッションでPhase 0（Cloudflare Access設定）から実装開始予定。**
+**CRM設計確定済（CRM_DESIGN.md）。次セッション開始前に次田さんのCloudflare設定（Phase 0事前作業）が必要。**
 
-### 次セッションの最優先タスク（Phase 0）
+### ⛔ 次セッション開始前に次田さんの作業が必要
 
-1. **次田さん作業（事前）**: `kjk.tadakayo.jp` の現在のDNS管理先を確認する
-2. **次田さん作業**: Cloudflare にアカウント登録 → `tadakayo.jp` を追加 → Zero Trust → Access でポリシー設定（@tadakayo.jp のみ）
-3. **Claude作業**: `firebase.json` に `admin` サブドメインターゲット追加・Firebase Console でカスタムドメイン設定
-4. **Claude作業**: Phase 1（案件一覧・詳細・Webhook受信）の実装
+| ステップ | 内容 | 場所 |
+|---|---|---|
+| 1 | Cloudflareアカウント作成 | [cloudflare.com](https://cloudflare.com) |
+| 2 | `tadakayo.jp` をCloudflareに追加 | Cloudflare Dashboard |
+| 3 | お名前.comのネームサーバーをCloudflareのものに変更 | お名前.com管理画面 |
+| 4 | Zero Trust → Access → Applications で `admin.kjk.tadakayo.jp` を追加・@tadakayo.jp のみ許可 | Cloudflare Zero Trust |
 
-> ⚠️ Phase 0 の Cloudflare 設定は次田さんのブラウザ操作が必要。セッション開始時に「Cloudflare設定できてますか？」と確認してから着手する。
+> ⚠️ ネームサーバー変更は反映に最大48時間かかる場合あり。早めに実施推奨。
 > 📌 **DNS管理先: お名前.com**（確認済み・2026-05-27）
+> 📌 **Cloudflare Accessは無料（最大50ユーザー）**
 
 LP・見積もりツール最新状態：
 - **令和8年度 申請期間: 2026年5月7日〜2027年3月12日（予定）** ← 2026-05-27更新
@@ -31,19 +34,13 @@ LP・見積もりツール最新状態：
 
 ---
 
-## 今セッションでやったこと（2026-05-27 追記）
+## 今セッションでやったこと（2026-05-27 全体まとめ）
 
 | 領域 | 内容 | 状態 |
 |---|---|---|
 | 技術仕様書 | `TECHNICAL_SPEC.md` 新規作成（セキュリティ・Pマーク・コスト・委託先一覧） | ✅ |
 | 工数試算書 | `工数試算書.md` 新規作成（フェーズ別・外部委託費用・Claude Code内製比較） | ✅ |
-| PDF出力 | デスクトップに `タダカヨ_システム技術仕様・工数試算書_2026-05-27.pdf` 生成 | ✅ |
-| 社内共有 | システム管理メンバーへ共有済み（次田さん実施） | ✅ |
-
-## 今セッションでやったこと（2026-05-27）
-
-| 領域 | 内容 | 状態 |
-|---|---|---|
+| PDF出力 | デスクトップに `タダカヨ_システム技術仕様・工数試算書_2026-05-27.pdf` 生成・社内共有済 | ✅ |
 | 申請期間修正 | 令和7年度→令和8年度（5/7〜令和9年3/12）に更新・公式ポータルで裏付け確認済 | ✅ |
 | 新要綱PDF取得 | r8_jyoseikin_youkou_01.pdf をプロジェクトフォルダに保存 | ✅ |
 | LP修正 | 「本日」→「令和8年度 助成金申請受付中」に変更 | ✅ |
