@@ -1,4 +1,4 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-05-26
+# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-05-27
 
 > handoff-id: tadakayo
 > サービス名（最新）: **タダカヨの介護情報基盤伴走支援**（サブ：タダサポ＋ シリーズ）
@@ -11,6 +11,8 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 **CRM（案件管理＋サプライチェーン）の詳細仕様書を CRM_DESIGN.md（v0.2）として確定済。**実装はPhase 1から段階的に着手予定。
 
 LP・見積もりツール最新状態：
+- **令和8年度 申請期間: 2026年5月7日〜2027年3月12日（予定）** ← 2026-05-27更新
+- 助成対象: 令和8年4月1日以降に実施した導入に係る経費
 - USB価格 ¥6,500 改定済
 - カードリーダー価格は「メーカー公式販売店価格」表記に変更（CIR415A ¥17,380 / CIR315A ¥7,150）
 - 補助金区分（居宅介護支援は¥64,000区分）を公式要項に基づき正しい配置に修正
@@ -18,6 +20,17 @@ LP・見積もりツール最新状態：
 - 「分類に注意するサービス」（居宅介護支援/居宅療養管理指導/地域密着型通所介護）をハイライト
 
 ---
+
+## 今セッションでやったこと（2026-05-27）
+
+| 領域 | 内容 | 状態 |
+|---|---|---|
+| 申請期間修正 | 令和7年度→令和8年度（5/7〜令和9年3/12）に更新・公式ポータルで裏付け確認済 | ✅ |
+| 新要綱PDF取得 | r8_jyoseikin_youkou_01.pdf をプロジェクトフォルダに保存 | ✅ |
+| LP修正 | 「本日」→「令和8年度 助成金申請受付中」に変更 | ✅ |
+| 料金MD更新 | 申請期間を令和8年度版に明記 | ✅ |
+| デプロイ | Firebase Hosting + git push | ✅ |
+| CRM状況確認 | admin/フォルダなし・CRM_DESIGN.mdのみ・未実装 | 確認 |
 
 ## 今セッションでやったこと（2026-05-22）
 
@@ -188,7 +201,9 @@ node md2pdf.mjs "<src.md>" "<dst.pdf>" "<title>"
 - スペース AAQAkcdopcA 共通
 
 ### 補助金要項の正本URL
-- 交付要綱PDF: https://www.kaigo-kiban-portal.jp/assets/pdf/jyoseikin_youkou_01.pdf
+- 交付要綱PDF（令和8年度・最新）: https://www.kaigo-kiban-portal.jp/assets/pdf/r8_jyoseikin_youkou_01.pdf
+- 旧要綱PDF（令和7年度・参考）: https://www.kaigo-kiban-portal.jp/assets/pdf/jyoseikin_youkou_01.pdf
+- 申請受付確認お知らせ: https://www.kaigo-kiban-portal.jp/notice/detail/ulruesqstm89985zz5mho283
 - ポータル: https://www.kaigo-kiban-portal.jp/
 
 ---
