@@ -1,6 +1,6 @@
 # Gmail MCP セットアップ手順（Claude Code 用）
 
-> 目的: y.tsukuda@tadakayo.jp の Gmail を Claude Code から読み書きできるようにする
+> 目的: yoshinao-tsukuda@tadakayo.jp の Gmail を Claude Code から読み書きできるようにする
 > 推奨パッケージ: [@gongrzhe/server-gmail-autoauth-mcp](https://github.com/GongRzhe/Gmail-MCP-Server)
 > 作成: 2026-05-26
 
@@ -20,7 +20,7 @@
 
 ```
 1. https://console.cloud.google.com/ にアクセス
-   ※ y.tsukuda@tadakayo.jp でログイン
+   ※ yoshinao-tsukuda@tadakayo.jp でログイン
 
 2. プロジェクトを選択 or 新規作成
    既存: kjk-tadakayo
@@ -33,13 +33,13 @@
    - User Type: 内部（@tadakayo.jp の Google Workspace ユーザーのみ）
      ※ 外部にすると審査が必要
    - アプリ名: タダカヨ Gmail MCP
-   - サポートメール: y.tsukuda@tadakayo.jp
+   - サポートメール: yoshinao-tsukuda@tadakayo.jp
    - スコープ: 以下を追加
      * https://www.googleapis.com/auth/gmail.send（送信）
      * https://www.googleapis.com/auth/gmail.compose（下書き）
      * https://www.googleapis.com/auth/gmail.modify（既読・ラベル）
      * https://www.googleapis.com/auth/gmail.readonly（読み取り）
-   - テストユーザー（必要なら）: y.tsukuda@tadakayo.jp
+   - テストユーザー（必要なら）: yoshinao-tsukuda@tadakayo.jp
 
 5. 「APIとサービス」→「認証情報」→「認証情報を作成」
    →「OAuth 2.0 クライアントID」
@@ -67,7 +67,7 @@ npm install -g @gongrzhe/server-gmail-autoauth-mcp
 npx @gongrzhe/server-gmail-autoauth-mcp auth
 ```
 
-- ブラウザが開く → y.tsukuda@tadakayo.jp でログイン
+- ブラウザが開く → yoshinao-tsukuda@tadakayo.jp でログイン
 - 警告が出たら「詳細」→「移動」→ 許可
 - 認証成功 → ターミナルに完了メッセージ
 
