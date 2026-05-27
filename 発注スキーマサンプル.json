@@ -1,0 +1,37 @@
+{
+  "partner_id": "PARTNER-001",
+  "partner_order_no": "JO-2026-001",
+  "order_date": "2026-05-27",
+  "contact": {
+    "name": "山田 花子",
+    "phone": "03-1234-5678",
+    "email": "yamada@example.com"
+  },
+  "items": [
+    {
+      "sku": "cir415a-01",
+      "product_name": "介護情報基盤 汎用カードリーダ CIR415A（Bluetooth）",
+      "qty": 2
+    },
+    {
+      "sku": "cir315a-01",
+      "product_name": "介護情報基盤 汎用カードリーダ CIR315A（USB）",
+      "qty": 1
+    }
+  ],
+  "desired_delivery_date": "2026-06-10",
+  "shipping": {
+    "type": "direct",
+    "postal_code": "130-0001",
+    "address": "東京都墨田区吾妻橋1-1-1",
+    "company": "社会福祉法人〇〇会",
+    "office_name": "〇〇デイサービス",
+    "contact_name": "鈴木 一郎",
+    "contact_phone": "03-9876-5432"
+  },
+  "subsidy": {
+    "is_applied": true,
+    "category": "houmon"
+  },
+  "notes": ""
+}

@@ -1,0 +1,2 @@
+partner_id,partner_order_no,order_date,contact_name,contact_phone,contact_email,sku,qty,desired_delivery_date,shipping_type,shipping_postal_code,shipping_address,shipping_company,shipping_office_name,shipping_contact_name,shipping_contact_phone,is_subsidy_applied,subsidy_category,notes
+PARTNER-001,JO-2026-001,2026-05-27,担当者名,電話番号,メールアドレス,cir415a-01,1,2026-06-10,direct,000-0000,都道府県市区町村番地,法人名,事業所名,送付先担当者名,送付先電話番号,true,houmon,

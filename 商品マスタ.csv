@@ -1,0 +1,4 @@
+sku,品番,商品名,接続方式,コネクタ,メーカー,JANコード,エンドユーザー定価目安(税込),卸価格1台(税別),卸価格2-10台(税別),卸価格11-30台(税別),備考
+cir415a-01,CIR415A-01,介護情報基盤 汎用カードリーダ CIR415A,Bluetooth+USB,USB Type-C,AB Circle Japan 株式会社,要確認,14500〜18500,7650,7520,7050,マイナ資格確認アプリ対応・iOS/Android/Windows対応
+cir315a-02,CIR315A-02,介護情報基盤 汎用カードリーダ CIR315A（Type-A）,USB,USB Type-A,AB Circle Japan 株式会社,要確認,6500〜7700,3580,3490,3000,マイナ資格確認アプリ対応・Windows対応
+cir315a-04,CIR315A-04,介護情報基盤 汎用カードリーダ CIR315A（Type-C）,USB,USB Type-C,AB Circle Japan 株式会社,要確認,6500〜7700,3770,3680,3160,マイナ資格確認アプリ対応・Windows対応
