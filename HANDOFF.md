@@ -8,7 +8,32 @@
 ## 現在の状態
 
 LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html）は本番稼働中。
-**CRM設計確定済（CRM_DESIGN.md）。次セッション開始前に次田さんのCloudflare設定（Phase 0事前作業）が必要。**
+**CRM Phase 1 コード実装完了（コミット 307a01b）。Firebase Console 設定後すぐデプロイ可能。**
+
+### ✅ 今セッションで完了したこと（2026-05-27 追記）
+
+| ファイル | 内容 |
+|---|---|
+| `admin/index.html` | ログイン画面（Google / @tadakayo.jp 制限） |
+| `admin/cases.html` | 案件一覧（検索・フィルタ・新規登録モーダル） |
+| `admin/case-detail.html` | 案件詳細（タイムライン・書類チェック・申請情報タブ） |
+| `admin/js/*.js` | Firebase Auth + Firestore リアルタイム購読 |
+| `functions/index.js` | Webhook受信（LP問い合わせ・見積もり成約 → Firestore保存 + Chat通知） |
+| `firestore.rules` / `storage.rules` | @tadakayo.jp 制限のセキュリティルール |
+| `firebase.json` | multi-site hosting 構成（LP + 管理画面） |
+| `CRM_SETUP_GUIDE.md` | デプロイ前の手順書 |
+
+### ⛔ デプロイ前に次田さんの作業が必要
+
+`CRM_SETUP_GUIDE.md` を参照。手順は以下の順番で:
+
+1. Firebase Console → Firestore Database を有効化（本番モード・asia-northeast1）
+2. Firebase Console → Authentication → Google プロバイダを有効化
+3. Firebase Console → Storage を有効化
+4. Firebase Console → ウェブアプリを追加 → `admin/js/firebase-config.js` の `REPLACE_WITH_ACTUAL_*` を差し替え
+5. `firebase hosting:sites:create kjk-tadakayo-admin --project kjk-tadakayo`（ターミナルで1回だけ）
+6. `cd functions && npm install && cd ..`（ターミナルで1回だけ）
+7. `bash deploy.sh`（全体デプロイ）
 
 ### ⛔ 次セッション開始前に次田さんの作業が必要
 
