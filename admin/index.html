@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ログイン — タダカヨ CRM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <i class="ti ti-heart-handshake"></i>
+      </div>
+      <h1 class="login-title">タダカヨ CRM</h1>
+      <p class="login-sub">介護情報基盤伴走支援 管理システム</p>
+
+      <button class="btn-google" id="loginBtn" type="button">
+        <i class="ti ti-brand-google"></i>
+        @tadakayo.jp でログイン
+      </button>
+
+      <div class="error-msg" id="errorMsg"></div>
+
+      <p class="login-footer">@tadakayo.jp のアカウントのみ利用できます</p>
+    </div>
+  </div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ hd: "tadakayo.jp" });
+
+    // すでにログイン済みなら案件一覧へ
+    onAuthStateChanged(auth, (user) => {
+      if (user && user.email?.endsWith("@tadakayo.jp")) {
+        location.href = "/cases.html";
+      }
+    });
+
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const errorEl = document.getElementById("errorMsg");
+      errorEl.style.display = "none";
+      try {
+        const result = await signInWithPopup(auth, provider);
+        if (!result.user.email?.endsWith("@tadakayo.jp")) {
+          await signOut(auth);
+          errorEl.textContent = "@tadakayo.jp のアカウントのみ利用できます";
+          errorEl.style.display = "block";
+          return;
+        }
+        location.href = "/cases.html";
+      } catch (e) {
+        errorEl.textContent = `ログインに失敗しました: ${e.message}`;
+        errorEl.style.display = "block";
+      }
+    });
+  </script>
+</body>
+</html>

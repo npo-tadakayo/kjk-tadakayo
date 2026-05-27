@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>案件一覧 — タダカヨ CRM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" href="/cases.html">
+          <i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button">
+          <i class="ti ti-logout" aria-hidden="true"></i>ログアウト
+        </button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">案件一覧</h1>
+        <button class="btn btn-primary" id="newCaseBtn" type="button">
+          <i class="ti ti-plus" aria-hidden="true"></i>新規案件
+        </button>
+      </div>
+
+      <!-- 申請期限バナー -->
+      <div id="deadlineBanner" class="deadline-banner safe" style="display:none">
+        <i class="ti ti-calendar-event" aria-hidden="true"></i>
+        <span id="deadlineText"></span>
+      </div>
+
+      <!-- フィルタ -->
+      <div class="filter-bar">
+        <input type="search" id="searchInput" placeholder="事業所名・担当者で検索..." style="flex:1; min-width:200px;">
+        <select id="statusFilter">
+          <option value="">すべてのステータス</option>
+          <option value="1">新規受信</option>
+          <option value="2">確認中</option>
+          <option value="3">受注確定</option>
+          <option value="4">失注</option>
+          <option value="5">担当者決定</option>
+          <option value="6">事前準備中</option>
+          <option value="7">伴走支援待ち</option>
+          <option value="8">伴走支援実施済</option>
+          <option value="9">書類準備完了・申請ガイド中</option>
+          <option value="10">申請完了・採択待ち</option>
+          <option value="11">採択・入金待ち</option>
+          <option value="12">アフターフォロー中</option>
+          <option value="13">案件完了</option>
+        </select>
+        <select id="sourceFilter">
+          <option value="">すべての流入</option>
+          <option value="lp_inquiry">LP問い合わせ</option>
+          <option value="mitsumori_quote">見積もり成約</option>
+          <option value="manual">手動登録</option>
+        </select>
+      </div>
+
+      <!-- 案件テーブル -->
+      <div class="card">
+        <div class="table-wrap">
+          <div id="loadingEl" class="loading">
+            <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...
+          </div>
+          <table id="casesTable" style="display:none">
+            <thead>
+              <tr>
+                <th>案件番号</th>
+                <th>事業所名</th>
+                <th>流入元</th>
+                <th>ステータス</th>
+                <th>担当者</th>
+                <th>受信日</th>
+                <th>最終更新</th>
+              </tr>
+            </thead>
+            <tbody id="casesBody"></tbody>
+          </table>
+          <div id="emptyEl" class="empty-state" style="display:none">
+            <i class="ti ti-inbox" aria-hidden="true"></i>
+            <p>案件がありません</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 新規案件モーダル -->
+  <div class="modal-overlay" id="newCaseModal" role="dialog" aria-modal="true" aria-label="新規案件登録">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>新規案件登録</h2>
+        <button class="btn btn-secondary" id="closeModalBtn" type="button" aria-label="閉じる">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="corpName">法人名</label>
+            <input class="form-control" type="text" id="corpName" placeholder="社会福祉法人○○">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="officeName">事業所名 <span style="color:red">*</span></label>
+            <input class="form-control" type="text" id="officeName" required placeholder="○○苑">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="contactName">担当者名</label>
+            <input class="form-control" type="text" id="contactName">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="contactPhone">電話番号</label>
+            <input class="form-control" type="tel" id="contactPhone">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="contactEmail">メールアドレス</label>
+          <input class="form-control" type="email" id="contactEmail">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newCaseMemo">メモ</label>
+          <textarea class="form-control" id="newCaseMemo" rows="3"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelModalBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveNewCaseBtn" type="button">
+          <i class="ti ti-check" aria-hidden="true"></i>登録する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/cases.js" type="module"></script>
+</body>
+</html>

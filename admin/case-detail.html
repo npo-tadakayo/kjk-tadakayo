@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>案件詳細 — タダカヨ CRM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/cases.html">
+          <i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button">
+          <i class="ti ti-logout" aria-hidden="true"></i>ログアウト
+        </button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <div style="margin-bottom:var(--space-4)">
+        <a href="/cases.html" style="display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--color-ink-muted)">
+          <i class="ti ti-chevron-left" aria-hidden="true"></i>案件一覧に戻る
+        </a>
+      </div>
+
+      <div id="loadingEl" class="loading">
+        <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...
+      </div>
+
+      <div id="mainContent" style="display:none">
+        <!-- 案件ヘッダー -->
+        <div class="case-header" id="caseHeader">
+          <div class="case-number" id="caseNumber"></div>
+          <div class="case-title" id="caseTitle"></div>
+          <div class="case-meta" id="caseMeta"></div>
+          <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
+            <div style="display:flex;align-items:center;gap:var(--space-2)">
+              <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="statusSelect">ステータス</label>
+              <select class="form-control" id="statusSelect" style="width:auto;min-width:200px">
+                <option value="1">新規受信</option>
+                <option value="2">確認中</option>
+                <option value="3">受注確定</option>
+                <option value="4">失注</option>
+                <option value="5">担当者決定</option>
+                <option value="6">事前準備中</option>
+                <option value="7">伴走支援待ち</option>
+                <option value="8">伴走支援実施済</option>
+                <option value="9">書類準備完了・申請ガイド中</option>
+                <option value="10">申請完了・採択待ち</option>
+                <option value="11">採択・入金待ち</option>
+                <option value="12">アフターフォロー中</option>
+                <option value="13">案件完了</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- タブ -->
+        <div class="tabs" role="tablist">
+          <button class="tab active" role="tab" data-tab="timeline" aria-selected="true">
+            <i class="ti ti-timeline" aria-hidden="true"></i> 対応記録
+          </button>
+          <button class="tab" role="tab" data-tab="documents" aria-selected="false">
+            <i class="ti ti-files" aria-hidden="true"></i> 書類チェック
+          </button>
+          <button class="tab" role="tab" data-tab="subsidy" aria-selected="false">
+            <i class="ti ti-coin-yen" aria-hidden="true"></i> 申請情報
+          </button>
+        </div>
+
+        <!-- 対応記録タブ -->
+        <div class="tab-content active" id="tab-timeline">
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px">記録を追加</span>
+            </div>
+            <div class="card-body">
+              <div class="form-row" style="margin-bottom:var(--space-3)">
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label" for="activityType">種別</label>
+                  <select class="form-control" id="activityType">
+                    <option value="phone_in">電話（着信）</option>
+                    <option value="phone_out">電話（発信）</option>
+                    <option value="email_in">メール（受信）</option>
+                    <option value="email_out">メール（送信）</option>
+                    <option value="visit">訪問・対面</option>
+                    <option value="memo">メモ</option>
+                  </select>
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label" for="activitySubject">件名</label>
+                  <input class="form-control" type="text" id="activitySubject" placeholder="対応内容の件名">
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:var(--space-3)">
+                <label class="form-label" for="activityBody">内容</label>
+                <textarea class="form-control" id="activityBody" rows="3" placeholder="対応内容を入力..."></textarea>
+              </div>
+              <div style="text-align:right">
+                <button class="btn btn-primary" id="addActivityBtn" type="button">
+                  <i class="ti ti-plus" aria-hidden="true"></i>記録を追加
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div id="timelineEl">
+            <div class="empty-state">
+              <i class="ti ti-notes" aria-hidden="true"></i>
+              <p>対応記録がありません</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 書類チェックタブ -->
+        <div class="tab-content" id="tab-documents">
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px">補助金申請 書類チェックリスト</span>
+            </div>
+            <div class="card-body">
+              <div class="checklist-item">
+                <label for="chk-bankbook">
+                  <input type="checkbox" id="chk-bankbook" data-field="bankbookReady">
+                  <i class="ti ti-notebook" aria-hidden="true"></i>
+                  通帳の写し
+                </label>
+                <span class="check-pending" id="status-bankbook"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+              <div class="checklist-item">
+                <label for="chk-service">
+                  <input type="checkbox" id="chk-service" data-field="serviceConfirmReady">
+                  <i class="ti ti-file-certificate" aria-hidden="true"></i>
+                  サービス種類が確認できる資料（指定通知書等）
+                </label>
+                <span class="check-pending" id="status-service"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+              <div class="checklist-item">
+                <label for="chk-receipt">
+                  <input type="checkbox" id="chk-receipt" data-field="receiptReady">
+                  <i class="ti ti-receipt" aria-hidden="true"></i>
+                  領収書（型名・用途記載必須）
+                </label>
+                <span class="check-pending" id="status-receipt"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+              <div class="checklist-item">
+                <label for="chk-myna">
+                  <input type="checkbox" id="chk-myna" data-field="mynaAppCompatibleConfirmed">
+                  <i class="ti ti-device-mobile-check" aria-hidden="true"></i>
+                  マイナ資格確認アプリ対応CR確認済
+                </label>
+                <span class="check-pending" id="status-myna"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+              <div class="checklist-item">
+                <label for="chk-portal">
+                  <input type="checkbox" id="chk-portal" data-field="portalAccountAcquired">
+                  <i class="ti ti-world" aria-hidden="true"></i>
+                  介護情報基盤ポータルアカウント取得済
+                </label>
+                <span class="check-pending" id="status-portal"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 振込口座情報 -->
+          <div class="card">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px">振込口座情報（事業所側）</span>
+              <button class="btn btn-primary" id="saveBankBtn" type="button" style="font-size:12px;padding:6px 12px">
+                <i class="ti ti-device-floppy" aria-hidden="true"></i>保存
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="bankType">銀行種別</label>
+                  <select class="form-control" id="bankType">
+                    <option value="bank">銀行</option>
+                    <option value="yucho">ゆうちょ銀行</option>
+                  </select>
+                </div>
+                <div class="form-group" id="bankNameGroup">
+                  <label class="form-label" for="bankName">銀行名</label>
+                  <input class="form-control" type="text" id="bankName" placeholder="○○銀行">
+                </div>
+              </div>
+              <div class="form-row" id="bankCodeRow">
+                <div class="form-group">
+                  <label class="form-label" for="bankCode">銀行コード</label>
+                  <input class="form-control" type="text" id="bankCode" maxlength="4" placeholder="0000">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="branchName">支店名</label>
+                  <input class="form-control" type="text" id="branchName" placeholder="○○支店">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="accountType">口座種別</label>
+                  <select class="form-control" id="accountType">
+                    <option value="普通">普通</option>
+                    <option value="当座">当座</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="accountNumber">口座番号（7桁）</label>
+                  <input class="form-control" type="text" id="accountNumber" maxlength="7" placeholder="1234567">
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="accountHolder">口座名義人（全角カタカナ）</label>
+                <input class="form-control" type="text" id="accountHolder" placeholder="シャカイフクシホウジン○○">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 申請情報タブ -->
+        <div class="tab-content" id="tab-subsidy">
+          <div class="card">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px">補助金申請ステータス</span>
+              <button class="btn btn-primary" id="saveSubsidyBtn" type="button" style="font-size:12px;padding:6px 12px">
+                <i class="ti ti-device-floppy" aria-hidden="true"></i>保存
+              </button>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label class="form-label" for="subsidyStatus">申請ステータス</label>
+                <select class="form-control" id="subsidyStatus" style="max-width:300px">
+                  <option value="preparing">準備中</option>
+                  <option value="docs_ready">書類完了</option>
+                  <option value="applied">申請済</option>
+                  <option value="adopted">採択</option>
+                  <option value="rejected">不採択</option>
+                  <option value="waiting_deposit">入金待ち</option>
+                  <option value="deposited">入金済</option>
+                </select>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="applicationDate">申請日</label>
+                  <input class="form-control" type="date" id="applicationDate">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="decisionReceivedAt">決定通知書受信日</label>
+                  <input class="form-control" type="date" id="decisionReceivedAt">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="actualDepositDate">振込確認日</label>
+                  <input class="form-control" type="date" id="actualDepositDate">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="grantAmount">交付額（円）</label>
+                  <input class="form-control" type="number" id="grantAmount" placeholder="64000">
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label" for="cardReaderCost">カードリーダー購入費用・税込（A）</label>
+                  <input class="form-control" type="number" id="cardReaderCost" placeholder="例: 43500">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" for="supportCost">接続サポート費用・税込（B）</label>
+                  <input class="form-control" type="number" id="supportCost" placeholder="例: 50000">
+                </div>
+              </div>
+              <div class="form-group" id="expectedDepositGroup" style="display:none">
+                <label class="form-label">振込予定日（自動算出）</label>
+                <p id="expectedDepositDate" style="font-size:14px;font-weight:600;color:var(--color-primary)"></p>
+              </div>
+              <div class="form-group" id="rejectionGroup" style="display:none">
+                <label class="form-label" for="rejectionReason">不採択理由</label>
+                <textarea class="form-control" id="rejectionReason" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /mainContent -->
+    </main>
+  </div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/case-detail.js" type="module"></script>
+</body>
+</html>

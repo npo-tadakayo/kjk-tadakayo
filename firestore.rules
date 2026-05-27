@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isTadakayoStaff() {
+      return isAuthenticated() && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+    }
+
+    match /{document=**} {
+      allow read, write: if isTadakayoStaff();
+    }
+  }
+}
