@@ -18,6 +18,7 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 4. **Claude作業**: Phase 1（案件一覧・詳細・Webhook受信）の実装
 
 > ⚠️ Phase 0 の Cloudflare 設定は次田さんのブラウザ操作が必要。セッション開始時に「Cloudflare設定できてますか？」と確認してから着手する。
+> 📌 **DNS管理先: お名前.com**（確認済み・2026-05-27）
 
 LP・見積もりツール最新状態：
 - **令和8年度 申請期間: 2026年5月7日〜2027年3月12日（予定）** ← 2026-05-27更新
