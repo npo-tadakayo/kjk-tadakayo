@@ -18,11 +18,10 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 | LP本番動作確認 | Playwrightで観察検証。申請期間・メーカー価格(¥17,380/¥7,150)・補助金区分(64k/55k/42k)・見積もり計算5パターン・Clarity/GA4 すべてPASS |
 | 補助金35コード逐語化 | LP表＋見積もり折りたたみを公式35コードに（区分① 18/② 12/③ 5）。短期入所療養介護の3種別・各短期利用バリアントを明示（旧:28行集約）|
 | favicon追加 | index/mitsumori に `images/tadakayo_logo.png` を icon/apple-touch-icon 設定 → 404解消 |
-| 見積E2Eテスト | 同意アンロックで成約Webhook発火を確認。`mode:'no-cors'` 送信のため status は opaque(0)=送信成立。⚠️ Chatスペース AAQAkcdopcA に【動作確認テスト】通知が最大2件届いている可能性あり（要確認） |
-| デプロイ | `deploy.sh --lp-only`（hosting:lp のみ・CRM admin非該当・Node20）|
-| コミット/push | `2dbe775`（main）を tsuku-29 PAT で push 済 |
-
-> ⚠️ 要確認: 見積書プレビューの列見出しが「単価（税別）」だが単価が税込値で表示されている可能性。税表記の整合は別途確認（今回スコープ外）。
+| 見積E2Eテスト | 同意アンロックで成約Webhook発火を確認。`mode:'no-cors'` 送信のため status は opaque(0)=送信成立。✅ Chatスペース AAQAkcdopcA への【動作確認テスト】通知の着弾を次田さんが確認（Webhook正常稼働の確証）|
+| 見積書 税表記の修正 | ✅ 明細テーブル見出しを「単価/金額（税別）」→「（税込）」に修正。定数・計算・注記（行1420「すべて税込で表示」）と整合させた。消費税の別途加算処理は無く、見出しのラベル誤りのみだった |
+| デプロイ | `deploy.sh --lp-only`（hosting:lp のみ・CRM admin非該当・Node20）を2回（35コード+favicon / 税表記修正）|
+| コミット/push | `2dbe775`・`f4bbd85`・税表記修正分を tsuku-29 PAT で push 済 |
 
 ### ✅ 今セッションで完了したこと（2026-05-27 追記）
 
