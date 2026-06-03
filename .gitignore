@@ -3,6 +3,8 @@
 *.log
 .firebase/
 .playwright-mcp/
+functions/node_modules/
+functions/.env
 images/1.png
 images/2.png
 images/tadakayo_logo_remove.png

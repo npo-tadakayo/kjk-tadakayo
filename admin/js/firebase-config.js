@@ -5,10 +5,10 @@
 //   > 下記の値を取得して置き換えること
 
 const firebaseConfig = {
-  apiKey: "REPLACE_WITH_ACTUAL_API_KEY",
+  apiKey: "AIzaSyAjAtYNnn2vaw1ooWzrPuVNoA9Rd9o4TyE",
   authDomain: "kjk-tadakayo.firebaseapp.com",
   projectId: "kjk-tadakayo",
   storageBucket: "kjk-tadakayo.firebasestorage.app",
-  messagingSenderId: "REPLACE_WITH_MESSAGING_SENDER_ID",
-  appId: "REPLACE_WITH_APP_ID"
+  messagingSenderId: "677262660109",
+  appId: "1:677262660109:web:79645398db17dab417bb44"
 };
