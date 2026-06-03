@@ -11,7 +11,11 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 **2026-06-02: LP本番動作確認PASS＋補助金完全リスト35コード逐語化＋favicon追加＋見積書税表記修正を本番デプロイ済み（最新コミット `ca0f47f`・GitHub push済・実体確認済）。**
 **CRM Phase 1 コード実装完了（コミット 307a01b）。Firebase Console 設定後すぐデプロイ可能（未デプロイ）。**
 
-> 🎯 **次セッションの開始点 = Option A runbook**（CRM Phase 1 デプロイ）。次田さんが Firebase Console で Step 1〜4（Firestore/Auth/Storage有効化＋ウェブアプリ追加）を実施し、`firebaseConfig` の実値を共有 → そこからClaudeが Phase 2（config差し替え→`hosting:sites:create`→`functions npm install`→`.env`設定→`bash deploy.sh`→実機検証）を実行する。**事前確認: Cloud Functions(v2)はBlazeプラン必須**。`CHAT_WEBHOOK_URL` は memory `reference_chat_webhooks.md` の①タダサポ＋を使う。
+> 🎯 **CRM Phase 1 デプロイ = あと「次田さんのConsole 4トグル」だけ**（2026-06-02 Phase2 CLI準備完了）。
+> ✅ Claude実行済み（CLI）: ウェブアプリ作成（App ID `1:677262660109:web:79645398db17dab417bb44`）／`firebase-config.js`実値化（commit `b8fe1c6`）／admin Hostingサイト `kjk-tadakayo-admin` 作成／`functions npm install`／`functions/.env`（CHAT_WEBHOOK_URL=①タダサポ＋）作成（gitignore済）。
+> ⛔ 次田さんがConsoleで未実施（Claude代行不可・gcloudは279アカで権限なし）:
+>   1. Firestore有効化（本番・asia-northeast1）2. Auth→Google有効化 3. Storage有効化 4. Blazeプラン
+>   → 完了後Claudeが「プリフライト確認→`bash deploy.sh`→実機検証」を一気に実行。2026-06-02時点でFirestore APIは403（未有効）。
 >
 > ⚠️ git 注意: push は PAT URL 直叩きのため `origin/main` 追跡参照が更新されず「ahead N」と誤表示される。実体は `git ls-remote <PAT-url> refs/heads/main` で裏取りすること（今回 `ca0f47f` で一致確認済）。
 
