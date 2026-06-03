@@ -8,8 +8,12 @@
 ## 現在の状態
 
 LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html）は本番稼働中。
-**2026-06-02: LP本番動作確認PASS＋補助金完全リスト35コード逐語化＋favicon追加を本番デプロイ済み（コミット `2dbe775` push済）。**
+**2026-06-02: LP本番動作確認PASS＋補助金完全リスト35コード逐語化＋favicon追加＋見積書税表記修正を本番デプロイ済み（最新コミット `ca0f47f`・GitHub push済・実体確認済）。**
 **CRM Phase 1 コード実装完了（コミット 307a01b）。Firebase Console 設定後すぐデプロイ可能（未デプロイ）。**
+
+> 🎯 **次セッションの開始点 = Option A runbook**（CRM Phase 1 デプロイ）。次田さんが Firebase Console で Step 1〜4（Firestore/Auth/Storage有効化＋ウェブアプリ追加）を実施し、`firebaseConfig` の実値を共有 → そこからClaudeが Phase 2（config差し替え→`hosting:sites:create`→`functions npm install`→`.env`設定→`bash deploy.sh`→実機検証）を実行する。**事前確認: Cloud Functions(v2)はBlazeプラン必須**。`CHAT_WEBHOOK_URL` は memory `reference_chat_webhooks.md` の①タダサポ＋を使う。
+>
+> ⚠️ git 注意: push は PAT URL 直叩きのため `origin/main` 追跡参照が更新されず「ahead N」と誤表示される。実体は `git ls-remote <PAT-url> refs/heads/main` で裏取りすること（今回 `ca0f47f` で一致確認済）。
 
 ### ✅ 今セッションで完了したこと（2026-06-02）
 
