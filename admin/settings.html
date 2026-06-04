@@ -42,6 +42,18 @@
             <div id="sendersList"></div>
             <button class="btn btn-secondary" id="addSenderBtn" type="button" style="font-size:12px;padding:6px 12px"><i class="ti ti-plus" aria-hidden="true"></i>差出人を追加</button>
           </div>
+
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">発注書（AB Circle向け）の発行元・発注者</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">発注書PDFの右側に表示される情報と、発注者氏名・擬似印鑑（デジタル印）に使われます。</p>
+            <div class="form-group"><label class="form-label" for="poIssuerName">発行元名</label><input class="form-control" id="poIssuerName" type="text" placeholder="NPO法人タダカヨ"></div>
+            <div class="form-group"><label class="form-label" for="poIssuerAddr">発行元住所</label><input class="form-control" id="poIssuerAddr" type="text" placeholder="東京都大田区大森中二丁目1番20-1001号"></div>
+            <div class="form-group"><label class="form-label" for="poIssuerRep">代表者（理事長等）</label><input class="form-control" id="poIssuerRep" type="text" placeholder="理事長：佐藤 拡史"></div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="poOrdererName">発注者氏名</label><input class="form-control" id="poOrdererName" type="text" placeholder="次田 芳尚"></div>
+              <div class="form-group"><label class="form-label" for="poSealText">印鑑の文字（1〜3字）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="次田"></div>
+            </div>
+          </div>
           <div id="saveStatus" style="font-size:13px;margin-bottom:8px"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
             <button class="btn btn-secondary" id="testBtn" type="button"><i class="ti ti-bell" aria-hidden="true"></i> Chatにテスト通知</button>

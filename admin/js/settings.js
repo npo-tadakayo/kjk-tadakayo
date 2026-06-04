@@ -70,6 +70,12 @@ onAuthStateChanged(auth, async (user)=>{
   if (!senders.length && s.senderName) senders = [{ name:s.senderName, postal:s.senderPostal||"", address:s.senderAddress||"", phone:s.senderPhone||"" }];
   renderSenders(senders);
   $("addSenderBtn").addEventListener("click", ()=>{ addSenderRow({}); });
+  // 発注書（発行元・発注者）
+  $("poIssuerName").value = s.poIssuerName || "";
+  $("poIssuerAddr").value = s.poIssuerAddr || "";
+  $("poIssuerRep").value = s.poIssuerRep || "";
+  $("poOrdererName").value = s.poOrdererName || "";
+  $("poSealText").value = s.poSealText || "";
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -80,6 +86,11 @@ onAuthStateChanged(auth, async (user)=>{
         chatWebhookUrl: $("chatWebhookUrl").value.trim(),
         gmailSender: $("gmailSender").value.trim(),
         senders: collectSenders(),
+        poIssuerName: $("poIssuerName").value.trim(),
+        poIssuerAddr: $("poIssuerAddr").value.trim(),
+        poIssuerRep: $("poIssuerRep").value.trim(),
+        poOrdererName: $("poOrdererName").value.trim(),
+        poSealText: $("poSealText").value.trim(),
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

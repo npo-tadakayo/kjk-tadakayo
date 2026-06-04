@@ -20,6 +20,8 @@ const PO_DEFAULT = {
   issuerAddrLabel: "事務所所在地：",
   issuerAddr: "東京都大田区大森中二丁目1番20-1001号",
   issuerRep: "理事長：佐藤 拡史",
+  ordererName: "次田 芳尚",
+  sealText: "次田",
 };
 function renderPO(o, st){
   st = st || {};
@@ -66,6 +68,10 @@ function renderPO(o, st){
         <tr class="grand"><td class="lbl">合計</td><td class="num"><strong>${yen(total)}</strong></td></tr>
       </tbody></table>
       ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
+      <div class="po-orderer">
+        <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
+        <div class="po-seal" aria-label="印">${esc(st.poSealText || PO_DEFAULT.sealText)}</div>
+      </div>
     </div>`;
 }
 
