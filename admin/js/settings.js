@@ -25,6 +25,34 @@ function renderNav(active){
     + `<a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>`;
 }
 
+function escAttr(s){ return String(s||"").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
+function addSenderRow(d){
+  const wrap=document.createElement("div");
+  wrap.className="sender-row";
+  wrap.style.cssText="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:8px";
+  wrap.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:flex-end">
+      <div class="form-group" style="flex:1;margin:0"><label class="form-label">差出人名</label><input class="form-control s-name" type="text" value="${escAttr(d.name)}" placeholder="NPO法人タダカヨ 介護情報基盤伴走支援事業"></div>
+      <button class="btn btn-danger s-del" type="button" style="font-size:12px;padding:6px 10px"><i class="ti ti-trash" aria-hidden="true"></i></button>
+    </div>
+    <div class="form-row" style="margin-top:8px">
+      <div class="form-group" style="margin:0"><label class="form-label">郵便番号</label><input class="form-control s-postal" type="text" value="${escAttr(d.postal)}" placeholder="000-0000"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">電話番号</label><input class="form-control s-phone" type="text" value="${escAttr(d.phone)}"></div>
+    </div>
+    <div class="form-group" style="margin:8px 0 0"><label class="form-label">住所</label><input class="form-control s-address" type="text" value="${escAttr(d.address)}"></div>`;
+  wrap.querySelector(".s-del").addEventListener("click",()=>wrap.remove());
+  $("sendersList").appendChild(wrap);
+}
+function renderSenders(list){ $("sendersList").innerHTML=""; (list.length?list:[{}]).forEach(addSenderRow); }
+function collectSenders(){
+  return Array.from(document.querySelectorAll("#sendersList .sender-row")).map(r=>({
+    name:r.querySelector(".s-name").value.trim(),
+    postal:r.querySelector(".s-postal").value.trim(),
+    phone:r.querySelector(".s-phone").value.trim(),
+    address:r.querySelector(".s-address").value.trim(),
+  })).filter(s=>s.name||s.address||s.postal||s.phone);
+}
+
 const testFn = httpsCallable(functions, "testChatNotify");
 
 onAuthStateChanged(auth, async (user)=>{
@@ -37,10 +65,11 @@ onAuthStateChanged(auth, async (user)=>{
   const s = snap.exists() ? snap.data() : {};
   $("chatWebhookUrl").value = s.chatWebhookUrl || "";
   $("gmailSender").value = s.gmailSender || "kjk-staff@tadakayo.jp";
-  $("senderName").value = s.senderName || "";
-  $("senderPostal").value = s.senderPostal || "";
-  $("senderPhone").value = s.senderPhone || "";
-  $("senderAddress").value = s.senderAddress || "";
+  // 差出人リスト（旧単一値があれば移行）
+  let senders = Array.isArray(s.senders) ? s.senders.slice() : [];
+  if (!senders.length && s.senderName) senders = [{ name:s.senderName, postal:s.senderPostal||"", address:s.senderAddress||"", phone:s.senderPhone||"" }];
+  renderSenders(senders);
+  $("addSenderBtn").addEventListener("click", ()=>{ addSenderRow({}); });
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -50,10 +79,7 @@ onAuthStateChanged(auth, async (user)=>{
       await setDoc(doc(db,"appConfig","settings"),{
         chatWebhookUrl: $("chatWebhookUrl").value.trim(),
         gmailSender: $("gmailSender").value.trim(),
-        senderName: $("senderName").value.trim(),
-        senderPostal: $("senderPostal").value.trim(),
-        senderPhone: $("senderPhone").value.trim(),
-        senderAddress: $("senderAddress").value.trim(),
+        senders: collectSenders(),
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

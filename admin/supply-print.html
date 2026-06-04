@@ -39,29 +39,42 @@
     /* レターパックプラス(赤) 宛名ラベル（実物準拠・A4印刷→切り取り） */
     .lp-note{font-size:12px;color:var(--muted);margin-bottom:8px;}
     .lp-label{
+      --lp:#E2001A;
       width:120mm; box-sizing:border-box;
-      border:1.5px dashed #E2001A; border-radius:4px; padding:6mm 7mm;
+      border:1.5px dashed var(--lp); border-radius:4px; padding:6mm 7mm;
       background:#fff;
     }
-    .lp-brand{font-weight:700;color:#E2001A;font-size:15px;letter-spacing:.05em;border-bottom:2px solid #E2001A;padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;}
-    .lp-brand span{font-size:12px;border:1px solid #E2001A;border-radius:3px;padding:1px 6px;}
-    .lp-sec{background:#E2001A;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:3px;margin:10px 0 6px;display:inline-block;}
+    .lp-label.blue{ --lp:#0068B7; }
+    .lp-brand{font-weight:700;color:var(--lp);font-size:15px;letter-spacing:.05em;border-bottom:2px solid var(--lp);padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;}
+    .lp-brand span{font-size:12px;border:1px solid var(--lp);border-radius:3px;padding:1px 6px;}
+    .lp-sec{background:var(--lp);color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:3px;margin:10px 0 6px;display:inline-block;}
     .lp-row{display:flex;align-items:center;gap:8px;border-bottom:1px solid #e3e3e3;padding:5px 2px;min-height:30px;}
     .lp-row.tall{min-height:46px;align-items:flex-start;}
     .lp-row.big{min-height:40px;}
-    .lp-k{flex:0 0 56px;font-size:11px;color:#E2001A;font-weight:700;}
+    .lp-k{flex:0 0 56px;font-size:11px;color:var(--lp);font-weight:700;}
     .lp-v{flex:1;font-size:15px;}
     .lp-addr{font-size:16px;line-height:1.5;}
     .lp-name{font-size:22px;font-weight:700;}
     .lp-keisho{font-size:14px;font-weight:400;}
-    .lp-zipmark{color:#E2001A;font-weight:700;font-size:16px;}
-    .zip .zbox{display:inline-block;width:9mm;height:11mm;line-height:11mm;border:1px solid #E2001A;border-radius:2px;text-align:center;margin:0 1px;font-size:16px;font-weight:700;vertical-align:middle;}
+    .lp-zipmark{color:var(--lp);font-weight:700;font-size:16px;}
+    .zip .zbox{display:inline-block;width:9mm;height:11mm;line-height:11mm;border:1px solid var(--lp);border-radius:2px;text-align:center;margin:0 1px;font-size:16px;font-weight:700;vertical-align:middle;}
     @media print{.toolbar{display:none;}body{background:#fff;}.sheet{max-width:none;margin:0;border:none;border-radius:0;padding:0;}@page{margin:18mm 16mm;}}
   </style>
 </head>
 <body>
   <div class="toolbar">
     <a class="btn btn-back" href="/supply.html"><i class="ti ti-arrow-left"></i> 供給管理へ</a>
+    <div id="lpControls" style="display:none;align-items:center;gap:10px;flex:1;justify-content:center">
+      <label style="font-size:13px">種別
+        <select id="lpVariant" style="padding:6px 8px;border-radius:6px;border:1px solid var(--line);font-size:13px">
+          <option value="plus">レターパックプラス（赤・520円）</option>
+          <option value="light">レターパックライト（青・370円）</option>
+        </select>
+      </label>
+      <label style="font-size:13px">差出人
+        <select id="lpSender" style="padding:6px 8px;border-radius:6px;border:1px solid var(--line);font-size:13px"></select>
+      </label>
+    </div>
     <button class="btn btn-print" id="printBtn" type="button"><i class="ti ti-printer"></i> 印刷 / PDF保存</button>
   </div>
   <div class="sheet"><div class="loading" id="loadingEl"><i class="ti ti-loader-2 ti-spin"></i> 読み込み中...</div>

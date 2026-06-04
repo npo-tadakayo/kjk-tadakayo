@@ -53,17 +53,21 @@ function zipBoxes(postal, n=7){
   const d=(postal||"").replace(/[^0-9]/g,"").padEnd(n," ").slice(0,n).split("");
   return `<span class="zip">${d.map(x=>`<span class="zbox">${x.trim()||"&nbsp;"}</span>`).join("")}</span>`;
 }
-function renderLetterpack(s, st){
-  st = st || {};
-  const fromName = st.senderName || "NPO法人タダカヨ 介護情報基盤伴走支援事業";
-  const fromPostal = st.senderPostal || "";
-  const fromAddr = st.senderAddress || "";
-  const fromPhone = st.senderPhone || "";
+function renderLetterpack(s, sender, variant){
+  sender = sender || {};
+  const isLight = variant === "light";
+  const brandName = isLight ? "レターパックライト" : "レターパックプラス";
+  const price = isLight ? "370円" : "520円";
+  const colorName = isLight ? "青" : "赤";
+  const fromName = sender.name || "";
+  const fromPostal = sender.postal || "";
+  const fromAddr = sender.address || "";
+  const fromPhone = sender.phone || "";
   const toName = `${esc(s.company?s.company+"　":"")}${esc(s.officeName||"")}`;
   return `
-    <div class="lp-note">切り取り線（- - -）で切り、レターパックプラス（赤）の宛名面に貼り付けてご利用ください。</div>
-    <div class="lp-label">
-      <div class="lp-brand">レターパックプラス　宛名ラベル <span>520円</span></div>
+    <div class="lp-note">切り取り線（- - -）で切り、${brandName}（${colorName}）の宛名面に貼り付けてご利用ください。</div>
+    <div class="lp-label ${isLight?"blue":""}">
+      <div class="lp-brand">${brandName}　宛名ラベル <span>${price}</span></div>
 
       <div class="lp-sec">お届け先</div>
       <div class="lp-row"><span class="lp-k">郵便番号</span><span class="lp-zipmark">〒</span>${zipBoxes(s.postal)}</div>
@@ -80,7 +84,7 @@ function renderLetterpack(s, st){
       <div class="lp-sec">品名（内容品）</div>
       <div class="lp-row"><span class="lp-v">介護情報基盤 マイナ資格確認 カードリーダー</span></div>
     </div>
-    <p style="font-size:11px;color:var(--muted);margin-top:14px">※ ラベルサイズは実物のレターパックプラス宛名欄に合わせています。差出人（ご依頼主）情報は「設定」で登録すると自動表示されます（未登録時は空欄）。</p>`;
+    <p style="font-size:11px;color:var(--muted);margin-top:14px">※ ラベルサイズは実物のレターパック宛名欄に合わせています。上部で種別（赤/青）と差出人を切り替えできます。差出人は「設定」で登録します。</p>`;
 }
 
 // 請求書（見積書の赤系を踏襲・認定事業所向け／卸価格・税別→税込）
@@ -125,12 +129,31 @@ onAuthStateChanged(auth, async (user)=>{
     const snap = await getDoc(doc(db,col,id));
     if(!snap.exists()){ document.getElementById("loadingEl").textContent="データが見つかりません"; return; }
     const d=snap.data();
-    let settings={};
-    if(type==="letterpack"){ try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){} }
-    const render = {po:renderPO, ship:renderShip, letterpack:(x)=>renderLetterpack(x,settings), invoice:renderInvoice}[type] || renderShip;
-    document.getElementById("body").innerHTML = render(d);
-    document.title = (TITLES[type]||"")+(d.poNumber||d.soNumber||"");
     document.getElementById("loadingEl").style.display="none";
     document.getElementById("body").style.display="block";
+    document.title = (TITLES[type]||"")+(d.poNumber||d.soNumber||"");
+
+    if(type==="letterpack"){
+      let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
+      let senders = Array.isArray(settings.senders)?settings.senders:[];
+      if(!senders.length && settings.senderName) senders=[{name:settings.senderName,postal:settings.senderPostal||"",address:settings.senderAddress||"",phone:settings.senderPhone||""}];
+      const ctrl=document.getElementById("lpControls"); ctrl.style.display="flex";
+      const selS=document.getElementById("lpSender");
+      selS.innerHTML = senders.length
+        ? senders.map((s,i)=>`<option value="${i}">${(s.name||"(無名)").replace(/</g,"&lt;")}</option>`).join("")
+        : `<option value="-1">（設定で差出人を登録してください）</option>`;
+      const draw=()=>{
+        const v=document.getElementById("lpVariant").value;
+        const idx=parseInt(selS.value,10);
+        document.getElementById("body").innerHTML = renderLetterpack(d, senders[idx]||{}, v);
+      };
+      document.getElementById("lpVariant").addEventListener("change",draw);
+      selS.addEventListener("change",draw);
+      draw();
+      return;
+    }
+
+    const render = {po:renderPO, ship:renderShip, invoice:renderInvoice}[type] || renderShip;
+    document.getElementById("body").innerHTML = render(d);
   }catch(e){ document.getElementById("loadingEl").textContent=`読み込み失敗: ${e.message}`; }
 });
