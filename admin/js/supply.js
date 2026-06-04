@@ -18,13 +18,13 @@ function today(){return new Date().toLocaleDateString("sv-SE");} // YYYY-MM-DD (
 function fmtDate(ts){ if(!ts) return "—"; const d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString("ja-JP",{year:"2-digit",month:"numeric",day:"numeric"});}
 function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 
-async function nextNumber(counterId, prefix){
+async function nextSeq(counterId){
   const ref = doc(db,"_counters",counterId);
-  const n = await runTransaction(db, async (tx)=>{
+  return await runTransaction(db, async (tx)=>{
     const s = await tx.get(ref); const v=(s.exists()?s.data().value:0)+1; tx.set(ref,{value:v}); return v;
   });
-  return `${prefix}-2026-${String(n).padStart(4,"0")}`;
 }
+function seqFmt(prefix,n){ return `${prefix}-2026-${String(n).padStart(4,"0")}`; }
 
 // ===== タブ =====
 function initTabs(){
@@ -92,7 +92,8 @@ function collectItems(kind){
 }
 
 function openOrder(){ itemRows("orderItems"); document.getElementById("orderDate").value=today();
-  document.getElementById("orderNote").value=""; document.getElementById("orderTotal").textContent="";
+  ["orderNote","orderShipLabel","orderShipFee","orderShipTo"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("orderTotal").textContent="";
   document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
   document.getElementById("orderModal").classList.add("open"); }
 function updateOrderTotal(){ const items=collectItems("orderItems");
@@ -103,11 +104,15 @@ async function saveOrder(){
   if(!items.length){ alert("数量を入力してください"); return; }
   const btn=document.getElementById("saveOrderBtn"); btn.disabled=true;
   try{
-    const poNumber=await nextNumber("purchaseOrders","PO");
+    const poNo=await nextSeq("purchaseOrders");
+    const poNumber=seqFmt("PO",poNo);
     const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
     await addDoc(collection(db,"purchaseOrders"),{
-      poNumber, orderDate:document.getElementById("orderDate").value||today(),
+      poNumber, poNo, orderDate:document.getElementById("orderDate").value||today(),
       supplier:"AB Circle Japan 株式会社", items, total,
+      shippingLabel:document.getElementById("orderShipLabel").value.trim(),
+      shippingFee:Number(document.getElementById("orderShipFee").value)||0,
+      shipTo:document.getElementById("orderShipTo").value.trim(),
       status:"sent", note:document.getElementById("orderNote").value.trim(),
       createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     document.getElementById("orderModal").classList.remove("open");
@@ -176,7 +181,7 @@ async function saveShip(){
       w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
   try{
-    const soNumber=await nextNumber("shipments","SH");
+    const soNumber=seqFmt("SH",await nextSeq("shipments"));
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType, partnerEmail, partnerName,
       status:"shipped",
@@ -315,7 +320,7 @@ async function shipFromOrder(o){
     if(!p || (p.stock||0)<it.qty){ alert(`在庫不足: ${it.name}（在庫 ${p?p.stock||0:0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
   if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
   try{
-    const soNumber=await nextNumber("shipments","SH");
+    const soNumber=seqFmt("SH",await nextSeq("shipments"));
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"shipped", partnerOrderId:o._id,

@@ -14,21 +14,59 @@ function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").
 function yen(n){return "¥"+Number(n||0).toLocaleString("ja-JP");}
 const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
 
-function renderPO(o){
-  const rows=(o.items||[]).map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen(i.qty*i.unitPrice)}</td></tr>`).join("");
+// 発注元（NPO法人タダカヨ）情報の既定値。設定(appConfig/settings.po*)で上書き可
+const PO_DEFAULT = {
+  issuerName: "NPO法人タダカヨ",
+  issuerAddrLabel: "事務所所在地：",
+  issuerAddr: "東京都大田区大森中二丁目1番20-1001号",
+  issuerRep: "理事長：佐藤 拡史",
+};
+function renderPO(o, st){
+  st = st || {};
+  const issuerName = st.poIssuerName || PO_DEFAULT.issuerName;
+  const issuerAddr = st.poIssuerAddr || PO_DEFAULT.issuerAddr;
+  const issuerRep  = st.poIssuerRep  || PO_DEFAULT.issuerRep;
+  const items = (o.items||[]).slice();
+  // 送料を明細行として追加（あれば）
+  const lines = items.map(i=>({ name:i.name, qty:i.qty, unitPrice:Number(i.unitPrice)||0, amount:(Number(i.unitPrice)||0)*(Number(i.qty)||0) }));
+  if (Number(o.shippingFee)>0) lines.push({ name:o.shippingLabel||"送料", qty:1, unitPrice:Number(o.shippingFee), amount:Number(o.shippingFee), plain:true });
+  const sub = lines.reduce((a,l)=>a+l.amount,0);
+  const tax = Math.floor(sub*0.1);
+  const total = sub + tax;
+  const no = (o.poNo!=null && o.poNo!=="") ? o.poNo : (o.poNumber||"");
+  const rows = lines.map(l=>`<tr>
+    <td>${esc(l.name)}</td>
+    <td class="num">${l.plain?l.qty:l.qty+" 個"}</td>
+    <td class="num">${yen(l.unitPrice)}</td>
+    <td class="num">${yen(l.amount)}</td></tr>`).join("");
   return `
-    <div class="doc-head"><div></div>
-      <div class="issuer"><div class="org">NPO法人タダカヨ</div>介護情報基盤伴走支援事業<br>発行日: ${today}</div></div>
-    <h1 class="title">発　注　書</h1>
-    <div class="to">${esc(o.supplier||"AB Circle Japan 株式会社")} 御中</div>
-    <div class="meta">発注番号: ${esc(o.poNumber)}　／　発注日: ${esc(o.orderDate||"")}</div>
-    <p style="margin-top:16px">下記のとおり発注いたします。</p>
-    <table class="items"><thead><tr><th>品番</th><th>商品名</th><th style="width:60px">数量</th><th style="width:110px">単価(税別)</th><th style="width:120px">金額(税別)</th></tr></thead>
-      <tbody>${rows}
-        <tr class="total-row"><td colspan="4" class="num">合計（税別）</td><td class="num">${yen(o.total)}</td></tr>
+    <div class="po">
+      <h1 class="po-title">発　注　書</h1>
+      <div class="po-head">
+        <div class="po-to">
+          <div class="po-to-name">${esc(o.supplier||"AB Circle Japan 株式会社")}　御中</div>
+          <p style="margin:18px 0 0">下記の通り発注申し上げます。</p>
+          <div class="po-total"><span>TOTAL</span> <strong>${yen(total)}</strong></div>
+        </div>
+        <div class="po-issuer">
+          <div class="po-no"><span>NO.</span> ${esc(String(no))}</div>
+          <div class="po-no"><span>発行日</span> ${esc(o.orderDate||"")}</div>
+          <div class="po-org">${esc(issuerName)}</div>
+          <div>${esc(PO_DEFAULT.issuerAddrLabel)}</div>
+          <div>${esc(issuerAddr)}</div>
+          <div>${esc(issuerRep)}</div>
+          ${o.shipTo?`<div style="margin-top:10px">送付先：</div><div style="white-space:pre-line">${esc(o.shipTo)}</div>`:""}
+        </div>
+      </div>
+      <table class="po-items"><thead><tr><th>品名</th><th class="num" style="width:64px">数量</th><th class="num" style="width:110px">単価</th><th class="num" style="width:120px">金額</th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      <table class="po-sum"><tbody>
+        <tr><td class="lbl">小計</td><td class="num">${yen(sub)}</td></tr>
+        <tr><td class="lbl">消費税 10%</td><td class="num">${yen(tax)}</td></tr>
+        <tr class="grand"><td class="lbl">合計</td><td class="num"><strong>${yen(total)}</strong></td></tr>
       </tbody></table>
-    ${o.note?`<div class="note">備考: ${esc(o.note)}</div>`:""}
-    <div class="footer">NPO法人タダカヨ　介護情報基盤伴走支援事業　／　本書はCRMにより自動生成されました。</div>`;
+      ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
+    </div>`;
 }
 
 function renderShip(s){
@@ -159,7 +197,12 @@ onAuthStateChanged(auth, async (user)=>{
       return;
     }
 
-    const render = {po:renderPO, ship:renderShip, invoice:renderInvoice}[type] || renderShip;
+    if(type==="po"){
+      let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
+      document.getElementById("body").innerHTML = renderPO(d, settings);
+      return;
+    }
+    const render = {ship:renderShip, invoice:renderInvoice}[type] || renderShip;
     document.getElementById("body").innerHTML = render(d);
   }catch(e){ document.getElementById("loadingEl").textContent=`読み込み失敗: ${e.message}`; }
 });

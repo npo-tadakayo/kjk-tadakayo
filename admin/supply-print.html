@@ -29,6 +29,28 @@
     .note{margin-top:16px;font-size:12px;white-space:pre-wrap;}
     .footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);text-align:center;}
     .loading{text-align:center;padding:60px;color:var(--muted);}
+    /* 発注書（ABサークル様サンプル準拠） */
+    .po-title{text-align:center;font-family:"Noto Serif JP",serif;font-size:26px;letter-spacing:.4em;font-weight:700;margin:0 0 28px;}
+    .po-head{display:flex;justify-content:space-between;gap:24px;margin-bottom:28px;}
+    .po-to{flex:1;}
+    .po-to-name{font-size:18px;font-weight:600;}
+    .po-total{margin-top:24px;font-size:14px;color:var(--muted);}
+    .po-total strong{font-size:30px;color:var(--ink);margin-left:14px;font-weight:700;}
+    .po-issuer{flex:0 0 300px;font-size:12px;color:#444;line-height:1.7;}
+    .po-no{font-size:13px;color:var(--ink);margin-bottom:2px;}
+    .po-no span{color:var(--muted);margin-right:18px;}
+    .po-org{font-weight:600;font-size:13px;margin:10px 0 2px;color:var(--ink);}
+    table.po-items{width:100%;border-collapse:collapse;margin-bottom:10px;}
+    table.po-items th{border-bottom:1.5px solid #888;padding:8px 6px;font-size:12px;color:var(--muted);font-weight:500;text-align:left;}
+    table.po-items td{border-bottom:1px solid var(--line);padding:14px 6px;font-size:14px;vertical-align:top;}
+    table.po-items .num{text-align:right;}
+    table.po-sum{margin-left:auto;width:300px;border-collapse:collapse;}
+    table.po-sum td{padding:8px 6px;font-size:14px;border-bottom:1px solid var(--line);}
+    table.po-sum td.lbl{color:var(--muted);}
+    table.po-sum td.num{text-align:right;}
+    table.po-sum tr.grand td{font-size:16px;border-bottom:none;border-top:1.5px solid #888;}
+    .po-note{margin-top:24px;font-size:12px;color:#555;}
+
     /* 請求書（見積書の赤系を踏襲） */
     .inv .doc-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
     .inv-title{font-family:"Noto Serif JP",serif;font-size:24px;letter-spacing:.3em;color:#E33535;border-bottom:3px solid #E33535;padding-bottom:8px;margin:0 0 20px;}
