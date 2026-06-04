@@ -1,4 +1,4 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-02（更新）
+# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-04（更新）
 
 > handoff-id: tadakayo
 > サービス名（最新）: **タダカヨの介護情報基盤伴走支援**（サブ：タダサポ＋ シリーズ）
@@ -8,8 +8,53 @@
 ## 現在の状態
 
 LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html）は本番稼働中。
+**🎉 2026-06-04: CRM Phase 1 本番デプロイ完了・実機検証PASS。Firebaseクラウド環境のセットアップが全完了した。**
+- 管理画面: https://kjk-tadakayo-admin.web.app （HTTP 200・Googleログインフロー稼働確認済）
+- Blaze（従量課金）有効化済 + 月¥3,000予算アラート設定済（50/90/100%通知）
+- Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
+- Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
+
+### ✅ 今セッションで完了したこと（2026-06-04 後半）— Webhook配線切替 + 過去データ取り込み
+
+| 項目 | 内容 |
+|---|---|
+| Webhook配線切替 | `mitsumori.html`/`index.html` の送信先を Chat直送 → **Cloud Functions**（`webhookMitsumori`/`webhookLpInquiry`）に変更。LP問い合わせ・見積もり成約が自動でFirestoreに案件登録されるように。Formspreeメール送信は継続。`no-cors`撤去（Functionは`cors:true`） |
+| バグ修正 | Functionの重複チェッククエリに複合インデックスが必要で全Webhookが500になる状態だった。`firestore.indexes.json`（`contactEmail+source+receivedAt`）を作成・デプロイ（READY確認）。手元curlテストで事前検出 |
+| 過去データ取り込み | デスクトップ「情報基盤問い合わせ」の21スクショ（見積もり成約/問い合わせ/名刺6枚）を読み取り、重複統合して **20事業所**をFirestoreに直接登録（Chat通知なし・受信日時は実日付JST→UTC変換）。`_counters/cases`=20、次の実案件は#21から |
+| 名刺OCR | 名刺画像はGeminiで二重OCRして精度向上（rule07） |
+| 要確認(後でCRM修正) | #1のさかえ(メール) / #8みそら(担当者名・メール) / #10清和園(事業所名・担当者名) / #12四季折々(法人/事業所名・担当者名) / 名刺#15ことり・#16希望館・#17ソアレ(メール) |
+
+> ⚠️ Chat通知なしのため Webhook Function は使わず Firestore REST API で直接書き込んだ（`x-goog-user-project: kjk-tadakayo` ヘッダ必須）。個人情報を含む一時ファイルは作業後に削除済（Pマーク）。
+> 📌 システム開発グループ Chat Webhook（開発報告用）: スペース `AAAAJTAWTVo`（key/token は通常の Chat Webhook URL）。
+
+### ✅ 今セッションで完了したこと（2026-06-04）— クラウド環境セットアップ全完了
+
+> 背景: 従来「Console操作はClaude代行不可（gcloudが279アカ）」だったが、本セッションで **gcloud に tadakayo アカウントを追加**（config `tadakayo`）し、ほぼ全工程をCLIで完遂した。Console操作が必要だったのは Auth Google プロバイダ有効化の1つだけ（OAuth自動生成APIが2026/3廃止のため）。
+
+| 項目 | 内容 | 手段 |
+|---|---|---|
+| gcloud tadakayo化 | `gcloud config configurations create tadakayo` + `gcloud auth login yoshinao-tsukuda@tadakayo.jp` | CLI |
+| API有効化 | firestore / firebase / identitytoolkit / storage / cloudfunctions / cloudbuild / artifactregistry / run / eventarc / pubsub / firebasestorage / billingbudgets / cloudbilling | gcloud |
+| Firestore | `(default)` DB作成（本番・asia-northeast1）+ ルールデプロイ（@tadakayo.jp制限） | firebase CLI |
+| Blaze | 次田さんがConsoleで請求先紐付け（請求先 `01F524-AB83CE-2DD2E2`） | Console（次田さん） |
+| 予算アラート | 月¥3,000・50/90/100%通知（budget id `1affaa42-...`） | gcloud billing |
+| Storage | defaultBucket作成 `kjk-tadakayo.firebasestorage.app`（asia-northeast1）+ ルールデプロイ | firebasestorage API + CLI |
+| Functions | webhookLpInquiry / webhookMitsumori（v2・asia-northeast1）デプロイ | firebase CLI |
+| Artifactクリーンアップ | gcf-artifacts（asia-northeast1）に 7日削除/直近3保持ポリシー | gcloud artifacts |
+| Hosting | LP + admin 両サイト release complete（admin初回はcleanupエラーで未確定→再デプロイで確定） | firebase CLI |
+| Auth Google | Console でGoogleプロバイダ有効化（clientId `677262660109-l68qjb2...`自動生成） | Console（次田さん） |
+| Auth許可ドメイン | admin.web.app / admin.firebaseapp.com / admin.kjk.tadakayo.jp を追加（unauthorized-domain防止） | identitytoolkit API |
+| 実機検証 | Playwrightで admin ログインページ表示→Googleログインフロー起動（hd=tadakayo.jp制限ヒント動作・次田芳尚アカウント認識）まで確認 | Playwright |
+
+> ⚠️ admin Hosting の初回デプロイは末尾の Artifactクリーンアップ未設定エラーでコマンドが中断し、hosting release が未確定で404になった。`firebase functions:artifacts:setpolicy` は us-central1 を見るので **gcloud で asia-northeast1 の gcf-artifacts にポリシー適用** → `firebase deploy --only hosting` 再実行で確定した。
+> ⚠️ Firebase Storage の defaultBucket は `POST firebasestorage.googleapis.com/v1beta/projects/{p}/defaultBucket` の **bodyに`{"location":"asia-northeast1"}`**（クエリ不可）で作成できる。
+
+---
+
+## 旧・現在の状態（2026-06-02時点・参考）
+
 **2026-06-02: LP本番動作確認PASS＋補助金完全リスト35コード逐語化＋favicon追加＋見積書税表記修正を本番デプロイ済み（最新コミット `ca0f47f`・GitHub push済・実体確認済）。**
-**CRM Phase 1 コード実装完了（コミット 307a01b）。Firebase Console 設定後すぐデプロイ可能（未デプロイ）。**
+**CRM Phase 1 コード実装完了（コミット 307a01b）。→ 2026-06-04 デプロイ完了済。**
 
 > 🎯 **CRM Phase 1 デプロイ = あと「次田さんのConsole 4トグル」だけ**（2026-06-02 Phase2 CLI準備完了）。
 > ✅ Claude実行済み（CLI）: ウェブアプリ作成（App ID `1:677262660109:web:79645398db17dab417bb44`）／`firebase-config.js`実値化（commit `b8fe1c6`）／admin Hostingサイト `kjk-tadakayo-admin` 作成／`functions npm install`／`functions/.env`（CHAT_WEBHOOK_URL=①タダサポ＋）作成（gitignore済）。
@@ -205,6 +250,10 @@ LP・見積もりツール最新状態：
 
 ## 次セッションでやること（優先順）
 
+0. ~~**CRMクラウド環境セットアップ**~~ ✅ 2026-06-04 全完了（Blaze/Firestore/Storage/Functions/Auth/予算アラート・実機検証PASS）
+0b. **【次の最有力タスク】mitsumori.html の Webhook を Functions 経由に切替** — 現在は `WEBHOOK_URL`=Chat直送。`https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookMitsumori` に変えると見積もり成約が自動でFirestoreに案件登録されCRMに乗る。同様に index.html の LP問い合わせも `webhookLpInquiry` 経由を検討（現状Formspree+Chat）。切替後は実機で1件投入してFirestore `cases` に入るか検証。
+0c. **管理画面の実ログイン確認**（次田さんが @tadakayo.jp で実際にログイン→案件一覧表示までを一度通す）
+0d. （任意）Cloudflare Access で `admin.kjk.tadakayo.jp` 化（CRM_SETUP_GUIDE Step6 / CRM_DESIGN Phase0）。許可ドメインには登録済。
 1. ~~**本番動作確認**: 補助金完全リスト表示・USB¥6,500反映・見積もり全パターン~~ ✅ 2026-06-02 完了（35コード逐語化・favicon・E2Eまで実施）
 2. **パイロット運用 30事業所**（〜2026/8月目標）
 3. **大分・別府市視察**（6/29候補）

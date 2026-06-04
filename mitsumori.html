@@ -907,8 +907,8 @@
   // 伴走支援費（税込・補助対象台数別）
   const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
 
-  // Google Chat Webhook（見積書ダウンロード通知用）
-  const WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQAkcdopcA/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=tYNefDlxe-fhdm-2yORV-tayo_u-iylTTd6eo_LE_u4';
+  // 成約通知 Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
+  const WEBHOOK_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookMitsumori';
 
   let estNo = '';
   let webhookSent = false; // 連絡先Webhookの二重送信防止フラグ
@@ -1115,21 +1115,22 @@
     return true;
   }
 
-  /* ──────── Google Chat Webhook 通知 ──────── */
+  /* ──────── 成約通知（Cloud Function 経由）──────── */
   async function notifyWebhook(payload) {
     try {
-      await fetch(WEBHOOK_URL, {
+      const res = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      if (!res.ok) console.warn('成約通知エラー:', res.status);
     } catch (e) {
       // 通知失敗してもPDFダウンロードは継続
       console.warn('Webhook送信に失敗しました', e);
     }
   }
 
+  // Cloud Function (webhookMitsumori) が期待する構造化データを生成
   function buildNotifyPayload() {
     const planKey     = document.querySelector('input[name="plan"]:checked').value;
     const btQty       = parseInt(document.getElementById('btQty').value)       || 0;
@@ -1143,41 +1144,29 @@
     const contactEmail= document.getElementById('contactEmail').value.trim();
     const contactAddr = (document.getElementById('contactAddress').value || '').trim();
     const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
-    const consented   = document.getElementById('consentCheck').checked;
 
     const calc = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
 
-    const text = [
-      '📩 *タダカヨ 介護情報基盤伴走支援 新規見積もり成約通知*',
-      `🕒 ${new Date().toLocaleString('ja-JP')}`,
-      '',
-      `*見積番号*：${estNo}`,
-      '',
-      '*【事業所さま情報】*',
-      `法人名：${corp}`,
-      `事業所名：${office}`,
-      `ご担当者：${contactName}`,
-      `電話：${contactTel}`,
-      `メール：${contactEmail}`,
-      contactAddr ? `住所：${contactAddr}` : null,
-      contactWeb  ? `HP：${contactWeb}` : null,
-      `同意：${consented ? '✅ 介護事業所関係者として同意済み' : '❌'}`,
-      '',
-      '*【見積もり内容】*',
-      `事業所種別：${calc.plan.label}（上限 ${yen(calc.plan.limit)}）`,
-      `機器構成：${configFullLabel(btQty, usbQty, btExtra, usbExtra)}`,
-      btQty    > 0 ? `　・CIR415A（BT）補助対象 ×${btQty}台：${yen(calc.btSubtotal)}` : null,
-      usbQty   > 0 ? `　・CIR315A（USB）補助対象 ×${usbQty}台：${yen(calc.usbSubtotal)}` : null,
-      btExtra  > 0 ? `　・CIR415A（BT）補助対象外 ×${btExtra}台：${yen(calc.btExtraSubtotal)}` : null,
-      usbExtra > 0 ? `　・CIR315A（USB）補助対象外 ×${usbExtra}台：${yen(calc.usbExtraSubtotal)}` : null,
-      calc.subsidyTotal > 0 ? `伴走支援費（税込）：${yen(calc.accFeeIncl)}` : null,
-      calc.discount > 0 ? `特別割引：−${yen(calc.discount)}` : null,
-      `*合計（税込）：${yen(calc.totalIncl)}*`,
-      `助成金充当：−${yen(calc.grantAmt)}`,
-      `*自己負担：${yen(calc.selfPay)}*${calc.selfPay === 0 ? '（自己負担¥0達成）' : ''}`,
-    ].filter(Boolean).join('\n');
-
-    return { text };
+    return {
+      corpName:       corp,
+      officeName:     office,
+      contactName:    contactName,
+      phone:          contactTel,
+      email:          contactEmail,
+      address:        contactAddr,
+      website:        contactWeb,
+      subsidyPlan:    calc.plan.label,
+      subsidyCategory: planKey,
+      btSubsidyQty:   btQty,
+      btExtraQty:     btExtra,
+      usbSubsidyQty:  usbQty,
+      usbExtraQty:    usbExtra,
+      subsidyAmount:  calc.grantAmt,
+      totalAmount:    calc.totalIncl,
+      specialDiscount: calc.discount,
+      selfPay:        calc.selfPay,
+      estNo:          estNo,
+    };
   }
 
   /* ──────── PDFダウンロード ──────── */

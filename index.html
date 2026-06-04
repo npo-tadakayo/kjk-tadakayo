@@ -2061,8 +2061,8 @@
     const form = document.getElementById('contact-form');
     const success = document.getElementById('form-success');
 
-    // Google Chat Webhook（介護情報基盤伴走支援 お問い合わせ通知用）
-    const CONTACT_WEBHOOK_URL = 'https://chat.googleapis.com/v1/spaces/AAQAkcdopcA/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=tYNefDlxe-fhdm-2yORV-tayo_u-iylTTd6eo_LE_u4';
+    // お問い合わせ Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
+    const CONTACT_WEBHOOK_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookLpInquiry';
 
     async function notifyContactWebhook(data) {
       const orgName    = data.get('事業所名') || '';
@@ -2072,28 +2072,23 @@
       const serviceType= data.get('サービス種別') || '';
       const message    = data.get('ご相談内容') || '';
 
-      const lines = [
-        '📞 *タダカヨ 介護情報基盤伴走支援 お問い合わせ受信*',
-        `🕒 ${new Date().toLocaleString('ja-JP')}`,
-        '',
-        '*【お問い合わせ内容】*',
-        `事業所名：${orgName}`,
-        `ご担当者：${personName}`,
-        phone ? `電話：${phone}` : null,
-        `メール：${email}`,
-        serviceType ? `サービス種別：${serviceType}` : null,
-      ];
-      if (message) {
-        lines.push('', '*【ご相談内容】*', message);
-      }
-      const text = lines.filter(l => l !== null).join('\n');
+      // サービス種別はメッセージ先頭に付記（Function は message を1フィールドで保存するため）
+      const fullMessage = [serviceType ? `【サービス種別】${serviceType}` : null, message]
+        .filter(Boolean).join('\n');
 
       try {
         await fetch(CONTACT_WEBHOOK_URL, {
           method: 'POST',
-          mode: 'no-cors',
-          headers: { 'Content-Type': 'application/json; charset=UTF-8' },
-          body: JSON.stringify({ text }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            corpName: '',
+            officeName: orgName,
+            name: personName,
+            phone: phone,
+            email: email,
+            website: '',
+            message: fullMessage,
+          }),
         });
       } catch (e) {
         // Webhook失敗してもFormspreeメール送信があるので致命的ではない
