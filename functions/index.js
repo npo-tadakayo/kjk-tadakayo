@@ -1,6 +1,6 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
-const { defineString } = require("firebase-functions/params");
+const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
 const { GoogleAuth } = require("google-auth-library");
@@ -8,7 +8,7 @@ const { GoogleAuth } = require("google-auth-library");
 admin.initializeApp();
 const db = admin.firestore();
 
-const CHAT_WEBHOOK_URL = defineString("CHAT_WEBHOOK_URL");
+const CHAT_WEBHOOK_URL = defineSecret("CHAT_WEBHOOK_URL");
 
 // アプリ設定（Firestore appConfig/settings）を読む。60秒キャッシュ・未設定は.env/既定にフォールバック
 let _settingsCache = null, _settingsAt = 0;
@@ -87,7 +87,7 @@ async function notifyChat(webhookUrl, message) {
 
 // LP 問い合わせ Webhook（index.html のお問い合わせフォームから）
 exports.webhookLpInquiry = onRequest(
-  { region: "asia-northeast1", cors: true },
+  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL] },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
@@ -180,7 +180,7 @@ exports.webhookLpInquiry = onRequest(
 
 // 見積もりツール 成約 Webhook（mitsumori.html から）
 exports.webhookMitsumori = onRequest(
-  { region: "asia-northeast1", cors: true },
+  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL] },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
@@ -288,7 +288,7 @@ exports.webhookMitsumori = onRequest(
 );
 
 // 設定画面からのChatテスト通知
-exports.testChatNotify = onCall({ region: "asia-northeast1" }, async (request) => {
+exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL] }, async (request) => {
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
   const url = await getChatWebhook();
@@ -342,7 +342,7 @@ async function buildFollowupDigest() {
 }
 
 exports.dailyFollowup = onSchedule(
-  { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1" },
+  { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL] },
   async () => {
     try {
       const msg = await buildFollowupDigest();
