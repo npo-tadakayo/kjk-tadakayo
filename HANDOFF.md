@@ -17,6 +17,8 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 >   1. Firestore有効化（本番・asia-northeast1）2. Auth→Google有効化 3. Storage有効化 4. Blazeプラン
 >   → 完了後Claudeが「プリフライト確認→`bash deploy.sh`→実機検証」を一気に実行。2026-06-02時点でFirestore APIは403（未有効）。
 >
+> ⏸ 2026-06-03: Console設定（特にBlaze=有料プラン切替）は **理事長への承認待ちで一旦保留**。非エンジニア向け説明文書 `クラウド利用料のご説明_理事長向け.md` を作成済み（費用は実質0円〜月数百円の見込み・予算アラート/アクセス制限で安全管理、と説明）。承認が下りたら次田さんがConsole 4トグル→Claudeがデプロイ。
+>
 > ⚠️ git 注意: push は PAT URL 直叩きのため `origin/main` 追跡参照が更新されず「ahead N」と誤表示される。実体は `git ls-remote <PAT-url> refs/heads/main` で裏取りすること（今回 `ca0f47f` で一致確認済）。
 
 ### ✅ 今セッションで完了したこと（2026-06-02）
