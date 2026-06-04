@@ -101,7 +101,7 @@ function renderLetterpack(s, sender, variant){
   sender = sender || {};
   const isLight = variant === "light";
   const brandName = isLight ? "レターパックライト" : "レターパックプラス";
-  const price = isLight ? "370円" : "520円";
+  const price = isLight ? "430円" : "600円";
   const colorName = isLight ? "青" : "赤";
   const fromName = sender.name || "";
   const fromPostal = sender.postal || "";
