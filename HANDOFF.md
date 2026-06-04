@@ -14,6 +14,20 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤6）— Phase 6 / 9 / 10 / 11
+
+| Phase | 内容 |
+|---|---|
+| 6 アフターフォロー自動化 | `dailyFollowup`（onSchedule・毎朝9時JST・asia-northeast1）。停滞(7日)・未割当新規・未申請(期限30日以内)・入金待ち14日超 を集計し**Chat通知**。0件なら通知しない。Cloud Scheduler `firebase-schedule-dailyFollowup` ENABLED |
+| 9 発注＋商品マスタ | `products`(3SKU・固定ID=sku・stock付き) を投入。`supply.html`/`js/supply.js` の「発注」: 新規発注（数量入力）→ 自動採番 `PO-2026-NNNN`・status=sent。「入荷登録」で在庫加算+status=received。**発注書PDF**(`supply-print.html?type=po`) |
+| 10 在庫管理 | supply「在庫・商品」: 3SKUの在庫表示＋手動±調整（`inventoryMovements`ログ）。発注入荷で+、出荷で−自動連動。`products.stock` を increment で更新 |
+| 11 出荷・送付状 | supply「出荷」: 送付先（法人/事業所/住所/担当）＋数量 → 自動採番 `SH-2026-NNNN`・在庫から自動引落（在庫不足はブロック）。**送付状PDF**(`supply-print.html?type=ship`) |
+| ナビ | 全画面サイドバーに「供給管理」追加（`ti-package`） |
+
+> ⚠️ 実機（@tadakayoログイン）検証は未。次田さん確認: 供給管理→在庫±調整／新規発注→発注書PDF／入荷登録で在庫増／新規出荷→送付状PDF＆在庫減。
+> 📌 商品マスタ初期値はCSV準拠（卸価格は税別・JANコードは要確認のまま）。AB Circle回答後に単価/JAN更新を。
+> 📌 発注/出荷の採番は `_counters/purchaseOrders`・`_counters/shipments`（共に PO/SH-2026-NNNN）。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤5）— Phase 5 レポートPDF
 
 | 項目 | 内容 |

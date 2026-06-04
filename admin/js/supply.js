@@ -1,0 +1,224 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, onAuthStateChanged, signOut }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, doc, getDocs, query, orderBy, onSnapshot,
+  addDoc, updateDoc, runTransaction, serverTimestamp, increment }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+let products = [];
+let currentUser = null;
+
+function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+function yen(n){return "¥"+Number(n||0).toLocaleString("ja-JP");}
+function today(){return new Date().toLocaleDateString("sv-SE");} // YYYY-MM-DD (local)
+function fmtDate(ts){ if(!ts) return "—"; const d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleDateString("ja-JP",{year:"2-digit",month:"numeric",day:"numeric"});}
+function toast(m){const t=document.getElementById("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
+
+async function nextNumber(counterId, prefix){
+  const ref = doc(db,"_counters",counterId);
+  const n = await runTransaction(db, async (tx)=>{
+    const s = await tx.get(ref); const v=(s.exists()?s.data().value:0)+1; tx.set(ref,{value:v}); return v;
+  });
+  return `${prefix}-2026-${String(n).padStart(4,"0")}`;
+}
+
+// ===== タブ =====
+function initTabs(){
+  document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+    document.querySelectorAll(".tab-content").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    document.getElementById(`tab-${t.dataset.tab}`).classList.add("active");
+  }));
+}
+
+// ===== 在庫・商品 =====
+function renderProducts(){
+  document.getElementById("productsBody").innerHTML = products.map(p=>`
+    <tr>
+      <td><strong>${esc(p.id)}</strong></td>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.connection||"")}</td>
+      <td>${yen(p.wholesale2_10)}</td>
+      <td><strong style="font-size:16px">${p.stock||0}</strong> 台</td>
+      <td>
+        <button class="btn btn-secondary stock-btn" data-sku="${p.id}" data-dir="in" style="font-size:12px;padding:4px 8px">＋入庫</button>
+        <button class="btn btn-secondary stock-btn" data-sku="${p.id}" data-dir="out" style="font-size:12px;padding:4px 8px">－出庫</button>
+      </td>
+    </tr>`).join("");
+  document.querySelectorAll(".stock-btn").forEach(b=>b.addEventListener("click",()=>adjustStock(b.dataset.sku,b.dataset.dir)));
+}
+
+async function adjustStock(sku, dir){
+  const p = products.find(x=>x.id===sku);
+  const qStr = prompt(`${p.name}\n${dir==="in"?"入庫":"出庫"}する台数を入力してください`, "1");
+  if(!qStr) return;
+  const q = parseInt(qStr,10);
+  if(!(q>0)){ alert("正の整数を入力してください"); return; }
+  if(dir==="out" && (p.stock||0)<q){ alert(`在庫不足（現在 ${p.stock||0} 台）`); return; }
+  const delta = dir==="in"? q : -q;
+  await updateDoc(doc(db,"products",sku),{stock:increment(delta)});
+  await addDoc(collection(db,"inventoryMovements"),{
+    sku, delta, reason: dir==="in"?"manual_in":"manual_out",
+    createdAt:serverTimestamp(), userName: currentUser.displayName||currentUser.email });
+  toast(`${p.name} を ${dir==="in"?"+":"-"}${q}台 調整しました`);
+}
+
+// ===== 発注モーダル =====
+function itemRows(containerId){
+  document.getElementById(containerId).innerHTML = `
+    <table style="width:100%;margin-bottom:10px"><thead><tr>
+      <th style="text-align:left;font-size:12px;color:var(--color-ink-muted)">品番</th>
+      <th style="text-align:left;font-size:12px;color:var(--color-ink-muted)">商品</th>
+      <th style="width:90px;font-size:12px;color:var(--color-ink-muted)">数量</th></tr></thead>
+    <tbody>${products.map(p=>`<tr>
+      <td style="font-size:12px">${esc(p.id)}</td>
+      <td style="font-size:12px">${esc(p.name)}</td>
+      <td><input class="form-control qty-input" type="number" min="0" value="0" data-sku="${p.id}" style="padding:4px 8px"></td>
+    </tr>`).join("")}</tbody></table>`;
+}
+function collectItems(kind){
+  const items=[];
+  document.querySelectorAll(`#${kind} .qty-input`).forEach(inp=>{
+    const q=parseInt(inp.value,10)||0;
+    if(q>0){ const p=products.find(x=>x.id===inp.dataset.sku);
+      items.push({sku:p.id,name:p.name,qty:q,unitPrice:p.wholesale2_10||0}); }
+  });
+  return items;
+}
+
+function openOrder(){ itemRows("orderItems"); document.getElementById("orderDate").value=today();
+  document.getElementById("orderNote").value=""; document.getElementById("orderTotal").textContent="";
+  document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
+  document.getElementById("orderModal").classList.add("open"); }
+function updateOrderTotal(){ const items=collectItems("orderItems");
+  const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
+  document.getElementById("orderTotal").textContent = items.length?`合計(税別): ${yen(total)}`:""; }
+async function saveOrder(){
+  const items=collectItems("orderItems");
+  if(!items.length){ alert("数量を入力してください"); return; }
+  const btn=document.getElementById("saveOrderBtn"); btn.disabled=true;
+  try{
+    const poNumber=await nextNumber("purchaseOrders","PO");
+    const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
+    await addDoc(collection(db,"purchaseOrders"),{
+      poNumber, orderDate:document.getElementById("orderDate").value||today(),
+      supplier:"AB Circle Japan 株式会社", items, total,
+      status:"sent", note:document.getElementById("orderNote").value.trim(),
+      createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+    document.getElementById("orderModal").classList.remove("open");
+    toast(`発注 ${poNumber} を登録しました`);
+  }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
+}
+
+function renderOrders(orders){
+  const body=document.getElementById("ordersBody"); const empty=document.getElementById("ordersEmpty");
+  empty.style.display = orders.length?"none":"block";
+  body.innerHTML = orders.map(o=>{
+    const summary=(o.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
+    const statusLabel={sent:"発注済",received:"入荷済",draft:"下書き"}[o.status]||o.status;
+    return `<tr>
+      <td><strong>${esc(o.poNumber)}</strong></td>
+      <td>${esc(o.orderDate||"")}</td>
+      <td style="font-size:12px">${esc(summary)}</td>
+      <td>${yen(o.total)}</td>
+      <td><span class="badge badge-${o.status==="received"?3:2}">${statusLabel}</span></td>
+      <td style="white-space:nowrap">
+        <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
+        ${o.status!=="received"?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
+      </td></tr>`;
+  }).join("");
+  document.querySelectorAll(".recv-btn").forEach(b=>b.addEventListener("click",()=>receiveOrder(b.dataset.id,orders)));
+}
+async function receiveOrder(id, orders){
+  const o=orders.find(x=>x._id===id);
+  if(!confirm(`発注 ${o.poNumber} を入荷登録します。在庫に加算されます。よろしいですか？`)) return;
+  try{
+    for(const it of (o.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
+      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"po_received",refNo:o.poNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    await updateDoc(doc(db,"purchaseOrders",id),{status:"received",receivedAt:serverTimestamp()});
+    toast(`${o.poNumber} を入荷登録しました`);
+  }catch(e){ alert(`入荷登録失敗: ${e.message}`);}
+}
+
+// ===== 出荷モーダル =====
+function openShip(){ itemRows("shipItems"); document.getElementById("shipDate").value=today();
+  ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("shipStockWarn").style.display="none";
+  document.getElementById("shipModal").classList.add("open"); }
+async function saveShip(){
+  const office=document.getElementById("shipOffice").value.trim();
+  if(!office){ alert("事業所名を入力してください"); return; }
+  const items=collectItems("shipItems");
+  if(!items.length){ alert("数量を入力してください"); return; }
+  // 在庫チェック
+  for(const it of items){ const p=products.find(x=>x.id===it.sku);
+    if((p.stock||0)<it.qty){ const w=document.getElementById("shipStockWarn");
+      w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
+  const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
+  try{
+    const soNumber=await nextNumber("shipments","SH");
+    await addDoc(collection(db,"shipments"),{
+      soNumber, shipDate:document.getElementById("shipDate").value||today(),
+      postal:document.getElementById("shipPostal").value.trim(),
+      company:document.getElementById("shipCompany").value.trim(),
+      officeName:office, address:document.getElementById("shipAddress").value.trim(),
+      contactName:document.getElementById("shipContact").value.trim(),
+      phone:document.getElementById("shipPhone").value.trim(),
+      items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+    for(const it of items){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
+      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    document.getElementById("shipModal").classList.remove("open");
+    toast(`出荷 ${soNumber} を登録しました（在庫から引落）`);
+  }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
+}
+function renderShipments(ships){
+  const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
+  empty.style.display = ships.length?"none":"block";
+  body.innerHTML = ships.map(s=>{
+    const summary=(s.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
+    return `<tr>
+      <td><strong>${esc(s.soNumber)}</strong></td>
+      <td>${esc(s.shipDate||"")}</td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}</td>
+      <td style="font-size:12px">${esc(summary)}</td>
+      <td><a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a></td>
+    </tr>`;
+  }).join("");
+}
+
+// ===== 初期化 =====
+onAuthStateChanged(auth, async (user)=>{
+  if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
+  currentUser=user;
+  document.getElementById("userEmail").textContent=user.displayName||user.email;
+  document.getElementById("logoutBtn").addEventListener("click",()=>signOut(auth).then(()=>location.href="/index.html"));
+  initTabs();
+
+  document.getElementById("newOrderBtn").addEventListener("click",openOrder);
+  document.getElementById("closeOrderBtn").addEventListener("click",()=>document.getElementById("orderModal").classList.remove("open"));
+  document.getElementById("cancelOrderBtn").addEventListener("click",()=>document.getElementById("orderModal").classList.remove("open"));
+  document.getElementById("saveOrderBtn").addEventListener("click",saveOrder);
+  document.getElementById("newShipBtn").addEventListener("click",openShip);
+  document.getElementById("closeShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
+  document.getElementById("cancelShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
+  document.getElementById("saveShipBtn").addEventListener("click",saveShip);
+
+  // products（リアルタイム・在庫反映）
+  onSnapshot(query(collection(db,"products")),(snap)=>{
+    products=snap.docs.map(d=>({_id:d.id,id:d.id,...d.data()})).sort((a,b)=>a.id.localeCompare(b.id));
+    renderProducts();
+  });
+  // 発注一覧
+  onSnapshot(query(collection(db,"purchaseOrders"),orderBy("createdAt","desc")),(snap)=>{
+    renderOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
+  });
+  // 出荷一覧
+  onSnapshot(query(collection(db,"shipments"),orderBy("createdAt","desc")),(snap)=>{
+    renderShipments(snap.docs.map(d=>({_id:d.id,...d.data()})));
+  });
+});

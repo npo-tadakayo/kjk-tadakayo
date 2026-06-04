@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>供給管理 — タダカヨ CRM</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
+        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
+        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
+        <a class="nav-item active" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">供給管理</h1></div>
+
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="inventory" role="tab"><i class="ti ti-building-warehouse" aria-hidden="true"></i> 在庫・商品</button>
+        <button class="tab" data-tab="orders" role="tab"><i class="ti ti-shopping-cart" aria-hidden="true"></i> 発注（→AB Circle）</button>
+        <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→事業所）</button>
+      </div>
+
+      <!-- 在庫・商品 -->
+      <div class="tab-content active" id="tab-inventory">
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th>卸価格(2-10台)</th><th>在庫</th><th>調整</th></tr></thead>
+          <tbody id="productsBody"></tbody></table>
+        </div></div>
+      </div>
+
+      <!-- 発注 -->
+      <div class="tab-content" id="tab-orders">
+        <div class="page-header" style="margin-bottom:12px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">タダカヨ → AB Circle Japan への発注</span>
+          <button class="btn btn-primary" id="newOrderBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規発注</button>
+        </div>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>発注番号</th><th>発注日</th><th>内容</th><th>金額(税別)</th><th>ステータス</th><th></th></tr></thead>
+          <tbody id="ordersBody"></tbody></table>
+          <div id="ordersEmpty" class="empty-state" style="display:none"><i class="ti ti-shopping-cart" aria-hidden="true"></i><p>発注がありません</p></div>
+        </div></div>
+      </div>
+
+      <!-- 出荷 -->
+      <div class="tab-content" id="tab-shipments">
+        <div class="page-header" style="margin-bottom:12px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">タダカヨ → 介護事業所への出荷・送付状</span>
+          <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
+        </div>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>出荷番号</th><th>出荷日</th><th>送付先</th><th>内容</th><th></th></tr></thead>
+          <tbody id="shipBody"></tbody></table>
+          <div id="shipEmpty" class="empty-state" style="display:none"><i class="ti ti-truck-delivery" aria-hidden="true"></i><p>出荷がありません</p></div>
+        </div></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 発注モーダル -->
+  <div class="modal-overlay" id="orderModal" role="dialog" aria-modal="true" aria-label="新規発注">
+    <div class="modal"><div class="modal-header"><h2>新規発注（→AB Circle）</h2>
+      <button class="btn btn-secondary" id="closeOrderBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label" for="orderDate">発注日</label><input class="form-control" type="date" id="orderDate"></div>
+        <div id="orderItems"></div>
+        <div class="form-group"><label class="form-label" for="orderNote">備考</label><textarea class="form-control" id="orderNote" rows="2"></textarea></div>
+        <p id="orderTotal" style="text-align:right;font-weight:700"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelOrderBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveOrderBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>発注を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 出荷モーダル -->
+  <div class="modal-overlay" id="shipModal" role="dialog" aria-modal="true" aria-label="新規出荷">
+    <div class="modal"><div class="modal-header"><h2>新規出荷（→事業所）</h2>
+      <button class="btn btn-secondary" id="closeShipBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="shipDate">出荷日</label><input class="form-control" type="date" id="shipDate"></div>
+          <div class="form-group"><label class="form-label" for="shipPostal">郵便番号</label><input class="form-control" type="text" id="shipPostal" placeholder="000-0000"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="shipCompany">法人名</label><input class="form-control" type="text" id="shipCompany"></div>
+        <div class="form-group"><label class="form-label" for="shipOffice">事業所名 <span style="color:red">*</span></label><input class="form-control" type="text" id="shipOffice"></div>
+        <div class="form-group"><label class="form-label" for="shipAddress">住所</label><input class="form-control" type="text" id="shipAddress"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="shipContact">送付先担当者</label><input class="form-control" type="text" id="shipContact"></div>
+          <div class="form-group"><label class="form-label" for="shipPhone">電話</label><input class="form-control" type="text" id="shipPhone"></div>
+        </div>
+        <div id="shipItems"></div>
+        <div id="shipStockWarn" style="font-size:12px;color:var(--color-danger);display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelShipBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveShipBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>出荷を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/supply.js" type="module"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
@@ -261,6 +262,62 @@ exports.webhookMitsumori = onRequest(
     } catch (e) {
       console.error("webhookMitsumori error:", e);
       res.status(500).json({ status: "error", message: e.message });
+    }
+  }
+);
+
+// ===== Phase 6: アフターフォロー自動化（日次・Chat通知）=====
+const STATUS_LABELS_FN = {
+  1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注", 5: "担当者決定",
+  6: "事前準備中", 7: "伴走支援待ち", 8: "伴走支援実施済", 9: "書類準備完了・申請ガイド中",
+  10: "申請完了・採択待ち", 11: "採択・入金待ち", 12: "アフターフォロー中", 13: "案件完了",
+};
+const FU_TERMINAL = [4, 13];
+const FU_PRE_APPLY = [1, 2, 3, 5, 6, 7, 8, 9];
+const FU_DEADLINE = new Date("2027-03-12T23:59:59+09:00");
+
+function daysAgo(ts) {
+  if (!ts) return null;
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+
+async function buildFollowupDigest() {
+  const snap = await db.collection("cases").get();
+  const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const deadlineDays = Math.ceil((FU_DEADLINE - new Date()) / 86400000);
+
+  const unassigned = cases.filter((c) => c.status === 1 && !c.assignedUserId);
+  const stale = cases.filter((c) => !FU_TERMINAL.includes(c.status) && (daysAgo(c.updatedAt) ?? 0) >= 7);
+  const deadlineNear = deadlineDays <= 30 ? cases.filter((c) => FU_PRE_APPLY.includes(c.status)) : [];
+  const awaitingDeposit = cases.filter((c) => c.status === 11 && (daysAgo(c.updatedAt) ?? 0) >= 14);
+
+  if (!unassigned.length && !stale.length && !deadlineNear.length && !awaitingDeposit.length) {
+    return null; // 通知不要
+  }
+  const line = (c) => `・#${c.caseNumber || "?"} ${c.officeName || "(名称未登録)"}（${STATUS_LABELS_FN[c.status] || "?"}）`;
+  const sec = (title, arr) => arr.length
+    ? `\n*${title}（${arr.length}件）*\n${arr.slice(0, 10).map(line).join("\n")}${arr.length > 10 ? `\n…ほか${arr.length - 10}件` : ""}` : "";
+
+  return [
+    `🗓 *タダカヨCRM 日次フォローアップ*（申請期限まで残り ${deadlineDays} 日）`,
+    sec("⏳ 未割当の新規案件", unassigned),
+    sec("⚠️ 停滞案件（7日以上未更新）", stale),
+    sec("📋 未申請（期限対応が必要）", deadlineNear),
+    sec("💰 入金待ちが14日以上", awaitingDeposit),
+    "\n👉 管理画面: https://kjk-tadakayo-admin.web.app/kanban",
+  ].filter(Boolean).join("\n");
+}
+
+exports.dailyFollowup = onSchedule(
+  { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1" },
+  async () => {
+    try {
+      const msg = await buildFollowupDigest();
+      if (msg) await notifyChat(CHAT_WEBHOOK_URL.value(), msg);
+      console.log("dailyFollowup done:", msg ? "通知あり" : "通知不要");
+    } catch (e) {
+      console.error("dailyFollowup error:", e);
     }
   }
 );
