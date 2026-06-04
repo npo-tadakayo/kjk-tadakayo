@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ユーザー管理 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">ユーザー管理（ロール）</h1>
+        <button class="btn btn-primary" id="newUserBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>ユーザーを追加</button>
+      </div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+      <div id="main" style="display:none">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">ここに登録された @tadakayo.jp ユーザーのみログインできます。未登録のユーザーはアクセスできません。</p>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>氏名</th><th>メール</th><th>ロール</th><th>状態</th><th></th></tr></thead>
+          <tbody id="usersBody"></tbody></table>
+          <div id="usersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>ユーザーがいません</p></div>
+        </div></div>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin-top:10px">ロール: <strong>管理者</strong>=全機能＋設定・ユーザー管理 ／ <strong>スタッフ</strong>=通常業務 ／ <strong>閲覧</strong>=参照中心。</p>
+      </div>
+    </main>
+  </div>
+
+  <!-- 追加/編集モーダル -->
+  <div class="modal-overlay" id="userModal" role="dialog" aria-modal="true" aria-label="ユーザー">
+    <div class="modal"><div class="modal-header"><h2 id="userModalTitle">ユーザーを追加</h2>
+      <button class="btn btn-secondary" id="closeUserBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label" for="uEmail">メール（@tadakayo.jp のGoogleアカウント）<span style="color:red">*</span></label><input class="form-control" id="uEmail" type="email" placeholder="name@tadakayo.jp"></div>
+        <div class="form-group"><label class="form-label" for="uName">氏名 <span style="color:red">*</span></label><input class="form-control" id="uName" type="text"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="uRole">ロール</label>
+            <select class="form-control" id="uRole">
+              <option value="admin">管理者</option>
+              <option value="staff" selected>スタッフ</option>
+              <option value="viewer">閲覧のみ</option>
+            </select></div>
+          <div class="form-group"><label class="form-label" for="uActive">状態</label>
+            <select class="form-control" id="uActive">
+              <option value="true" selected>有効</option>
+              <option value="false">停止</option>
+            </select></div>
+        </div>
+        <div id="uError" style="font-size:13px;color:var(--color-danger);margin-top:6px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelUserBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveUserBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>保存</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/users.js" type="module"></script>
+</body>
+</html>

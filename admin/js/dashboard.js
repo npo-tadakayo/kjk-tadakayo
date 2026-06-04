@@ -1,4 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot }
@@ -107,11 +108,12 @@ function render(cases) {
     sources.map((s) => barRow(SOURCE_LABELS[s], cases.filter((c) => c.source === s).length, total, srcColors[s])).join("");
 }
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) {
     location.href = "/index.html";
     return;
   }
+  if (!(await gateRole(db, user))) return;
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click",
     () => signOut(auth).then(() => location.href = "/index.html"));

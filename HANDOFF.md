@@ -14,6 +14,19 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤12）— ロール管理・ログイン登録制
+
+| 項目 | 内容 |
+|---|---|
+| usersコレクション | email=ID / name / role(admin/staff/viewer) / active。既存6名を登録済（次田・佐藤=admin、他=staff）|
+| ログイン登録制 | `auth.js login()` で users 未登録/停止はログイン不可。全画面ゲートで `role.js gateRole()` を呼び、未登録は拒否画面。設定・ユーザー管理は **adminOnly** |
+| ユーザー管理画面 | `users.html`+`users.js`（管理者のみ）。追加/編集/削除・自己ロックアウト防止（自分の削除/停止/降格に確認）|
+| Firestoreルール | `isRegistered()`(=@tadakayo.jp かつ users active) / `isAdmin()` を導入。全データは登録スタッフのみ。users は本人読取・admin管理。partners/partnerOrders/products は従来どおり |
+| 共通 | `role.js`（getMyRole/showAccessDenied/gateRole）。全画面ナビに「ユーザー管理」追加 |
+
+> ⚠️ ロックアウト防止のため6名を先に登録してからルール厳格化済み。新スタッフは「ユーザー管理」で追加しないとログインできない。
+> 📌 viewer ロールは現状ログイン可（読み取り中心）。各書き込みのrole別細分化は未実装（必要なら次段階）。実機確認: 未登録@tadakayoでログイン→拒否 / 管理者で全画面 / staffで設定・ユーザー管理が拒否されるか。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤11）— 日付西暦化＋認定事業所の詳細情報
 
 | 項目 | 内容 |

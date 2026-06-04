@@ -1,9 +1,11 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ hd: "tadakayo.jp" });
 
@@ -15,6 +17,18 @@ export async function login() {
   if (!email.endsWith("@tadakayo.jp")) {
     await signOut(auth);
     throw new Error("@tadakayo.jp のアカウントのみ利用できます");
+  }
+  // ロール登録チェック（未登録/停止はログイン不可）
+  try {
+    const s = await getDoc(doc(db, "users", email));
+    if (!s.exists() || s.data().active === false) {
+      await signOut(auth);
+      throw new Error("このアカウントは登録されていません。管理者にユーザー登録を依頼してください。");
+    }
+  } catch (e) {
+    if (e.message && e.message.includes("登録されていません")) throw e;
+    await signOut(auth);
+    throw new Error("アクセス権限を確認できませんでした。管理者にお問い合わせください。");
   }
   return result.user;
 }

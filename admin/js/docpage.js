@@ -1,4 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const app = initializeApp(firebaseConfig);
@@ -10,6 +11,7 @@ const NAV = [
   ["/kanban.html","ti-layout-kanban","カンバン"],
   ["/supply.html","ti-package","供給管理"],
   ["/settings.html","ti-settings","設定"],
+  ["/users.html","ti-users","ユーザー管理"],
 ];
 function renderNav(){
   const path = location.pathname;
@@ -23,6 +25,7 @@ function renderNav(){
 
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
+  if(!(await gateRole(db,user))) return;
   renderNav();
   const ue = document.getElementById("userEmail"); if(ue) ue.textContent = user.displayName || user.email;
   const lo = document.getElementById("logoutBtn"); if(lo) lo.addEventListener("click", ()=>signOut(auth).then(()=>location.href="/index.html"));

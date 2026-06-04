@@ -1,4 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
@@ -17,6 +18,7 @@ const NAV = [
   ["/kanban.html","ti-layout-kanban","カンバン"],
   ["/supply.html","ti-package","供給管理"],
   ["/settings.html","ti-settings","設定"],
+  ["/users.html","ti-users","ユーザー管理"],
 ];
 function renderNav(active){
   $("nav").innerHTML = NAV.map(([h,i,l])=>`<a class="nav-item ${h===active?"active":""}" href="${h}"><i class="ti ${i}" aria-hidden="true"></i>${l}</a>`).join("")
@@ -57,6 +59,7 @@ const testFn = httpsCallable(functions, "testChatNotify");
 
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
+  if(!(await gateRole(db,user,{adminOnly:true}))) return;
   renderNav("/settings.html");
   $("userEmail").textContent = user.displayName || user.email;
   $("logoutBtn").addEventListener("click", ()=>signOut(auth).then(()=>location.href="/index.html"));

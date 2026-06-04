@@ -1,4 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -174,6 +175,7 @@ function renderInvoice(s, st){
 const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 "};
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
+  if(!(await gateRole(db,user))) return;
   document.getElementById("printBtn").addEventListener("click",()=>window.print());
   const docId = type==="plabel" ? params.get("pid") : id;
   if(!type||!docId){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }

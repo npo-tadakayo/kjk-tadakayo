@@ -4,6 +4,7 @@ import { getAuth, onAuthStateChanged, signOut }
 import { getFirestore, collection, query, orderBy, onSnapshot,
   addDoc, serverTimestamp, getDocs, limit, doc, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { gateRole } from "/js/role.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -284,11 +285,12 @@ function closeModal() {
 }
 
 // 初期化
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) {
     location.href = "/index.html";
     return;
   }
+  if (!(await gateRole(db, user))) return;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
 

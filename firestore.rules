@@ -4,40 +4,57 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
-    function isTadakayoStaff() {
+    function emailIsTadakayo() {
       return isAuthenticated() && request.auth.token.email.matches('.*@tadakayo[.]jp$');
     }
-    // 認定事業所パートナー: partners/{email} が存在し active==true
+    // users/{email} に登録があり active==true の @tadakayo.jp ユーザー
+    function userData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
+    }
+    function isRegistered() {
+      return emailIsTadakayo()
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && userData().active == true;
+    }
+    function isAdmin() {
+      return isRegistered() && userData().role == 'admin';
+    }
+    // 認定事業所パートナー
     function isPartner() {
       return isAuthenticated()
         && exists(/databases/$(database)/documents/partners/$(request.auth.token.email))
         && get(/databases/$(database)/documents/partners/$(request.auth.token.email)).data.active == true;
     }
 
-    // 商品マスタ: 認証済みなら閲覧可（パートナーがカタログ参照）／編集はタダカヨのみ
+    // ユーザー（ロール）管理: 本人は自分の登録を読める／管理は管理者のみ
+    match /users/{email} {
+      allow read: if isAuthenticated() && (request.auth.token.email == email || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // 商品マスタ: 認証済みは閲覧可（パートナーのカタログ参照）／編集は登録スタッフ
     match /products/{sku} {
       allow read: if isAuthenticated();
-      allow write: if isTadakayoStaff();
+      allow write: if isRegistered();
     }
 
-    // パートナー名簿: 本人は自分の登録のみ閲覧可／管理はタダカヨ
+    // 認定事業所名簿: 本人は自分の登録を読める／管理は登録スタッフ
     match /partners/{email} {
-      allow read: if isTadakayoStaff() || (isAuthenticated() && request.auth.token.email == email);
-      allow write: if isTadakayoStaff();
+      allow read: if isRegistered() || (isAuthenticated() && request.auth.token.email == email);
+      allow write: if isRegistered();
     }
 
-    // 認定事業所からの発注（受注）: 本人は作成＋自分の分のみ閲覧／タダカヨは全件
+    // 認定事業所からの発注（受注）
     match /partnerOrders/{id} {
-      allow create: if isPartner()
-        && request.resource.data.partnerEmail == request.auth.token.email;
-      allow read: if isTadakayoStaff()
+      allow create: if isPartner() && request.resource.data.partnerEmail == request.auth.token.email;
+      allow read: if isRegistered()
         || (isPartner() && resource.data.partnerEmail == request.auth.token.email);
-      allow update, delete: if isTadakayoStaff();
+      allow update, delete: if isRegistered();
     }
 
-    // 上記以外（案件・事業所・対応記録・在庫・発注・出荷・カウンタ等）はタダカヨのみ
+    // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     match /{document=**} {
-      allow read, write: if isTadakayoStaff();
+      allow read, write: if isRegistered();
     }
   }
 }
