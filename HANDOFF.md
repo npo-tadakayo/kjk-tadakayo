@@ -14,6 +14,21 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤8）— Webhook設定化・ドキュメント・ファビコン
+
+| 項目 | 内容 |
+|---|---|
+| Webhook設定化 | Chat Webhook URL・メール送信元を `appConfig/settings`（Firestore）に移行。Functions は `getSettings()`（60秒キャッシュ・.envフォールバック）で参照。**コード変更/再デプロイなしで変更可能に** |
+| 設定画面 | `admin/settings.html`+`js/settings.js`: Webhook URL・送信元の編集＋「Chatテスト通知」（`testChatNotify` callable）。@tadakayo限定 |
+| エンジニアノート | `admin/engineering.html`（アプリ内表示・rule13）。**Mermaid 4図**（FLOW業務フロー/ARCH構成/ER データモデル/SEQ シーケンス・rule20）＋コレクション一覧・認証/デプロイ。mermaid@11 をCDN動的import |
+| マニュアル | `admin/manual.html`（アプリ内・連番カード・FAQ・困ったとき） |
+| 共通 | `js/docpage.js`（doc共通：認証ゲート＋ナビ＋Mermaid描画）。全画面サイドバーに「設定/マニュアル/エンジニアノート」追加（rule21 HelpNav） |
+| ファビコン | `images/tadakayo_logo.png` を `admin/favicon.png` に配置し、全adminページに `<link rel="icon">`＋apple-touch-icon |
+
+> ⚠️ 実機（@tadakayoログイン）検証は未。次田さん確認: ①設定画面でWebhook/送信元の編集＋テスト通知 ②エンジニアノートのMermaid図が描画されるか ③マニュアル表示 ④各画面のタブにロゴfavicon。
+> 📌 docs/ENGINEERING_NOTES.md / docs/MANUAL.md（リポジトリSSOT）は未作成。アプリ内画面を先に作成済。必要なら次回 docs/ にも書き出す。
+> 📌 settings変更は最大60秒で反映（Functionキャッシュ）。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤7）— Gmail送信 実機検証 + Phase 12 B2Bポータル
 
 **Gmail送信 実機検証 完了** ✅

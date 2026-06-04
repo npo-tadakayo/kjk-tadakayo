@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>エンジニアノート — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .doc{max-width:900px;}
+    .doc h2{font-family:"Noto Serif JP",serif;font-size:20px;margin:32px 0 12px;padding-left:10px;border-left:4px solid var(--color-primary);}
+    .doc h3{font-size:15px;margin:20px 0 8px;color:var(--color-ink);}
+    .doc p,.doc li{font-size:13px;line-height:1.8;}
+    .doc table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;}
+    .doc th,.doc td{border:1px solid var(--color-line);padding:6px 10px;text-align:left;vertical-align:top;}
+    .doc th{background:var(--color-bg);}
+    .doc code{background:var(--color-bg);padding:1px 5px;border-radius:4px;font-size:12px;}
+    .diagram{background:#fff;border:1px solid var(--color-line);border-radius:8px;padding:16px;margin:12px 0;overflow-x:auto;}
+    .label{display:inline-block;font-size:11px;font-weight:700;color:#fff;background:var(--color-primary);border-radius:4px;padding:2px 8px;margin-bottom:6px;}
+    .callout{border-radius:8px;padding:12px 14px;margin:12px 0;font-size:13px;}
+    .callout.info{background:#e5edf5;border-left:4px solid #3a6e9e;}
+    .callout.warn{background:#fef3e6;border-left:4px solid #c87a1f;}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">エンジニアノート</h1></div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+
+      <div class="doc" id="doc" style="display:none">
+        <p>このCRMの仕組みを、非エンジニアの方にも分かるよう図解しています。データの流れ・保存場所・連携先をまとめています。</p>
+
+        <h2>§0 これは何のシステム？</h2>
+        <p>介護事業所の「介護情報基盤」導入を、<strong>NPO法人タダカヨ</strong>が伴走支援する事業の管理システムです。LP・見積もりツールからの問い合わせを<strong>案件</strong>として受け取り、担当・伴走支援・助成金申請・カードリーダーの発注/在庫/出荷までを一元管理します。</p>
+
+        <h2>§1 業務フロー（全体像）</h2>
+        <div class="label">FLOW｜業務の流れ</div>
+        <div class="diagram"><pre class="mermaid">
+flowchart TD
+  A["介護事業所<br/>(LP・見積もり)"] -->|問い合わせ/成約| B["案件 受付<br/>新規受信"]
+  B --> C["担当者決定"]
+  C --> D["伴走支援<br/>(訪問・設定・写真)"]
+  D --> E["書類準備・申請ガイド"]
+  E --> F["助成金 申請"]
+  F --> G["採択・入金"]
+  G --> H["アフターフォロー / 完了"]
+  B -.失注.-> X["失注"]
+  C2["認定事業所"] -->|B2B発注| I["受注"]
+  I --> J["在庫引当・出荷<br/>送付状"]
+  classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
+  classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
+  class A,C2 care; class B,C,D,E,F,G,H,I,J sys;
+        </pre></div>
+
+        <h2>§2 システム構成（アーキテクチャ）</h2>
+        <div class="label">ARCH｜構成図</div>
+        <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph 公開["公開サイト (Firebase Hosting)"]
+    LP["LP / 見積もりツール<br/>kjk.tadakayo.jp"]
+  end
+  subgraph 管理["管理画面 (Firebase Hosting)"]
+    ADM["CRM管理画面<br/>kjk-tadakayo-admin.web.app"]
+    PT["認定事業所ポータル<br/>/partner.html"]
+  end
+  subgraph BE["Cloud Functions (asia-northeast1)"]
+    WH["webhook受信"]
+    SEND["sendCaseEmail"]
+    AI["aiAssist"]
+    SCH["dailyFollowup (毎朝9時)"]
+  end
+  DB[("Firestore<br/>データ保管")]
+  LP -->|問い合わせ/成約| WH --> DB
+  ADM <--> DB
+  PT <--> DB
+  ADM --> AI -->|Vertex AI| GEM["Gemini 2.5"]
+  ADM --> SEND -->|DWD キーレス| GM["Gmail送信"]
+  WH -->|通知| CHAT["Google Chat"]
+  SCH --> DB
+  SCH -->|通知| CHAT
+  classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
+  classDef db fill:#e0e3e6,stroke:#37474f,color:#2C2416;
+  classDef ext fill:#f5e6d8,stroke:#c05a1f,color:#2C2416;
+  class LP,ADM,PT,WH,SEND,AI,SCH sys; class DB db; class GEM,GM,CHAT ext;
+        </pre></div>
+
+        <h2>§3 データモデル（ER図）</h2>
+        <div class="label">ER｜データの関係</div>
+        <div class="diagram"><pre class="mermaid">
+erDiagram
+  offices ||--o{ cases : "1事業所に複数案件"
+  cases ||--o{ activities : "対応記録"
+  cases ||--o{ sessions : "伴走支援"
+  cases ||--|| documentChecklists : "書類チェック"
+  cases ||--|| subsidyApplications : "申請情報"
+  partners ||--o{ partnerOrders : "認定事業所の発注"
+  products ||--o{ inventoryMovements : "在庫増減"
+  cases {
+    int caseNumber
+    string officeName
+    int status "1-13"
+    string source "lp/見積/手動"
+    array cardReaders
+    int expectedSubsidyAmount
+  }
+  offices { string officeName string corpName string phone }
+  activities { string type string subject timestamp occurredAt }
+  sessions { string sessionDate string summary array photoUrls }
+  products { string sku string name int stock int wholesale2_10 }
+  purchaseOrders { string poNumber array items int total string status }
+  shipments { string soNumber string officeName array items }
+  partners { string email string partnerName bool active }
+  partnerOrders { string partnerEmail array items string status }
+        </pre></div>
+        <table>
+          <tr><th>コレクション</th><th>役割</th></tr>
+          <tr><td><code>cases</code></td><td>案件（問い合わせ〜完了の中心データ）</td></tr>
+          <tr><td><code>offices</code></td><td>介護事業所マスタ</td></tr>
+          <tr><td><code>activities</code></td><td>対応記録（電話・メール・訪問・メモ・メール送信）</td></tr>
+          <tr><td><code>sessions</code></td><td>伴走支援セッション（日付・メモ・写真）</td></tr>
+          <tr><td><code>documentChecklists / subsidyApplications</code></td><td>書類チェック・助成金申請情報</td></tr>
+          <tr><td><code>products / inventoryMovements</code></td><td>商品マスタ・在庫増減ログ</td></tr>
+          <tr><td><code>purchaseOrders / shipments</code></td><td>発注（→AB Circle）・出荷（→事業所）</td></tr>
+          <tr><td><code>partners / partnerOrders</code></td><td>認定事業所の許可リスト・受注</td></tr>
+          <tr><td><code>appConfig/settings</code></td><td>Webhook URL・送信元などの設定</td></tr>
+          <tr><td><code>_counters</code></td><td>案件番号・発注/出荷番号の採番</td></tr>
+        </table>
+
+        <h2>§4 代表的な処理の流れ（シーケンス）</h2>
+        <div class="label">SEQ｜見積もり成約 → 案件登録</div>
+        <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant U as 介護事業所
+  participant LP as 見積もりツール
+  participant FN as Cloud Function
+  participant DB as Firestore
+  participant CH as Google Chat
+  U->>LP: 必須入力＋同意（成約）
+  LP->>FN: webhookMitsumori（構造化データ）
+  FN->>DB: offices / cases / activities 作成
+  FN->>CH: 成約を通知
+  FN-->>LP: 200 OK
+  Note over DB: 管理画面に案件が自動表示
+        </pre></div>
+
+        <h2>§5 認証・セキュリティ</h2>
+        <ul>
+          <li>管理画面: <strong>Googleログイン＋@tadakayo.jp 限定</strong>（Firestoreルールで強制）</li>
+          <li>認定事業所ポータル: Googleログイン＋<strong>許可リスト</strong>（partners）。自分の発注のみ閲覧</li>
+          <li>メール送信: <strong>ドメイン全体委任（DWD）・キーレス</strong>（鍵を保存せず都度署名）。スコープは <code>gmail.send</code> のみ</li>
+          <li>AI: <strong>Vertex AI + SA認証</strong>（裸APIキー不使用）</li>
+        </ul>
+
+        <h2>§6 デプロイ・運用</h2>
+        <table>
+          <tr><th>項目</th><th>値</th></tr>
+          <tr><td>Firebaseプロジェクト</td><td><code>kjk-tadakayo</code></td></tr>
+          <tr><td>公開LP</td><td>https://kjk.tadakayo.jp</td></tr>
+          <tr><td>管理画面</td><td>https://kjk-tadakayo-admin.web.app</td></tr>
+          <tr><td>リージョン</td><td>asia-northeast1（Vertexのみ global）</td></tr>
+          <tr><td>デプロイ</td><td>Node20 / <code>firebase deploy</code></td></tr>
+        </table>
+        <div class="callout warn"><strong>注意:</strong> Webhook URL・メール送信元は「設定」画面（appConfig/settings）から変更できます。コード変更・再デプロイは不要です。</div>
+
+        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-04 ／ 詳細な技術仕様はリポジトリ <code>docs/ENGINEERING_NOTES.md</code> を参照。</p>
+      </div>
+    </main>
+  </div>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/docpage.js" type="module"></script>
+</body>
+</html>

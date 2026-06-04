@@ -10,6 +10,25 @@ const db = admin.firestore();
 
 const CHAT_WEBHOOK_URL = defineString("CHAT_WEBHOOK_URL");
 
+// アプリ設定（Firestore appConfig/settings）を読む。60秒キャッシュ・未設定は.env/既定にフォールバック
+let _settingsCache = null, _settingsAt = 0;
+async function getSettings() {
+  if (_settingsCache && Date.now() - _settingsAt < 60000) return _settingsCache;
+  try {
+    const snap = await db.collection("appConfig").doc("settings").get();
+    _settingsCache = snap.exists ? snap.data() : {};
+  } catch (e) {
+    console.warn("getSettings failed:", e.message);
+    _settingsCache = _settingsCache || {};
+  }
+  _settingsAt = Date.now();
+  return _settingsCache;
+}
+async function getChatWebhook() {
+  const s = await getSettings();
+  return (s && s.chatWebhookUrl) || CHAT_WEBHOOK_URL.value() || "";
+}
+
 // ===== Vertex AI (Gemini) — SA認証/ADC・鍵なし =====
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "kjk-tadakayo";
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || "global";
@@ -143,7 +162,7 @@ exports.webhookLpInquiry = onRequest(
         attachmentUrls: [],
       });
 
-      const chatWebhook = CHAT_WEBHOOK_URL.value();
+      const chatWebhook = await getChatWebhook();
       await notifyChat(
         chatWebhook,
         `📥 新規LP問い合わせ [案件 #${caseNumber}]\n事業所: ${officeData.officeName}\n担当者: ${body.name || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nメッセージ: ${body.message || ""}`
@@ -252,7 +271,7 @@ exports.webhookMitsumori = onRequest(
         .map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`)
         .join(", ");
 
-      const chatWebhook = CHAT_WEBHOOK_URL.value();
+      const chatWebhook = await getChatWebhook();
       await notifyChat(
         chatWebhook,
         `🎉 見積もり成約！ [案件 #${caseNumber}]\n事業所: ${officeData.officeName} (${officeData.corpName})\n担当者: ${body.contactName || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nプラン: ${body.subsidyPlan || ""}\n構成: ${crSummary}\n金額: ¥${Number(body.totalAmount || 0).toLocaleString()}`
@@ -265,6 +284,17 @@ exports.webhookMitsumori = onRequest(
     }
   }
 );
+
+// 設定画面からのChatテスト通知
+exports.testChatNotify = onCall({ region: "asia-northeast1" }, async (request) => {
+  const email = request.auth?.token?.email || "";
+  if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
+  const url = await getChatWebhook();
+  if (!url) throw new HttpsError("failed-precondition", "Chat Webhook URLが未設定です");
+  _settingsCache = null; // 最新設定で送る
+  await notifyChat(await getChatWebhook(), `✅ タダカヨCRM 設定テスト通知（送信者: ${email}）`);
+  return { ok: true };
+});
 
 // ===== Phase 6: アフターフォロー自動化（日次・Chat通知）=====
 const STATUS_LABELS_FN = {
@@ -314,7 +344,7 @@ exports.dailyFollowup = onSchedule(
   async () => {
     try {
       const msg = await buildFollowupDigest();
-      if (msg) await notifyChat(CHAT_WEBHOOK_URL.value(), msg);
+      if (msg) await notifyChat(await getChatWebhook(), msg);
       console.log("dailyFollowup done:", msg ? "通知あり" : "通知不要");
     } catch (e) {
       console.error("dailyFollowup error:", e);
@@ -404,12 +434,12 @@ const GMAIL_SENDER = process.env.GMAIL_SENDER || "kjk-staff@tadakayo.jp";
 const GMAIL_SA = `kjk-gmail-sa@${VERTEX_PROJECT}.iam.gserviceaccount.com`;
 const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
-async function gmailAccessToken() {
+async function gmailAccessToken(sender) {
   const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
   const client = await auth.getClient();
   const now = Math.floor(Date.now() / 1000);
   const claims = {
-    iss: GMAIL_SA, sub: GMAIL_SENDER, scope: GMAIL_SCOPE,
+    iss: GMAIL_SA, sub: sender, scope: GMAIL_SCOPE,
     aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
   };
   // 鍵を持たず IAM Credentials API でJWTを署名
@@ -431,9 +461,9 @@ async function gmailAccessToken() {
 function b64(s) { return Buffer.from(s, "utf-8").toString("base64"); }
 function encWord(s) { return `=?UTF-8?B?${b64(s)}?=`; }
 
-function buildRawMessage({ to, subject, body }) {
+function buildRawMessage({ to, subject, body, sender }) {
   const mime = [
-    `From: ${encWord("タダカヨ事務局")} <${GMAIL_SENDER}>`,
+    `From: ${encWord("タダカヨ事務局")} <${sender}>`,
     `To: ${to}`,
     `Subject: ${encWord(subject)}`,
     "MIME-Version: 1.0",
@@ -462,10 +492,11 @@ exports.sendCaseEmail = onCall(
     }
 
     try {
-      const token = await gmailAccessToken();
-      const raw = buildRawMessage({ to, subject, body });
+      const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
+      const token = await gmailAccessToken(sender);
+      const raw = buildRawMessage({ to, subject, body, sender });
       const res = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(GMAIL_SENDER)}/messages/send`,
+        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
         { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ raw }) }
       );

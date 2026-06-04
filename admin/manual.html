@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マニュアル — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .doc{max-width:860px;}
+    .doc h2{font-family:"Noto Serif JP",serif;font-size:20px;margin:32px 0 12px;padding-left:10px;border-left:4px solid var(--color-success);}
+    .doc h3{font-size:15px;margin:18px 0 6px;}
+    .doc p,.doc li{font-size:13px;line-height:1.85;}
+    .doc ol li{margin-bottom:6px;}
+    .step{background:#fff;border:1px solid var(--color-line);border-radius:8px;padding:14px 16px;margin:10px 0;}
+    .step .n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--color-success);color:#fff;font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:8px;}
+    .faq{border-bottom:1px solid var(--color-line);padding:10px 0;}
+    .faq .q{font-weight:600;font-size:13px;}
+    .callout{border-radius:8px;padding:12px 14px;margin:12px 0;font-size:13px;}
+    .callout.tip{background:#e8f5ec;border-left:4px solid #5a8a3a;}
+    .callout.warn{background:#fef3e6;border-left:4px solid #c87a1f;}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">マニュアル</h1></div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+
+      <div class="doc" id="doc" style="display:none">
+        <h2>§1 このシステムでできること</h2>
+        <p>介護情報基盤の伴走支援に関する<strong>問い合わせ・見積もり・伴走支援・助成金申請・カードリーダーの発注/在庫/出荷</strong>を一つの画面で管理できます。問い合わせは自動で「案件」として取り込まれます。</p>
+
+        <h2>§2 画面の見かた</h2>
+        <ul>
+          <li><strong>ダッシュボード</strong>: 件数・補助金額・進捗の全体像</li>
+          <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み・CSV出力</li>
+          <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）</li>
+          <li><strong>供給管理</strong>: 在庫・発注・出荷・認定事業所の受注</li>
+          <li><strong>設定</strong>: 通知先(Chat)・メール送信元の変更</li>
+        </ul>
+
+        <h2>§3 使い方（基本操作）</h2>
+        <h3>案件を進める</h3>
+        <div class="step"><span class="n">1</span>案件一覧またはカンバンから案件を開く</div>
+        <div class="step"><span class="n">2</span>「ステータス」を現在の状況に変更（履歴に自動記録）</div>
+        <div class="step"><span class="n">3</span>「対応記録」タブに電話・メール・訪問などを記録</div>
+        <div class="step"><span class="n">4</span>「伴走支援」タブで訪問日・メモ・写真を残す</div>
+        <div class="step"><span class="n">5</span>「申請情報」タブで助成金の申請状況を管理</div>
+
+        <h3>AIアシスタントを使う（案件詳細→AIアシスタント）</h3>
+        <ul>
+          <li><strong>返信メール下書き</strong>: 問い合わせ内容から返信文案を作成</li>
+          <li><strong>要約・分類</strong>: 案件のポイントを自動整理</li>
+          <li><strong>伴走報告文</strong>: 伴走メモから報告文を作成</li>
+          <li>下書きは「送信欄へ転記」→ そのまま<strong>メール送信</strong>できます</li>
+        </ul>
+
+        <h3>報告書を出す</h3>
+        <div class="step"><span class="n">1</span>案件詳細の右上「報告書PDF」をクリック</div>
+        <div class="step"><span class="n">2</span>開いたページで「印刷 / PDF保存」</div>
+
+        <h3>カードリーダーの発注・出荷（供給管理）</h3>
+        <ul>
+          <li><strong>発注</strong>: 「新規発注」で数量入力 → 発注書PDF → 届いたら「入荷登録」（在庫が増えます）</li>
+          <li><strong>出荷</strong>: 「新規出荷」で送付先と数量 → 送付状PDF（在庫が自動で減ります）</li>
+        </ul>
+
+        <h3>認定事業所からの発注を受ける</h3>
+        <div class="step"><span class="n">1</span>供給管理「パートナー管理」で認定事業所のログイン用メールと名称を登録</div>
+        <div class="step"><span class="n">2</span>認定事業所に <strong>partner.html</strong> のURLを案内</div>
+        <div class="step"><span class="n">3</span>届いた発注は供給管理「受注（認定事業所）」で確認・ステータス更新</div>
+
+        <h2>§4 よくある質問</h2>
+        <div class="faq"><div class="q">Q. 問い合わせはどうやって入ってきますか？</div><p>LP・見積もりツールから送信されると、自動で案件として登録され、Google Chatにも通知されます。</p></div>
+        <div class="faq"><div class="q">Q. メールはどのアドレスから送られますか？</div><p>「タダカヨ事務局 &lt;kjk-staff@tadakayo.jp&gt;」から送信されます。設定画面で変更できます。</p></div>
+        <div class="faq"><div class="q">Q. 通知先のChatを変えたい</div><p>設定画面の「Google Chat Webhook URL」を変更して保存してください（最大60秒で反映）。</p></div>
+        <div class="faq"><div class="q">Q. AIの文章はそのまま送って大丈夫？</div><p>必ず内容を確認・修正してから送ってください。AIは下書きの補助です。</p></div>
+
+        <h2>§5 困ったとき</h2>
+        <div class="callout warn"><strong>ログインできない</strong>：@tadakayo.jp のアカウントでログインしているか確認してください。認定事業所の方は許可リスト登録が必要です。</div>
+        <div class="callout tip"><strong>メールが送れない</strong>：設定画面の「メール送信元」が正しいアカウントか確認してください。解決しない場合は事務局へご連絡ください。</div>
+
+        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-04 ／ 詳細は <code>docs/MANUAL.md</code></p>
+      </div>
+    </main>
+  </div>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/docpage.js" type="module"></script>
+</body>
+</html>
