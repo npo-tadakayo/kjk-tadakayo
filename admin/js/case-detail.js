@@ -423,6 +423,8 @@ function buildAiContext() {
   };
 }
 
+let lastAiTask = null;
+
 async function runAi(task) {
   const loading = document.getElementById("aiLoading");
   const wrap = document.getElementById("aiResultWrap");
@@ -434,8 +436,11 @@ async function runAi(task) {
     const question = document.getElementById("aiQuestion").value.trim();
     const res = await aiAssistFn({ task, context: buildAiContext(), question });
     const text = res?.data?.text || "（応答が空でした）";
+    lastAiTask = task;
     document.getElementById("aiResultTitle").textContent = AI_TITLES[task] || "生成結果";
     document.getElementById("aiResult").textContent = text;
+    // 返信下書きのときだけ「送信欄へ転記」を出す
+    document.getElementById("aiToComposerBtn").style.display = task === "reply_draft" ? "" : "none";
     wrap.style.display = "block";
   } catch (e) {
     document.getElementById("aiResultTitle").textContent = "エラー";
@@ -451,6 +456,57 @@ async function runAi(task) {
 function copyAiResult() {
   const text = document.getElementById("aiResult").textContent;
   navigator.clipboard.writeText(text).then(() => showToast("コピーしました"));
+}
+
+// AI返信下書きを送信欄へ転記（件名/本文を分離）
+function aiResultToComposer() {
+  const text = document.getElementById("aiResult").textContent || "";
+  const m = text.match(/件名[:：]\s*(.+)/);
+  let subject = "", body = text;
+  if (m) {
+    subject = m[1].trim();
+    body = text.replace(/件名[:：].*(\r?\n)+/, "").replace(/^本文[:：]\s*/m, "").trim();
+  }
+  if (subject) document.getElementById("mailSubject").value = subject;
+  document.getElementById("mailBody").value = body;
+  if (currentCase?.contactEmail && !document.getElementById("mailTo").value) {
+    document.getElementById("mailTo").value = currentCase.contactEmail;
+  }
+  document.getElementById("mailBody").scrollIntoView({ behavior: "smooth", block: "center" });
+  showToast("送信欄に転記しました");
+}
+
+// メール送信
+const sendCaseEmailFn = httpsCallable(functions, "sendCaseEmail");
+async function sendMail() {
+  const to = document.getElementById("mailTo").value.trim();
+  const subject = document.getElementById("mailSubject").value.trim();
+  const body = document.getElementById("mailBody").value.trim();
+  const status = document.getElementById("mailStatus");
+  if (!to || !subject || !body) {
+    status.style.color = "var(--color-danger)";
+    status.textContent = "宛先・件名・本文をすべて入力してください";
+    return;
+  }
+  if (!confirm(`このメールを送信します。よろしいですか？\n\n宛先: ${to}\n件名: ${subject}`)) return;
+
+  const btn = document.getElementById("sendMailBtn");
+  btn.disabled = true;
+  status.style.color = "var(--color-ink-muted)";
+  status.innerHTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 送信中...';
+  try {
+    await sendCaseEmailFn({ to, subject, body, caseId });
+    status.style.color = "var(--color-success)";
+    status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（タイムラインに記録）';
+    document.getElementById("mailSubject").value = "";
+    document.getElementById("mailBody").value = "";
+    showToast("メールを送信しました");
+  } catch (e) {
+    status.style.color = "var(--color-danger)";
+    status.textContent = `送信に失敗しました: ${e.message || e}`;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // タブ切替
@@ -563,4 +619,11 @@ onAuthStateChanged(auth, async (user) => {
   document.querySelectorAll(".ai-btn").forEach((b) =>
     b.addEventListener("click", () => runAi(b.dataset.task)));
   document.getElementById("aiCopyBtn").addEventListener("click", copyAiResult);
+  document.getElementById("aiToComposerBtn").addEventListener("click", aiResultToComposer);
+
+  // メール送信
+  if (currentCase?.contactEmail) {
+    document.getElementById("mailTo").value = currentCase.contactEmail;
+  }
+  document.getElementById("sendMailBtn").addEventListener("click", sendMail);
 });

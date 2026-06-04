@@ -2,6 +2,7 @@ const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https")
 const { defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
+const { GoogleAuth } = require("google-auth-library");
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -337,6 +338,102 @@ exports.aiAssist = onCall(
     } catch (e) {
       console.error("aiAssist error:", e);
       throw new HttpsError("internal", `AI処理に失敗しました: ${e.message}`);
+    }
+  }
+);
+
+// ===== Gmail送信（キーレスDWD：iamcredentials.signJwt → JWT bearer）=====
+const GMAIL_SENDER = process.env.GMAIL_SENDER || "kjk-staff@tadakayo.jp";
+const GMAIL_SA = `kjk-gmail-sa@${VERTEX_PROJECT}.iam.gserviceaccount.com`;
+const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.send";
+
+async function gmailAccessToken() {
+  const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
+  const client = await auth.getClient();
+  const now = Math.floor(Date.now() / 1000);
+  const claims = {
+    iss: GMAIL_SA, sub: GMAIL_SENDER, scope: GMAIL_SCOPE,
+    aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600,
+  };
+  // 鍵を持たず IAM Credentials API でJWTを署名
+  const signRes = await client.request({
+    url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${GMAIL_SA}:signJwt`,
+    method: "POST", data: { payload: JSON.stringify(claims) },
+  });
+  const tokenRes = await client.request({
+    url: "https://oauth2.googleapis.com/token", method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    data: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion: signRes.data.signedJwt,
+    }).toString(),
+  });
+  return tokenRes.data.access_token;
+}
+
+function b64(s) { return Buffer.from(s, "utf-8").toString("base64"); }
+function encWord(s) { return `=?UTF-8?B?${b64(s)}?=`; }
+
+function buildRawMessage({ to, subject, body }) {
+  const mime = [
+    `From: ${encWord("タダカヨ事務局")} <${GMAIL_SENDER}>`,
+    `To: ${to}`,
+    `Subject: ${encWord(subject)}`,
+    "MIME-Version: 1.0",
+    'Content-Type: text/plain; charset="UTF-8"',
+    "Content-Transfer-Encoding: base64",
+    "",
+    b64(body),
+  ].join("\r\n");
+  return Buffer.from(mime, "utf-8").toString("base64")
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+exports.sendCaseEmail = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60 },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    const { to, subject, body, caseId } = request.data || {};
+    if (!to || !subject || !body) {
+      throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
+    }
+
+    try {
+      const token = await gmailAccessToken();
+      const raw = buildRawMessage({ to, subject, body });
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(GMAIL_SENDER)}/messages/send`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ raw }) }
+      );
+      if (!res.ok) {
+        const t = await res.text();
+        console.error("Gmail send failed:", res.status, t);
+        throw new HttpsError("internal", `Gmail送信に失敗しました（${res.status}）。DWD登録と送信元アカウントをご確認ください`);
+      }
+      const sent = await res.json();
+
+      // タイムラインに送信記録
+      if (caseId) {
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        await db.collection("activities").add({
+          caseId, type: "gmail_sent", occurredAt: now,
+          userId: request.auth.uid, userName: email,
+          subject: `メール送信: ${subject}`, body: `宛先: ${to}\n\n${body}`, attachmentUrls: [],
+        });
+        await db.collection("cases").doc(caseId).update({ updatedAt: now });
+      }
+      return { ok: true, id: sent.id };
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("sendCaseEmail error:", e);
+      throw new HttpsError("internal", `送信処理に失敗しました: ${e.message}`);
     }
   }
 );

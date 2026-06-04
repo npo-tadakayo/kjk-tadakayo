@@ -14,6 +14,23 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤4）— Gmail実送信（キーレスDWD）
+
+| 項目 | 内容 |
+|---|---|
+| 方式 | DWD（ドメイン全体委任）。**キーレス**＝SA鍵を発行/保存せず `iamcredentials.signJwt` で都度JWT署名 → jwt-bearerでアクセストークン取得（Pマーク配慮） |
+| 基盤 | `gmail.googleapis.com`/`iamcredentials.googleapis.com` 有効化。専用SA `kjk-gmail-sa@kjk-tadakayo.iam.gserviceaccount.com` 作成。compute SA に `kjk-gmail-sa` への `serviceAccountTokenCreator` 付与 |
+| 送信元 | `kjk-staff@tadakayo.jp`（コード default。env `GMAIL_SENDER` で上書き可）。差出人表示「タダカヨ事務局」 |
+| Function | `sendCaseEmail`(onCall・asia-northeast1)。@tadakayo認証ガード。to/subject/body/caseId受領→Gmail送信→タイムラインに`gmail_sent`記録 |
+| UI | case-detail AIタブに「メール送信」コンポーザー（宛先/件名/本文/送信）。AI返信下書き→「送信欄へ転記」で件名/本文を自動流し込み（宛先は問い合わせメール自動プリフィル） |
+| スコープ | `gmail.send` のみ（送信専用） |
+
+> ⛔ **次田さんの残作業（これが完了するまで送信は動かない）**:
+>   1. **`kjk-staff@tadakayo.jp` を正規ユーザーアカウントとして作成**（グループ不可・メールボックス必須。Workspace for Nonprofits なら無償枠）
+>   2. **Workspace管理コンソールでDWD登録**: https://admin.google.com/ac/owl/domainwidedelegation → 新しく追加 → クライアントID `107379651912400439233` / スコープ `https://www.googleapis.com/auth/gmail.send` → 承認
+> 完了後、案件詳細→AIアシスタント→メール送信 でテスト（最初は自分宛てに送るのが安全）。失敗時は Functions ログ `sendCaseEmail` を確認。
+> 📌 送信元アドレスを変える場合: `functions/.env` に `GMAIL_SENDER=...` を追記して再デプロイ。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤3）— Vertex AI（Gemini）AIアシスタント
 
 | 項目 | 内容 |

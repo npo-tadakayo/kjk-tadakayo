@@ -378,14 +378,47 @@
                 <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 生成中...
               </div>
               <div id="aiResultWrap" style="display:none;margin-top:12px">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
                   <strong style="font-size:13px" id="aiResultTitle">生成結果</strong>
-                  <button class="btn btn-secondary" id="aiCopyBtn" type="button" style="font-size:12px;padding:4px 10px">
-                    <i class="ti ti-copy" aria-hidden="true"></i> コピー
-                  </button>
+                  <div style="display:flex;gap:6px">
+                    <button class="btn btn-secondary" id="aiToComposerBtn" type="button" style="font-size:12px;padding:4px 10px;display:none">
+                      <i class="ti ti-arrow-down" aria-hidden="true"></i> 送信欄へ転記
+                    </button>
+                    <button class="btn btn-secondary" id="aiCopyBtn" type="button" style="font-size:12px;padding:4px 10px">
+                      <i class="ti ti-copy" aria-hidden="true"></i> コピー
+                    </button>
+                  </div>
                 </div>
                 <div class="ai-result" id="aiResult"></div>
               </div>
+            </div>
+          </div>
+
+          <!-- メール送信コンポーザー -->
+          <div class="card">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px"><i class="ti ti-mail-forward" aria-hidden="true"></i> メール送信（タダカヨ事務局より）</span>
+            </div>
+            <div class="card-body">
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label" for="mailTo">宛先</label>
+                <input class="form-control" type="email" id="mailTo" placeholder="例: example@care.jp">
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label" for="mailSubject">件名</label>
+                <input class="form-control" type="text" id="mailSubject" placeholder="件名">
+              </div>
+              <div class="form-group" style="margin-bottom:10px">
+                <label class="form-label" for="mailBody">本文</label>
+                <textarea class="form-control" id="mailBody" rows="8" placeholder="本文（AIの返信下書きを「送信欄へ転記」で流し込めます）"></textarea>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                <span style="font-size:12px;color:var(--color-ink-muted)">送信元: kjk-staff@tadakayo.jp（事務局）</span>
+                <button class="btn btn-primary" id="sendMailBtn" type="button">
+                  <i class="ti ti-send" aria-hidden="true"></i> 送信する
+                </button>
+              </div>
+              <div id="mailStatus" style="font-size:13px;margin-top:8px"></div>
             </div>
           </div>
         </div>
