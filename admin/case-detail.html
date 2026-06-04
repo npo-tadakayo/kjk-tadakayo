@@ -88,6 +88,9 @@
           <button class="tab" role="tab" data-tab="subsidy" aria-selected="false">
             <i class="ti ti-coin-yen" aria-hidden="true"></i> 申請情報
           </button>
+          <button class="tab" role="tab" data-tab="ai" aria-selected="false">
+            <i class="ti ti-sparkles" aria-hidden="true"></i> AIアシスタント
+          </button>
         </div>
 
         <!-- 対応記録タブ -->
@@ -336,6 +339,52 @@
               <div class="form-group" id="rejectionGroup" style="display:none">
                 <label class="form-label" for="rejectionReason">不採択理由</label>
                 <textarea class="form-control" id="rejectionReason" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AIアシスタントタブ -->
+        <div class="tab-content" id="tab-ai">
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px"><i class="ti ti-sparkles" aria-hidden="true"></i> AIアシスタント（Gemini）</span>
+            </div>
+            <div class="card-body">
+              <p style="font-size:12px;color:var(--color-ink-muted);margin-bottom:12px">
+                この案件の情報（問い合わせ内容・対応履歴・伴走メモ）をもとに、Geminiが文面作成や要約を行います。内容は必ず確認のうえご利用ください。
+              </p>
+              <div class="ai-actions">
+                <button class="btn btn-ghost ai-btn" data-task="reply_draft" type="button">
+                  <i class="ti ti-mail" aria-hidden="true"></i> 返信メール下書き
+                </button>
+                <button class="btn btn-ghost ai-btn" data-task="summary_classify" type="button">
+                  <i class="ti ti-list-details" aria-hidden="true"></i> 要約・分類
+                </button>
+                <button class="btn btn-ghost ai-btn" data-task="session_report" type="button">
+                  <i class="ti ti-clipboard-text" aria-hidden="true"></i> 伴走報告文
+                </button>
+              </div>
+              <div class="form-group" style="margin:14px 0 8px">
+                <label class="form-label" for="aiQuestion">自由に質問する</label>
+                <div style="display:flex;gap:8px">
+                  <input class="form-control" type="text" id="aiQuestion" placeholder="例: この事業所への次の一手は？">
+                  <button class="btn btn-primary ai-btn" data-task="assistant" type="button" style="flex:0 0 auto">
+                    <i class="ti ti-send" aria-hidden="true"></i> 質問
+                  </button>
+                </div>
+              </div>
+              <div id="aiLoading" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-top:8px">
+                <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 生成中...
+              </div>
+              <div id="aiResultWrap" style="display:none;margin-top:12px">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <strong style="font-size:13px" id="aiResultTitle">生成結果</strong>
+                  <button class="btn btn-secondary" id="aiCopyBtn" type="button" style="font-size:12px;padding:4px 10px">
+                    <i class="ti ti-copy" aria-hidden="true"></i> コピー
+                  </button>
+                </div>
+                <div class="ai-result" id="aiResult"></div>
               </div>
             </div>
           </div>

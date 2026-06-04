@@ -6,11 +6,14 @@ import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc,
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { getFunctions, httpsCallable }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const functions = getFunctions(app, "asia-northeast1");
 
 const caseId = new URLSearchParams(location.search).get("id");
 if (!caseId) { location.href = "/cases.html"; }
@@ -79,6 +82,8 @@ function calcExpectedDeposit(applicationDateStr) {
 }
 
 let currentCase = null;
+let latestActivities = [];
+let latestSessions = [];
 
 function renderCaseHeader(c) {
   document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
@@ -394,6 +399,60 @@ async function addSession(userId, userName) {
   }
 }
 
+// ===== AIアシスタント =====
+const aiAssistFn = httpsCallable(functions, "aiAssist");
+const AI_TITLES = {
+  reply_draft: "返信メール下書き", summary_classify: "要約・分類",
+  session_report: "伴走報告文", assistant: "AIの回答",
+};
+
+function buildAiContext() {
+  const c = currentCase || {};
+  const crs = (c.cardReaders || []).map((r) =>
+    `${r.type}×${(Number(r.subsidyQty) || 0) + (Number(r.extraQty) || 0)}台`).join(", ");
+  return {
+    officeName: c.officeName, corpName: c.corpName, contactName: c.contactName,
+    source: SOURCE_LABELS[c.source] || c.source,
+    statusLabel: STATUS_LABELS[c.status] || "",
+    subsidyPlan: c.subsidyPlan || "", cardReaders: crs,
+    message: c.message || "",
+    timeline: latestActivities.map((a) =>
+      `[${ACTIVITY_LABELS[a.type] || a.type}] ${a.subject || ""} ${a.body || ""}`.trim()),
+    sessionNotes: latestSessions.map((s) =>
+      `${s.sessionDate || ""} ${s.summary || ""}`.trim()).filter(Boolean),
+  };
+}
+
+async function runAi(task) {
+  const loading = document.getElementById("aiLoading");
+  const wrap = document.getElementById("aiResultWrap");
+  const btns = document.querySelectorAll(".ai-btn");
+  btns.forEach((b) => (b.disabled = true));
+  loading.style.display = "block";
+  wrap.style.display = "none";
+  try {
+    const question = document.getElementById("aiQuestion").value.trim();
+    const res = await aiAssistFn({ task, context: buildAiContext(), question });
+    const text = res?.data?.text || "（応答が空でした）";
+    document.getElementById("aiResultTitle").textContent = AI_TITLES[task] || "生成結果";
+    document.getElementById("aiResult").textContent = text;
+    wrap.style.display = "block";
+  } catch (e) {
+    document.getElementById("aiResultTitle").textContent = "エラー";
+    document.getElementById("aiResult").textContent =
+      `AI処理に失敗しました: ${e.message || e}`;
+    wrap.style.display = "block";
+  } finally {
+    loading.style.display = "none";
+    btns.forEach((b) => (b.disabled = false));
+  }
+}
+
+function copyAiResult() {
+  const text = document.getElementById("aiResult").textContent;
+  navigator.clipboard.writeText(text).then(() => showToast("コピーしました"));
+}
+
 // タブ切替
 function initTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -485,7 +544,8 @@ onAuthStateChanged(auth, async (user) => {
     orderBy("occurredAt", "desc")
   );
   onSnapshot(actQ, (snap) => {
-    renderTimeline(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+    latestActivities = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    renderTimeline(latestActivities);
   });
 
   // 伴走支援セッション購読
@@ -495,6 +555,12 @@ onAuthStateChanged(auth, async (user) => {
     orderBy("createdAt", "desc")
   );
   onSnapshot(sessQ, (snap) => {
-    renderSessions(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+    latestSessions = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    renderSessions(latestSessions);
   });
+
+  // AIアシスタント
+  document.querySelectorAll(".ai-btn").forEach((b) =>
+    b.addEventListener("click", () => runAi(b.dataset.task)));
+  document.getElementById("aiCopyBtn").addEventListener("click", copyAiResult);
 });

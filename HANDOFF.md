@@ -14,6 +14,22 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤3）— Vertex AI（Gemini）AIアシスタント
+
+| 項目 | 内容 |
+|---|---|
+| 方式 | **Vertex AI + ADC（SA認証・鍵なし）**。裸APIキーは不使用（rule03準拠・キー失効リスク回避） |
+| 基盤 | `aiplatform.googleapis.com` 有効化、Functions実行SA（`677262660109-compute@…`）に `roles/aiplatform.user` 付与 |
+| SDK | `functions` に `@google/genai`（^1.52.0）追加。`new GoogleGenAI({vertexai:true, project, location})` |
+| location | **`global`**（asia-northeast1 はGeminiモデル可用性が不安定なため）。model `gemini-2.5-flash`・thinkingBudget:0 |
+| Function | `aiAssist`（onCall・asia-northeast1）。`request.auth.token.email` が `@tadakayo.jp` でなければ拒否。task=reply_draft/summary_classify/session_report/assistant をプロンプト分岐 |
+| UI | case-detail に「AIアシスタント」タブ。返信下書き/要約・分類/伴走報告文 の3ボタン＋自由質問。結果表示＋コピー。コンテキスト（案件情報＋対応履歴＋伴走メモ）を client から payload で渡す |
+| 検証 | Vertex REST直叩きで `gemini-2.5-flash`/global/HTTP200/「テスト成功」応答を確認。aiAssist deploy済・JS構文OK・モジュール読込エラーなし |
+
+> ⚠️ callable+クライアント連携の実動作は @tadakayo ログイン必須のため未検証。次田さん確認: 案件詳細→AIアシスタント→各ボタンで生成されるか。
+> 💰 課金: Vertex従量（flash・低volumeで月数十円想定）。Blaze＋予算アラート¥3,000でカバー。
+> 📌 これで Phase 3（メール送信）の「文面生成」部分は完成。残るは Gmail API での実送信（OAuth設定が前提）。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤2）— CRM Phase 7/8/4 並行実装
 
 | Phase | 内容 |

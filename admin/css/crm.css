@@ -768,6 +768,21 @@ select.form-control { cursor: pointer; }
 }
 .session-photo:hover { transform: scale(1.03); border-color: var(--color-primary); }
 
+/* ========== AIアシスタント ========== */
+.ai-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.ai-result {
+  background: var(--color-bg);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
 /* ========== Responsive ========== */
 @media (max-width: 768px) {
   .sidebar { display: none; }

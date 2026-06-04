@@ -1,11 +1,23 @@
-const { onRequest } = require("firebase-functions/v2/https");
+const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
+const { GoogleGenAI } = require("@google/genai");
 
 admin.initializeApp();
 const db = admin.firestore();
 
 const CHAT_WEBHOOK_URL = defineString("CHAT_WEBHOOK_URL");
+
+// ===== Vertex AI (Gemini) — SA認証/ADC・鍵なし =====
+const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "kjk-tadakayo";
+const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || "global";
+let _genai;
+function genai() {
+  if (!_genai) {
+    _genai = new GoogleGenAI({ vertexai: true, project: VERTEX_PROJECT, location: VERTEX_LOCATION });
+  }
+  return _genai;
+}
 
 // ステータス定数
 const STATUS = {
@@ -248,6 +260,83 @@ exports.webhookMitsumori = onRequest(
     } catch (e) {
       console.error("webhookMitsumori error:", e);
       res.status(500).json({ status: "error", message: e.message });
+    }
+  }
+);
+
+// ===== AIアシスタント（Vertex AI / Gemini）=====
+const SYSTEM_CONTEXT = `あなたは介護事業所向けサービス「タダカヨの介護情報基盤伴走支援」の事務局スタッフを補佐するアシスタントです。
+本サービスは、介護事業所が「介護情報基盤」を導入する際の伴走支援（カードリーダー手配・助成金申請ガイド・設定支援）を提供します。NPO法人タダカヨが運営し、営利目的の業者ではありません。
+介護現場の用語を正確に使い（利用者・事業所・ケアマネージャー等）、敬意あるていねいな日本語で回答してください。`;
+
+function caseContextText(ctx = {}) {
+  const lines = [
+    `■ 事業所: ${ctx.officeName || "不明"}${ctx.corpName ? `（${ctx.corpName}）` : ""}`,
+    `■ ご担当者: ${ctx.contactName || "不明"}`,
+    `■ 流入元: ${ctx.source || "不明"} / ステータス: ${ctx.statusLabel || "不明"}`,
+    ctx.subsidyPlan ? `■ 補助金プラン: ${ctx.subsidyPlan}` : "",
+    ctx.cardReaders ? `■ カードリーダー: ${ctx.cardReaders}` : "",
+    ctx.message ? `■ 問い合わせ/メモ:\n${ctx.message}` : "",
+  ];
+  if (Array.isArray(ctx.timeline) && ctx.timeline.length) {
+    lines.push("■ 対応履歴:");
+    ctx.timeline.slice(0, 15).forEach((t) => lines.push(`  - ${t}`));
+  }
+  if (Array.isArray(ctx.sessionNotes) && ctx.sessionNotes.length) {
+    lines.push("■ 伴走支援メモ:");
+    ctx.sessionNotes.slice(0, 15).forEach((s) => lines.push(`  - ${s}`));
+  }
+  return lines.filter(Boolean).join("\n");
+}
+
+function buildPrompt(task, ctx, question) {
+  const c = caseContextText(ctx);
+  switch (task) {
+    case "reply_draft":
+      return `${SYSTEM_CONTEXT}\n\n以下の案件情報をもとに、事業所のご担当者さま宛ての返信メール文面を作成してください。
+件名と本文を出し、次のアクション（例: カードリーダー手配・日程調整・必要書類のご案内）を1つ添えてください。過度な売り込みは避け、安心感のある丁寧な文面に。\n\n【案件情報】\n${c}`;
+    case "summary_classify":
+      return `${SYSTEM_CONTEXT}\n\n以下の案件を事務局向けに整理してください。出力は次の形式で簡潔に:
+【要約】2〜3行
+【事業所種別の推定】（例: 居宅介護支援/通所介護/特養 等。不明なら「不明」）
+【補助金区分の推定】訪問・通所系(¥64,000) / 居住・入所系(¥55,000) / その他(¥42,000) のいずれか or 不明
+【緊急度】高/中/低 と理由
+【カードリーダー希望】有/無/不明
+【おすすめ次アクション】1〜2点\n\n【案件情報】\n${c}`;
+    case "session_report":
+      return `${SYSTEM_CONTEXT}\n\n以下の伴走支援メモをもとに、関係者に共有できる支援報告文を作成してください。出力形式:
+【実施内容の要約】
+【できたこと】
+【次回までのTODO】
+冗長にせず、現場で読みやすい箇条書き中心に。\n\n【案件情報】\n${c}`;
+    case "assistant":
+      return `${SYSTEM_CONTEXT}\n\n事務局スタッフからの質問に、案件情報をふまえて回答してください。助成金・申請・カードリーダー・設定など実務的な観点で、わからないことは「要確認」と明示してください。\n\n【案件情報】\n${c}\n\n【質問】\n${question || "この案件の状況を要約し、次にすべきことを教えてください。"}`;
+    default:
+      return null;
+  }
+}
+
+exports.aiAssist = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB" },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    const { task, context, question } = request.data || {};
+    const prompt = buildPrompt(task, context || {}, question);
+    if (!prompt) throw new HttpsError("invalid-argument", `不明なタスク: ${task}`);
+
+    try {
+      const result = await genai().models.generateContent({
+        model: "gemini-2.5-flash",
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: { thinkingConfig: { thinkingBudget: 0 }, maxOutputTokens: 2048, temperature: 0.4 },
+      });
+      return { text: result.text || "", task };
+    } catch (e) {
+      console.error("aiAssist error:", e);
+      throw new HttpsError("internal", `AI処理に失敗しました: ${e.message}`);
     }
   }
 );
