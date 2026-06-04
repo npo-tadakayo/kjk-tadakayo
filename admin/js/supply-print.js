@@ -48,30 +48,39 @@ function renderShip(s){
     <div class="footer">NPO法人タダカヨ　介護情報基盤伴走支援事業　／　お問い合わせ: kjk-staff@tadakayo.jp</div>`;
 }
 
-// レターパックプラス(赤) 宛名面（お届け先）。実封筒に合わせて余白調整が必要な場合あり
-function zipBoxes(postal){
-  const d=(postal||"").replace(/[^0-9]/g,"").padEnd(7," ").slice(0,7).split("");
-  return `<span class="zip">${d.map(n=>`<span class="zbox">${n.trim()||"&nbsp;"}</span>`).join("")}</span>`;
+// レターパックプラス(赤) 宛名ラベル：実物の記入欄を再現。A4に印刷→切り取り線で切って貼付
+function zipBoxes(postal, n=7){
+  const d=(postal||"").replace(/[^0-9]/g,"").padEnd(n," ").slice(0,n).split("");
+  return `<span class="zip">${d.map(x=>`<span class="zbox">${x.trim()||"&nbsp;"}</span>`).join("")}</span>`;
 }
-function renderLetterpack(s){
+function renderLetterpack(s, st){
+  st = st || {};
+  const fromName = st.senderName || "NPO法人タダカヨ 介護情報基盤伴走支援事業";
+  const fromPostal = st.senderPostal || "";
+  const fromAddr = st.senderAddress || "";
+  const fromPhone = st.senderPhone || "";
+  const toName = `${esc(s.company?s.company+"　":"")}${esc(s.officeName||"")}`;
   return `
-    <div class="lp">
-      <div class="lp-title">レターパック宛名（お届け先）</div>
-      <div class="lp-block">
-        <div class="lp-zip">〒 ${zipBoxes(s.postal)}</div>
-        <div class="lp-addr">${esc(s.address||"")}</div>
-        <div class="lp-name">${esc(s.company?s.company+" ":"")}${esc(s.officeName||"")}　御中</div>
-        ${s.contactName?`<div class="lp-sub">${esc(s.contactName)} 様</div>`:""}
-        ${s.phone?`<div class="lp-sub">TEL ${esc(s.phone)}</div>`:""}
-        <div class="lp-sub">品名: 介護情報基盤 カードリーダー</div>
-      </div>
-      <div class="lp-from">
-        <div style="font-size:12px;color:var(--muted)">ご依頼主</div>
-        NPO法人タダカヨ（介護情報基盤伴走支援事業）<br>
-        お問い合わせ: kjk-staff@tadakayo.jp
-      </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:14px">※ レターパックプラス(赤)の宛名面に合わせています。印刷位置がずれる場合は、印刷ダイアログの余白設定で調整してください。宛名ラベルに印刷して貼り付けることもできます。</p>
-    </div>`;
+    <div class="lp-note">切り取り線（- - -）で切り、レターパックプラス（赤）の宛名面に貼り付けてご利用ください。</div>
+    <div class="lp-label">
+      <div class="lp-brand">レターパックプラス　宛名ラベル <span>520円</span></div>
+
+      <div class="lp-sec">お届け先</div>
+      <div class="lp-row"><span class="lp-k">郵便番号</span><span class="lp-zipmark">〒</span>${zipBoxes(s.postal)}</div>
+      <div class="lp-row tall"><span class="lp-k">ご住所</span><span class="lp-v lp-addr">${esc(s.address||"")}</span></div>
+      <div class="lp-row big"><span class="lp-k">お名前</span><span class="lp-v lp-name">${toName} <span class="lp-keisho">御中</span></span></div>
+      <div class="lp-row"><span class="lp-k">電話番号</span><span class="lp-v">${esc(s.phone||"")}</span></div>
+
+      <div class="lp-sec">ご依頼主</div>
+      <div class="lp-row"><span class="lp-k">郵便番号</span><span class="lp-zipmark">〒</span>${zipBoxes(fromPostal)}</div>
+      <div class="lp-row"><span class="lp-k">ご住所</span><span class="lp-v">${esc(fromAddr)}</span></div>
+      <div class="lp-row"><span class="lp-k">お名前</span><span class="lp-v">${esc(fromName)}</span></div>
+      <div class="lp-row"><span class="lp-k">電話番号</span><span class="lp-v">${esc(fromPhone)}</span></div>
+
+      <div class="lp-sec">品名（内容品）</div>
+      <div class="lp-row"><span class="lp-v">介護情報基盤 マイナ資格確認 カードリーダー</span></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin-top:14px">※ ラベルサイズは実物のレターパックプラス宛名欄に合わせています。差出人（ご依頼主）情報は「設定」で登録すると自動表示されます（未登録時は空欄）。</p>`;
 }
 
 // 請求書（見積書の赤系を踏襲・認定事業所向け／卸価格・税別→税込）
@@ -116,7 +125,9 @@ onAuthStateChanged(auth, async (user)=>{
     const snap = await getDoc(doc(db,col,id));
     if(!snap.exists()){ document.getElementById("loadingEl").textContent="データが見つかりません"; return; }
     const d=snap.data();
-    const render = {po:renderPO, ship:renderShip, letterpack:renderLetterpack, invoice:renderInvoice}[type] || renderShip;
+    let settings={};
+    if(type==="letterpack"){ try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){} }
+    const render = {po:renderPO, ship:renderShip, letterpack:(x)=>renderLetterpack(x,settings), invoice:renderInvoice}[type] || renderShip;
     document.getElementById("body").innerHTML = render(d);
     document.title = (TITLES[type]||"")+(d.poNumber||d.soNumber||"");
     document.getElementById("loadingEl").style.display="none";

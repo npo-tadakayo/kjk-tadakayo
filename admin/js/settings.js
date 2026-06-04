@@ -37,6 +37,10 @@ onAuthStateChanged(auth, async (user)=>{
   const s = snap.exists() ? snap.data() : {};
   $("chatWebhookUrl").value = s.chatWebhookUrl || "";
   $("gmailSender").value = s.gmailSender || "kjk-staff@tadakayo.jp";
+  $("senderName").value = s.senderName || "";
+  $("senderPostal").value = s.senderPostal || "";
+  $("senderPhone").value = s.senderPhone || "";
+  $("senderAddress").value = s.senderAddress || "";
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -46,6 +50,10 @@ onAuthStateChanged(auth, async (user)=>{
       await setDoc(doc(db,"appConfig","settings"),{
         chatWebhookUrl: $("chatWebhookUrl").value.trim(),
         gmailSender: $("gmailSender").value.trim(),
+        senderName: $("senderName").value.trim(),
+        senderPostal: $("senderPostal").value.trim(),
+        senderPhone: $("senderPhone").value.trim(),
+        senderAddress: $("senderAddress").value.trim(),
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

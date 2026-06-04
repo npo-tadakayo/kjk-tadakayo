@@ -36,6 +36,15 @@
             <input class="form-control" id="gmailSender" type="email" placeholder="kjk-staff@tadakayo.jp">
             <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">案件詳細からのメール送信の差出人（DWD登録済みの正規アカウントのみ）。</p>
           </div>
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:8px">差出人（レターパック宛名・送り状のご依頼主）</div>
+            <div class="form-group"><label class="form-label" for="senderName">差出人名</label><input class="form-control" id="senderName" type="text" placeholder="NPO法人タダカヨ 介護情報基盤伴走支援事業"></div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="senderPostal">郵便番号</label><input class="form-control" id="senderPostal" type="text" placeholder="000-0000"></div>
+              <div class="form-group"><label class="form-label" for="senderPhone">電話番号</label><input class="form-control" id="senderPhone" type="text" placeholder="00-0000-0000"></div>
+            </div>
+            <div class="form-group"><label class="form-label" for="senderAddress">住所</label><input class="form-control" id="senderAddress" type="text"></div>
+          </div>
           <div id="saveStatus" style="font-size:13px;margin-bottom:8px"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
             <button class="btn btn-secondary" id="testBtn" type="button"><i class="ti ti-bell" aria-hidden="true"></i> Chatにテスト通知</button>

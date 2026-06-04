@@ -36,15 +36,26 @@
     .inv .grand strong{font-size:20px;color:#c02828;}
     .inv .total-row td{font-weight:700;background:#FFF8F8;color:#c02828;}
     .inv .pay{margin-top:18px;border:1px dashed var(--line);border-radius:6px;padding:12px;}
-    /* レターパック宛名 */
-    .lp-title{font-size:12px;color:var(--muted);margin-bottom:10px;}
-    .lp-block{border:2px solid #E33535;border-radius:6px;padding:20px 22px;max-width:560px;}
-    .lp-zip{font-size:18px;margin-bottom:14px;}
-    .zip .zbox{display:inline-block;min-width:22px;border-bottom:2px solid #999;text-align:center;margin:0 2px;font-weight:700;}
-    .lp-addr{font-size:20px;line-height:1.6;margin-bottom:12px;}
-    .lp-name{font-size:24px;font-weight:700;}
-    .lp-sub{font-size:14px;color:#333;margin-top:6px;}
-    .lp-from{margin-top:22px;font-size:14px;}
+    /* レターパックプラス(赤) 宛名ラベル（実物準拠・A4印刷→切り取り） */
+    .lp-note{font-size:12px;color:var(--muted);margin-bottom:8px;}
+    .lp-label{
+      width:120mm; box-sizing:border-box;
+      border:1.5px dashed #E2001A; border-radius:4px; padding:6mm 7mm;
+      background:#fff;
+    }
+    .lp-brand{font-weight:700;color:#E2001A;font-size:15px;letter-spacing:.05em;border-bottom:2px solid #E2001A;padding-bottom:4px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:baseline;}
+    .lp-brand span{font-size:12px;border:1px solid #E2001A;border-radius:3px;padding:1px 6px;}
+    .lp-sec{background:#E2001A;color:#fff;font-size:12px;font-weight:700;padding:2px 8px;border-radius:3px;margin:10px 0 6px;display:inline-block;}
+    .lp-row{display:flex;align-items:center;gap:8px;border-bottom:1px solid #e3e3e3;padding:5px 2px;min-height:30px;}
+    .lp-row.tall{min-height:46px;align-items:flex-start;}
+    .lp-row.big{min-height:40px;}
+    .lp-k{flex:0 0 56px;font-size:11px;color:#E2001A;font-weight:700;}
+    .lp-v{flex:1;font-size:15px;}
+    .lp-addr{font-size:16px;line-height:1.5;}
+    .lp-name{font-size:22px;font-weight:700;}
+    .lp-keisho{font-size:14px;font-weight:400;}
+    .lp-zipmark{color:#E2001A;font-weight:700;font-size:16px;}
+    .zip .zbox{display:inline-block;width:9mm;height:11mm;line-height:11mm;border:1px solid #E2001A;border-radius:2px;text-align:center;margin:0 1px;font-size:16px;font-weight:700;vertical-align:middle;}
     @media print{.toolbar{display:none;}body{background:#fff;}.sheet{max-width:none;margin:0;border:none;border-radius:0;padding:0;}@page{margin:18mm 16mm;}}
   </style>
 </head>
