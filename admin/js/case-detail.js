@@ -626,4 +626,7 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("mailTo").value = currentCase.contactEmail;
   }
   document.getElementById("sendMailBtn").addEventListener("click", sendMail);
+
+  // 報告書PDF
+  document.getElementById("reportBtn").setAttribute("href", `/report.html?id=${caseId}`);
 });

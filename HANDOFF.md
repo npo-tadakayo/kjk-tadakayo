@@ -14,6 +14,17 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤5）— Phase 5 レポートPDF
+
+| 項目 | 内容 |
+|---|---|
+| 出力方式 | `window.print()`（見積書と同方式・依存なし）。専用ページ `admin/report.html`+`js/report.js` |
+| 内容 | 支援報告書（A4・ブランド準拠）: 事業所情報／案件概要（ステータス・補助金区分・想定額・CR構成）／補助金申請状況／伴走支援の記録（sessions）／対応履歴（activities）／発行日 |
+| 動線 | 案件詳細ヘッダーに「報告書PDF」ボタン → `/report.html?id=...` を別タブで開く → 印刷/PDF保存 |
+| 印刷CSS | toolbar非表示・A4余白・改ページ制御（@media print） |
+
+> ⚠️ 実描画・印刷は @tadakayo ログイン必須のため未検証。次田さん確認: 案件詳細→報告書PDF→内容表示＆「印刷/PDF保存」でPDF化できるか。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤4）— Gmail実送信（キーレスDWD）
 
 | 項目 | 内容 |
