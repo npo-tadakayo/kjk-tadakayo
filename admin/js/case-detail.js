@@ -390,6 +390,7 @@ async function addSession(userId, userName) {
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
     dateEl.value = ""; summaryEl.value = ""; filesEl.value = "";
+    const pc = document.getElementById("photoCount"); if (pc) pc.textContent = "";
     showToast("伴走支援セッションを記録しました");
   } catch (e) {
     alert(`記録に失敗しました: ${e.message}`);
@@ -558,6 +559,24 @@ onAuthStateChanged(auth, async (user) => {
 
   // 伴走支援セッション追加
   document.getElementById("addSessionBtn").addEventListener("click", () => addSession(user.uid, user.displayName || user.email));
+
+  // 写真: カメラ撮影 / 選択
+  const photoInput = document.getElementById("sessionPhotos");
+  const photoCount = document.getElementById("photoCount");
+  document.getElementById("cameraBtn").addEventListener("click", () => {
+    photoInput.setAttribute("capture", "environment"); // スマホはカメラ起動
+    photoInput.removeAttribute("multiple");
+    photoInput.click();
+  });
+  document.getElementById("galleryBtn").addEventListener("click", () => {
+    photoInput.removeAttribute("capture");
+    photoInput.setAttribute("multiple", "multiple");
+    photoInput.click();
+  });
+  photoInput.addEventListener("change", () => {
+    const n = (photoInput.files || []).length;
+    photoCount.textContent = n ? `${n}枚 選択中` : "";
+  });
 
   // 書類チェック
   document.querySelectorAll("[data-field]").forEach((chk) => {

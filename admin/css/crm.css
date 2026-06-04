@@ -751,10 +751,6 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
 .bar-track { flex: 1; height: 14px; background: var(--color-bg); border-radius: var(--radius-full, 999px); overflow: hidden; }
 .bar-fill { height: 100%; border-radius: var(--radius-full, 999px); min-width: 2px; transition: width .3s; }
 .bar-count { flex: 0 0 36px; text-align: right; font-weight: 700; color: var(--color-ink-muted); }
-@media (max-width: 768px) {
-  #breakdownGrid { grid-template-columns: 1fr !important; }
-  .bar-label { flex-basis: 120px; }
-}
 
 /* ========== 伴走支援セッション写真 ========== */
 .session-photos {
@@ -788,9 +784,39 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
   overflow-y: auto;
 }
 
+/* ========== モバイルヘッダー（rule25）========== */
+.mobile-header { display: none; }
+.mobile-header {
+  align-items: center; gap: 10px;
+  height: 56px; padding: 0 12px;
+  background: var(--color-primary); color: #fff;
+  position: sticky; top: 0; z-index: 30;
+}
+.mh-burger {
+  background: none; border: none; color: #fff; cursor: pointer;
+  min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center;
+  font-size: 22px; border-radius: 8px;
+}
+.mh-title { font-family: "Noto Serif JP", serif; font-weight: 600; font-size: 16px; }
+.nav-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 40; display: none; }
+.nav-overlay.show { display: block; }
+
 /* ========== Responsive ========== */
-@media (max-width: 768px) {
-  .sidebar { display: none; }
+@media (max-width: 1024px) {
+  .layout { display: block; }
+  .mobile-header { display: flex; }
+  .sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; width: min(280px, 80vw);
+    transform: translateX(-100%);
+    transition: transform .24s cubic-bezier(.4,0,.2,1);
+    z-index: 50; box-shadow: 2px 0 16px rgba(0,0,0,.18);
+  }
+  .sidebar.open { transform: translateX(0); }
   .main-content { padding: var(--space-4); }
+}
+@media (max-width: 768px) {
+  #breakdownGrid { grid-template-columns: 1fr !important; }
+  .bar-label { flex-basis: 120px; }
   .form-row { grid-template-columns: 1fr; }
+  .table-wrap { overflow-x: auto; }
 }
