@@ -14,6 +14,20 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤2）— CRM Phase 7/8/4 並行実装
+
+| Phase | 内容 |
+|---|---|
+| 8 CSV出力 | `cases.html`/`cases.js`：案件一覧に「CSV出力」ボタン。現在の絞り込み結果をUTF-8 BOM付きCSVで出力（Excel対応） |
+| 7 ダッシュボード | `dashboard.html`+`js/dashboard.js` 新規。サマリー（総数/受注/申請/完了/失注/想定補助額合計/CR台数）・パイプラインファネル・ステータス別/流入元別バー。リアルタイム集計 |
+| 4 伴走支援＋写真 | `case-detail`：新タブ「伴走支援」。実施日＋メモ＋写真（複数）を `sessions` コレクション＋Storage(`sessions/{id}/photos/`)に保存。タイムラインにも訪問記録として自動追加。写真サムネ表示（クリックで原寸） |
+| ナビ | 全4画面サイドバーに「ダッシュボード/案件一覧/カンバン」統一 |
+| インデックス | `activities`(caseId+occurredAt)・`sessions`(caseId+createdAt) 複合インデックス追加・READY確認。※activities indexは案件詳細タイムラインにも必要だった（今回同時に解消） |
+
+> ⚠️ 実機（@tadakayoログイン）検証は未。次田さん確認項目: ①ダッシュボードの集計数が妥当 ②案件一覧CSV出力 ③案件詳細→伴走支援タブで写真アップロード→サムネ表示＆タイムライン反映。
+> ⛔ 未着手: Phase 3 Gmail送信（Gmail API OAuth設定が前提）/ Phase 5 レポートPDF / Phase 6 アフターフォロー自動化 / Phase 9-12 発注・在庫・出荷・B2Bポータル。
+> 📌 Phase 3 の前提=Gmail API OAuthクライアント作成（Console作業）。`Gmail_MCP_セットアップ手順.md` 参照。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤）— CRM Phase 2（カンバン＋全体アラート）
 
 | 項目 | 内容 |

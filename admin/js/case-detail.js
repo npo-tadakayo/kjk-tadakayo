@@ -4,10 +4,13 @@ import { getAuth, onAuthStateChanged, signOut }
 import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc,
   collection, query, where, orderBy, onSnapshot, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 const caseId = new URLSearchParams(location.search).get("id");
 if (!caseId) { location.href = "/cases.html"; }
@@ -301,6 +304,96 @@ function showToast(msg) {
   toast._t = setTimeout(() => { toast.style.display = "none"; }, 2500);
 }
 
+// ===== 伴走支援セッション =====
+function renderSessions(sessions) {
+  const el = document.getElementById("sessionsEl");
+  if (!sessions.length) {
+    el.innerHTML = `<div class="empty-state"><i class="ti ti-camera" aria-hidden="true"></i><p>伴走支援の記録がありません</p></div>`;
+    return;
+  }
+  el.innerHTML = sessions.map((s) => {
+    const photos = (s.photoUrls || []).map((u) =>
+      `<a href="${u}" target="_blank" rel="noopener"><img class="session-photo" src="${u}" alt="支援写真" loading="lazy"></a>`
+    ).join("");
+    return `
+      <div class="card" style="margin-bottom:var(--space-3)">
+        <div class="card-body">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong style="font-size:14px"><i class="ti ti-calendar-event" aria-hidden="true"></i> ${escHtml(s.sessionDate || "日付未設定")}</strong>
+            <span style="font-size:12px;color:var(--color-ink-muted)">${escHtml(s.userName || "")} ・ ${formatDateTime(s.createdAt)}</span>
+          </div>
+          ${s.summary ? `<div style="font-size:13px;white-space:pre-wrap;margin-bottom:${photos ? "10px" : "0"}">${escHtml(s.summary)}</div>` : ""}
+          ${photos ? `<div class="session-photos">${photos}</div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function addSession(userId, userName) {
+  const dateEl = document.getElementById("sessionDate");
+  const summaryEl = document.getElementById("sessionSummary");
+  const filesEl = document.getElementById("sessionPhotos");
+  const sessionDate = dateEl.value;
+  const summary = summaryEl.value.trim();
+  const files = Array.from(filesEl.files || []);
+  if (!sessionDate && !summary && !files.length) {
+    alert("実施日・メモ・写真のいずれかを入力してください");
+    return;
+  }
+
+  const btn = document.getElementById("addSessionBtn");
+  const progress = document.getElementById("sessionUploadProgress");
+  btn.disabled = true;
+  progress.style.display = files.length ? "block" : "none";
+
+  try {
+    // 先にセッションdocを作成（IDをStorageパスに使う）
+    const sessRef = await addDoc(collection(db, "sessions"), {
+      caseId,
+      sessionDate: sessionDate || "",
+      summary,
+      userId,
+      userName,
+      photoUrls: [],
+      createdAt: serverTimestamp(),
+    });
+
+    // 写真をStorageへアップロード（sessions/{sessionId}/photos/{name}）
+    const urls = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const safeName = `${Date.now()}_${i}_${f.name.replace(/[^\w.\-]/g, "_")}`;
+      const path = `sessions/${sessRef.id}/photos/${safeName}`;
+      const snap = await uploadBytes(storageRef(storage, path), f);
+      urls.push(await getDownloadURL(snap.ref));
+    }
+    if (urls.length) {
+      await updateDoc(doc(db, "sessions", sessRef.id), { photoUrls: urls });
+    }
+
+    // タイムラインにも記録（種別: 訪問・対面）
+    await addDoc(collection(db, "activities"), {
+      caseId,
+      type: "visit",
+      occurredAt: serverTimestamp(),
+      userId,
+      userName,
+      subject: `伴走支援セッション${sessionDate ? `（${sessionDate}）` : ""}`,
+      body: summary + (urls.length ? `\n写真${urls.length}枚を添付` : ""),
+      attachmentUrls: urls,
+    });
+    await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
+
+    dateEl.value = ""; summaryEl.value = ""; filesEl.value = "";
+    showToast("伴走支援セッションを記録しました");
+  } catch (e) {
+    alert(`記録に失敗しました: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    progress.style.display = "none";
+  }
+}
+
 // タブ切替
 function initTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
@@ -348,6 +441,9 @@ onAuthStateChanged(auth, async (user) => {
   // 対応記録追加
   document.getElementById("addActivityBtn").addEventListener("click", () => addActivity(user.uid, user.displayName || user.email));
 
+  // 伴走支援セッション追加
+  document.getElementById("addSessionBtn").addEventListener("click", () => addSession(user.uid, user.displayName || user.email));
+
   // 書類チェック
   document.querySelectorAll("[data-field]").forEach((chk) => {
     chk.addEventListener("change", async () => {
@@ -390,5 +486,15 @@ onAuthStateChanged(auth, async (user) => {
   );
   onSnapshot(actQ, (snap) => {
     renderTimeline(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+  });
+
+  // 伴走支援セッション購読
+  const sessQ = query(
+    collection(db, "sessions"),
+    where("caseId", "==", caseId),
+    orderBy("createdAt", "desc")
+  );
+  onSnapshot(sessQ, (snap) => {
+    renderSessions(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
   });
 });

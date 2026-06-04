@@ -16,6 +16,9 @@
         <div class="app-sub">介護情報基盤伴走支援</div>
       </div>
       <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html">
+          <i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード
+        </a>
         <a class="nav-item active" href="/cases.html">
           <i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧
         </a>
@@ -35,9 +38,14 @@
     <main class="main-content">
       <div class="page-header">
         <h1 class="page-title">案件一覧</h1>
-        <button class="btn btn-primary" id="newCaseBtn" type="button">
-          <i class="ti ti-plus" aria-hidden="true"></i>新規案件
-        </button>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" id="exportCsvBtn" type="button">
+            <i class="ti ti-file-spreadsheet" aria-hidden="true"></i>CSV出力
+          </button>
+          <button class="btn btn-primary" id="newCaseBtn" type="button">
+            <i class="ti ti-plus" aria-hidden="true"></i>新規案件
+          </button>
+        </div>
       </div>
 
       <!-- 申請期限バナー -->

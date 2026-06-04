@@ -16,6 +16,9 @@
         <div class="app-sub">介護情報基盤伴走支援</div>
       </div>
       <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html">
+          <i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード
+        </a>
         <a class="nav-item" href="/cases.html">
           <i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧
         </a>
@@ -76,6 +79,9 @@
           <button class="tab active" role="tab" data-tab="timeline" aria-selected="true">
             <i class="ti ti-timeline" aria-hidden="true"></i> 対応記録
           </button>
+          <button class="tab" role="tab" data-tab="sessions" aria-selected="false">
+            <i class="ti ti-camera" aria-hidden="true"></i> 伴走支援
+          </button>
           <button class="tab" role="tab" data-tab="documents" aria-selected="false">
             <i class="ti ti-files" aria-hidden="true"></i> 書類チェック
           </button>
@@ -124,6 +130,46 @@
             <div class="empty-state">
               <i class="ti ti-notes" aria-hidden="true"></i>
               <p>対応記録がありません</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 伴走支援タブ -->
+        <div class="tab-content" id="tab-sessions">
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header">
+              <span style="font-weight:600;font-size:14px">伴走支援セッションを記録</span>
+            </div>
+            <div class="card-body">
+              <div class="form-row" style="margin-bottom:var(--space-3)">
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label" for="sessionDate">実施日</label>
+                  <input class="form-control" type="date" id="sessionDate">
+                </div>
+                <div class="form-group" style="margin-bottom:0">
+                  <label class="form-label" for="sessionPhotos">写真（複数可）</label>
+                  <input class="form-control" type="file" id="sessionPhotos" accept="image/*" multiple>
+                </div>
+              </div>
+              <div class="form-group" style="margin-bottom:var(--space-3)">
+                <label class="form-label" for="sessionSummary">支援内容・メモ</label>
+                <textarea class="form-control" id="sessionSummary" rows="3" placeholder="当日の支援内容、設定状況、次回までの宿題など"></textarea>
+              </div>
+              <div style="text-align:right">
+                <button class="btn btn-primary" id="addSessionBtn" type="button">
+                  <i class="ti ti-plus" aria-hidden="true"></i>セッションを記録
+                </button>
+              </div>
+              <div id="sessionUploadProgress" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-top:8px">
+                <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> アップロード中...
+              </div>
+            </div>
+          </div>
+
+          <div id="sessionsEl">
+            <div class="empty-state">
+              <i class="ti ti-camera" aria-hidden="true"></i>
+              <p>伴走支援の記録がありません</p>
             </div>
           </div>
         </div>

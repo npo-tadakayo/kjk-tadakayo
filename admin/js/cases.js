@@ -113,6 +113,60 @@ function escHtml(str) {
     .replace(/"/g, "&quot;");
 }
 
+// 現在の絞り込み結果をCSV出力（Excel対応・UTF-8 BOM付き）
+function getFilteredCases() {
+  const search = document.getElementById("searchInput").value.toLowerCase();
+  const statusFilter = document.getElementById("statusFilter").value;
+  const sourceFilter = document.getElementById("sourceFilter").value;
+  return allCases.filter((c) => {
+    const matchSearch = !search ||
+      (c.officeName || "").toLowerCase().includes(search) ||
+      (c.corpName || "").toLowerCase().includes(search) ||
+      (c.contactName || "").toLowerCase().includes(search);
+    const matchStatus = !statusFilter || String(c.status) === statusFilter;
+    const matchSource = !sourceFilter || c.source === sourceFilter;
+    return matchSearch && matchStatus && matchSource;
+  });
+}
+
+function csvCell(v) {
+  const s = String(v ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function fmtFull(ts) {
+  if (!ts) return "";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit" });
+}
+
+function exportCsv() {
+  const rows = getFilteredCases();
+  const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元",
+    "ステータス","担当スタッフ","補助金区分","想定補助額","受信日時","最終更新"];
+  const lines = [headers.join(",")];
+  rows.forEach((c) => {
+    lines.push([
+      c.caseNumber || "", c.officeName || "", c.corpName || "", c.contactName || "",
+      c.contactPhone || "", c.contactEmail || "", SOURCE_LABELS[c.source] || c.source || "",
+      STATUS_LABELS[c.status] || "", c.assignedUserName || "未割当",
+      c.subsidyCategory || "", c.expectedSubsidyAmount || "",
+      fmtFull(c.receivedAt), fmtFull(c.updatedAt),
+    ].map(csvCell).join(","));
+  });
+  const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const today = new Date().toLocaleDateString("ja-JP").replace(/\//g, "");
+  a.href = url;
+  a.download = `案件一覧_${today}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function getNextCaseNumber() {
   const counterRef = doc(db, "_counters", "cases");
   return await runTransaction(db, async (tx) => {
@@ -224,6 +278,7 @@ onAuthStateChanged(auth, (user) => {
   document.getElementById("searchInput").addEventListener("input", renderCases);
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
+  document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
 
   updateDeadlineBanner();
 
