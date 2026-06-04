@@ -89,21 +89,16 @@
 
       <!-- パートナー管理 -->
       <div class="tab-content" id="tab-partners">
-        <div class="card" style="margin-bottom:16px"><div class="card-body">
-          <h3 style="font-size:13px;margin:0 0 4px;color:var(--color-ink-muted)">認定事業所を許可リストに追加（ログイン用Googleメール）</h3>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">登録するのは<strong>認定事業所さま自身のGoogleアカウント</strong>（gmail.com や会社ドメイン等／@tadakayo.jp ではありません）。この登録作業は @tadakayo.jp の職員のみが行えます。間違えた場合は一覧の「削除」で消せます。</p>
-          <div class="form-row">
-            <div class="form-group"><label class="form-label" for="prEmail">ログインメール <span style="color:red">*</span></label><input class="form-control" id="prEmail" type="email" placeholder="partner@example.com"></div>
-            <div class="form-group"><label class="form-label" for="prName">認定事業所名 <span style="color:red">*</span></label><input class="form-control" id="prName" type="text"></div>
-          </div>
-          <div style="text-align:right"><button class="btn btn-primary" id="addPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>追加</button></div>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:6px">※ ポータルURL: <strong>https://kjk-tadakayo-admin.web.app/partner.html</strong>（認定事業所さまに案内）</p>
-        </div></div>
+        <div class="page-header" style="margin-bottom:12px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業所の登録・連絡先・担当者管理（@tadakayo.jp 職員のみ）</span>
+          <button class="btn btn-primary" id="newPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>認定事業所を追加</button>
+        </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>ログインメール</th><th>認定事業所名</th><th>状態</th><th></th></tr></thead>
+          <table><thead><tr><th>認定事業所</th><th>連絡先</th><th>担当者</th><th>状態</th><th></th></tr></thead>
           <tbody id="partnersBody"></tbody></table>
-          <div id="partnersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>登録パートナーがありません</p></div>
+          <div id="partnersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>登録された認定事業所がありません</p></div>
         </div></div>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin-top:8px">※ ポータルURL: <strong>https://kjk-tadakayo-admin.web.app/partner.html</strong>（認定事業所さまに案内）。ログインメールは認定事業所さま自身のGoogleアカウント。</p>
       </div>
     </main>
   </div>
@@ -156,6 +151,34 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelShipBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="saveShipBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>出荷を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 認定事業所 追加/編集モーダル -->
+  <div class="modal-overlay" id="partnerModal" role="dialog" aria-modal="true" aria-label="認定事業所">
+    <div class="modal"><div class="modal-header"><h2 id="partnerModalTitle">認定事業所を追加</h2>
+      <button class="btn btn-secondary" id="closePartnerBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="prEmail">ログインメール（Googleアカウント）<span style="color:red">*</span></label><input class="form-control" id="prEmail" type="email" placeholder="partner@example.com"></div>
+          <div class="form-group"><label class="form-label" for="prName">認定事業所名 <span style="color:red">*</span></label><input class="form-control" id="prName" type="text"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="prCorp">法人名</label><input class="form-control" id="prCorp" type="text"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="prPostal">郵便番号</label><input class="form-control" id="prPostal" type="text" placeholder="000-0000"></div>
+          <div class="form-group"><label class="form-label" for="prPhone">代表電話</label><input class="form-control" id="prPhone" type="text"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="prAddress">住所</label><input class="form-control" id="prAddress" type="text"></div>
+        <div class="form-group"><label class="form-label" for="prMail">代表メール</label><input class="form-control" id="prMail" type="email"></div>
+        <div class="form-group" style="margin-bottom:4px"><label class="form-label">担当者（複数登録可）</label></div>
+        <div id="prContacts"></div>
+        <button class="btn btn-secondary" id="addContactBtn" type="button" style="font-size:12px;padding:6px 12px"><i class="ti ti-plus" aria-hidden="true"></i>担当者を追加</button>
+        <div id="prError" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelPartnerBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="savePartnerBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>保存</button>
       </div>
     </div>
   </div>

@@ -334,40 +334,94 @@ let partnersCache = [];
 function renderPartners(partners){
   partnersCache = partners;
   document.getElementById("partnersEmpty").style.display = partners.length?"none":"block";
-  document.getElementById("partnersBody").innerHTML = partners.map(p=>`
-    <tr>
-      <td><strong>${esc(p._id)}</strong></td>
-      <td>${esc(p.partnerName||"")}</td>
-      <td>${p.active?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
+  document.getElementById("partnersBody").innerHTML = partners.map(p=>{
+    const addr=[p.postal?("〒"+p.postal):"",p.address||""].filter(Boolean).join(" ");
+    const contacts=(p.contacts||[]).map(c=>esc(c.name||"")).filter(Boolean).join("、");
+    return `<tr>
+      <td><strong>${esc(p.partnerName||"")}</strong>${p.corpName?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(p.corpName)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">${esc(p._id)}</div></td>
+      <td style="font-size:12px">${esc(addr)||"—"}${p.phone?`<div>TEL ${esc(p.phone)}</div>`:""}${p.contactEmail?`<div>${esc(p.contactEmail)}</div>`:""}</td>
+      <td style="font-size:12px">${contacts||"—"}</td>
+      <td>${p.active!==false?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active}" style="font-size:12px;padding:4px 8px">${p.active?"停止する":"有効化"}</button>
-        <button class="btn btn-danger del-partner" data-email="${esc(p._id)}" data-name="${esc(p.partnerName||"")}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash" aria-hidden="true"></i>削除</button>
+        <button class="btn btn-secondary edit-partner" data-email="${esc(p._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
+        <a class="btn btn-secondary" href="/supply-print.html?type=plabel&pid=${encodeURIComponent(p._id)}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
+        <button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active!==false}" style="font-size:12px;padding:4px 8px">${p.active!==false?"停止":"有効化"}</button>
+        <button class="btn btn-danger del-partner" data-email="${esc(p._id)}" data-name="${esc(p.partnerName||"")}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
       </td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
+  document.querySelectorAll(".edit-partner").forEach(b=>b.addEventListener("click",()=>{
+    const p=partnersCache.find(x=>x._id===b.dataset.email); if(p) openPartnerModal(p);
+  }));
   document.querySelectorAll(".toggle-partner").forEach(b=>b.addEventListener("click",async()=>{
     await updateDoc(doc(db,"partners",b.dataset.email),{active: b.dataset.active!=="true"});
-    toast("パートナー状態を更新しました");
+    toast("状態を更新しました");
   }));
   document.querySelectorAll(".del-partner").forEach(b=>b.addEventListener("click",async()=>{
-    if(!confirm(`「${b.dataset.name||b.dataset.email}」を許可リストから完全に削除します。\nこのアカウントはポータルにログインできなくなります。よろしいですか？`)) return;
+    if(!confirm(`「${b.dataset.name||b.dataset.email}」を完全に削除します。ポータルにログインできなくなります。よろしいですか？`)) return;
     await deleteDoc(doc(db,"partners",b.dataset.email));
-    toast("パートナーを削除しました");
+    toast("削除しました");
   }));
 }
-async function addPartner(){
+
+// 担当者行
+function contactRow(c){
+  c=c||{};
+  const wrap=document.createElement("div");
+  wrap.className="contact-row";
+  wrap.style.cssText="display:flex;gap:6px;margin-bottom:6px;align-items:center";
+  wrap.innerHTML=`
+    <input class="form-control c-name" type="text" placeholder="氏名" value="${esc(c.name||'').replace(/"/g,'&quot;')}" style="flex:1;padding:5px 8px">
+    <input class="form-control c-phone" type="text" placeholder="電話" value="${esc(c.phone||'').replace(/"/g,'&quot;')}" style="flex:1;padding:5px 8px">
+    <input class="form-control c-email" type="text" placeholder="メール" value="${esc(c.email||'').replace(/"/g,'&quot;')}" style="flex:1;padding:5px 8px">
+    <button class="btn btn-danger c-del" type="button" style="padding:5px 8px"><i class="ti ti-x"></i></button>`;
+  wrap.querySelector(".c-del").addEventListener("click",()=>wrap.remove());
+  document.getElementById("prContacts").appendChild(wrap);
+}
+let editingPartnerId=null;
+function openPartnerModal(p){
+  p=p||{};
+  editingPartnerId = p._id || null;
+  document.getElementById("partnerModalTitle").textContent = editingPartnerId?"認定事業所を編集":"認定事業所を追加";
+  document.getElementById("prEmail").value = p._id||"";
+  document.getElementById("prEmail").disabled = !!editingPartnerId; // メール=IDは編集不可
+  document.getElementById("prName").value = p.partnerName||"";
+  document.getElementById("prCorp").value = p.corpName||"";
+  document.getElementById("prPostal").value = p.postal||"";
+  document.getElementById("prPhone").value = p.phone||"";
+  document.getElementById("prAddress").value = p.address||"";
+  document.getElementById("prMail").value = p.contactEmail||"";
+  document.getElementById("prContacts").innerHTML="";
+  (p.contacts&&p.contacts.length?p.contacts:[{}]).forEach(contactRow);
+  document.getElementById("prError").style.display="none";
+  document.getElementById("partnerModal").classList.add("open");
+}
+async function savePartner(){
   const email=document.getElementById("prEmail").value.trim().toLowerCase();
   const name=document.getElementById("prName").value.trim();
-  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert("正しいメールアドレスを入力してください"); return; }
-  if(!name){ alert("認定事業所名を入力してください"); return; }
-  if(email.endsWith("@tadakayo.jp")){
-    if(!confirm("@tadakayo.jp は職員（管理側）アカウントです。認定事業所ポータルのパートナーとして登録しますか？\n通常は認定事業所さま自身のGoogleアカウント（gmail等）を登録します。")) return;
-  }
-  if(partnersCache.some(p=>p._id===email)){ alert("このメールは既に登録されています"); return; }
-  await setDoc(doc(db,"partners",email),{
-    email, partnerName:name, active:true, createdAt:serverTimestamp(),
-    createdBy: currentUser.displayName||currentUser.email });
-  document.getElementById("prEmail").value=""; document.getElementById("prName").value="";
-  toast(`${name} を許可リストに追加しました`);
+  const err=document.getElementById("prError"); err.style.display="none";
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent="正しいログインメールを入力してください"; err.style.display="block"; return; }
+  if(!name){ err.textContent="認定事業所名を入力してください"; err.style.display="block"; return; }
+  if(!editingPartnerId && partnersCache.some(p=>p._id===email)){ err.textContent="このメールは既に登録されています"; err.style.display="block"; return; }
+  if(!editingPartnerId && email.endsWith("@tadakayo.jp") &&
+     !confirm("@tadakayo.jp は職員アカウントです。認定事業所として登録しますか？")) return;
+  const contacts=Array.from(document.querySelectorAll("#prContacts .contact-row")).map(r=>({
+    name:r.querySelector(".c-name").value.trim(), phone:r.querySelector(".c-phone").value.trim(), email:r.querySelector(".c-email").value.trim(),
+  })).filter(c=>c.name||c.phone||c.email);
+  const data={
+    email, partnerName:name,
+    corpName:document.getElementById("prCorp").value.trim(),
+    postal:document.getElementById("prPostal").value.trim(),
+    address:document.getElementById("prAddress").value.trim(),
+    phone:document.getElementById("prPhone").value.trim(),
+    contactEmail:document.getElementById("prMail").value.trim(),
+    contacts,
+    updatedAt:serverTimestamp(),
+  };
+  if(!editingPartnerId){ data.active=true; data.createdAt=serverTimestamp(); data.createdBy=currentUser.displayName||currentUser.email; }
+  await setDoc(doc(db,"partners",email), data, {merge:true});
+  document.getElementById("partnerModal").classList.remove("open");
+  toast(`${name} を保存しました`);
 }
 
 // ===== 初期化 =====
@@ -408,7 +462,11 @@ onAuthStateChanged(auth, async (user)=>{
     renderPartnerOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
   });
   // パートナー名簿
-  document.getElementById("addPartnerBtn").addEventListener("click",addPartner);
+  document.getElementById("newPartnerBtn").addEventListener("click",()=>openPartnerModal(null));
+  document.getElementById("closePartnerBtn").addEventListener("click",()=>document.getElementById("partnerModal").classList.remove("open"));
+  document.getElementById("cancelPartnerBtn").addEventListener("click",()=>document.getElementById("partnerModal").classList.remove("open"));
+  document.getElementById("savePartnerBtn").addEventListener("click",savePartner);
+  document.getElementById("addContactBtn").addEventListener("click",()=>contactRow({}));
   onSnapshot(query(collection(db,"partners")),(snap)=>{
     const list=snap.docs.map(d=>({_id:d.id,...d.data()}));
     activePartners = list.filter(p=>p.active!==false);

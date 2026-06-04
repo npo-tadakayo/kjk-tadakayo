@@ -33,7 +33,7 @@ function daysUntilDeadline() {
 function formatDate(ts) {
   if (!ts) return "—";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" });
+  return d.toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
 function updateDeadlineBanner() {

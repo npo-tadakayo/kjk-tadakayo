@@ -119,21 +119,27 @@ function renderInvoice(s){
     </div>`;
 }
 
-const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",invoice:"請求書 "};
+const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 "};
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   document.getElementById("printBtn").addEventListener("click",()=>window.print());
-  if(!type||!id){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }
+  const docId = type==="plabel" ? params.get("pid") : id;
+  if(!type||!docId){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }
   try{
-    const col = type==="po"?"purchaseOrders":"shipments";
-    const snap = await getDoc(doc(db,col,id));
+    const col = type==="po"?"purchaseOrders" : type==="plabel"?"partners" : "shipments";
+    const snap = await getDoc(doc(db,col,docId));
     if(!snap.exists()){ document.getElementById("loadingEl").textContent="データが見つかりません"; return; }
     const d=snap.data();
     document.getElementById("loadingEl").style.display="none";
     document.getElementById("body").style.display="block";
     document.title = (TITLES[type]||"")+(d.poNumber||d.soNumber||"");
 
-    if(type==="letterpack"){
+    if(type==="letterpack" || type==="plabel"){
+      // plabel=認定事業所宛（partners/{pid}）／letterpack=出荷のお届け先
+      let toObj = d;
+      if(type==="plabel"){
+        toObj = { company:d.corpName||"", officeName:d.partnerName||"", postal:d.postal||"", address:d.address||"", phone:d.phone||"" };
+      }
       let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
       let senders = Array.isArray(settings.senders)?settings.senders:[];
       if(!senders.length && settings.senderName) senders=[{name:settings.senderName,postal:settings.senderPostal||"",address:settings.senderAddress||"",phone:settings.senderPhone||""}];
@@ -145,7 +151,7 @@ onAuthStateChanged(auth, async (user)=>{
       const draw=()=>{
         const v=document.getElementById("lpVariant").value;
         const idx=parseInt(selS.value,10);
-        document.getElementById("body").innerHTML = renderLetterpack(d, senders[idx]||{}, v);
+        document.getElementById("body").innerHTML = renderLetterpack(toObj, senders[idx]||{}, v);
       };
       document.getElementById("lpVariant").addEventListener("change",draw);
       selS.addEventListener("change",draw);
