@@ -76,6 +76,8 @@ onAuthStateChanged(auth, async (user)=>{
   $("poIssuerRep").value = s.poIssuerRep || "";
   $("poOrdererName").value = s.poOrdererName || "";
   $("poSealText").value = s.poSealText || "";
+  $("invoiceIssuerName").value = s.invoiceIssuerName || "";
+  $("invoiceRegNo").value = s.invoiceRegNo || "";
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -91,6 +93,8 @@ onAuthStateChanged(auth, async (user)=>{
         poIssuerRep: $("poIssuerRep").value.trim(),
         poOrdererName: $("poOrdererName").value.trim(),
         poSealText: $("poSealText").value.trim(),
+        invoiceIssuerName: $("invoiceIssuerName").value.trim(),
+        invoiceRegNo: $("invoiceRegNo").value.trim(),
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

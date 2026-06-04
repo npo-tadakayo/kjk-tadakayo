@@ -132,34 +132,42 @@ function renderLetterpack(s, sender, variant){
 }
 
 // 請求書（見積書の赤系を踏襲・認定事業所向け／卸価格・税別→税込）
-function renderInvoice(s){
+function renderInvoice(s, st){
+  st = st || {};
   const items=s.items||[];
   const sub=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
   const tax=Math.floor(sub*0.1); const total=sub+tax;
-  const rows=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("");
   const invNo=(s.soNumber||"").replace(/^SH/,"INV");
   const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
+  const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
+  const regNo = st.invoiceRegNo || "";
+  const regLine = regNo
+    ? `登録番号: <strong>${esc(regNo)}</strong>`
+    : `<span style="color:#c0392b">登録番号: 未登録（設定で登録してください）</span>`;
+  // 適格請求書: 各明細に適用税率を表示
+  const rows2=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
-        <div class="issuer"><div class="org">NPO法人タダカヨ</div>介護情報基盤伴走支援事業<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div></div>
+        <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div></div>
       <h1 class="inv-title">請　求　書</h1>
       <div class="to">${esc(billName)} 御中</div>
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
       <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>
       <div class="grand">ご請求金額（税込）　<strong>${yen(total)}</strong></div>
-      <table class="items"><thead><tr><th>品名</th><th style="width:60px">数量</th><th style="width:110px">単価(税別)</th><th style="width:120px">金額(税別)</th></tr></thead>
-        <tbody>${rows}
-          <tr><td colspan="3" class="num">小計（税別）</td><td class="num">${yen(sub)}</td></tr>
-          <tr><td colspan="3" class="num">消費税（10%）</td><td class="num">${yen(tax)}</td></tr>
-          <tr class="total-row"><td colspan="3" class="num">合計（税込）</td><td class="num">${yen(total)}</td></tr>
-        </tbody></table>
+      <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(税抜)</th><th style="width:116px">金額(税抜)</th></tr></thead>
+        <tbody>${rows2}</tbody></table>
+      <table class="po-sum" style="margin-top:10px"><tbody>
+        <tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
+        <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>
+        <tr class="grand"><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
+      </tbody></table>
       <div class="pay">
         <div style="font-weight:700;margin-bottom:4px">お振込先</div>
-        <div style="font-size:12px;color:var(--muted)">※ 振込先口座は別途ご案内します（設定でテンプレート化予定）。お支払期限: 請求書発行月の翌月末。</div>
+        <div style="font-size:12px;color:var(--muted)">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限: 請求書発行月の翌月末。</div>
       </div>
-      <div class="footer">NPO法人タダカヨ　介護情報基盤伴走支援事業</div>
+      <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
     </div>`;
 }
 
@@ -203,12 +211,11 @@ onAuthStateChanged(auth, async (user)=>{
       return;
     }
 
-    if(type==="po"){
+    if(type==="po" || type==="invoice"){
       let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
-      document.getElementById("body").innerHTML = renderPO(d, settings);
+      document.getElementById("body").innerHTML = type==="po" ? renderPO(d, settings) : renderInvoice(d, settings);
       return;
     }
-    const render = {ship:renderShip, invoice:renderInvoice}[type] || renderShip;
-    document.getElementById("body").innerHTML = render(d);
+    document.getElementById("body").innerHTML = renderShip(d);
   }catch(e){ document.getElementById("loadingEl").textContent=`読み込み失敗: ${e.message}`; }
 });
