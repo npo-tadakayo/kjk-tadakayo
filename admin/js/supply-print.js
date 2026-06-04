@@ -103,7 +103,7 @@ function renderLetterpack(s, sender, variant){
   const fromPhone = sender.phone || "";
   const toName = `${esc(s.company?s.company+"　":"")}${esc(s.officeName||"")}`;
   return `
-    <div class="lp-note">切り取り線（- - -）で切り、${brandName}（${colorName}）の宛名面に貼り付けてご利用ください。</div>
+    <div class="lp-note">A4で印刷 → 切り取り線（- - -）で切り取り → <strong>${brandName}（${colorName}）の宛名面にそのまま直接貼り付け</strong>てください。</div>
     <div class="lp-label ${isLight?"blue":""}">
       <div class="lp-brand">${brandName}　宛名ラベル <span>${price}</span></div>
 
