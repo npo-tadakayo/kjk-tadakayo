@@ -31,7 +31,9 @@ async function getChatWebhook() {
 
 // ===== Vertex AI (Gemini) — SA認証/ADC・鍵なし =====
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "kjk-tadakayo";
-const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || "global";
+// データレジデンシー(個人情報の国内処理)のため既定を asia-northeast1 とする。
+// global は data residency 非対応のため使用しない（開発チーム指摘 H-5）。
+const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || "asia-northeast1";
 let _genai;
 function genai() {
   if (!_genai) {
