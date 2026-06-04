@@ -648,4 +648,6 @@ onAuthStateChanged(auth, async (user) => {
 
   // 報告書PDF
   document.getElementById("reportBtn").setAttribute("href", `/report.html?id=${caseId}`);
+  // この案件から出荷を作成（直接出荷フォームへ取り込み）
+  document.getElementById("shipFromCaseBtn").setAttribute("href", `/supply.html?ship=${caseId}`);
 });

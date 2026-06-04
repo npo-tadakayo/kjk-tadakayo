@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDocs, query, orderBy, onSnapshot,
+import { getFirestore, collection, doc, getDoc, getDocs, query, orderBy, onSnapshot,
   addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -197,6 +197,32 @@ async function saveShip(){
     document.getElementById("shipModal").classList.remove("open");
     toast(`出荷 ${soNumber} を登録しました（在庫から引落）`);
   }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
+}
+
+// 案件（事業所の申し込み）→ 直接出荷フォームに取り込み
+async function prefillShipFromCase(caseId){
+  try{
+    const cs=await getDoc(doc(db,"cases",caseId)); if(!cs.exists()){ alert("案件が見つかりません"); return; }
+    const c=cs.data();
+    let office={};
+    if(c.officeId){ try{ const os=await getDoc(doc(db,"offices",c.officeId)); if(os.exists()) office=os.data(); }catch(_){} }
+    const tab=document.querySelector('.tab[data-tab="shipments"]'); if(tab) tab.click();
+    openShip();
+    document.getElementById("shipType").value="direct";
+    document.getElementById("shipPartnerWrap").style.display="none";
+    document.getElementById("shipCompany").value = c.corpName||office.corpName||"";
+    document.getElementById("shipOffice").value  = c.officeName||office.officeName||"";
+    document.getElementById("shipPostal").value  = office.zip||office.postal||"";
+    document.getElementById("shipAddress").value = c.address||office.address||"";
+    document.getElementById("shipContact").value = c.contactName||"";
+    document.getElementById("shipPhone").value   = c.contactPhone||office.phone||"";
+    (c.cardReaders||[]).forEach(r=>{
+      const qty=(Number(r.subsidyQty)||0)+(Number(r.extraQty)||0);
+      const sku = r.type==="BT" ? "cir415a-01" : r.type==="USB" ? "cir315a-02" : null;
+      if(sku && qty>0){ const inp=document.querySelector(`#shipItems .qty-input[data-sku="${sku}"]`); if(inp) inp.value=qty; }
+    });
+    toast("案件情報を取り込みました。数量・住所・USB品番をご確認ください");
+  }catch(e){ alert(`取り込み失敗: ${e.message}`); }
 }
 
 async function deleteShipment(s){
@@ -450,9 +476,12 @@ onAuthStateChanged(auth, async (user)=>{
   });
 
   // products（リアルタイム・在庫反映）
+  let prefilled=false;
+  const shipCaseId = new URLSearchParams(location.search).get("ship");
   onSnapshot(query(collection(db,"products")),(snap)=>{
     products=snap.docs.map(d=>({_id:d.id,id:d.id,...d.data()})).sort((a,b)=>a.id.localeCompare(b.id));
     renderProducts();
+    if(shipCaseId && !prefilled){ prefilled=true; prefillShipFromCase(shipCaseId); }
   });
   // 発注一覧
   onSnapshot(query(collection(db,"purchaseOrders"),orderBy("createdAt","desc")),(snap)=>{
