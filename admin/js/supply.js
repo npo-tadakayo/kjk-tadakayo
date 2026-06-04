@@ -166,7 +166,9 @@ async function saveShip(){
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=collectItems("shipItems").map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
-    return {...it, unitPrice: p.wholesale2_10||0}; // 卸価格(税別)をスナップショット
+    // 直送(認定事業所)=卸価格 / 直接(事業所)=エンドユーザー定価 をスナップショット
+    const unitPrice = shipType==="dropship" ? (p.wholesale2_10||0) : (p.listPrice||0);
+    return {...it, unitPrice};
   });
   if(!items.length){ alert("数量を入力してください"); return; }
   for(const it of items){ const p=products.find(x=>x.id===it.sku);
@@ -177,6 +179,7 @@ async function saveShip(){
     const soNumber=await nextNumber("shipments","SH");
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType, partnerEmail, partnerName,
+      status:"shipped",
       shipDate:document.getElementById("shipDate").value||today(),
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
@@ -201,24 +204,47 @@ async function deleteShipment(s){
   }catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
+const SHIP_STATUS = { shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };
+const SHIP_STATUS_BADGE = { shipped:7, invoiced:9, paid:3, canceled:4 };
+function shipTotal(s){ return (s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0); }
+function shipTotalIncl(s){ return Math.floor(shipTotal(s)*1.1); }
+
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
+  // サマリー（未請求 / 請求済・未入金 / 入金済）
+  const active = ships.filter(s=>s.status!=="canceled");
+  const unbilled = active.filter(s=>s.status==="shipped");
+  const billed = active.filter(s=>s.status==="invoiced");
+  const paid = active.filter(s=>s.status==="paid");
+  const sumBox=document.getElementById("shipSummary");
+  if(sumBox) sumBox.innerHTML = [
+    `<div class="alert-chip warn"><i class="ti ti-package-export"></i><div><div class="alert-num">${unbilled.length}</div><div class="alert-label">未請求（発送済）</div></div></div>`,
+    `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(billed.reduce((a,s)=>a+shipTotalIncl(s),0))}</div><div class="alert-label">請求済・未入金（税込）</div></div></div>`,
+    `<div class="alert-chip info"><i class="ti ti-cash"></i><div><div class="alert-num">${yen(paid.reduce((a,s)=>a+(Number(s.paymentAmount)||shipTotalIncl(s)),0))}</div><div class="alert-label">入金済（税込）</div></div></div>`,
+  ].join("");
+
   body.innerHTML = ships.map(s=>{
     const summary=(s.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
     const typeBadge = s.shipType==="dropship"
       ? `<span class="badge badge-6">直送(認定)</span>` : `<span class="badge badge-2">直接</span>`;
-    const invoiceBtn = s.shipType==="dropship"
-      ? `<a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>` : "";
+    const st=s.status||"shipped";
+    const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${SHIP_STATUS[st]||st}</span>`;
+    const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
+    let lifeBtns="";
+    if(st==="shipped") lifeBtns=`<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`;
+    else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`;
+    else if(st==="paid") lifeBtns=`<span style="font-size:12px;color:var(--color-success)">入金 ${esc(s.paidAt||"")}</span>`;
     return `<tr>
-      <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge}</div></td>
+      <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}${s.partnerName?`<div style="font-size:12px;color:var(--color-ink-muted)">請求: ${esc(s.partnerName)}</div>`:""}</td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div></td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td style="white-space:nowrap">
+        ${lifeBtns}
+        <a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
-        ${invoiceBtn}
         <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
       </td>
     </tr>`;
@@ -226,6 +252,25 @@ function renderShipments(ships){
   document.querySelectorAll(".del-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) deleteShipment(s);
   }));
+  document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",async()=>{
+    await updateDoc(doc(db,"shipments",b.dataset.id),{status:"invoiced",invoicedAt:today(),updatedAt:serverTimestamp()});
+    toast("請求済にしました");
+  }));
+  document.querySelectorAll(".mark-paid").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) recordPayment(s);
+  }));
+}
+
+async function recordPayment(s){
+  const def=shipTotalIncl(s);
+  const amtStr=prompt(`入金額（税込）を入力してください\n${s.soNumber} / 請求先: ${s.shipType==="dropship"?s.partnerName:(s.company||s.officeName)}`, String(def));
+  if(amtStr===null) return;
+  const amt=parseInt(String(amtStr).replace(/[^0-9]/g,""),10);
+  if(!(amt>=0)){ alert("金額を正しく入力してください"); return; }
+  const dateStr=prompt("入金日（YYYY-MM-DD）", today());
+  if(dateStr===null) return;
+  await updateDoc(doc(db,"shipments",s._id),{status:"paid",paymentAmount:amt,paidAt:dateStr,updatedAt:serverTimestamp()});
+  toast(`入金を記録しました（${yen(amt)}）`);
 }
 
 // ===== 受注（認定事業所から）=====
@@ -237,18 +282,51 @@ function renderPartnerOrders(orders){
     const sum=(o.items||[]).map(i=>`${i.sku||""}×${i.qty}`).join(", ");
     const sh=o.shipping||{};
     const opts=Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("");
+    const shipBtn = o.status==="shipped"
+      ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
+      : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
     return `<tr>
       <td>${fmtDT(o.createdAt)}</td>
       <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
       <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
       <td style="font-size:12px">${esc(sum)}</td>
       <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select></td>
+      <td>${shipBtn}</td>
     </tr>`;
   }).join("");
   document.querySelectorAll(".po-status").forEach(sel=>sel.addEventListener("change",async()=>{
     await updateDoc(doc(db,"partnerOrders",sel.dataset.id),{status:sel.value,updatedAt:serverTimestamp()});
     toast("受注ステータスを更新しました");
   }));
+  document.querySelectorAll(".po-ship").forEach(b=>b.addEventListener("click",()=>{
+    const o=orders.find(x=>x._id===b.dataset.id); if(o) shipFromOrder(o);
+  }));
+}
+
+// 受注（認定事業所）→ 出荷（直送）へ変換
+async function shipFromOrder(o){
+  const sh=o.shipping||{};
+  const items=(o.items||[]).map(it=>{
+    const p=products.find(x=>x.id===it.sku)||{};
+    return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:p.wholesale2_10||0 };
+  }).filter(it=>it.qty>0);
+  if(!items.length){ alert("発注内容が空です"); return; }
+  for(const it of items){ const p=products.find(x=>x.id===it.sku);
+    if(!p || (p.stock||0)<it.qty){ alert(`在庫不足: ${it.name}（在庫 ${p?p.stock||0:0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
+  if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
+  try{
+    const soNumber=await nextNumber("shipments","SH");
+    await addDoc(collection(db,"shipments"),{
+      soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
+      status:"shipped", partnerOrderId:o._id,
+      shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
+      address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
+      items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+    for(const it of items){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
+      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
+    toast(`受注を出荷登録しました（${soNumber}）`);
+  }catch(e){ alert(`出荷登録失敗: ${e.message}`); }
 }
 
 // ===== パートナー管理 =====

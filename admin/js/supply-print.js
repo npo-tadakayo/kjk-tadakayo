@@ -81,12 +81,13 @@ function renderInvoice(s){
   const tax=Math.floor(sub*0.1); const total=sub+tax;
   const rows=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("");
   const invNo=(s.soNumber||"").replace(/^SH/,"INV");
+  const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
         <div class="issuer"><div class="org">NPO法人タダカヨ</div>介護情報基盤伴走支援事業<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div></div>
       <h1 class="inv-title">請　求　書</h1>
-      <div class="to">${esc(s.partnerName||"")} 御中</div>
+      <div class="to">${esc(billName)} 御中</div>
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
       <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>

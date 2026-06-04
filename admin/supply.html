@@ -64,14 +64,15 @@
         </div></div>
       </div>
 
-      <!-- 出荷 -->
+      <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">タダカヨ → 介護事業所への出荷・送付状</span>
+          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金（直接事業所／認定事業所 直送 共通）</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
+        <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>出荷番号</th><th>出荷日</th><th>送付先</th><th>内容</th><th></th></tr></thead>
+          <table><thead><tr><th>出荷番号 / 状態</th><th>出荷日</th><th>送付先・請求先</th><th>内容</th><th></th></tr></thead>
           <tbody id="shipBody"></tbody></table>
           <div id="shipEmpty" class="empty-state" style="display:none"><i class="ti ti-truck-delivery" aria-hidden="true"></i><p>出荷がありません</p></div>
         </div></div>
@@ -80,7 +81,7 @@
       <!-- 受注（認定事業所から） -->
       <div class="tab-content" id="tab-partnerorders">
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th></tr></thead>
+          <table><thead><tr><th>受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th></th></tr></thead>
           <tbody id="poBody"></tbody></table>
           <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業所からの受注はありません</p></div>
         </div></div>
