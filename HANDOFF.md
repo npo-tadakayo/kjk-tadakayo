@@ -14,6 +14,20 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤）— CRM Phase 2（カンバン＋全体アラート）
+
+| 項目 | 内容 |
+|---|---|
+| カンバンボード | `admin/kanban.html` + `admin/js/kanban.js` 新規。13ステータスを列表示（パイプライン順、失注は末尾）。リアルタイム購読 |
+| ドラッグ&ドロップ | カードを列間D&Dで status 変更（`updateDoc` + activities に「ステータス変更 旧→新（カンバンで変更）」を記録）。カードクリックで案件詳細へ |
+| 全体アラート | 画面上部に3チップ: ①未割当の新規案件 ②未申請（期限対応必要・期限30日以内のとき） ③停滞案件（7日以上未更新）。停滞カードは左赤ライン+「停滞Nd」表示 |
+| ナビ統一 | cases.html / case-detail.html / kanban.html のサイドバーに「案件一覧 / カンバン」リンク追加（`ti-layout-kanban`） |
+| CSS | `admin/css/crm.css` に kanban / alert スタイル追記（フォント12px以上厳守） |
+| デプロイ | hosting:admin デプロイ済。JS構文エラー0・auth ゲート正常を確認 |
+
+> ⚠️ カンバンのD&D・アラート集計の実動作は **@tadakayo.jp ログインが必要なため Claude では未検証**。次田さんが https://kjk-tadakayo-admin.web.app → カンバン で、20件がステータス別に並ぶ／カードをドラッグして列移動でステータスが変わる／詳細のタイムラインに記録される、を確認してほしい（rule05 認証系は実機検証セット）。
+> 📌 D&Dはデスクトップ前提（モバイルは未対応。カード→詳細→ステータス選択で代替可）。
+
 ### ✅ 今セッションで完了したこと（2026-06-04 後半）— Webhook配線切替 + 過去データ取り込み
 
 | 項目 | 内容 |
