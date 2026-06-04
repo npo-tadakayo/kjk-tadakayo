@@ -29,6 +29,22 @@
     .note{margin-top:16px;font-size:12px;white-space:pre-wrap;}
     .footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);text-align:center;}
     .loading{text-align:center;padding:60px;color:var(--muted);}
+    /* 請求書（見積書の赤系を踏襲） */
+    .inv .doc-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;}
+    .inv-title{font-family:"Noto Serif JP",serif;font-size:24px;letter-spacing:.3em;color:#E33535;border-bottom:3px solid #E33535;padding-bottom:8px;margin:0 0 20px;}
+    .inv .grand{background:#FFE4EC;border:1px solid #E33535;border-radius:6px;padding:10px 14px;font-size:15px;margin:8px 0 16px;}
+    .inv .grand strong{font-size:20px;color:#c02828;}
+    .inv .total-row td{font-weight:700;background:#FFF8F8;color:#c02828;}
+    .inv .pay{margin-top:18px;border:1px dashed var(--line);border-radius:6px;padding:12px;}
+    /* レターパック宛名 */
+    .lp-title{font-size:12px;color:var(--muted);margin-bottom:10px;}
+    .lp-block{border:2px solid #E33535;border-radius:6px;padding:20px 22px;max-width:560px;}
+    .lp-zip{font-size:18px;margin-bottom:14px;}
+    .zip .zbox{display:inline-block;min-width:22px;border-bottom:2px solid #999;text-align:center;margin:0 2px;font-weight:700;}
+    .lp-addr{font-size:20px;line-height:1.6;margin-bottom:12px;}
+    .lp-name{font-size:24px;font-weight:700;}
+    .lp-sub{font-size:14px;color:#333;margin-top:6px;}
+    .lp-from{margin-top:22px;font-size:14px;}
     @media print{.toolbar{display:none;}body{background:#fff;}.sheet{max-width:none;margin:0;border:none;border-radius:0;padding:0;}@page{margin:18mm 16mm;}}
   </style>
 </head>

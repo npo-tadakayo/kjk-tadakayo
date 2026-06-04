@@ -146,16 +146,29 @@ async function receiveOrder(id, orders){
 }
 
 // ===== 出荷モーダル =====
+let activePartners = [];
 function openShip(){ itemRows("shipItems"); document.getElementById("shipDate").value=today();
   ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("shipStockWarn").style.display="none";
+  document.getElementById("shipType").value="direct";
+  // 請求先プルダウン（有効パートナー）
+  document.getElementById("shipPartner").innerHTML = '<option value="">選択してください</option>'+
+    activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
+  document.getElementById("shipPartnerWrap").style.display="none";
   document.getElementById("shipModal").classList.add("open"); }
+
 async function saveShip(){
   const office=document.getElementById("shipOffice").value.trim();
   if(!office){ alert("事業所名を入力してください"); return; }
-  const items=collectItems("shipItems");
+  const shipType=document.getElementById("shipType").value;
+  const partnerEmail = shipType==="dropship" ? document.getElementById("shipPartner").value : "";
+  if(shipType==="dropship" && !partnerEmail){ alert("直送の場合は請求先（認定事業所）を選択してください"); return; }
+  const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
+  const items=collectItems("shipItems").map(it=>{
+    const p=products.find(x=>x.id===it.sku)||{};
+    return {...it, unitPrice: p.wholesale2_10||0}; // 卸価格(税別)をスナップショット
+  });
   if(!items.length){ alert("数量を入力してください"); return; }
-  // 在庫チェック
   for(const it of items){ const p=products.find(x=>x.id===it.sku);
     if((p.stock||0)<it.qty){ const w=document.getElementById("shipStockWarn");
       w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
@@ -163,7 +176,8 @@ async function saveShip(){
   try{
     const soNumber=await nextNumber("shipments","SH");
     await addDoc(collection(db,"shipments"),{
-      soNumber, shipDate:document.getElementById("shipDate").value||today(),
+      soNumber, shipType, partnerEmail, partnerName,
+      shipDate:document.getElementById("shipDate").value||today(),
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
       officeName:office, address:document.getElementById("shipAddress").value.trim(),
@@ -176,19 +190,42 @@ async function saveShip(){
     toast(`出荷 ${soNumber} を登録しました（在庫から引落）`);
   }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
 }
+
+async function deleteShipment(s){
+  if(!confirm(`出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`)) return;
+  try{
+    for(const it of (s.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
+      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"shipment_canceled",refNo:s.soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    await deleteDoc(doc(db,"shipments",s._id));
+    toast(`出荷 ${s.soNumber} を削除し、在庫を戻しました`);
+  }catch(e){ alert(`削除失敗: ${e.message}`); }
+}
+
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
   body.innerHTML = ships.map(s=>{
     const summary=(s.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
+    const typeBadge = s.shipType==="dropship"
+      ? `<span class="badge badge-6">直送(認定)</span>` : `<span class="badge badge-2">直接</span>`;
+    const invoiceBtn = s.shipType==="dropship"
+      ? `<a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>` : "";
     return `<tr>
-      <td><strong>${esc(s.soNumber)}</strong></td>
+      <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}</td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}${s.partnerName?`<div style="font-size:12px;color:var(--color-ink-muted)">請求: ${esc(s.partnerName)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
-      <td><a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a></td>
+      <td style="white-space:nowrap">
+        <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
+        <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
+        ${invoiceBtn}
+        <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
+      </td>
     </tr>`;
   }).join("");
+  document.querySelectorAll(".del-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) deleteShipment(s);
+  }));
 }
 
 // ===== 受注（認定事業所から）=====
@@ -271,6 +308,9 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
   document.getElementById("cancelShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
   document.getElementById("saveShipBtn").addEventListener("click",saveShip);
+  document.getElementById("shipType").addEventListener("change",(e)=>{
+    document.getElementById("shipPartnerWrap").style.display = e.target.value==="dropship"?"":"none";
+  });
 
   // products（リアルタイム・在庫反映）
   onSnapshot(query(collection(db,"products")),(snap)=>{
@@ -292,6 +332,8 @@ onAuthStateChanged(auth, async (user)=>{
   // パートナー名簿
   document.getElementById("addPartnerBtn").addEventListener("click",addPartner);
   onSnapshot(query(collection(db,"partners")),(snap)=>{
-    renderPartners(snap.docs.map(d=>({_id:d.id,...d.data()})));
+    const list=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    activePartners = list.filter(p=>p.active!==false);
+    renderPartners(list);
   });
 });

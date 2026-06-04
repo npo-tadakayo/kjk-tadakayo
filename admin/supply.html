@@ -130,6 +130,15 @@
       <button class="btn btn-secondary" id="closeShipBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <div class="form-row">
+          <div class="form-group"><label class="form-label" for="shipType">出荷種別 <span style="color:red">*</span></label>
+            <select class="form-control" id="shipType">
+              <option value="direct">タダカヨから直接（自社実施）</option>
+              <option value="dropship">認定事業所からの依頼（直送）</option>
+            </select></div>
+          <div class="form-group" id="shipPartnerWrap" style="display:none"><label class="form-label" for="shipPartner">請求先（認定事業所）<span style="color:red">*</span></label>
+            <select class="form-control" id="shipPartner"></select></div>
+        </div>
+        <div class="form-row">
           <div class="form-group"><label class="form-label" for="shipDate">出荷日</label><input class="form-control" type="date" id="shipDate"></div>
           <div class="form-group"><label class="form-label" for="shipPostal">郵便番号</label><input class="form-control" type="text" id="shipPostal" placeholder="000-0000"></div>
         </div>
