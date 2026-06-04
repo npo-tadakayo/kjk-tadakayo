@@ -55,6 +55,37 @@ function collectSenders(){
   })).filter(s=>s.name||s.address||s.postal||s.phone);
 }
 
+// 印影画像（発注書の角印）。data URI を appConfig/settings.poSealImage に保存
+let poSealImage = "";
+function updateSealPreview(){
+  const pv = $("poSealPreview");
+  if (poSealImage){ $("poSealImg").src = poSealImage; pv.style.display = "flex"; }
+  else { pv.style.display = "none"; }
+}
+// アップロード画像を「黒背景→透過＋縮小」してdata URI化（Pillowのalpha=最大チャンネル方式をcanvasで再現）
+function processSealImage(file){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const max = 200;
+      const sc = Math.min(1, max / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * sc));
+      const h = Math.max(1, Math.round(img.height * sc));
+      const cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, w, h);
+      const d = ctx.getImageData(0, 0, w, h); const p = d.data;
+      for (let i=0; i<p.length; i+=4){ p[i+3] = Math.max(p[i], p[i+1], p[i+2]); } // alpha=max(R,G,B)
+      ctx.putImageData(d, 0, 0);
+      resolve(cv.toDataURL("image/png"));
+    };
+    img.onerror = reject;
+    const fr = new FileReader();
+    fr.onload = ()=>{ img.src = fr.result; };
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
+}
+
 const testFn = httpsCallable(functions, "testChatNotify");
 
 onAuthStateChanged(auth, async (user)=>{
@@ -79,6 +110,14 @@ onAuthStateChanged(auth, async (user)=>{
   $("poIssuerRep").value = s.poIssuerRep || "";
   $("poOrdererName").value = s.poOrdererName || "";
   $("poSealText").value = s.poSealText || "";
+  poSealImage = s.poSealImage || "";
+  updateSealPreview();
+  $("poSealFile").addEventListener("change", async (e)=>{
+    const f = e.target.files && e.target.files[0]; if(!f) return;
+    try{ poSealImage = await processSealImage(f); updateSealPreview(); toast("印影を読み込みました（黒背景を透過処理）。「保存」で確定します"); }
+    catch(_){ toast("画像の読み込みに失敗しました"); }
+  });
+  $("poSealClear").addEventListener("click", ()=>{ poSealImage=""; $("poSealFile").value=""; updateSealPreview(); });
   $("invoiceIssuerName").value = s.invoiceIssuerName || "";
   $("invoiceRegNo").value = s.invoiceRegNo || "";
   $("loadingEl").style.display = "none";
@@ -96,6 +135,7 @@ onAuthStateChanged(auth, async (user)=>{
         poIssuerRep: $("poIssuerRep").value.trim(),
         poOrdererName: $("poOrdererName").value.trim(),
         poSealText: $("poSealText").value.trim(),
+        poSealImage: poSealImage || "",
         invoiceIssuerName: $("invoiceIssuerName").value.trim(),
         invoiceRegNo: $("invoiceRegNo").value.trim(),
         updatedAt: serverTimestamp(), updatedBy: user.email,

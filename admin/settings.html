@@ -53,6 +53,15 @@
               <div class="form-group"><label class="form-label" for="poOrdererName">発注者氏名</label><input class="form-control" id="poOrdererName" type="text" placeholder="次田 芳尚"></div>
               <div class="form-group"><label class="form-label" for="poSealText">印鑑の文字（1〜3字）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="次田"></div>
             </div>
+            <div class="form-group">
+              <label class="form-label" for="poSealFile">印影画像（角印・任意）</label>
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 6px">登録すると発注書の印鑑が「文字のデジタル印」から実際の印影画像に変わります。黒い背景は自動で透明化します（PNG / JPG）。</p>
+              <input class="form-control" id="poSealFile" type="file" accept="image/*">
+              <div id="poSealPreview" style="display:none;align-items:center;gap:12px;margin-top:8px">
+                <img id="poSealImg" alt="印影プレビュー" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--color-line);border-radius:6px;background:#fff">
+                <button class="btn btn-danger" id="poSealClear" type="button" style="font-size:12px;padding:6px 10px"><i class="ti ti-trash" aria-hidden="true"></i> 印影を削除</button>
+              </div>
+            </div>
           </div>
           <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">適格請求書（インボイス制度）</div>

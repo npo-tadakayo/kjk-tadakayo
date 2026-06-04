@@ -71,7 +71,9 @@ function renderPO(o, st){
       ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
       <div class="po-orderer">
         <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
-        <div class="po-seal" aria-label="印">${esc(st.poSealText || PO_DEFAULT.sealText)}</div>
+        ${st.poSealImage
+          ? `<img class="po-seal-img" src="${st.poSealImage}" alt="印">`
+          : `<div class="po-seal" aria-label="印">${esc(st.poSealText || PO_DEFAULT.sealText)}</div>`}
       </div>
     </div>`;
 }
