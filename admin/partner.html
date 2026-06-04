@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>認定事業所ポータル — タダカヨ介護情報基盤伴走支援</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <!-- ログイン前 -->
+  <div id="loginView" style="min-height:100vh;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:24px;text-align:center">
+    <div style="font-family:'Noto Serif JP',serif;font-size:22px;color:var(--color-success)">認定事業所ポータル</div>
+    <div style="font-size:13px;color:var(--color-ink-muted);max-width:360px">タダカヨ 介護情報基盤伴走支援事業<br>パートナー認定事業所さま専用の発注ページです</div>
+    <button class="btn btn-primary" id="loginBtn" type="button" style="height:48px"><i class="ti ti-brand-google" aria-hidden="true"></i> Googleでログイン</button>
+    <div id="loginError" style="font-size:13px;color:var(--color-danger);display:none"></div>
+  </div>
+
+  <!-- 許可なし -->
+  <div id="denyView" style="min-height:100vh;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center">
+    <i class="ti ti-lock" style="font-size:40px;color:var(--color-ink-light)" aria-hidden="true"></i>
+    <div style="font-size:15px;font-weight:600">アクセス権限がありません</div>
+    <div style="font-size:13px;color:var(--color-ink-muted);max-width:380px">このアカウント（<span id="denyEmail"></span>）は認定事業所として登録されていません。タダカヨ事務局（kjk-staff@tadakayo.jp）へお問い合わせください。</div>
+    <button class="btn btn-secondary" id="denyLogout" type="button">別のアカウントでログイン</button>
+  </div>
+
+  <!-- 本体 -->
+  <div id="appView" class="layout" style="display:none">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">認定事業所ポータル</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item active" href="#order"><i class="ti ti-shopping-cart-plus" aria-hidden="true"></i>発注する</a>
+        <a class="nav-item" href="#history"><i class="ti ti-history" aria-hidden="true"></i>発注履歴</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="partnerInfo"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">カードリーダーを発注する</h1></div>
+
+      <div class="card" style="margin-bottom:20px">
+        <div class="card-header"><span style="font-weight:600;font-size:14px">発注フォーム</span></div>
+        <div class="card-body">
+          <h3 style="font-size:13px;margin:0 0 8px;color:var(--color-ink-muted)">① 商品・数量</h3>
+          <div id="orderItems"></div>
+
+          <h3 style="font-size:13px;margin:16px 0 8px;color:var(--color-ink-muted)">② 送付先（介護事業所）</h3>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="poCompany">法人名</label><input class="form-control" id="poCompany" type="text"></div>
+            <div class="form-group"><label class="form-label" for="poOffice">事業所名 <span style="color:red">*</span></label><input class="form-control" id="poOffice" type="text"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="poPostal">郵便番号</label><input class="form-control" id="poPostal" type="text" placeholder="000-0000"></div>
+            <div class="form-group"><label class="form-label" for="poAddress">住所</label><input class="form-control" id="poAddress" type="text"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="poContact">送付先ご担当者</label><input class="form-control" id="poContact" type="text"></div>
+            <div class="form-group"><label class="form-label" for="poPhone">電話番号</label><input class="form-control" id="poPhone" type="text"></div>
+          </div>
+
+          <h3 style="font-size:13px;margin:16px 0 8px;color:var(--color-ink-muted)">③ その他</h3>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="poDelivery">希望納期</label><input class="form-control" id="poDelivery" type="date"></div>
+            <div class="form-group"><label class="form-label" for="poSubsidy">補助金区分</label>
+              <select class="form-control" id="poSubsidy">
+                <option value="">（任意）</option>
+                <option value="houmon">訪問・通所・短期滞在系（¥64,000）</option>
+                <option value="kyojyu">居住・入所系（¥55,000）</option>
+                <option value="other">その他（¥42,000）</option>
+              </select></div>
+          </div>
+          <div class="form-group"><label class="form-label" for="poNote">備考・ご要望</label><textarea class="form-control" id="poNote" rows="2"></textarea></div>
+
+          <div id="poError" style="font-size:13px;color:var(--color-danger);margin-bottom:8px;display:none"></div>
+          <div style="text-align:right">
+            <button class="btn btn-primary" id="submitOrderBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i>この内容で発注する</button>
+          </div>
+          <div id="poStatus" style="font-size:13px;margin-top:8px"></div>
+        </div>
+      </div>
+
+      <h2 id="history" class="page-title" style="font-size:18px;margin:24px 0 12px">発注履歴</h2>
+      <div class="card"><div class="table-wrap">
+        <table><thead><tr><th>発注日時</th><th>送付先</th><th>内容</th><th>ステータス</th></tr></thead>
+        <tbody id="historyBody"></tbody></table>
+        <div id="historyEmpty" class="empty-state" style="display:none"><i class="ti ti-history" aria-hidden="true"></i><p>発注履歴がありません</p></div>
+      </div></div>
+    </main>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/partner.js" type="module"></script>
+</body>
+</html>

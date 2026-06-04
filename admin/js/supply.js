@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, query, orderBy, onSnapshot,
-  addDoc, updateDoc, runTransaction, serverTimestamp, increment }
+  addDoc, updateDoc, setDoc, runTransaction, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
@@ -191,6 +191,56 @@ function renderShipments(ships){
   }).join("");
 }
 
+// ===== 受注（認定事業所から）=====
+const PO_STATUS = { received:"受付済", confirmed:"受注確定", shipped:"出荷済", canceled:"キャンセル" };
+function fmtDT(ts){ if(!ts) return "—"; const d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});}
+function renderPartnerOrders(orders){
+  document.getElementById("poEmpty").style.display = orders.length?"none":"block";
+  document.getElementById("poBody").innerHTML = orders.map(o=>{
+    const sum=(o.items||[]).map(i=>`${i.sku||""}×${i.qty}`).join(", ");
+    const sh=o.shipping||{};
+    const opts=Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("");
+    return `<tr>
+      <td>${fmtDT(o.createdAt)}</td>
+      <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
+      <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
+      <td style="font-size:12px">${esc(sum)}</td>
+      <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select></td>
+    </tr>`;
+  }).join("");
+  document.querySelectorAll(".po-status").forEach(sel=>sel.addEventListener("change",async()=>{
+    await updateDoc(doc(db,"partnerOrders",sel.dataset.id),{status:sel.value,updatedAt:serverTimestamp()});
+    toast("受注ステータスを更新しました");
+  }));
+}
+
+// ===== パートナー管理 =====
+function renderPartners(partners){
+  document.getElementById("partnersEmpty").style.display = partners.length?"none":"block";
+  document.getElementById("partnersBody").innerHTML = partners.map(p=>`
+    <tr>
+      <td><strong>${esc(p._id)}</strong></td>
+      <td>${esc(p.partnerName||"")}</td>
+      <td>${p.active?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
+      <td><button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active}" style="font-size:12px;padding:4px 8px">${p.active?"停止する":"有効化"}</button></td>
+    </tr>`).join("");
+  document.querySelectorAll(".toggle-partner").forEach(b=>b.addEventListener("click",async()=>{
+    await updateDoc(doc(db,"partners",b.dataset.email),{active: b.dataset.active!=="true"});
+    toast("パートナー状態を更新しました");
+  }));
+}
+async function addPartner(){
+  const email=document.getElementById("prEmail").value.trim().toLowerCase();
+  const name=document.getElementById("prName").value.trim();
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert("正しいメールアドレスを入力してください"); return; }
+  if(!name){ alert("認定事業所名を入力してください"); return; }
+  await setDoc(doc(db,"partners",email),{
+    email, partnerName:name, active:true, createdAt:serverTimestamp(),
+    createdBy: currentUser.displayName||currentUser.email });
+  document.getElementById("prEmail").value=""; document.getElementById("prName").value="";
+  toast(`${name} を許可リストに追加しました`);
+}
+
 // ===== 初期化 =====
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
@@ -220,5 +270,14 @@ onAuthStateChanged(auth, async (user)=>{
   // 出荷一覧
   onSnapshot(query(collection(db,"shipments"),orderBy("createdAt","desc")),(snap)=>{
     renderShipments(snap.docs.map(d=>({_id:d.id,...d.data()})));
+  });
+  // 受注（認定事業所から）
+  onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
+    renderPartnerOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
+  });
+  // パートナー名簿
+  document.getElementById("addPartnerBtn").addEventListener("click",addPartner);
+  onSnapshot(query(collection(db,"partners")),(snap)=>{
+    renderPartners(snap.docs.map(d=>({_id:d.id,...d.data()})));
   });
 });

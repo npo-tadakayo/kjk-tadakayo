@@ -14,6 +14,26 @@ LP（kjk.tadakayo.jp）と見積もりツール（kjk.tadakayo.jp/mitsumori.html
 - Firestore / Storage / Cloud Functions(Webhook×2) / Auth(Google) すべて稼働
 - Auth許可ドメインに admin サイト + 将来のカスタムドメイン admin.kjk.tadakayo.jp を登録済
 
+### ✅ 今セッションで完了したこと（2026-06-04 終盤7）— Gmail送信 実機検証 + Phase 12 B2Bポータル
+
+**Gmail送信 実機検証 完了** ✅
+- 次田さんが `kjk-staff@tadakayo.jp` 作成＋Workspace管理コンソールでDWD登録（client_id `107379651912400439233`/`gmail.send`）完了
+- キーレスDWD経由で実送信テスト成功（messageId `19e918c1e67f9716`・kjk-staff→yoshinao-tsukuda宛）。検証用の一時tokenCreatorはrevoke済（残るは compute SA のみ＝正常）
+- → CRMの案件詳細AIタブのメール送信は本番稼働可能
+
+**Phase 12: 認定事業所向け B2Bポータル**
+| 項目 | 内容 |
+|---|---|
+| 認証 | Googleログイン＋**許可リスト**（`partners/{email}` に active:true がある人のみ）。@tadakayo以外の社外ユーザー対応 |
+| Firestoreルール | `products`=認証済み読取/タダカヨ書込、`partners`=本人読取/タダカヨ管理、`partnerOrders`=本人作成&自分のみ閲覧/タダカヨ全件。他は従来通りタダカヨのみ。compile成功・deploy済 |
+| パートナー画面 | `admin/partner.html`+`js/partner.js`: ログイン→許可確認→**発注フォーム**（商品数量+送付先+希望納期+補助金区分）+**自分の発注履歴**。URL https://kjk-tadakayo-admin.web.app/partner.html |
+| 職員側 | `supply.html` に「受注（認定事業所）」タブ（partnerOrders一覧+ステータス更新）＋「パートナー管理」タブ（許可リストにメール+事業所名を追加/停止） |
+| index | `partnerOrders`(partnerEmail+createdAt) 複合インデックス追加 |
+
+> ⚠️ パートナー画面の実機検証は「許可リスト登録済みの認定事業所Googleアカウント」が必要なため未実施。使い方: 供給管理→パートナー管理 で認定事業所のログインメール＋名称を追加 → そのメールの本人が partner.html にGoogleログイン → 発注。
+> 📌 ポータルは現状 admin Hosting 上（/partner.html）。将来 `partner.kjk.tadakayo.jp` 等の独立ドメイン化も可（Cloudflare/ドメイン設定が必要）。セキュリティはFirestoreルールで担保済み。
+> 🎉 **これでCRM Phase 1〜12＋Vertex AI＋Gmail送信 すべて実装完了。**
+
 ### ✅ 今セッションで完了したこと（2026-06-04 終盤6）— Phase 6 / 9 / 10 / 11
 
 | Phase | 内容 |

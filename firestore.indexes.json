@@ -24,6 +24,14 @@
         { "fieldPath": "caseId", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "partnerOrders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "partnerEmail", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

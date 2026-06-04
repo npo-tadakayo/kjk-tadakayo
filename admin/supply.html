@@ -33,6 +33,8 @@
         <button class="tab active" data-tab="inventory" role="tab"><i class="ti ti-building-warehouse" aria-hidden="true"></i> 在庫・商品</button>
         <button class="tab" data-tab="orders" role="tab"><i class="ti ti-shopping-cart" aria-hidden="true"></i> 発注（→AB Circle）</button>
         <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→事業所）</button>
+        <button class="tab" data-tab="partnerorders" role="tab"><i class="ti ti-inbox" aria-hidden="true"></i> 受注（認定事業所）</button>
+        <button class="tab" data-tab="partners" role="tab"><i class="ti ti-users" aria-hidden="true"></i> パートナー管理</button>
       </div>
 
       <!-- 在庫・商品 -->
@@ -66,6 +68,33 @@
           <table><thead><tr><th>出荷番号</th><th>出荷日</th><th>送付先</th><th>内容</th><th></th></tr></thead>
           <tbody id="shipBody"></tbody></table>
           <div id="shipEmpty" class="empty-state" style="display:none"><i class="ti ti-truck-delivery" aria-hidden="true"></i><p>出荷がありません</p></div>
+        </div></div>
+      </div>
+
+      <!-- 受注（認定事業所から） -->
+      <div class="tab-content" id="tab-partnerorders">
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th></tr></thead>
+          <tbody id="poBody"></tbody></table>
+          <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業所からの受注はありません</p></div>
+        </div></div>
+      </div>
+
+      <!-- パートナー管理 -->
+      <div class="tab-content" id="tab-partners">
+        <div class="card" style="margin-bottom:16px"><div class="card-body">
+          <h3 style="font-size:13px;margin:0 0 8px;color:var(--color-ink-muted)">認定事業所を許可リストに追加（ログイン用Googleメール）</h3>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="prEmail">ログインメール <span style="color:red">*</span></label><input class="form-control" id="prEmail" type="email" placeholder="partner@example.com"></div>
+            <div class="form-group"><label class="form-label" for="prName">認定事業所名 <span style="color:red">*</span></label><input class="form-control" id="prName" type="text"></div>
+          </div>
+          <div style="text-align:right"><button class="btn btn-primary" id="addPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>追加</button></div>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:6px">※ ポータルURL: <strong>https://kjk-tadakayo-admin.web.app/partner.html</strong>（認定事業所さまに案内）</p>
+        </div></div>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>ログインメール</th><th>認定事業所名</th><th>状態</th><th></th></tr></thead>
+          <tbody id="partnersBody"></tbody></table>
+          <div id="partnersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>登録パートナーがありません</p></div>
         </div></div>
       </div>
     </main>
