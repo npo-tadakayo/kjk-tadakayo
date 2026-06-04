@@ -97,13 +97,13 @@
           <table id="casesTable" style="display:none">
             <thead>
               <tr>
-                <th>案件番号</th>
-                <th>事業所名</th>
-                <th>流入元</th>
-                <th>ステータス</th>
-                <th>担当者</th>
-                <th>受信日</th>
-                <th>最終更新</th>
+                <th class="sortable" data-sort="caseNumber">案件番号 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="officeName">事業所名 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="source">流入元 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="status">ステータス <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="assignedUserName">担当者 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="receivedAt">受信日 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="updatedAt">最終更新 <span class="sort-ind"></span></th>
               </tr>
             </thead>
             <tbody id="casesBody"></tbody>

@@ -57,13 +57,40 @@ function updateDeadlineBanner() {
 }
 
 let allCases = [];
+let sortState = { field: "receivedAt", dir: "desc" };
+
+const NUMERIC_FIELDS = ["caseNumber", "status"];
+const DATE_FIELDS = ["receivedAt", "updatedAt"];
+function sortValue(c, f) {
+  if (DATE_FIELDS.includes(f)) { const v = c[f]; return v?.toMillis ? v.toMillis() : (v ? new Date(v).getTime() : 0); }
+  if (NUMERIC_FIELDS.includes(f)) return Number(c[f]) || 0;
+  if (f === "source") return SOURCE_LABELS[c.source] || c.source || "";
+  if (f === "assignedUserName") return c.assignedUserName || "";
+  return (c[f] || "").toString();
+}
+function sortCases(arr) {
+  const { field, dir } = sortState;
+  const m = dir === "asc" ? 1 : -1;
+  return [...arr].sort((a, b) => {
+    const va = sortValue(a, field), vb = sortValue(b, field);
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * m;
+    return String(va).localeCompare(String(vb), "ja") * m;
+  });
+}
+function updateSortIndicators() {
+  document.querySelectorAll("th.sortable").forEach((th) => {
+    const ind = th.querySelector(".sort-ind");
+    if (!ind) return;
+    ind.textContent = th.dataset.sort === sortState.field ? (sortState.dir === "asc" ? "▲" : "▼") : "";
+  });
+}
 
 function renderCases() {
   const search = document.getElementById("searchInput").value.toLowerCase();
   const statusFilter = document.getElementById("statusFilter").value;
   const sourceFilter = document.getElementById("sourceFilter").value;
 
-  const filtered = allCases.filter((c) => {
+  const filtered = sortCases(allCases.filter((c) => {
     const matchSearch = !search ||
       (c.officeName || "").toLowerCase().includes(search) ||
       (c.corpName || "").toLowerCase().includes(search) ||
@@ -71,7 +98,7 @@ function renderCases() {
     const matchStatus = !statusFilter || String(c.status) === statusFilter;
     const matchSource = !sourceFilter || c.source === sourceFilter;
     return matchSearch && matchStatus && matchSource;
-  });
+  }));
 
   const tbody = document.getElementById("casesBody");
   const table = document.getElementById("casesTable");
@@ -279,6 +306,14 @@ onAuthStateChanged(auth, (user) => {
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
+  document.querySelectorAll("th.sortable").forEach((th) => th.addEventListener("click", () => {
+    const f = th.dataset.sort;
+    if (sortState.field === f) sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
+    else sortState = { field: f, dir: DATE_FIELDS.includes(f) || NUMERIC_FIELDS.includes(f) ? "desc" : "asc" };
+    updateSortIndicators();
+    renderCases();
+  }));
+  updateSortIndicators();
 
   updateDeadlineBanner();
 

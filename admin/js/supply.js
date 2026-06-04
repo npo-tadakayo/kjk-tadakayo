@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDocs, query, orderBy, onSnapshot,
-  addDoc, updateDoc, setDoc, runTransaction, serverTimestamp, increment }
+  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const app = initializeApp(firebaseConfig);
@@ -215,18 +215,28 @@ function renderPartnerOrders(orders){
 }
 
 // ===== パートナー管理 =====
+let partnersCache = [];
 function renderPartners(partners){
+  partnersCache = partners;
   document.getElementById("partnersEmpty").style.display = partners.length?"none":"block";
   document.getElementById("partnersBody").innerHTML = partners.map(p=>`
     <tr>
       <td><strong>${esc(p._id)}</strong></td>
       <td>${esc(p.partnerName||"")}</td>
       <td>${p.active?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
-      <td><button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active}" style="font-size:12px;padding:4px 8px">${p.active?"停止する":"有効化"}</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active}" style="font-size:12px;padding:4px 8px">${p.active?"停止する":"有効化"}</button>
+        <button class="btn btn-danger del-partner" data-email="${esc(p._id)}" data-name="${esc(p.partnerName||"")}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash" aria-hidden="true"></i>削除</button>
+      </td>
     </tr>`).join("");
   document.querySelectorAll(".toggle-partner").forEach(b=>b.addEventListener("click",async()=>{
     await updateDoc(doc(db,"partners",b.dataset.email),{active: b.dataset.active!=="true"});
     toast("パートナー状態を更新しました");
+  }));
+  document.querySelectorAll(".del-partner").forEach(b=>b.addEventListener("click",async()=>{
+    if(!confirm(`「${b.dataset.name||b.dataset.email}」を許可リストから完全に削除します。\nこのアカウントはポータルにログインできなくなります。よろしいですか？`)) return;
+    await deleteDoc(doc(db,"partners",b.dataset.email));
+    toast("パートナーを削除しました");
   }));
 }
 async function addPartner(){
@@ -234,6 +244,10 @@ async function addPartner(){
   const name=document.getElementById("prName").value.trim();
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ alert("正しいメールアドレスを入力してください"); return; }
   if(!name){ alert("認定事業所名を入力してください"); return; }
+  if(email.endsWith("@tadakayo.jp")){
+    if(!confirm("@tadakayo.jp は職員（管理側）アカウントです。認定事業所ポータルのパートナーとして登録しますか？\n通常は認定事業所さま自身のGoogleアカウント（gmail等）を登録します。")) return;
+  }
+  if(partnersCache.some(p=>p._id===email)){ alert("このメールは既に登録されています"); return; }
   await setDoc(doc(db,"partners",email),{
     email, partnerName:name, active:true, createdAt:serverTimestamp(),
     createdBy: currentUser.displayName||currentUser.email });
