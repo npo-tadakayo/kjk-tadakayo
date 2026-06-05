@@ -7,7 +7,7 @@
 
 ## 🆕 2026-06-05 セッション⑤（発注機能: 下書き→確定→ABサークルへ発注書PDF添付メール送付）
 
-> 状態: ステップ1＋2を実装・本番反映・push 済み（コミット `1739c29`）。**実機検証（@tadakayoログイン要）が次田さんの最優先**。AB Circle 2026-06-05 回答を反映。
+> 状態: 発注機能(ステップ1+2)＋任意改善4件＋M-1/H-3下調べまで完了・**全push済み（最新 `98cedca`）**。Claude側で本番に積める作業は完了。**実機検証（@tadakayoログイン要）が次田さんの最優先**。AB Circle 2026-06-05 回答を反映。
 
 ### 今セッションの成果
 - **AB Circle 確定情報を取り込み**（memory `reference_abcircle.md`）: 発注先 `h.noda@abcircle.com`＋CC 谷口`n.taniguchi@abcircle.com`/小多`s.oda@abcircle.co.jp`、卸価格(数量帯別)、送料表、JAN、月末締め翌月末払い(NP掛け払い)、納期=署名発注書受領から1週間以内、不良品=info@abcircle.co.jp、最小ロット1台。
@@ -19,6 +19,13 @@
 - **共通化**: 発注書描画を `admin/js/po-doc.js`(renderPOHtml/PO_STYLE/DEFAULT_PO_MAIL_*)に切り出し、supply-print と確定プレビューで再利用。
 - 本番: hosting:admin release complete / commit `1739c29`(push済) / preview検証で構文OK・console error 0（認証後UIはセッション切れで未確認）。
 
+### 同セッション後半：任意改善4件＋下調べ（全push済み・最新 `98cedca`）
+- **発注の送料自動計算**（`fc0c4c1`）: 発注モーダルに「お届け地域」セレクト。AB送料表(memory reference_abcircle)から送料・名目を自動入力（手入力可）。
+- **出荷(直送)を数量帯別単価に**（`cb6f4b5`）: 認定事業所への直送出荷の単価を wholesale2_10 固定→ unitPriceFor(数量帯別)に。
+- **LP側 glob 修正**（`cb6f4b5`）: hosting:lp の headers を `source:"**"` 化。preview検証で **html=no-cache(即時反映)／アセット=immutable** の両立を確認・本番反映（COOP globと同根の問題を解消）。
+- **HANDOFF スリム化**（`18add8b`）: 745→283行。過去の逐次記録は `HANDOFF_ARCHIVE.md` に全保存（情報喪失なし）。
+- **M-1/H-3 下調べ**（`98cedca`）: read-onlyライブ確認。H-3対象が**7関数**に(sendSupplierOrder追加→fn-mail-saに統合)／M-1前提API(recaptchaenterprise/firebaseappcheck)が**両方未有効**／着手手順をClaude・次田さん(Console)で担当分離。詳細は `SECURITY_REMEDIATION.md` 末尾「下調べ結果」。
+
 ### 🙏 次田さんの実機検証（最優先・@tadakayoログイン要）
 1. 設定画面で「仕入先」「発注メール定型文」を確認し**一度「保存」**（Firestoreに確定させる。発注機能はフォールバックでも動くが保存推奨）
 2. 供給管理→発注: 新規発注→下書き保存→編集→「確定」→プレビュー→送信
@@ -26,10 +33,10 @@
 3. 発注書PDFの宛名が仕入先名か／入荷登録で在庫加算（既存）
 
 ### 次セッションTODO
-1. 実機検証のフィードバック反映（発注書PDFレイアウト調整・文面調整など）
-2. M-1 Webhook保護 / H-3 関数別SA（専用セッション・`SECURITY_REMEDIATION.md`参照）
-3. 設定の未入力（インボイス番号T+13桁/振込先/レターパック差出人）
-4. （任意）受注(認定事業所)・出荷にも送料表/数量帯別単価を展開、LP側 `**/*.html` glob修正
+1. **実機検証のフィードバック反映**（発注の下書き→確定→送付・送料地域・数量帯別単価・PDFレイアウト・COOP警告消失・partnerモバイルの確認結果を受けて調整）
+2. **M-1 Webhook保護**（App Check段階移行）— 着手前に次田さんが Console で reCAPTCHA Enterprise鍵発行＋App Check登録（`SECURITY_REMEDIATION.md`末尾「下調べ結果」に担当分離手順）。続いて **H-3 関数別SA**（破壊的・editor剥奪は最後・専用セッション）
+3. 設定の未入力（インボイス番号T+13桁/振込先/レターパック差出人/発注書発行元・代表者）
+4. （任意）受注(認定事業所)にも送料表/数量帯別単価を展開／Gemini 3移行(2026-10-16期限)／viewerロール書込制限／案件テストデータ整理
 
 ---
 
