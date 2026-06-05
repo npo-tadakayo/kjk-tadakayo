@@ -102,17 +102,21 @@ async function verifyAppCheck(req) {
   }
 }
 
-// App Check ゲート。観察モード(enforce=false)の間は弾かず warn のみ。
+// App Check ゲート。観察モード(enforce=false)の間は弾かず、検証結果をログするのみ。
 // 戻り値 true = 既にレスポンス送信済み（呼び出し側は return して処理を中断する）。
 async function appCheckGate(req, res, label) {
   const r = await verifyAppCheck(req);
-  if (r.ok) return false;
+  if (r.ok) {
+    // 観察モード中は成功も記録し、verified/failed 比率を見て Phase B 切替を判断する。
+    if (!APPCHECK_ENFORCE) console.log(`[AppCheck][${label}] observe: verified`);
+    return false;
+  }
   if (APPCHECK_ENFORCE) {
     console.warn(`[AppCheck][${label}] reject(enforce): ${r.reason}`);
     res.status(401).json({ status: "unauthorized", reason: "app-check-failed" });
     return true;
   }
-  console.warn(`[AppCheck][${label}] observe(enforce=false / pass-through): ${r.reason}`);
+  console.warn(`[AppCheck][${label}] observe(pass-through): ${r.reason}`);
   return false;
 }
 
