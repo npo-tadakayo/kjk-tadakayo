@@ -85,6 +85,37 @@ async function notifyChat(webhookUrl, message) {
   }
 }
 
+// ===== App Check 手動検証（M-1 Webhook保護・段階移行 / SECURITY_REMEDIATION M-1） =====
+// onRequest(HTTP) は callable と違い App Check の自動強制が効かないため、
+// クライアントが付与した X-Firebase-AppCheck ヘッダを admin.appCheck().verifyToken() で手動検証する。
+// 既定は「観察モード」（弾かず warn のみ）。APPCHECK_ENFORCE=true で検証失敗を 401 で弾く（強制モード）。
+const APPCHECK_ENFORCE = process.env.APPCHECK_ENFORCE === "true";
+
+async function verifyAppCheck(req) {
+  const token = req.header("X-Firebase-AppCheck");
+  if (!token) return { ok: false, reason: "missing-token" };
+  try {
+    await admin.appCheck().verifyToken(token);
+    return { ok: true, reason: "verified" };
+  } catch (e) {
+    return { ok: false, reason: "invalid:" + ((e.errorInfo && e.errorInfo.code) || e.code || e.message || "unknown") };
+  }
+}
+
+// App Check ゲート。観察モード(enforce=false)の間は弾かず warn のみ。
+// 戻り値 true = 既にレスポンス送信済み（呼び出し側は return して処理を中断する）。
+async function appCheckGate(req, res, label) {
+  const r = await verifyAppCheck(req);
+  if (r.ok) return false;
+  if (APPCHECK_ENFORCE) {
+    console.warn(`[AppCheck][${label}] reject(enforce): ${r.reason}`);
+    res.status(401).json({ status: "unauthorized", reason: "app-check-failed" });
+    return true;
+  }
+  console.warn(`[AppCheck][${label}] observe(enforce=false / pass-through): ${r.reason}`);
+  return false;
+}
+
 // LP 問い合わせ Webhook（index.html のお問い合わせフォームから）
 exports.webhookLpInquiry = onRequest(
   { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL] },
@@ -93,6 +124,9 @@ exports.webhookLpInquiry = onRequest(
       res.status(405).send("Method Not Allowed");
       return;
     }
+
+    // App Check 検証（観察モード: APPCHECK_ENFORCE=false の間は弾かず warn のみ）
+    if (await appCheckGate(req, res, "webhookLpInquiry")) return;
 
     try {
       const body = req.body;
@@ -186,6 +220,9 @@ exports.webhookMitsumori = onRequest(
       res.status(405).send("Method Not Allowed");
       return;
     }
+
+    // App Check 検証（観察モード: APPCHECK_ENFORCE=false の間は弾かず warn のみ）
+    if (await appCheckGate(req, res, "webhookMitsumori")) return;
 
     try {
       const body = req.body;

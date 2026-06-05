@@ -5,6 +5,25 @@
 
 ---
 
+## 🆕 2026-06-05 セッション⑥（M-1 Webhook保護＝App Check 段階移行・Phase A 完了）
+
+> 状態: **M-1 Phase A（観察モード）を実装・本番反映・実機検証まで完了**。LP問い合わせ/見積もりフォームの Webhook を Firebase App Check（reCAPTCHA Enterprise）で保護。**観察モード（弾かない）なので問い合わせ・見積もりは今までどおり通る**。詳細は `SECURITY_REMEDIATION.md` の「### 1. M-1 Webhook保護」冒頭の Phase A ブロック。
+
+### 今セッションの成果（コミット予定）
+- **次田さん Console 作業完了**: reCAPTCHA Enterprise サイトキー発行（`kjk.tadakayo.jp`／スコアベース／key=`6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`）＋ App Check に Web アプリ `kjk-crm-admin`(`…web:79645398db17dab417bb44`) を reCAPTCHA Enterprise で登録。
+- **コード**: `index.html`/`mitsumori.html` に App Check 初期化＋Webhook fetch に `X-Firebase-AppCheck` 付与。`functions/index.js` に `appCheckGate()`（観察モード・`APPCHECK_ENFORCE` 既定 false）を追加し `webhookLpInquiry`/`webhookMitsumori` 冒頭で検証。
+- **デプロイ**: functions 2本のみ更新（他5関数は未変更）／ LP は preview channel→本番昇格（hosting:lp）。前提API `recaptchaenterprise`/`firebaseappcheck` 有効化済み。
+- **検証**: 本番 `kjk.tadakayo.jp` 実ブラウザで `getAppCheckToken()` が954文字の正規JWTを返却・console error 0／functions GET=405（稼働・案件未作成）／両LP 200・コード搭載確認。
+
+### 次セッションTODO（M-1 の続き）
+1. **数日 observe ログ観察** → `gcloud`/Console で functions ログの `[AppCheck][webhookLpInquiry|webhookMitsumori] observe(...)` を確認。正規フォーム送信が `verified`、外部不正POSTが `missing-token`/`invalid` で出るか。
+2. **Phase B（強制）**: 正規トークン付与率が十分高ければ functions に `APPCHECK_ENFORCE=true` を設定（`--set-env-vars` or `functions/.env`）して2本再デプロイ → 手元curl(トークンなし)=401／正規フォーム=200を確認。ロールバックは `APPCHECK_ENFORCE=false` 再デプロイ。
+3. （任意・完全な疎通確認）本番LPフォームから1件テスト送信→ログ `verified` 確認→作成された案件を削除。
+4. （別件）`firebase-functions` 旧版警告＋Node20が2026-10-30終了予定 → Gemini 2.5 retire(2026-10-16)と合わせ10月までに対応。
+5. **H-3 関数別SA**（破壊的・editor剥奪は最後）は引き続き専用セッション・番号単位の明示認可で。対象は7関数（`sendSupplierOrder`含む）。
+
+---
+
 ## 🆕 2026-06-05 セッション⑤（発注機能: 下書き→確定→ABサークルへ発注書PDF添付メール送付）
 
 > 状態: 発注機能(ステップ1+2)＋任意改善4件＋M-1/H-3下調べまで完了・**全push済み（最新 `98cedca`）**。Claude側で本番に積める作業は完了。**実機検証（@tadakayoログイン要）が次田さんの最優先**。AB Circle 2026-06-05 回答を反映。

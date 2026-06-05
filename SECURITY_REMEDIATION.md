@@ -21,7 +21,7 @@
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
 | H-3 | 高 | 関数別SA・最小権限 | 🟠 計画（破壊的） | IAM＋再デプロイ |
-| M-1 | 中 | Webhook 保護（App Check） | 🟠 計画（段階移行） | App Check |
+| M-1 | 中 | Webhook 保護（App Check） | 🟡 Phase A 実装・観察中（2026-06-05） | App Check |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
 
@@ -185,6 +185,15 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 ---
 
 ### 1. M-1 Webhook保護（App Check・段階移行）【次の最有力】
+
+> ✅ **Phase A（観察モード）実装・本番反映・検証まで完了（2026-06-05 セッション⑥）**
+> - reCAPTCHA Enterprise サイトキー発行（表示名 `kjk-tadakayo-lp` / ドメイン `kjk.tadakayo.jp` / スコアベース・チェックボックスなし）。サイトキー = `6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`（公開キー・ページ埋込）。
+> - Firebase App Check に Web アプリ `kjk-crm-admin`（App ID `1:677262660109:web:79645398db17dab417bb44`）を **reCAPTCHA Enterprise** プロバイダ＋上記サイトキーで登録済み（TTL 1時間）。**API タブの各サービス Enforce は未設定（=他機能に影響なし）**。
+> - 前提 API `recaptchaenterprise` / `firebaseappcheck` を有効化済み。
+> - コード: `index.html` / `mitsumori.html` に App Check（compat SDK + ReCaptchaEnterpriseProvider）初期化＋Webhook fetch に `X-Firebase-AppCheck` ヘッダ付与（`getAppCheckToken()`・取得失敗時 null）。`functions/index.js` に `appCheckGate()` を追加し `webhookLpInquiry`/`webhookMitsumori` 冒頭で検証。`APPCHECK_ENFORCE`（既定 false=観察）。
+> - デプロイ: functions 2本のみ更新（他5関数は未変更）/ LP は preview channel → 本番昇格（hosting:lp）。
+> - **検証**: 本番 `kjk.tadakayo.jp` の実ブラウザで `getAppCheckToken()` が 954文字の正規 App Check JWT を返却・console error 0。functions は GET で 405（稼働確認・案件未作成）。両LP（`/`・`/mitsumori`）HTTP 200・コード搭載確認。
+> - **残: Phase B（強制）** = 数日 observe ログ（`[AppCheck][...] observe` の `verified`/`missing-token` 比率）を確認し、正規フォームのトークン付与率が十分高ければ functions に `APPCHECK_ENFORCE=true`（`--set-env-vars` or functions/.env）を設定して2本を再デプロイ。手元 curl（トークンなし）が 401／正規フォームが 200・Firestore `cases` 登録、で確認。ロールバックは `APPCHECK_ENFORCE=false` で再デプロイ。
 
 **技術判断**:
 - `webhookLpInquiry` / `webhookMitsumori` は `onRequest`（HTTP）。callable と違い App Check の自動強制が効かない → Functions 側で `X-Firebase-AppCheck` ヘッダを `admin.appCheck().verifyToken()` で**手動検証**する。

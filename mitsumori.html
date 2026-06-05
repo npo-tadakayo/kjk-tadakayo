@@ -893,6 +893,41 @@
 
 </div><!-- /app-body -->
 
+<!-- Firebase App Check（M-1 フォーム保護 / reCAPTCHA Enterprise・観察モード対応） -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
+<script>
+  (function () {
+    try {
+      firebase.initializeApp({
+        apiKey: "AIzaSyAjAtYNnn2vaw1ooWzrPuVNoA9Rd9o4TyE",
+        authDomain: "kjk-tadakayo.firebaseapp.com",
+        projectId: "kjk-tadakayo",
+        messagingSenderId: "677262660109",
+        appId: "1:677262660109:web:79645398db17dab417bb44"
+      });
+      firebase.appCheck().activate(
+        new firebase.appCheck.ReCaptchaEnterpriseProvider("6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp"),
+        true
+      );
+    } catch (e) {
+      console.warn("App Check 初期化に失敗:", e);
+    }
+  })();
+  // フォーム送信に付与する App Check トークンを取得（失敗時は null・観察モードでは null でも送信継続）
+  async function getAppCheckToken() {
+    try {
+      if (window.firebase && firebase.appCheck) {
+        const r = await firebase.appCheck().getToken(false);
+        return r && r.token ? r.token : null;
+      }
+    } catch (e) {
+      console.warn("App Check トークン取得失敗:", e);
+    }
+    return null;
+  }
+</script>
+
 <script>
   /* ──────── 定数（すべて税込価格） ──────── */
   const PLANS = {
@@ -1118,9 +1153,12 @@
   /* ──────── 成約通知（Cloud Function 経由）──────── */
   async function notifyWebhook(payload) {
     try {
+      const appCheckToken = await getAppCheckToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
       const res = await fetch(WEBHOOK_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(payload),
       });
       if (!res.ok) console.warn('成約通知エラー:', res.status);
