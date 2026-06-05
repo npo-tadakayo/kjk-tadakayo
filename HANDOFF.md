@@ -5,6 +5,32 @@
 
 ---
 
+## 🆕 2026-06-05 セッション④（本番デプロイ実施＋COOP glob修正＋worktree整理）
+
+> 状態: セッション③の積み残し（本番デプロイ）を完了・push済み（最新コミット `ebf3ae1`）。残りは次田さんの実機検証と M-1/H-3（専用セッション）。
+
+### 今セッションの成果
+- **本番デプロイ完了**（COOP設定・partner.htmlモバイル対応・docs整備を反映）。rule05 二段階（preview channel→検証→本番昇格）で実施。
+  - 本番URL: https://kjk-tadakayo-admin.web.app / コミット `ebf3ae1`（push済み・origin/main一致）/ **hosting:admin のみ**（functions/rules非該当・誤削除リスクなし）
+  - 証跡: 全ページ COOP `same-origin-allow-popups` を curl確認 / ログイン画面 console error 0 / 認証後画面(/cases)も正常表示
+- **🔴 重要修正: COOPが実は全く効いていなかった問題を preview で発見・修正**。firebase.json admin headers が `source: "**/*.html"` だったが、`cleanUrls: true` で配信パスが拡張子なし（`/`・`/partner` 等）になり **glob が一切マッチせず COOPもno-cacheも未適用**だった。`source: "**"` に変更し全documentへCOOP適用＋HTML即時反映を実現（`ebf3ae1`）。preview channel を踏まなければ「デプロイしたのに警告消えず」で本番化していた。
+  - ⚠️ **LP側 (hosting:lp) の `**/*.html` headers も同じ glob 問題**（COOPは不要だが HTML no-cache が効かず＝LP更新が最大1時間反映遅延）。今回スコープ外で未対応。次回 `source:"**"` 化を検討。
+- **worktree 4つ整理（全削除）**: 1ヶ月分溜まった Claude作業用worktree を撤去しリポジトリを main 1本に。いずれもローカル限定（remote未push）・固有データ喪失なし。
+  - confident-brattain=5/8の古い実験（Formspree修正は既にmain反映済）/ naughty-nobel=5/12の料金没案（¥25,000傾斜＝現行¥60k合意と矛盾）/ affectionate-bohr・relaxed-cerf=マージ済。印影素材(hanko.png/2.png)は本体に残存確認済。
+
+### 🙏 次田さんの実機検証（@tadakayoログイン要・最優先）
+- 管理画面で一度 **ログアウト→再ログイン** → 開発者ツール Console で `Cross-Origin-Opener-Policy`/`window.closed` 警告が消えたか
+- **partner.html**（認定事業所ポータル）をスマホで開き、ハンバーガー→ドロワー開閉
+- （既存の `実機検証チェックリスト.md` も継続：0認証/8請求書PDF/9設定入力/発注セレクト/M-5メールverify）
+
+### 次セッションTODO（優先順）
+1. **M-1 Webhook保護**（App Check段階移行）/ **H-3 関数別SA** — 破壊的・Console前提作業あり・専用セッション推奨（`SECURITY_REMEDIATION.md`末尾「次セッション実行計画」参照）
+2. **設定の未入力**（インボイス登録番号T+13桁/振込先/レターパック差出人/発注書発行元・代表者）— @tadakayoログイン要
+3. （任意）LP側 `**/*.html` glob問題の修正 / Gemini 3移行(2026-10-16期限) / viewerロール書込制限 / 案件テストデータ整理
+4. （任意）HANDOFF.md が肥大化（700行超）→ 古いセッション記録の圧縮・アーカイブ化を検討
+
+---
+
 ## 🆕 2026-06-05 セッション③（セキュリティ計画＋M-3クリア＋開発4タスク＋Chat報告）
 
 > 状態: 当セッションのコミット `09db9a3`（security docs）/ `7cb9355`（admin開発）＋本HANDOFF更新を main に push 済み。**本番デプロイは次セッションで一気に実施**。
