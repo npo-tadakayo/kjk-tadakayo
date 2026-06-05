@@ -5,22 +5,25 @@
 
 ---
 
-## 🆕 2026-06-05 セッション⑥（M-1 Webhook保護＝App Check 段階移行・Phase A 完了）
+## 🆕 2026-06-05 セッション⑥（M-1 App Check Phase A 完了 ＋ H-3 関数別SA移行）
 
-> 状態: **M-1 Phase A（観察モード）を実装・本番反映・実機検証まで完了**。LP問い合わせ/見積もりフォームの Webhook を Firebase App Check（reCAPTCHA Enterprise）で保護。**観察モード（弾かない）なので問い合わせ・見積もりは今までどおり通る**。詳細は `SECURITY_REMEDIATION.md` の「### 1. M-1 Webhook保護」冒頭の Phase A ブロック。
+> 状態: **M-1 Phase A（観察モード）完了**＋**H-3 SA移行完了（editor剥奪のみ残）**。いずれも本番反映・検証済み。**観察モードなので問い合わせ・見積もりは今までどおり通る**。詳細は `SECURITY_REMEDIATION.md` の「### 1. M-1」「### 2. H-3」冒頭ブロック。
 
 ### 今セッションの成果（コミット予定）
 - **次田さん Console 作業完了**: reCAPTCHA Enterprise サイトキー発行（`kjk.tadakayo.jp`／スコアベース／key=`6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`）＋ App Check に Web アプリ `kjk-crm-admin`(`…web:79645398db17dab417bb44`) を reCAPTCHA Enterprise で登録。
 - **コード**: `index.html`/`mitsumori.html` に App Check 初期化＋Webhook fetch に `X-Firebase-AppCheck` 付与。`functions/index.js` に `appCheckGate()`（観察モード・`APPCHECK_ENFORCE` 既定 false）を追加し `webhookLpInquiry`/`webhookMitsumori` 冒頭で検証。
 - **デプロイ**: functions 2本のみ更新（他5関数は未変更）／ LP は preview channel→本番昇格（hosting:lp）。前提API `recaptchaenterprise`/`firebaseappcheck` 有効化済み。
-- **検証**: 本番 `kjk.tadakayo.jp` 実ブラウザで `getAppCheckToken()` が954文字の正規JWTを返却・console error 0／functions GET=405（稼働・案件未作成）／両LP 200・コード搭載確認。
+- **検証**: 本番 `kjk.tadakayo.jp` 実ブラウザで `getAppCheckToken()` が954文字の正規JWTを返却・console error 0／functions GET=405。本番フォーム疎通テストで `observe: verified` ログ確認（テスト案件は削除）。
 
-### 次セッションTODO（M-1 の続き）
-1. **数日 observe ログ観察** → `gcloud`/Console で functions ログの `[AppCheck][webhookLpInquiry|webhookMitsumori] observe(...)` を確認。正規フォーム送信が `verified`、外部不正POSTが `missing-token`/`invalid` で出るか。
-2. **Phase B（強制）**: 正規トークン付与率が十分高ければ functions に `APPCHECK_ENFORCE=true` を設定（`--set-env-vars` or `functions/.env`）して2本再デプロイ → 手元curl(トークンなし)=401／正規フォーム=200を確認。ロールバックは `APPCHECK_ENFORCE=false` 再デプロイ。
-3. （任意・完全な疎通確認）本番LPフォームから1件テスト送信→ログ `verified` 確認→作成された案件を削除。
-4. （別件）`firebase-functions` 旧版警告＋Node20が2026-10-30終了予定 → Gemini 2.5 retire(2026-10-16)と合わせ10月までに対応。
-5. **H-3 関数別SA**（破壊的・editor剥奪は最後）は引き続き専用セッション・番号単位の明示認可で。対象は7関数（`sendSupplierOrder`含む）。
+### 今セッションの成果（H-3 関数別SA移行）
+- 4専用SA作成＋最小権限付与：`fn-webhook-sa`/`fn-batch-sa`（datastore.user＋CHAT secretAccessor）/`fn-ai-sa`（aiplatform.user のみ）/`fn-mail-sa`（datastore.user＋kjk-gmail-sa tokenCreator）。全IAMバインド読取確認済み。
+- 全7関数の定義に `serviceAccount` を明記して再デプロイ。実行SA切替を `gcloud functions describe` で確認（webhook2本→fn-webhook-sa / testChatNotify・dailyFollowup→fn-batch-sa / aiAssist→fn-ai-sa / sendCaseEmail・sendSupplierOrder→fn-mail-sa）。
+- `webhookLpInquiry`(fn-webhook-sa) を本番疎通し HTTP200・verified・Firestore書込を確認（テスト案件#22削除）。**compute SA の editor/aiplatform.user は安全網として保持中**。
+
+### 次セッションTODO（優先順）
+1. **【H-3 残・最優先】次田さんが管理画面(@tadakayo)で動作確認** → aiAssist(AI生成)/sendCaseEmail(メール送信)/sendSupplierOrder(発注書送付)/testChatNotify(設定→テスト通知)を実行し成功確認。dailyFollowupは毎朝9時自動。→ 1〜2日 M-5(5xx)監視 → 問題なければ **compute SA の editor/aiplatform.user を剥奪**（不可逆・**最終確認必須**。手順は `SECURITY_REMEDIATION.md` § 2 冒頭）。壊れたら該当関数を compute SA に戻して再デプロイで無停止ロールバック。
+2. **【M-1 残】数日 observe ログ観察**（`[AppCheck][...] observe: verified`/`pass-through` の比率）→ 十分なら **Phase B**：functions に `APPCHECK_ENFORCE=true` 設定→2本再デプロイ→手元curl(トークンなし)=401・正規フォーム=200を確認。ロールバックは `false` 再デプロイ。
+3. （別件）`firebase-functions` 旧版警告＋Node20が2026-10-30終了 → Gemini 2.5 retire(2026-10-16)と合わせ10月までに対応。
 
 ---
 

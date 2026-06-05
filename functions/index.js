@@ -10,6 +10,12 @@ const db = admin.firestore();
 
 const CHAT_WEBHOOK_URL = defineSecret("CHAT_WEBHOOK_URL");
 
+// H-3 関数別の専用SA（最小権限・SECURITY_REMEDIATION H-3）。compute SA(editor)依存を解消。
+const SA_WEBHOOK = "fn-webhook-sa@kjk-tadakayo.iam.gserviceaccount.com"; // datastore.user + CHAT secretAccessor
+const SA_BATCH   = "fn-batch-sa@kjk-tadakayo.iam.gserviceaccount.com";   // datastore.user + CHAT secretAccessor
+const SA_AI      = "fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com";      // aiplatform.user のみ
+const SA_MAIL    = "fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com";    // datastore.user + kjk-gmail-sa tokenCreator
+
 // アプリ設定（Firestore appConfig/settings）を読む。60秒キャッシュ・未設定は.env/既定にフォールバック
 let _settingsCache = null, _settingsAt = 0;
 async function getSettings() {
@@ -122,7 +128,7 @@ async function appCheckGate(req, res, label) {
 
 // LP 問い合わせ Webhook（index.html のお問い合わせフォームから）
 exports.webhookLpInquiry = onRequest(
-  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL] },
+  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_WEBHOOK },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
@@ -218,7 +224,7 @@ exports.webhookLpInquiry = onRequest(
 
 // 見積もりツール 成約 Webhook（mitsumori.html から）
 exports.webhookMitsumori = onRequest(
-  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL] },
+  { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_WEBHOOK },
   async (req, res) => {
     if (req.method !== "POST") {
       res.status(405).send("Method Not Allowed");
@@ -329,7 +335,7 @@ exports.webhookMitsumori = onRequest(
 );
 
 // 設定画面からのChatテスト通知
-exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL] }, async (request) => {
+exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
   const url = await getChatWebhook();
@@ -383,7 +389,7 @@ async function buildFollowupDigest() {
 }
 
 exports.dailyFollowup = onSchedule(
-  { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL] },
+  { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
   async () => {
     try {
       const msg = await buildFollowupDigest();
@@ -448,7 +454,7 @@ function buildPrompt(task, ctx, question) {
 }
 
 exports.aiAssist = onCall(
-  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB" },
+  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_AI },
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
@@ -545,7 +551,7 @@ function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
 }
 
 exports.sendCaseEmail = onCall(
-  { region: "asia-northeast1", timeoutSeconds: 60 },
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
@@ -596,7 +602,7 @@ exports.sendCaseEmail = onCall(
 
 // 発注書PDFを添付してABサークルへ送付（確定して送付）。送信成功で発注を発注済へ更新
 exports.sendSupplierOrder = onCall(
-  { region: "asia-northeast1", timeoutSeconds: 120 },
+  { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {

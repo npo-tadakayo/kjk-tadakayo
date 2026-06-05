@@ -20,7 +20,7 @@
 | M-4 | 中 | authorized_domains から localhost 削除 | ✅ 完了 | Auth設定 |
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
-| H-3 | 高 | 関数別SA・最小権限 | 🟠 計画（破壊的） | IAM＋再デプロイ |
+| H-3 | 高 | 関数別SA・最小権限 | 🟡 SA移行済・editor剥奪待ち（2026-06-05） | IAM＋再デプロイ |
 | M-1 | 中 | Webhook 保護（App Check） | 🟡 Phase A 実装・観察中（2026-06-05） | App Check |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
@@ -221,6 +221,24 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 ---
 
 ### 2. H-3 関数別SA・最小権限【破壊的・editor剥奪は最後】
+
+> 🟡 **SA移行まで完了（2026-06-05 セッション⑥）／ editor剥奪のみ残**
+> - 4つの専用SAを作成し最小権限を付与：`fn-webhook-sa`(datastore.user＋CHAT secretAccessor) / `fn-batch-sa`(同) / `fn-ai-sa`(aiplatform.user のみ) / `fn-mail-sa`(datastore.user＋kjk-gmail-sa への serviceAccountTokenCreator)。全IAMバインド読み取り確認済み。
+> - 全7関数の定義に `serviceAccount` を明記（コード化＝再デプロイで維持）して再デプロイ済み。実行SA切替を `gcloud functions describe` で確認：webhook2本→fn-webhook-sa / testChatNotify・dailyFollowup→fn-batch-sa / aiAssist→fn-ai-sa / sendCaseEmail・sendSupplierOrder→fn-mail-sa。
+> - **検証済**: `webhookLpInquiry`(fn-webhook-sa) を本番疎通テストし HTTP200・`observe: verified`・Firestore書込・Chat通知・secret読取が全て機能（テスト案件は削除）。fn-batch-sa は fn-webhook-sa と同一ロールのため等価。
+> - **compute SA(`677262660109-compute`) の `roles/editor`＋`roles/aiplatform.user` は安全網として保持中**（まだ剥奪していない）。
+> - **残（次セッション）**:
+>   1. 次田さんが管理画面(@tadakayoログイン)で **aiAssist(AI生成) / sendCaseEmail(メール送信) / sendSupplierOrder(発注書送付) / testChatNotify(設定のテスト通知)** を実行し成功を確認。dailyFollowup は毎朝9時に自動実行（または Scheduler force-run）。
+>   2. 1〜2日 M-5 アラート(5xx)が増えないか監視。
+>   3. 問題なければ **compute SA から editor と aiplatform.user を剥奪**（最終・不可逆。**着手前に最終確認を取る**）:
+>      ```bash
+>      GCLOUD=~/Projects/google-cloud-sdk/bin/gcloud; P=kjk-tadakayo
+>      CSA=677262660109-compute@developer.gserviceaccount.com
+>      $GCLOUD projects remove-iam-policy-binding $P --member="serviceAccount:$CSA" --role="roles/editor" --account=yoshinao-tsukuda@tadakayo.jp
+>      $GCLOUD projects remove-iam-policy-binding $P --member="serviceAccount:$CSA" --role="roles/aiplatform.user" --account=yoshinao-tsukuda@tadakayo.jp
+>      ```
+>      剥奪後に全関数を再疎通確認。
+> - **ロールバック**（ある関数が新SAで壊れた場合）: 該当関数の `serviceAccount` 行をコードから外して compute SA で再デプロイ／または不足ロールを新SAへ追加付与。editor 剥奪前なら無停止で戻せる。
 
 **設計（関数 → 専用SA → 最小ロール）**:
 
