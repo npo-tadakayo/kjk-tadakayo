@@ -262,3 +262,34 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
   2. model 名差し替え＋`thinkingConfig` 等 config の互換確認
   3. aiAssist の4タスク（reply_draft / summary_classify / session_report / assistant）で出力品質を回帰確認
 - 猶予4ヶ月。M-1 / H-3 の後で可。retire 前月（2026-09）までに完了を目安。
+
+---
+
+## 🔎 下調べ結果（2026-06-05 セッション⑤・read-only ライブ確認）
+
+次セッションで M-1 / H-3 に着手する前提を最新化（read-only gcloud で裏取り）:
+
+### H-3 対象が **7関数** に（`sendSupplierOrder` 追加）
+本セッションで発注メール送付の `sendSupplierOrder` を追加。これも `677262660109-compute` SA を共有するため H-3 の対象。
+- 確認: 全7関数（`aiAssist` / `dailyFollowup` / `sendCaseEmail` / `sendSupplierOrder` / `testChatNotify` / `webhookLpInquiry` / `webhookMitsumori`）が compute SA を共有。
+- compute SA のロール = `roles/editor` + `roles/aiplatform.user`（過剰権限・計画通り）。
+- **H-3 設計の更新**: `fn-mail-sa` の担当を **`sendCaseEmail` ＋ `sendSupplierOrder`** に（両者とも `kjk-gmail-sa` を `signJwt` で impersonate するキーレスDWDのメール送信関数。付与ロールは同じ＝`kjk-gmail-sa` への `iam.serviceAccountTokenCreator` + `roles/datastore.user`）。他3SA（fn-webhook-sa / fn-ai-sa / fn-batch-sa）は変更なし。
+
+### M-1 前提 API は **未有効**（着手時に有効化）
+- `recaptchaenterprise.googleapis.com` / `firebaseappcheck.googleapis.com` とも **2026-06-05 時点で未有効**を確認。
+- M-1 着手時に有効化（Claude 代行可）:
+```bash
+gcloud services enable recaptchaenterprise.googleapis.com firebaseappcheck.googleapis.com \
+  --project=kjk-tadakayo --account=yoshinao-tsukuda@tadakayo.jp
+```
+
+### M-1 着手の最小手順（担当を分離）
+1. **（Claude）** 上記 API 2つを有効化
+2. **（次田さん・Console）** reCAPTCHA Enterprise サイトキー発行（対象ドメイン `kjk.tadakayo.jp`）→ サイトキー文字列を共有
+3. **（次田さん・Console）** Firebase Console → App Check → Web アプリ（App ID `1:677262660109:web:79645398db17dab417bb44`）を reCAPTCHA Enterprise プロバイダ＋上記サイトキーで登録
+4. **（Claude）** `index.html` / `mitsumori.html` に App Check SDK 初期化、Webhook の fetch に `X-Firebase-AppCheck` ヘッダを付与（Phase A: `APPCHECK_ENFORCE=false`＝観察・弾かない）
+5. **（Claude）** functions（`webhookLpInquiry` / `webhookMitsumori`）に `admin.appCheck().verifyToken()` の手動検証を実装（失敗しても warn のみ）→ デプロイ → 数日メトリクス観察
+6. 失敗率が十分低ければ `APPCHECK_ENFORCE=true` で強制（Phase B）→ 手元 curl（トークンなし）が 401、正規フォームが 200 を確認
+
+> [!INFO]
+> M-1（リード保護・段階移行で低リスク）→ H-3（破壊的・editor 剥奪は最後）の順は変わらず。両者とも次田さんの着手指示（番号単位の明示認可）を得てから実施。H-3 は editor 剥奪前ならいつでも無停止ロールバック可。
