@@ -1,4 +1,4 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-04（更新）
+# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-05（更新）
 
 > handoff-id: tadakayo
 > サービス名（最新）: **タダカヨの介護情報基盤伴走支援**（サブ：タダサポ＋ シリーズ）
@@ -15,6 +15,35 @@
 
 > ⚠️ **重要・ログイン**: `users` コレクションに登録された @tadakayo.jp ユーザーのみログイン可。現在 admin=次田(yoshinao-tsukuda)・佐藤(hiroshi-sato)、staff=藤田/斎藤/石田/蜂須賀。新規スタッフは管理画面「ユーザー管理」で追加しないとログイン不可。
 > ⚠️ 多くの新機能は **@tadakayoログインでの実機通し検証が未**（下記「次セッション」参照）。
+
+---
+
+## 🆕 2026-06-05 セッション追記（実機検証＋印影＋GCPセキュリティ改修）
+
+### A. 発注書の実印影対応（完了・デプロイ済 / commit `505832a`）
+- 設定に「印影画像」アップロード欄を追加。アップロード時にブラウザ側で**黒背景→透過＋200px縮小**（alpha=最大ch）し `appConfig/settings.poSealImage`(data URI)へ保存。発注書(supply-print)は画像があれば `<img class=po-seal-img>` で角印描画、無ければ従来の文字印。
+- 次田さんの実印影(2.png)を**本番設定に登録済み**（透過プレビュー確認済）。⚠️ 実発注(PO)が0件のため、**実発注書PDFでの角印目視は未**（初回発注時に確認）。
+
+### B. GCPセキュリティ改修（開発チーム指摘 10件中 **5件完了**）
+> 指示書プロンプトは「番号単位の明示認可」必須。gcloud は `--account=yoshinao-tsukuda@tadakayo.jp` で kjk-tadakayo 操作可。Functionsソースは本repo `functions/`。
+- ✅ **H-1** Firestore Delete Protection 有効化（`DELETE_PROTECTION_ENABLED`）
+- ✅ **H-5** Vertex AI Location=asia-northeast1（aiAssist env＋**コード既定値も** global→asia-northeast1 `8568249`。データレジデンシー）
+- ✅ **M-4** authorized_domains から localhost 削除（本番5ドメイン維持）
+- ✅ **H-2** Firestore PITR 有効化（7日復元・`604800s`）
+- ✅ **M-2** CHAT_WEBHOOK_URL を Secret Manager 化（defineSecret・4関数 `2dff953`。平文env廃止・testChatNotify実機OK）
+- ⏳ 残り5件（**番号単位認可が必要**）:
+  - **M-1**（Webhook保護）: HMACは公開フォームに**不適**（鍵露出）。**Firebase App Checkで再設計**。reCAPTCHA鍵作成＋**段階移行(非強制→観察→強制)必須**＝**専用セッション**で実施（リード喪失防止）。
+  - **H-3**（関数別SA・最小権限）/ **H-4**（kjk-gmail-sa キー廃止）= Phase4・高リスクIAM・破壊的。Phase1-3後に慎重に。
+  - **M-5**（Cloud Monitoring アラート）/ **M-3**（管理者MFA・FE改修）= Phase5。
+  - 付帯: **Gemini 2.5系は 2026-10-16 retire** → Gemini 3 移行計画を別途協議。
+- ⚠️ 指示書の参照docs（architecture.html/ARCHITECTURE.md/gcp-inventory.yaml）は**本repoに不在**（別repo？要確認）。今回はライブGCP read-onlyで把握して実施。
+
+### C. 実機検証で見つかった要対応（未処理）
+- **設定の未入力**: レターパック差出人 / 発注書(発行元・住所・代表者・発注者氏名・印影文字) / インボイス(事業者名・登録番号T+13桁) が全て空（次田さん入力待ち。※印影画像は登録済）。
+- **請求書の「振込先（口座）」フィールドが設定に無い**（請求書PDFにハードコードのプレースホルダの疑い→要調査・UI追加）。
+- **ログインCOOP警告**（firebase-auth `window.closed`）。今は動作するがSafari等で要確認。
+- 案件20件の多くは **@tadakayo.jp のテスト投入データ**（本番運用前に残す/消す判断）。
+- スタッフ4名（蜂須賀/藤田/斎藤/石田）は姓のみ表示＝氏名要調整。
 
 ### 次セッションでやること（最優先＝実機検証）
 1. **@tadakayo.jp でログインして全画面の通し確認**（特にロール管理・受注→請求→入金・宛名/請求書/発注書PDF・モバイル・カメラ撮影）
