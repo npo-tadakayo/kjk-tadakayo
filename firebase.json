@@ -42,15 +42,11 @@
       "trailingSlash": false,
       "headers": [
         {
-          "source": "**/*.html",
+          "source": "**",
           "headers": [
             { "key": "Cache-Control", "value": "no-cache, max-age=0" },
             { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" }
           ]
-        },
-        {
-          "source": "**/*.@(css|js)",
-          "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0" }]
         }
       ]
     }
