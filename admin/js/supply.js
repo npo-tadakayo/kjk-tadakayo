@@ -92,9 +92,22 @@ function collectItems(kind){
   return items;
 }
 
+function fillOrderShipTo(){
+  const sel=document.getElementById("orderPartnerSelect");
+  const p=activePartners.find(x=>x._id===sel.value);
+  if(!p) return; // 「手入力」選択時は既存の入力を保持
+  const name=p.corpName ? `${p.corpName}　${p.partnerName||""}`.trim() : (p.partnerName||"");
+  const lines=[ p.postal?`〒${p.postal}`:"", `${p.address||""}　${name}`.trim() ].filter(Boolean);
+  document.getElementById("orderShipTo").value=lines.join("\n");
+}
 function openOrder(){ itemRows("orderItems"); document.getElementById("orderDate").value=today();
   ["orderNote","orderShipLabel","orderShipFee","orderShipTo"].forEach(id=>document.getElementById(id).value="");
   document.getElementById("orderTotal").textContent="";
+  // 認定事業所セレクト（選ぶと送付先を自動入力・手入力修正も可）
+  const sel=document.getElementById("orderPartnerSelect");
+  sel.innerHTML = '<option value="">（手入力 / 自社で受け取り）</option>'+
+    activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
+  sel.value=""; sel.onchange=fillOrderShipTo;
   document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
   document.getElementById("orderModal").classList.add("open"); }
 function updateOrderTotal(){ const items=collectItems("orderItems");

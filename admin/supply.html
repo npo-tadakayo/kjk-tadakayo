@@ -115,6 +115,9 @@
           <div class="form-group"><label class="form-label" for="orderShipLabel">送料の名目</label><input class="form-control" id="orderShipLabel" type="text" placeholder="送料(北海道)"></div>
           <div class="form-group"><label class="form-label" for="orderShipFee">送料（円・税別）</label><input class="form-control" id="orderShipFee" type="number" min="0" placeholder="1500"></div>
         </div>
+        <div class="form-group"><label class="form-label" for="orderPartnerSelect">認定事業所から選ぶ（直送先・任意）</label>
+          <select class="form-control" id="orderPartnerSelect"><option value="">（手入力 / 自社で受け取り）</option></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">選ぶと下の送付先に住所を自動入力します（手入力での修正も可能）。</p></div>
         <div class="form-group"><label class="form-label" for="orderShipTo">送付先（AB Circleからの納品先）</label><textarea class="form-control" id="orderShipTo" rows="2" placeholder="〒063-0836&#10;北海道札幌市西区発寒16条12丁目1-20　株式会社279"></textarea></div>
         <div class="form-group"><label class="form-label" for="orderNote">備考（未入力時は「※100台未満〜」を表示）</label><textarea class="form-control" id="orderNote" rows="2"></textarea></div>
         <p id="orderTotal" style="text-align:right;font-weight:700"></p>
