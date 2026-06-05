@@ -5,6 +5,34 @@
 
 ---
 
+## 🆕 2026-06-05 セッション⑤（発注機能: 下書き→確定→ABサークルへ発注書PDF添付メール送付）
+
+> 状態: ステップ1＋2を実装・本番反映・push 済み（コミット `1739c29`）。**実機検証（@tadakayoログイン要）が次田さんの最優先**。AB Circle 2026-06-05 回答を反映。
+
+### 今セッションの成果
+- **AB Circle 確定情報を取り込み**（memory `reference_abcircle.md`）: 発注先 `h.noda@abcircle.com`＋CC 谷口`n.taniguchi@abcircle.com`/小多`s.oda@abcircle.co.jp`、卸価格(数量帯別)、送料表、JAN、月末締め翌月末払い(NP掛け払い)、納期=署名発注書受領から1週間以内、不良品=info@abcircle.co.jp、最小ロット1台。
+- **商品マスタ更新**（Firestore REST直接・MCPは別プロジェクトを見るため使用不可）: 3SKUに JAN・31台価格(wholesale31)を投入。既存の数量帯別価格(wholesale1/2_10/11_30)は価格表と一致済み。
+- **発注の3段階化**（supply.js）: 新規=下書き(draft)→編集/削除→確定。希望納期(desiredDate)欄追加。発注単価を数量帯別(unitPriceFor: 1/2-10/11-30/31+)に。
+- **確定して送付**: 「確定」→プレビュー(confirmModal: 宛先=設定の仕入先メール/CC・件名・本文=定型文差込・編集可・発注書PDFプレビュー)→送信。発注書PDFを html2pdf(CDN)でブラウザ生成し添付、Gmail(DWD)送信、成功でstatus=sent＋emailedTo/emailedAt記録。
+- **設定追加**（settings.html/js）: 仕入先(ABサークル: supplierName/Email/Cc/Contact/住所)＋発注メール定型文(poMailSubject/poMailBody・差込 {{発注番号}}{{品目}}{{金額}}{{希望納期}}{{発行日}}{{担当者}}{{仕入先名}})。確定値を初期表示(未保存でも見える)。発注書の宛名も supplierName 参照に。
+- **functions**: buildRawMessage を multipart(添付/CC)対応に拡張＋ `sendSupplierOrder` callable 追加（本番create成功・既存関数に影響なし）。
+- **共通化**: 発注書描画を `admin/js/po-doc.js`(renderPOHtml/PO_STYLE/DEFAULT_PO_MAIL_*)に切り出し、supply-print と確定プレビューで再利用。
+- 本番: hosting:admin release complete / commit `1739c29`(push済) / preview検証で構文OK・console error 0（認証後UIはセッション切れで未確認）。
+
+### 🙏 次田さんの実機検証（最優先・@tadakayoログイン要）
+1. 設定画面で「仕入先」「発注メール定型文」を確認し**一度「保存」**（Firestoreに確定させる。発注機能はフォールバックでも動くが保存推奨）
+2. 供給管理→発注: 新規発注→下書き保存→編集→「確定」→プレビュー→送信
+   - ⚠️ **「この内容で送信」は実メールがABサークルへ飛ぶ**。最初は**宛先(TO)を自分の@tadakayoに変えて**テスト送信し、PDF添付/レイアウト/数量帯別単価(11台以上で単価減)を確認
+3. 発注書PDFの宛名が仕入先名か／入荷登録で在庫加算（既存）
+
+### 次セッションTODO
+1. 実機検証のフィードバック反映（発注書PDFレイアウト調整・文面調整など）
+2. M-1 Webhook保護 / H-3 関数別SA（専用セッション・`SECURITY_REMEDIATION.md`参照）
+3. 設定の未入力（インボイス番号T+13桁/振込先/レターパック差出人）
+4. （任意）受注(認定事業所)・出荷にも送料表/数量帯別単価を展開、LP側 `**/*.html` glob修正
+
+---
+
 ## 🆕 2026-06-05 セッション④（本番デプロイ実施＋COOP glob修正＋worktree整理）
 
 > 状態: セッション③の積み残し（本番デプロイ）を完了・push済み（最新コミット `ebf3ae1`）。残りは次田さんの実機検証と M-1/H-3（専用セッション）。
