@@ -316,8 +316,8 @@ async function saveShip(){
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=collectItems("shipItems").map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
-    // 直送(認定事業所)=卸価格 / 直接(事業所)=エンドユーザー定価 をスナップショット
-    const unitPrice = shipType==="dropship" ? (p.wholesale2_10||0) : (p.listPrice||0);
+    // 直送(認定事業所)=卸価格(数量帯別) / 直接(事業所)=エンドユーザー定価 をスナップショット
+    const unitPrice = shipType==="dropship" ? unitPriceFor(p, it.qty) : (p.listPrice||0);
     return {...it, unitPrice};
   });
   if(!items.length){ alert("数量を入力してください"); return; }
@@ -484,7 +484,7 @@ async function shipFromOrder(o){
   const sh=o.shipping||{};
   const items=(o.items||[]).map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
-    return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:p.wholesale2_10||0 };
+    return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:unitPriceFor(p, Number(it.qty)||0) };
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
   for(const it of items){ const p=products.find(x=>x.id===it.sku);

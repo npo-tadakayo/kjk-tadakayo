@@ -22,7 +22,7 @@
       "trailingSlash": false,
       "headers": [
         {
-          "source": "**/*.html",
+          "source": "**",
           "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0" }]
         },
         {
