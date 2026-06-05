@@ -8,3 +8,12 @@ functions/.env
 images/1.png
 images/2.png
 images/tadakayo_logo_remove.png
+
+# 検証スクショ（管理画面・案件データが写るためコミットしない・ルート直下のみ）
+/admin-*.png
+
+# Google Drive ポインタファイル（実体はDrive上）
+*.gdoc
+
+# 議事録（個人情報を含む社内議論・Drive管理）
+議事録など/

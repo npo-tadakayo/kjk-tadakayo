@@ -15,7 +15,10 @@ let unsubHistory = null;
 
 function $(id){ return document.getElementById(id); }
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function show(view){ ["loginView","denyView","appView"].forEach(v=>{ $(v).style.display = v===view ? (v==="appView"?"flex":"flex") : "none"; }); }
+function show(view){
+  ["loginView","denyView","appView"].forEach(v=>{ $(v).style.display = v===view ? "flex" : "none"; });
+  document.body.classList.toggle("po-app", view==="appView"); // モバイルヘッダーは appView 時のみ表示
+}
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 function fmt(ts){ if(!ts) return "—"; const d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});}
 
@@ -96,6 +99,7 @@ function renderHistory(orders){
 
 function startApp(){
   show("appView");
+  const mt=document.querySelector(".mh-title"); if(mt) mt.textContent="認定事業所ポータル"; // モバイルヘッダーのタイトル
   $("partnerInfo").textContent = `${me.partnerName||""}（${me.email}）`;
   renderItemInputs();
   $("submitOrderBtn").addEventListener("click", submitOrder);

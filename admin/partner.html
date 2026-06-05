@@ -8,6 +8,10 @@
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    /* モバイルヘッダーは appView 表示時のみ表示（ログイン前/アクセス拒否画面では隠す・rule25） */
+    body:not(.po-app) .mobile-header { display: none !important; }
+  </style>
 </head>
 <body>
   <!-- ログイン前 -->
@@ -100,6 +104,7 @@
     style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
 
   <script src="/js/firebase-config.js"></script>
+  <script src="/js/mobilenav.js"></script>
   <script src="/js/partner.js" type="module"></script>
 </body>
 </html>
