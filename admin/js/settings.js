@@ -120,6 +120,11 @@ onAuthStateChanged(auth, async (user)=>{
   $("poSealClear").addEventListener("click", ()=>{ poSealImage=""; $("poSealFile").value=""; updateSealPreview(); });
   $("invoiceIssuerName").value = s.invoiceIssuerName || "";
   $("invoiceRegNo").value = s.invoiceRegNo || "";
+  $("billingBankName").value = s.billingBankName || "";
+  $("billingBranchName").value = s.billingBranchName || "";
+  $("billingAccountType").value = s.billingAccountType || "普通";
+  $("billingAccountNumber").value = s.billingAccountNumber || "";
+  $("billingAccountHolder").value = s.billingAccountHolder || "";
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -138,6 +143,11 @@ onAuthStateChanged(auth, async (user)=>{
         poSealImage: poSealImage || "",
         invoiceIssuerName: $("invoiceIssuerName").value.trim(),
         invoiceRegNo: $("invoiceRegNo").value.trim(),
+        billingBankName: $("billingBankName").value.trim(),
+        billingBranchName: $("billingBranchName").value.trim(),
+        billingAccountType: $("billingAccountType").value,
+        billingAccountNumber: $("billingAccountNumber").value.trim(),
+        billingAccountHolder: $("billingAccountHolder").value.trim(),
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

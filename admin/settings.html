@@ -71,6 +71,19 @@
               <div class="form-group"><label class="form-label" for="invoiceRegNo">登録番号（T＋13桁）</label><input class="form-control" id="invoiceRegNo" type="text" placeholder="T1234567890123"></div>
             </div>
           </div>
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">請求書の振込先口座</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">タダカヨ発行の請求書の「お振込先」欄に印字されます。未入力の場合は「振込先口座は別途ご案内します」と表示されます。</p>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="billingBankName">金融機関名</label><input class="form-control" id="billingBankName" type="text" placeholder="○○銀行 / ゆうちょ銀行"></div>
+              <div class="form-group"><label class="form-label" for="billingBranchName">支店名</label><input class="form-control" id="billingBranchName" type="text" placeholder="○○支店"></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="billingAccountType">口座種別</label><select class="form-control" id="billingAccountType"><option value="普通">普通</option><option value="当座">当座</option></select></div>
+              <div class="form-group"><label class="form-label" for="billingAccountNumber">口座番号</label><input class="form-control" id="billingAccountNumber" type="text" placeholder="1234567"></div>
+            </div>
+            <div class="form-group"><label class="form-label" for="billingAccountHolder">口座名義</label><input class="form-control" id="billingAccountHolder" type="text" placeholder="トクヒ）タダカヨ"></div>
+          </div>
           <div id="saveStatus" style="font-size:13px;margin-bottom:8px"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
             <button class="btn btn-secondary" id="testBtn" type="button"><i class="ti ti-bell" aria-hidden="true"></i> Chatにテスト通知</button>

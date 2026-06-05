@@ -147,6 +147,12 @@ function renderInvoice(s, st){
   const regLine = regNo
     ? `登録番号: <strong>${esc(regNo)}</strong>`
     : `<span style="color:#c0392b">登録番号: 未登録（設定で登録してください）</span>`;
+  // お振込先（設定 appConfig/settings.billing* / 未設定なら従来の案内文言）
+  const bankName=st.billingBankName||"", branch=st.billingBranchName||"", acctType=st.billingAccountType||"普通", acctNo=st.billingAccountNumber||"", acctHolder=st.billingAccountHolder||"";
+  const hasBank = bankName && acctNo;
+  const payInner = hasBank
+    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div><div style="font-size:12px;color:var(--muted);margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
+    : `<div style="font-size:12px;color:var(--muted)">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
   // 適格請求書: 各明細に適用税率を表示
   const rows2=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("");
   return `
@@ -168,7 +174,7 @@ function renderInvoice(s, st){
       </tbody></table>
       <div class="pay">
         <div style="font-weight:700;margin-bottom:4px">お振込先</div>
-        <div style="font-size:12px;color:var(--muted)">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限: 請求書発行月の翌月末。</div>
+        ${payInner}
       </div>
       <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
     </div>`;
