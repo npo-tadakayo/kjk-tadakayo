@@ -86,6 +86,27 @@ function itemRows(containerId){
       <td><input class="form-control qty-input" type="number" min="0" value="0" data-sku="${p.id}" style="padding:4px 8px"></td>
     </tr>`).join("")}</tbody></table>`;
 }
+// AB Circle 送料表（税別・全国送料一覧 離島込み）。memory reference_abcircle と一致させること
+const SHIPPING_FEES = [
+  { region:"北海道", fee:1500, note:"北海道" },
+  { region:"北東北", fee:1000, note:"青森・岩手・秋田" },
+  { region:"南東北", fee:1000, note:"宮城・山形・福島" },
+  { region:"関東", fee:900, note:"東京・神奈川・千葉・埼玉・茨城・栃木・群馬" },
+  { region:"甲信越", fee:1000, note:"山梨・新潟・長野" },
+  { region:"北陸・中部", fee:1000, note:"富山・石川・福井・静岡・愛知・岐阜・三重" },
+  { region:"関西", fee:1100, note:"大阪・京都・兵庫・奈良・滋賀・和歌山" },
+  { region:"中国・四国", fee:1200, note:"広島・岡山・山口・鳥取・島根・香川・愛媛・高知・徳島" },
+  { region:"九州", fee:1300, note:"福岡・佐賀・長崎・熊本・大分・宮崎・鹿児島" },
+  { region:"沖縄", fee:1500, note:"沖縄" },
+  { region:"その他離島", fee:2500, note:"離島" },
+];
+function applyShipRegion(){
+  const sel=document.getElementById("orderShipRegion");
+  const r=SHIPPING_FEES.find(x=>x.region===sel.value);
+  if(!r) return; // 「選択しない」は手入力を保持
+  document.getElementById("orderShipFee").value=r.fee;
+  document.getElementById("orderShipLabel").value=`送料（${r.region}）`;
+}
 // 数量帯別の卸単価（AB Circle価格表: 1台 / 2-10台 / 11-30台 / 31台以上）
 function unitPriceFor(p, qty){
   if(!p) return 0;
@@ -135,6 +156,11 @@ function openOrder(o){
   sel.innerHTML = '<option value="">（手入力 / 自社で受け取り）</option>'+
     activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
   sel.value=""; sel.onchange=fillOrderShipTo;
+  // お届け地域セレクト（送料自動入力）
+  const rsel=document.getElementById("orderShipRegion");
+  rsel.innerHTML='<option value="">選択しない（手入力）</option>'+
+    SHIPPING_FEES.map(r=>`<option value="${r.region}">${r.region}（${r.note}）— ¥${r.fee.toLocaleString("ja-JP")}</option>`).join("");
+  rsel.value=""; rsel.onchange=applyShipRegion;
   // 編集時は既存の数量を反映
   if(o && Array.isArray(o.items)){ o.items.forEach(it=>{ const inp=document.querySelector(`#orderItems .qty-input[data-sku="${it.sku}"]`); if(inp) inp.value=it.qty; }); }
   document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));

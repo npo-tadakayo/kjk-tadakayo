@@ -114,6 +114,9 @@
           <div class="form-group"><label class="form-label" for="orderDesiredDate">希望納期（任意）</label><input class="form-control" type="date" id="orderDesiredDate"></div>
         </div>
         <div id="orderItems"></div>
+        <div class="form-group"><label class="form-label" for="orderShipRegion">お届け地域（送料の自動入力）</label>
+          <select class="form-control" id="orderShipRegion"><option value="">選択しない（手入力）</option></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ABサークルの送料表から、選んだ地域の送料を下に自動入力します（100台未満は送料が必要）。</p></div>
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="orderShipLabel">送料の名目</label><input class="form-control" id="orderShipLabel" type="text" placeholder="送料(北海道)"></div>
           <div class="form-group"><label class="form-label" for="orderShipFee">送料（円・税別）</label><input class="form-control" id="orderShipFee" type="number" min="0" placeholder="1500"></div>
