@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { renderPOHtml } from "/js/po-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -24,59 +25,8 @@ const PO_DEFAULT = {
   ordererName: "次田 芳尚",
   sealText: "次田",
 };
-function renderPO(o, st){
-  st = st || {};
-  const issuerName = st.poIssuerName || PO_DEFAULT.issuerName;
-  const issuerAddr = st.poIssuerAddr || PO_DEFAULT.issuerAddr;
-  const issuerRep  = st.poIssuerRep  || PO_DEFAULT.issuerRep;
-  const items = (o.items||[]).slice();
-  // 送料を明細行として追加（あれば）
-  const lines = items.map(i=>({ name:i.name, qty:i.qty, unitPrice:Number(i.unitPrice)||0, amount:(Number(i.unitPrice)||0)*(Number(i.qty)||0) }));
-  if (Number(o.shippingFee)>0) lines.push({ name:o.shippingLabel||"送料", qty:1, unitPrice:Number(o.shippingFee), amount:Number(o.shippingFee), plain:true });
-  const sub = lines.reduce((a,l)=>a+l.amount,0);
-  const tax = Math.floor(sub*0.1);
-  const total = sub + tax;
-  const no = (o.poNo!=null && o.poNo!=="") ? o.poNo : (o.poNumber||"");
-  const rows = lines.map(l=>`<tr>
-    <td>${esc(l.name)}</td>
-    <td class="num">${l.plain?l.qty:l.qty+" 個"}</td>
-    <td class="num">${yen(l.unitPrice)}</td>
-    <td class="num">${yen(l.amount)}</td></tr>`).join("");
-  return `
-    <div class="po">
-      <h1 class="po-title">発　注　書</h1>
-      <div class="po-head">
-        <div class="po-to">
-          <div class="po-to-name">${esc(o.supplier||"AB Circle Japan 株式会社")}　御中</div>
-          <p style="margin:18px 0 0">下記の通り発注申し上げます。</p>
-          <div class="po-total"><span>TOTAL</span> <strong>${yen(total)}</strong></div>
-        </div>
-        <div class="po-issuer">
-          <div class="po-no"><span>NO.</span> ${esc(String(no))}</div>
-          <div class="po-no"><span>発行日</span> ${esc(o.orderDate||"")}</div>
-          <div class="po-org">${esc(issuerName)}</div>
-          <div>${esc(PO_DEFAULT.issuerAddrLabel)}</div>
-          <div>${esc(issuerAddr)}</div>
-          <div>${esc(issuerRep)}</div>
-          ${o.shipTo?`<div style="margin-top:10px">送付先：</div><div style="white-space:pre-line">${esc(o.shipTo)}</div>`:""}
-        </div>
-      </div>
-      <table class="po-items"><thead><tr><th>品名</th><th class="num" style="width:64px">数量</th><th class="num" style="width:110px">単価</th><th class="num" style="width:120px">金額</th></tr></thead>
-        <tbody>${rows}</tbody></table>
-      <table class="po-sum"><tbody>
-        <tr><td class="lbl">小計</td><td class="num">${yen(sub)}</td></tr>
-        <tr><td class="lbl">消費税 10%</td><td class="num">${yen(tax)}</td></tr>
-        <tr class="grand"><td class="lbl">合計</td><td class="num"><strong>${yen(total)}</strong></td></tr>
-      </tbody></table>
-      ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
-      <div class="po-orderer">
-        <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
-        ${st.poSealImage
-          ? `<img class="po-seal-img" src="${st.poSealImage}" alt="印">`
-          : `<div class="po-seal" aria-label="印">${esc(st.poSealText || PO_DEFAULT.sealText)}</div>`}
-      </div>
-    </div>`;
-}
+// 発注書の描画は po-doc.js の renderPOHtml に統合（確定プレビューと共通化）
+function renderPO(o, st){ return renderPOHtml(o, st); }
 
 function renderShip(s){
   const rows=(s.items||[]).map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="num">${i.qty}</td></tr>`).join("");

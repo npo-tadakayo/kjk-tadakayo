@@ -86,6 +86,23 @@ function processSealImage(file){
   });
 }
 
+const DEFAULT_PO_MAIL_BODY = `{{仕入先名}}
+{{担当者}}
+
+平素より大変お世話になっております。NPO法人タダカヨ 介護情報基盤伴走支援事業でございます。
+
+下記のとおり発注いたします。発注書を添付いたしましたので、ご確認のほどよろしくお願いいたします。
+
+■ 発注番号: {{発注番号}}
+■ 品目: {{品目}}
+■ 金額（税別）: {{金額}}
+■ 希望納期: {{希望納期}}
+
+お手数ですが、発注書にご署名・ご捺印の上、ご返送いただけますと幸いです。
+何卒よろしくお願い申し上げます。
+
+NPO法人タダカヨ 介護情報基盤伴走支援事業`;
+
 const testFn = httpsCallable(functions, "testChatNotify");
 
 onAuthStateChanged(auth, async (user)=>{
@@ -118,6 +135,16 @@ onAuthStateChanged(auth, async (user)=>{
     catch(_){ toast("画像の読み込みに失敗しました"); }
   });
   $("poSealClear").addEventListener("click", ()=>{ poSealImage=""; $("poSealFile").value=""; updateSealPreview(); });
+  // 仕入先（ABサークル）— 確定値を初期表示（未保存でも見える。発注機能側にもフォールバックあり）
+  $("supplierName").value = s.supplierName || "AB Circle Japan 株式会社";
+  $("supplierContact").value = s.supplierContact || "野田 様";
+  $("supplierEmail").value = s.supplierEmail || "h.noda@abcircle.com";
+  $("supplierCc").value = s.supplierCc || "n.taniguchi@abcircle.com, s.oda@abcircle.co.jp";
+  $("supplierPostal").value = s.supplierPostal || "";
+  $("supplierAddress").value = s.supplierAddress || "";
+  // 発注メール定型文（未保存ならデフォルト文面）
+  $("poMailSubject").value = s.poMailSubject || "【発注書送付】NPO法人タダカヨ（{{発注番号}}）";
+  $("poMailBody").value = s.poMailBody || DEFAULT_PO_MAIL_BODY;
   $("invoiceIssuerName").value = s.invoiceIssuerName || "";
   $("invoiceRegNo").value = s.invoiceRegNo || "";
   $("billingBankName").value = s.billingBankName || "";
@@ -141,6 +168,14 @@ onAuthStateChanged(auth, async (user)=>{
         poOrdererName: $("poOrdererName").value.trim(),
         poSealText: $("poSealText").value.trim(),
         poSealImage: poSealImage || "",
+        supplierName: $("supplierName").value.trim(),
+        supplierContact: $("supplierContact").value.trim(),
+        supplierEmail: $("supplierEmail").value.trim(),
+        supplierCc: $("supplierCc").value.trim(),
+        supplierPostal: $("supplierPostal").value.trim(),
+        supplierAddress: $("supplierAddress").value.trim(),
+        poMailSubject: $("poMailSubject").value.trim(),
+        poMailBody: $("poMailBody").value,
         invoiceIssuerName: $("invoiceIssuerName").value.trim(),
         invoiceRegNo: $("invoiceRegNo").value.trim(),
         billingBankName: $("billingBankName").value.trim(),

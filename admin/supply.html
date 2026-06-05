@@ -106,10 +106,13 @@
 
   <!-- 発注モーダル -->
   <div class="modal-overlay" id="orderModal" role="dialog" aria-modal="true" aria-label="新規発注">
-    <div class="modal"><div class="modal-header"><h2>新規発注（→AB Circle）</h2>
+    <div class="modal"><div class="modal-header"><h2 id="orderModalTitle">新規発注（→AB Circle）</h2>
       <button class="btn btn-secondary" id="closeOrderBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
-        <div class="form-group"><label class="form-label" for="orderDate">発注日</label><input class="form-control" type="date" id="orderDate"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="orderDate">発注日</label><input class="form-control" type="date" id="orderDate"></div>
+          <div class="form-group"><label class="form-label" for="orderDesiredDate">希望納期（任意）</label><input class="form-control" type="date" id="orderDesiredDate"></div>
+        </div>
         <div id="orderItems"></div>
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="orderShipLabel">送料の名目</label><input class="form-control" id="orderShipLabel" type="text" placeholder="送料(北海道)"></div>
@@ -124,7 +127,7 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelOrderBtn" type="button">キャンセル</button>
-        <button class="btn btn-primary" id="saveOrderBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>発注を登録</button>
+        <button class="btn btn-primary" id="saveOrderBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>下書きとして保存</button>
       </div>
     </div>
   </div>
@@ -192,9 +195,33 @@
     </div>
   </div>
 
+  <!-- 確定して送付モーダル（発注書PDFを添付してABサークルへメール） -->
+  <div class="modal-overlay" id="confirmModal" role="dialog" aria-modal="true" aria-label="確定して送付">
+    <div class="modal" style="max-width:880px"><div class="modal-header"><h2 id="confirmModalTitle">確定して送付（→AB Circle）</h2>
+      <button class="btn btn-secondary" id="closeConfirmBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">下の内容で発注書PDFを添付してメール送信します。送信すると発注は「発注済」になります。送信前に件名・本文を編集できます。</p>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="cfTo">宛先（TO）<span style="color:red">*</span></label><input class="form-control" id="cfTo" type="email" placeholder="h.noda@abcircle.com"></div>
+          <div class="form-group"><label class="form-label" for="cfCc">CC（カンマ区切り）</label><input class="form-control" id="cfCc" type="text"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="cfSubject">件名 <span style="color:red">*</span></label><input class="form-control" id="cfSubject" type="text"></div>
+        <div class="form-group"><label class="form-label" for="cfBody">本文 <span style="color:red">*</span></label><textarea class="form-control" id="cfBody" rows="9" style="font-family:inherit;line-height:1.7;resize:vertical"></textarea></div>
+        <div style="font-size:12px;color:var(--color-ink-muted);margin-bottom:6px">添付される発注書PDFのプレビュー：</div>
+        <div id="cfPreview" style="border:1px solid var(--color-line);border-radius:8px;max-height:360px;overflow:auto;background:#f3f1ec;padding:12px;display:flex;justify-content:center"></div>
+        <div id="cfError" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelConfirmBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="sendConfirmBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i>この内容で送信</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"
     style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/supply.js" type="module"></script>

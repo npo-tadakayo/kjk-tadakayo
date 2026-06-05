@@ -64,6 +64,26 @@
             </div>
           </div>
           <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">仕入先（ABサークル）— 発注書の送付先</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">発注書PDFの宛名と、発注「確定して送付」時のメール送付先になります。CCは複数可（カンマ区切り）。</p>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="supplierName">仕入先名</label><input class="form-control" id="supplierName" type="text" placeholder="AB Circle Japan 株式会社"></div>
+              <div class="form-group"><label class="form-label" for="supplierContact">担当者</label><input class="form-control" id="supplierContact" type="text" placeholder="野田 様"></div>
+            </div>
+            <div class="form-group"><label class="form-label" for="supplierEmail">送付先メール（TO）</label><input class="form-control" id="supplierEmail" type="email" placeholder="h.noda@abcircle.com"></div>
+            <div class="form-group"><label class="form-label" for="supplierCc">CC（カンマ区切り・任意）</label><input class="form-control" id="supplierCc" type="text" placeholder="n.taniguchi@abcircle.com, s.oda@abcircle.co.jp"></div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="supplierPostal">郵便番号（任意）</label><input class="form-control" id="supplierPostal" type="text" placeholder="000-0000"></div>
+              <div class="form-group"><label class="form-label" for="supplierAddress">住所（任意）</label><input class="form-control" id="supplierAddress" type="text"></div>
+            </div>
+          </div>
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">発注メールの定型文（ABサークル送付用）</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">「確定して送付」時の件名・本文の下書きに使います（送信前に画面で編集できます）。差込: <code>{{発注番号}}</code> <code>{{品目}}</code> <code>{{金額}}</code> <code>{{希望納期}}</code> <code>{{発行日}}</code> <code>{{担当者}}</code> <code>{{仕入先名}}</code></p>
+            <div class="form-group"><label class="form-label" for="poMailSubject">件名</label><input class="form-control" id="poMailSubject" type="text" placeholder="【発注書送付】NPO法人タダカヨ（{{発注番号}}）"></div>
+            <div class="form-group"><label class="form-label" for="poMailBody">本文</label><textarea class="form-control" id="poMailBody" rows="10" style="font-family:inherit;resize:vertical;line-height:1.7"></textarea></div>
+          </div>
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">適格請求書（インボイス制度）</div>
             <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">タダカヨ発行の請求書に記載する適格請求書発行事業者の登録番号です。</p>
             <div class="form-row">

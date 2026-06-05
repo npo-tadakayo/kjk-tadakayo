@@ -462,19 +462,44 @@ async function gmailAccessToken(sender) {
 
 function b64(s) { return Buffer.from(s, "utf-8").toString("base64"); }
 function encWord(s) { return `=?UTF-8?B?${b64(s)}?=`; }
+function wrap76(s) { return String(s).replace(/[\r\n]/g, "").replace(/(.{76})/g, "$1\r\n"); }
 
-function buildRawMessage({ to, subject, body, sender }) {
-  const mime = [
+// cc・添付（PDF等）に対応。attachments=[{filename, mimeType, contentBase64}]。なければ従来の text/plain。
+function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
+  const headers = [
     `From: ${encWord("タダカヨ事務局")} <${sender}>`,
     `To: ${to}`,
-    `Subject: ${encWord(subject)}`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
-    "",
-    b64(body),
-  ].join("\r\n");
-  return Buffer.from(mime, "utf-8").toString("base64")
+  ];
+  if (cc) headers.push(`Cc: ${cc}`);
+  headers.push(`Subject: ${encWord(subject)}`, "MIME-Version: 1.0");
+  let lines;
+  if (attachments && attachments.length) {
+    const bd = "tadakayo_po_mixed_boundary";
+    lines = headers.concat([
+      `Content-Type: multipart/mixed; boundary="${bd}"`, "",
+      `--${bd}`,
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64", "",
+      wrap76(b64(body)),
+    ]);
+    for (const att of attachments) {
+      lines.push(
+        `--${bd}`,
+        `Content-Type: ${att.mimeType || "application/pdf"}; name="${att.filename}"`,
+        "Content-Transfer-Encoding: base64",
+        `Content-Disposition: attachment; filename="${att.filename}"`, "",
+        wrap76(att.contentBase64),
+      );
+    }
+    lines.push(`--${bd}--`);
+  } else {
+    lines = headers.concat([
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64", "",
+      wrap76(b64(body)),
+    ]);
+  }
+  return Buffer.from(lines.join("\r\n"), "utf-8").toString("base64")
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
@@ -523,6 +548,54 @@ exports.sendCaseEmail = onCall(
     } catch (e) {
       if (e instanceof HttpsError) throw e;
       console.error("sendCaseEmail error:", e);
+      throw new HttpsError("internal", `送信処理に失敗しました: ${e.message}`);
+    }
+  }
+);
+
+// 発注書PDFを添付してABサークルへ送付（確定して送付）。送信成功で発注を発注済へ更新
+exports.sendSupplierOrder = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120 },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    const { to, cc, subject, body, pdfBase64, filename, poId } = request.data || {};
+    if (!to || !subject || !body) {
+      throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
+    }
+    try {
+      const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
+      const token = await gmailAccessToken(sender);
+      const attachments = pdfBase64
+        ? [{ filename: filename || "order.pdf", mimeType: "application/pdf", contentBase64: pdfBase64 }]
+        : [];
+      const raw = buildRawMessage({ to, cc, subject, body, sender, attachments });
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ raw }) }
+      );
+      if (!res.ok) {
+        const t = await res.text();
+        console.error("Gmail send (supplier) failed:", res.status, t);
+        throw new HttpsError("internal", `Gmail送信に失敗しました（${res.status}）。DWD登録と送信元をご確認ください`);
+      }
+      const sent = await res.json();
+      if (poId) {
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        await db.collection("purchaseOrders").doc(poId).update({
+          status: "sent", emailedTo: to, emailedCc: cc || "", emailedAt: now, confirmedAt: now,
+        });
+      }
+      return { ok: true, id: sent.id };
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("sendSupplierOrder error:", e);
       throw new HttpsError("internal", `送信処理に失敗しました: ${e.message}`);
     }
   }

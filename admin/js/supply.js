@@ -5,10 +5,14 @@ import { getAuth, onAuthStateChanged, signOut }
 import { getFirestore, collection, doc, getDoc, getDocs, query, orderBy, onSnapshot,
   addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, "asia-northeast1");
+const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
 
 let products = [];
 let currentUser = null;
@@ -82,12 +86,22 @@ function itemRows(containerId){
       <td><input class="form-control qty-input" type="number" min="0" value="0" data-sku="${p.id}" style="padding:4px 8px"></td>
     </tr>`).join("")}</tbody></table>`;
 }
+// 数量帯別の卸単価（AB Circle価格表: 1台 / 2-10台 / 11-30台 / 31台以上）
+function unitPriceFor(p, qty){
+  if(!p) return 0;
+  if(qty>=31) return Number(p.wholesale31 ?? p.wholesale11_30 ?? p.wholesale2_10 ?? 0);
+  if(qty>=11) return Number(p.wholesale11_30 ?? p.wholesale2_10 ?? 0);
+  if(qty>=2)  return Number(p.wholesale2_10 ?? 0);
+  return Number(p.wholesale1 ?? p.wholesale2_10 ?? 0);
+}
 function collectItems(kind){
   const items=[];
   document.querySelectorAll(`#${kind} .qty-input`).forEach(inp=>{
     const q=parseInt(inp.value,10)||0;
     if(q>0){ const p=products.find(x=>x.id===inp.dataset.sku);
-      items.push({sku:p.id,name:p.name,qty:q,unitPrice:p.wholesale2_10||0}); }
+      // 発注は数量帯別単価。出荷(shipItems)はsaveShipで単価を上書きするため従来値でよい
+      const unitPrice = kind==="orderItems" ? unitPriceFor(p,q) : (p.wholesale2_10||0);
+      items.push({sku:p.id,name:p.name,qty:q,unitPrice}); }
   });
   return items;
 }
@@ -100,15 +114,31 @@ function fillOrderShipTo(){
   const lines=[ p.postal?`〒${p.postal}`:"", `${p.address||""}　${name}`.trim() ].filter(Boolean);
   document.getElementById("orderShipTo").value=lines.join("\n");
 }
-function openOrder(){ itemRows("orderItems"); document.getElementById("orderDate").value=today();
-  ["orderNote","orderShipLabel","orderShipFee","orderShipTo"].forEach(id=>document.getElementById(id).value="");
+let editingOrderId = null;
+function openOrder(o){
+  o = o || null;
+  editingOrderId = o ? o._id : null;
+  document.getElementById("orderModalTitle").textContent = o ? `発注の編集（${o.poNumber||"下書き"}）` : "新規発注（→AB Circle）";
+  document.getElementById("saveOrderBtn").innerHTML = o
+    ? '<i class="ti ti-device-floppy" aria-hidden="true"></i>下書きを更新'
+    : '<i class="ti ti-device-floppy" aria-hidden="true"></i>下書きとして保存';
+  itemRows("orderItems");
+  document.getElementById("orderDate").value = (o&&o.orderDate) || today();
+  document.getElementById("orderDesiredDate").value = (o&&o.desiredDate) || "";
+  document.getElementById("orderNote").value = (o&&o.note) || "";
+  document.getElementById("orderShipLabel").value = (o&&o.shippingLabel) || "";
+  document.getElementById("orderShipFee").value = (o&&o.shippingFee) || "";
+  document.getElementById("orderShipTo").value = (o&&o.shipTo) || "";
   document.getElementById("orderTotal").textContent="";
   // 認定事業所セレクト（選ぶと送付先を自動入力・手入力修正も可）
   const sel=document.getElementById("orderPartnerSelect");
   sel.innerHTML = '<option value="">（手入力 / 自社で受け取り）</option>'+
     activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
   sel.value=""; sel.onchange=fillOrderShipTo;
+  // 編集時は既存の数量を反映
+  if(o && Array.isArray(o.items)){ o.items.forEach(it=>{ const inp=document.querySelector(`#orderItems .qty-input[data-sku="${it.sku}"]`); if(inp) inp.value=it.qty; }); }
   document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
+  updateOrderTotal();
   document.getElementById("orderModal").classList.add("open"); }
 function updateOrderTotal(){ const items=collectItems("orderItems");
   const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
@@ -118,20 +148,30 @@ async function saveOrder(){
   if(!items.length){ alert("数量を入力してください"); return; }
   const btn=document.getElementById("saveOrderBtn"); btn.disabled=true;
   try{
-    const poNo=await nextSeq("purchaseOrders");
-    const poNumber=seqFmt("PO",poNo);
     const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
-    await addDoc(collection(db,"purchaseOrders"),{
-      poNumber, poNo, orderDate:document.getElementById("orderDate").value||today(),
+    const data={
+      orderDate:document.getElementById("orderDate").value||today(),
+      desiredDate:document.getElementById("orderDesiredDate").value||"",
       supplier:"AB Circle Japan 株式会社", items, total,
       shippingLabel:document.getElementById("orderShipLabel").value.trim(),
       shippingFee:Number(document.getElementById("orderShipFee").value)||0,
       shipTo:document.getElementById("orderShipTo").value.trim(),
-      status:"sent", note:document.getElementById("orderNote").value.trim(),
-      createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+      note:document.getElementById("orderNote").value.trim(),
+      updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email };
+    if(editingOrderId){
+      await updateDoc(doc(db,"purchaseOrders",editingOrderId), data);
+      toast("下書きを更新しました");
+    }else{
+      const poNo=await nextSeq("purchaseOrders");
+      const poNumber=seqFmt("PO",poNo);
+      await addDoc(collection(db,"purchaseOrders"),{
+        ...data, poNumber, poNo, status:"draft",
+        createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+      toast(`下書き ${poNumber} を保存しました`);
+    }
     document.getElementById("orderModal").classList.remove("open");
-    toast(`発注 ${poNumber} を登録しました`);
-  }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
+    editingOrderId=null;
+  }catch(e){ alert(`保存失敗: ${e.message}`);} finally{ btn.disabled=false; }
 }
 
 function renderOrders(orders){
@@ -140,18 +180,27 @@ function renderOrders(orders){
   body.innerHTML = orders.map(o=>{
     const summary=(o.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
     const statusLabel={sent:"発注済",received:"入荷済",draft:"下書き"}[o.status]||o.status;
+    const badgeN = o.status==="received"?3 : o.status==="draft"?2 : 7;
+    const isDraft = o.status==="draft";
+    const sentInfo = o.emailedAt ? `<div style="font-size:11px;color:var(--color-success)">メール送付済</div>` : "";
     return `<tr>
       <td><strong>${esc(o.poNumber)}</strong></td>
-      <td>${esc(o.orderDate||"")}</td>
+      <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:11px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td>${yen(o.total)}</td>
-      <td><span class="badge badge-${o.status==="received"?3:2}">${statusLabel}</span></td>
+      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}</td>
       <td style="white-space:nowrap">
         <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
-        ${o.status!=="received"?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
+        ${isDraft?`<button class="btn btn-secondary edit-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
+        <button class="btn btn-primary confirm-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>確定</button>
+        <button class="btn btn-danger del-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px" aria-label="削除"><i class="ti ti-trash"></i></button>`:""}
+        ${o.status==="sent"?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
       </td></tr>`;
   }).join("");
   document.querySelectorAll(".recv-btn").forEach(b=>b.addEventListener("click",()=>receiveOrder(b.dataset.id,orders)));
+  document.querySelectorAll(".edit-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) openOrder(o); }));
+  document.querySelectorAll(".confirm-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) confirmOrder(o); }));
+  document.querySelectorAll(".del-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) deleteOrder(o); }));
 }
 async function receiveOrder(id, orders){
   const o=orders.find(x=>x._id===id);
@@ -162,6 +211,62 @@ async function receiveOrder(id, orders){
     await updateDoc(doc(db,"purchaseOrders",id),{status:"received",receivedAt:serverTimestamp()});
     toast(`${o.poNumber} を入荷登録しました`);
   }catch(e){ alert(`入荷登録失敗: ${e.message}`);}
+}
+// 下書き → 確定して送付（発注書PDFを添付してABサークルへメール）
+let confirmingOrder = null;
+async function confirmOrder(o){
+  confirmingOrder = o;
+  let s = {};
+  try{ const ss=await getDoc(doc(db,"appConfig","settings")); s = ss.exists()?ss.data():{}; }catch(_){}
+  const supplierName = s.supplierName || "AB Circle Japan 株式会社";
+  const supplierContact = s.supplierContact || "野田 様";
+  const summary = (o.items||[]).map(i=>`${i.name} × ${i.qty}`).join("\n");
+  const fill = (t)=> String(t||"")
+    .split("{{発注番号}}").join(o.poNumber||"")
+    .split("{{品目}}").join(summary)
+    .split("{{金額}}").join("¥"+Number(o.total||0).toLocaleString("ja-JP")+"（税別）")
+    .split("{{希望納期}}").join(o.desiredDate||"（指定なし）")
+    .split("{{発行日}}").join(o.orderDate||"")
+    .split("{{担当者}}").join(supplierContact)
+    .split("{{仕入先名}}").join(supplierName);
+  document.getElementById("cfTo").value = s.supplierEmail || "h.noda@abcircle.com";
+  document.getElementById("cfCc").value = s.supplierCc || "n.taniguchi@abcircle.com, s.oda@abcircle.co.jp";
+  document.getElementById("cfSubject").value = fill(s.poMailSubject || DEFAULT_PO_MAIL_SUBJECT);
+  document.getElementById("cfBody").value = fill(s.poMailBody || DEFAULT_PO_MAIL_BODY);
+  document.getElementById("cfError").style.display="none";
+  document.getElementById("cfPreview").innerHTML = `<style>${PO_STYLE}</style>` + renderPOHtml(o, s);
+  document.getElementById("confirmModalTitle").textContent = `確定して送付（${o.poNumber}）`;
+  document.getElementById("confirmModal").classList.add("open");
+}
+async function sendConfirmedOrder(){
+  const o = confirmingOrder; if(!o) return;
+  const to = document.getElementById("cfTo").value.trim();
+  const cc = document.getElementById("cfCc").value.trim();
+  const subject = document.getElementById("cfSubject").value.trim();
+  const body = document.getElementById("cfBody").value;
+  const err = document.getElementById("cfError"); err.style.display="none";
+  if(!to || !subject || !body.trim()){ err.textContent="宛先・件名・本文は必須です"; err.style.display="block"; return; }
+  const btn=document.getElementById("sendConfirmBtn"); const orig=btn.innerHTML;
+  btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> PDF生成中...';
+  try{
+    const el = document.querySelector("#cfPreview .po");
+    if(!el) throw new Error("発注書プレビューが見つかりません");
+    const opt = { margin:[10,8,10,8], filename:`${o.poNumber}.pdf`, image:{type:"jpeg",quality:0.95},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"} };
+    const dataUri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
+    const pdfBase64 = String(dataUri).split(",")[1] || "";
+    btn.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
+    await sendSupplierOrderFn({ to, cc, subject, body, pdfBase64, filename:`${o.poNumber}.pdf`, poId:o._id });
+    document.getElementById("confirmModal").classList.remove("open");
+    confirmingOrder=null;
+    toast(`${o.poNumber} を発注書添付で送信しました`);
+  }catch(e){ err.textContent=`送信に失敗: ${e.message||e}`; err.style.display="block"; }
+  finally{ btn.disabled=false; btn.innerHTML=orig; }
+}
+async function deleteOrder(o){
+  if(!confirm(`下書き ${o.poNumber} を削除します。よろしいですか？`)) return;
+  try{ await deleteDoc(doc(db,"purchaseOrders",o._id)); toast(`${o.poNumber} を削除しました`); }
+  catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
 // ===== 出荷モーダル =====
@@ -478,10 +583,13 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("logoutBtn").addEventListener("click",()=>signOut(auth).then(()=>location.href="/index.html"));
   initTabs();
 
-  document.getElementById("newOrderBtn").addEventListener("click",openOrder);
+  document.getElementById("newOrderBtn").addEventListener("click",()=>openOrder());
   document.getElementById("closeOrderBtn").addEventListener("click",()=>document.getElementById("orderModal").classList.remove("open"));
   document.getElementById("cancelOrderBtn").addEventListener("click",()=>document.getElementById("orderModal").classList.remove("open"));
   document.getElementById("saveOrderBtn").addEventListener("click",saveOrder);
+  document.getElementById("closeConfirmBtn").addEventListener("click",()=>document.getElementById("confirmModal").classList.remove("open"));
+  document.getElementById("cancelConfirmBtn").addEventListener("click",()=>document.getElementById("confirmModal").classList.remove("open"));
+  document.getElementById("sendConfirmBtn").addEventListener("click",sendConfirmedOrder);
   document.getElementById("newShipBtn").addEventListener("click",openShip);
   document.getElementById("closeShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
   document.getElementById("cancelShipBtn").addEventListener("click",()=>document.getElementById("shipModal").classList.remove("open"));
