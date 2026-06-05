@@ -5,6 +5,31 @@
 
 ---
 
+## 🆕 2026-06-05 セッション③（セキュリティ計画＋M-3クリア＋開発4タスク＋Chat報告）
+
+> 状態: 当セッションのコミット `09db9a3`（security docs）/ `7cb9355`（admin開発）＋本HANDOFF更新を main に push 済み。**本番デプロイは次セッションで一気に実施**。
+
+### 今セッションの成果
+- **セキュリティ残件の棚卸し＋実行計画**: `SECURITY_REMEDIATION.md` 末尾に「次セッション実行計画」（M-1/H-3/Gemini移行の手順・認可・ロールバック・前提Console作業）を追記。ライブ read-only で裏取り済（6関数が compute SA 共有＝editor+aiplatform.user / App Check 未実装 / aiAssist=gemini-2.5-flash）。
+- **M-3 管理者MFA を充足クリア**: 管理画面ログインは Google SSO 一本（`admin/js/auth.js`・パスワードなし・裏取り済）＝組織の Workspace 2段階認証で2要素を担保。Firebase MFA 実装不要。→ セキュリティ 10件中 **8件完了・残コード作業2件（M-1/H-3）＋付帯Gemini**。
+- **開発チームへ Chat 報告**: 対応状況を開発報告用スペース（`DEV_CHAT_WEBHOOK_URL`＝spaces/AAAAJTAWTVo）へ投稿（messageID `UnQZwMQQ69Y`）。
+- **開発4タスク完了**（`7cb9355`）:
+  1. `.gitignore` 整理（検証スクショ `admin-*.png`/gdoc/議事録 を除外）
+  2. `partner.html` モバイル対応（共通 mobilenav.js 横展開・appView 時のみヘッダー表示・タイトル「認定事業所ポータル」。preview 検証済＝loginViewヘッダー非表示／ドロワー開閉。共通 CSS/JS は不変）
+  3. COOP 設定（`firebase.json` admin に `Cross-Origin-Opener-Policy: same-origin-allow-popups`・signInWithPopup の window.closed 警告抑制。**本番デプロイ後に有効**）
+  4. docs SSOT（`MANUAL.md` 新規＋`ENGINEERING_NOTES.md` に CRM 技術仕様＝FLOW/ARCH/ER/SEQ 4図・コレクション・認証・デプロイを統合。両 html の参照修正）
+
+### 次セッションで「一気に最後まで仕上げる」TODO
+1. **本番デプロイ**（rule05: preview channel→認証正常確認→本番昇格）。COOP・partner.html・docs を反映。
+   - デプロイ後検証: `curl -sI https://kjk-tadakayo-admin.web.app/ | grep -i cross-origin-opener`（→ same-origin-allow-popups）／ ログインで console の COOP 警告消失／ partner.html 実機ドロワー（要パートナーアカウント）
+2. **実機検証チェックリスト**（@tadakayo ログイン: 認証／請求書PDF／設定入力／発注セレクト／M-5 メール verify）
+3. **M-1 Webhook保護**（App Check 段階移行）— 前提: 次田さんが Console で reCAPTCHA Enterprise 鍵発行＋App Check 登録 → Phase A 観察→Phase B 強制（`SECURITY_REMEDIATION.md` 実行計画参照）
+4. **H-3 関数別SA**（破壊的・番号単位認可要・同上参照）
+5. **設定の未入力**（レターパック差出人／発注書 発行元・代表者／インボイス登録番号 T+13桁／振込先）
+6. （任意）Gemini 3 移行（2026-10-16期限）／ viewer ロール書込制限／案件テストデータ整理
+
+---
+
 ## 現在の状態（2026-06-04 セッション終了時点）
 
 **CRMはほぼ全機能が本番稼働中。** LP（kjk.tadakayo.jp）・見積もり（/mitsumori.html）も稼働中。最新コミット `f5e023d`（main・push済み）。
