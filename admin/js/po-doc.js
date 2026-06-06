@@ -59,7 +59,9 @@ export function renderPOHtml(o, st){
               <div>${esc(issuerAddr)}</div>
               <div>${esc(issuerRep)}</div>
             </div>
-            ${sealKakuHtml(st.poSealKakuText || "タダカヨ")}
+            ${st.poSealImage
+              ? `<img class="seal-kaku-img" src="${st.poSealImage}" alt="タダカヨの角印">`
+              : sealKakuHtml(st.poSealKakuText || "タダカヨ")}
           </div>
           ${o.shipTo?`<div style="margin-top:10px">送付先：</div><div style="white-space:pre-line">${esc(o.shipTo)}</div>`:""}
         </div>
@@ -74,9 +76,7 @@ export function renderPOHtml(o, st){
       ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
       <div class="po-orderer">
         <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
-        ${st.poSealImage
-          ? `<img class="po-seal-img" src="${st.poSealImage}" alt="担当者印">`
-          : `<div class="po-seal" aria-label="担当者印">${esc(st.poSealText || surnameOf(st.poOrdererName || PO_DEFAULT.ordererName) || PO_DEFAULT.sealText)}</div>`}
+        <div class="po-seal" aria-label="担当者印">${esc(st.poSealText || surnameOf(st.poOrdererName || PO_DEFAULT.ordererName) || PO_DEFAULT.sealText)}</div>
       </div>
     </div>`;
 }
@@ -115,6 +115,7 @@ table.po-sum tr.grand td{font-size:16px;border-bottom:none;border-top:1.5px soli
 .po-company{display:flex;align-items:center;gap:10px;margin-top:8px;}
 .po-company-info{flex:1;}
 .po-company-info .po-org{margin-top:0;}
+.seal-kaku-img{width:82px;height:82px;object-fit:contain;flex:0 0 auto;transform:rotate(-3deg);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 `;
 
 // 発注メール定型文のデフォルト（settings.js の同名定数と内容を一致させること）

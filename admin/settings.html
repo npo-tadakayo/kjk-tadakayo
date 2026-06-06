@@ -51,11 +51,11 @@
             <div class="form-group"><label class="form-label" for="poIssuerRep">代表者（理事長等）</label><input class="form-control" id="poIssuerRep" type="text" placeholder="理事長：佐藤 拡史"></div>
             <div class="form-row">
               <div class="form-group"><label class="form-label" for="poOrdererName">発注者氏名</label><input class="form-control" id="poOrdererName" type="text" placeholder="次田 芳尚"></div>
-              <div class="form-group"><label class="form-label" for="poSealText">印鑑の文字（1〜3字）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="次田"></div>
+              <div class="form-group"><label class="form-label" for="poSealText">担当者印の文字（姓・空欄なら発注者氏名から自動）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="次田"></div>
             </div>
             <div class="form-group">
-              <label class="form-label" for="poSealFile">印影画像（角印・任意）</label>
-              <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 6px">登録すると発注書の印鑑が「文字のデジタル印」から実際の印影画像に変わります。黒い背景は自動で透明化します（PNG / JPG）。</p>
+              <label class="form-label" for="poSealFile">会社角印の画像（任意・タダカヨの印鑑）</label>
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 6px">登録すると、請求書・発注書の「NPO法人タダカヨ」名称の右の角印が、この実際の印影画像になります（未登録なら文字の角印）。担当者印（発注者の丸印）は氏名の姓から自動生成されます。黒い背景は自動で透明化します（PNG / JPG）。</p>
               <input class="form-control" id="poSealFile" type="file" accept="image/*">
               <div id="poSealPreview" style="display:none;align-items:center;gap:12px;margin-top:8px">
                 <img id="poSealImg" alt="印影プレビュー" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--color-line);border-radius:6px;background:#fff">

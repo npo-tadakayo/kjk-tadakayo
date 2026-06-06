@@ -110,7 +110,9 @@ function renderInvoice(s, st){
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
           <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div>
-          ${sealKakuHtml("タダカヨ")}
+          ${st.poSealImage
+            ? `<img class="seal-kaku-img" src="${st.poSealImage}" alt="タダカヨの角印">`
+            : sealKakuHtml("タダカヨ")}
         </div></div>
       <h1 class="inv-title">請　求　書</h1>
       <div class="to">${esc(billName)} 御中</div>
