@@ -22,6 +22,7 @@
 - **C2 肥大化ファイル分割**（`1a7abdf` / `supply-pricing.js`・`case-detail-util.js` 新設）: 機能別分割（発注/出荷を別ファイル）は共有state(products/appSettings/activePartners)・onSnapshot・DOM依存が密でリスク高につき見送り、**state非依存の純粋ロジック/定数/ユーティリティのみ切り出し**（supply.js 798→749行＋pricing45行 ／ case-detail.js 650→592行＋util55行・`SOURCE_LABELS`は`constants.js`へ統合してC1重複排除）。挙動完全不変。**本番ログイン状態のブラウザで供給管理・案件詳細を実機検証**（console error0・全タブ描画・escHtml等のimport解決・アクセス拒否0）。
 - **補助金区分の誤り訂正**（`71a5fa4` / index.html・mitsumori.html・料金md×2・本書）: 令和8年度 交付要綱別添(`r8_jyoseikin.pdf`)と突合し、**居宅療養管理指導(31)・地域密着型通所介護(78)は訪問・通所系¥64,000・3台**と確認（旧資料は居住系¥55,000/その他¥42,000に誤分類＝利用者へ過小案内していた）。LP早見表・注意書き／見積もりカード・35種リスト／料金md／本書の区分表・合意事項を訂正。**LP+見積もりを本番反映(hosting:lp)・curl全項目検証**。見積もりの計算ロジック(区分→上限額)は不変＝サービスの振り分けのみ修正。memory `reference_subsidy_categories.md` に正の区分を記録。介護情報基盤スペースへ告知済み（msg `0SHVO1lHmAg`）。⚠️**過去に居宅療養管理指導/地域密着型通所介護の事業所へ見積もりしていた場合は金額が変わるため要見直し**。
 - **A2/A3 画面整理**: 調査の結果、設定7セクション・供給5タブ・案件詳細6タブで既に十分整理済み＝**達成済みと判断**（追加の意味ある整理なし・本番稼働中につき無理な微調整は見送り）。
+- **アクセシビリティ監査の指摘を修正（WCAG 2.1 AA・`22443a4`）**: `/design:accessibility-review` 監査でCritical/Major検出→修正。①案件一覧の行(`tr onclick`)を**キーボード操作可能化**（`tabindex=0`/`role="link"`/`aria-label`/Enter・Space遷移・WCAG2.1.1）②全画面共通(`mobilenav.js`)のモーダルに**Escクローズ＋Tabフォーカストラップ＋初期フォーカス**(2.1.2/2.4.3)③`.btn-primary`を`#E33535`(白文字4.39:1)→`primary-dark #c02828`(5.85:1)に(1.4.3)。**本番ログイン状態のブラウザで実機検証**(Tab→案件行→Enterで詳細遷移／発注モーダルEscで閉じ／btn背景=rgb(192,40,40)確認)。カンバンのドラッグ移動(代替=サブ状態セレクトでキーボード可)・`--color-ink-light`(装飾のみ)はMinorで見送り。
 
 ### デプロイ
 - 本番URL: https://kjk-tadakayo-admin.web.app（hosting:admin のみ・functions/rules不変＝誤削除リスクなし）
