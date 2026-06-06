@@ -94,8 +94,8 @@ async function notifyChat(webhookUrl, message) {
 // ===== App Check 手動検証（M-1 Webhook保護・段階移行 / SECURITY_REMEDIATION M-1） =====
 // onRequest(HTTP) は callable と違い App Check の自動強制が効かないため、
 // クライアントが付与した X-Firebase-AppCheck ヘッダを admin.appCheck().verifyToken() で手動検証する。
-// 既定は「観察モード」（弾かず warn のみ）。APPCHECK_ENFORCE=true で検証失敗を 401 で弾く（強制モード）。
-const APPCHECK_ENFORCE = process.env.APPCHECK_ENFORCE === "true";
+// 既定で強制モード（検証失敗を 401 で弾く・fail-secure）。観察モードへ戻すには env APPCHECK_ENFORCE=false を設定。
+const APPCHECK_ENFORCE = process.env.APPCHECK_ENFORCE !== "false";
 
 async function verifyAppCheck(req) {
   const token = req.header("X-Firebase-AppCheck");

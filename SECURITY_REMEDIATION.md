@@ -9,7 +9,7 @@
 
 ## サマリー
 
-10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。残り **2件＋付帯1件**。本番影響・破壊性の大きいもの（H-3 / M-1）は段階・専用対応とする。
+10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。**2026-06-06 に M-1（Phase B 強制）・H-3（editor 剥奪）まで完了し、指摘10件すべて対応済み**。付帯の Gemini 2.5 retire（2026-10-16）のみ10月期限で残（現行モデルは正常動作）。
 
 | # | 重大度 | 項目 | 状態 | 反映方法 |
 |---|---|---|---|---|
@@ -20,8 +20,8 @@
 | M-4 | 中 | authorized_domains から localhost 削除 | ✅ 完了 | Auth設定 |
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
-| H-3 | 高 | 関数別SA・最小権限 | 🟡 SA移行済・editor剥奪待ち（2026-06-05） | IAM＋再デプロイ |
-| M-1 | 中 | Webhook 保護（App Check） | 🟡 Phase A 実装・観察中（2026-06-05） | App Check |
+| H-3 | 高 | 関数別SA・最小権限 | ✅ 完了（2026-06-06・editor剥奪→builds.builderのみ） | IAM＋再デプロイ |
+| M-1 | 中 | Webhook 保護（App Check） | ✅ 完了（2026-06-06・Phase B 強制） | App Check |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
 
@@ -186,6 +186,8 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 
 ### 1. M-1 Webhook保護（App Check・段階移行）【次の最有力】
 
+> ✅ **完了（2026-06-06）: Phase B（強制）まで実施**。コード既定を fail-secure 強制（`APPCHECK_ENFORCE !== "false"`）に変更し2本を本番再デプロイ。**トークンなし curl=401／本番ブラウザの正規トークン=200** を実証（テスト案件削除）。ロールバックは env `APPCHECK_ENFORCE=false`。以下は Phase A（観察）の記録。
+>
 > ✅ **Phase A（観察モード）実装・本番反映・検証まで完了（2026-06-05 セッション⑥）**
 > - reCAPTCHA Enterprise サイトキー発行（表示名 `kjk-tadakayo-lp` / ドメイン `kjk.tadakayo.jp` / スコアベース・チェックボックスなし）。サイトキー = `6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`（公開キー・ページ埋込）。
 > - Firebase App Check に Web アプリ `kjk-crm-admin`（App ID `1:677262660109:web:79645398db17dab417bb44`）を **reCAPTCHA Enterprise** プロバイダ＋上記サイトキーで登録済み（TTL 1時間）。**API タブの各サービス Enforce は未設定（=他機能に影響なし）**。
@@ -193,7 +195,7 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 > - コード: `index.html` / `mitsumori.html` に App Check（compat SDK + ReCaptchaEnterpriseProvider）初期化＋Webhook fetch に `X-Firebase-AppCheck` ヘッダ付与（`getAppCheckToken()`・取得失敗時 null）。`functions/index.js` に `appCheckGate()` を追加し `webhookLpInquiry`/`webhookMitsumori` 冒頭で検証。`APPCHECK_ENFORCE`（既定 false=観察）。
 > - デプロイ: functions 2本のみ更新（他5関数は未変更）/ LP は preview channel → 本番昇格（hosting:lp）。
 > - **検証**: 本番 `kjk.tadakayo.jp` の実ブラウザで `getAppCheckToken()` が 954文字の正規 App Check JWT を返却・console error 0。functions は GET で 405（稼働確認・案件未作成）。両LP（`/`・`/mitsumori`）HTTP 200・コード搭載確認。
-> - **残: Phase B（強制）** = 数日 observe ログ（`[AppCheck][...] observe` の `verified`/`missing-token` 比率）を確認し、正規フォームのトークン付与率が十分高ければ functions に `APPCHECK_ENFORCE=true`（`--set-env-vars` or functions/.env）を設定して2本を再デプロイ。手元 curl（トークンなし）が 401／正規フォームが 200・Firestore `cases` 登録、で確認。ロールバックは `APPCHECK_ENFORCE=false` で再デプロイ。
+> - ✅ **Phase B（強制）完了（2026-06-06・上記）**。以下は当初計画の記録: 数日 observe ログ（`[AppCheck][...] observe` の `verified`/`missing-token` 比率）を確認し、正規フォームのトークン付与率が十分高ければ functions に `APPCHECK_ENFORCE=true`（`--set-env-vars` or functions/.env）を設定して2本を再デプロイ。手元 curl（トークンなし）が 401／正規フォームが 200・Firestore `cases` 登録、で確認。ロールバックは `APPCHECK_ENFORCE=false` で再デプロイ。
 
 **技術判断**:
 - `webhookLpInquiry` / `webhookMitsumori` は `onRequest`（HTTP）。callable と違い App Check の自動強制が効かない → Functions 側で `X-Firebase-AppCheck` ヘッダを `admin.appCheck().verifyToken()` で**手動検証**する。
@@ -222,12 +224,12 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 
 ### 2. H-3 関数別SA・最小権限【破壊的・editor剥奪は最後】
 
-> 🟡 **SA移行まで完了（2026-06-05 セッション⑥）／ editor剥奪のみ残**
+> ✅ **完了（2026-06-06）: SA移行＋editor剥奪まで実施。** compute SA は `roles/editor`＋`roles/aiplatform.user` を剥奪し、ビルド用 `roles/cloudbuild.builds.builder`（gen2ビルドが compute SA を使うため）のみに縮小。**editor無しでテストデプロイ成功＝ビルド能力維持を確認**。全7関数は最小権限の専用SAで稼働。ロールバックは compute SA に editor を再付与（無停止）。以下は移行の記録。
 > - 4つの専用SAを作成し最小権限を付与：`fn-webhook-sa`(datastore.user＋CHAT secretAccessor) / `fn-batch-sa`(同) / `fn-ai-sa`(aiplatform.user のみ) / `fn-mail-sa`(datastore.user＋kjk-gmail-sa への serviceAccountTokenCreator)。全IAMバインド読み取り確認済み。
 > - 全7関数の定義に `serviceAccount` を明記（コード化＝再デプロイで維持）して再デプロイ済み。実行SA切替を `gcloud functions describe` で確認：webhook2本→fn-webhook-sa / testChatNotify・dailyFollowup→fn-batch-sa / aiAssist→fn-ai-sa / sendCaseEmail・sendSupplierOrder→fn-mail-sa。
 > - **検証済**: `webhookLpInquiry`(fn-webhook-sa) を本番疎通テストし HTTP200・`observe: verified`・Firestore書込・Chat通知・secret読取が全て機能（テスト案件は削除）。fn-batch-sa は fn-webhook-sa と同一ロールのため等価。
 > - **compute SA(`677262660109-compute`) の `roles/editor`＋`roles/aiplatform.user` は安全網として保持中**（まだ剥奪していない）。
-> - **残（次セッション）**:
+> - ✅ **2026-06-06 実施済み**（builds.builder付与→editor/aiplatform.user剥奪→テストデプロイでビルド成功を確認）。当初の残手順は以下（記録・任意の追加確認）:
 >   1. 次田さんが管理画面(@tadakayoログイン)で **aiAssist(AI生成) / sendCaseEmail(メール送信) / sendSupplierOrder(発注書送付) / testChatNotify(設定のテスト通知)** を実行し成功を確認。dailyFollowup は毎朝9時に自動実行（または Scheduler force-run）。
 >   2. 1〜2日 M-5 アラート(5xx)が増えないか監視。
 >   3. 問題なければ **compute SA から editor と aiplatform.user を剥奪**（最終・不可逆。**着手前に最終確認を取る**）:

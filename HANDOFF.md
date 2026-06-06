@@ -5,9 +5,9 @@
 
 ---
 
-## 🆕 2026-06-05 セッション⑥（M-1 App Check Phase A 完了 ＋ H-3 関数別SA移行）
+## 🆕 2026-06-06 セッション⑥（M-1 強制まで完了 ＋ H-3 editor剥奪まで完了＝指摘10件すべて完了）
 
-> 状態: **M-1 Phase A（観察モード）完了**＋**H-3 SA移行完了（editor剥奪のみ残）**。いずれも本番反映・検証済み。**観察モードなので問い合わせ・見積もりは今までどおり通る**。詳細は `SECURITY_REMEDIATION.md` の「### 1. M-1」「### 2. H-3」冒頭ブロック。
+> 状態: **M-1（強制モード）完了 ＋ H-3（editor剥奪まで）完了**。GCPセキュリティ指摘10件すべて対応済み（付帯 Gemini 2.5 retire 2026-10-16 のみ10月期限で残）。本番反映・検証済み（M-1強制: トークンなし→401／本番正規トークン→200、H-3: 全7関数が最小権限SA・compute SAは `builds.builder` のみ・editor無しでテストデプロイ成功）。詳細は `SECURITY_REMEDIATION.md` の「### 1. M-1」「### 2. H-3」冒頭。
 
 ### 今セッションの成果（コミット予定）
 - **次田さん Console 作業完了**: reCAPTCHA Enterprise サイトキー発行（`kjk.tadakayo.jp`／スコアベース／key=`6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`）＋ App Check に Web アプリ `kjk-crm-admin`(`…web:79645398db17dab417bb44`) を reCAPTCHA Enterprise で登録。
@@ -21,9 +21,9 @@
 - `webhookLpInquiry`(fn-webhook-sa) を本番疎通し HTTP200・verified・Firestore書込を確認（テスト案件#22削除）。**compute SA の editor/aiplatform.user は安全網として保持中**。
 
 ### 次セッションTODO（優先順）
-1. **【H-3 残・最優先】次田さんが管理画面(@tadakayo)で動作確認** → aiAssist(AI生成)/sendCaseEmail(メール送信)/sendSupplierOrder(発注書送付)/testChatNotify(設定→テスト通知)を実行し成功確認。dailyFollowupは毎朝9時自動。→ 1〜2日 M-5(5xx)監視 → 問題なければ **compute SA の editor/aiplatform.user を剥奪**（不可逆・**最終確認必須**。手順は `SECURITY_REMEDIATION.md` § 2 冒頭）。壊れたら該当関数を compute SA に戻して再デプロイで無停止ロールバック。
-2. **【M-1 残】数日 observe ログ観察**（`[AppCheck][...] observe: verified`/`pass-through` の比率）→ 十分なら **Phase B**：functions に `APPCHECK_ENFORCE=true` 設定→2本再デプロイ→手元curl(トークンなし)=401・正規フォーム=200を確認。ロールバックは `false` 再デプロイ。
-3. （別件）`firebase-functions` 旧版警告＋Node20が2026-10-30終了 → Gemini 2.5 retire(2026-10-16)と合わせ10月までに対応。
+1. **【任意・動作確認】次田さんが管理画面(@tadakayo)で AI生成(aiAssist)/メール送信(sendCaseEmail)/発注書送付(sendSupplierOrder)/テスト通知(testChatNotify) を一度実行**して成功を確認（IAMは検証済みで動くはずだが、onCallは実ログインでしか動作確認できないため最終チェック）。万一失敗したら該当関数の `serviceAccount` を外して compute SA で再デプロイ＝無停止ロールバック（compute SA に editor 再付与も可）。dailyFollowup は毎朝9時自動。
+2. **【10月期限の保守・緊急でない】(a) Gemini 2.5→3 移行**（`aiAssist` model差し替え＋出力品質の回帰確認・要@tadakayoログイン／2026-10-16 retire）。**(b) firebase-functions 最新化＋Node 20→22**（2026-10-30 decommission・破壊的変更ありうるので専用セッション推奨）。いずれも現行は正常動作。
+3. （事業・プロダクト面）パイロット30事業所／大分視察(6/29)／協定書法務／認定事業所掲示資料／「業者ではない旨」文書／居宅介護支援訴求 ほか（本書下部の旧TODO参照）。
 
 ---
 
