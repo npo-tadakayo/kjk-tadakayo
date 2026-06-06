@@ -2,12 +2,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, doc, runTransaction }
+  addDoc, serverTimestamp, doc, getDoc, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { gateRole } from "/js/role.js";
 import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
-  daysUntilDeadline,
+  DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -39,8 +39,9 @@ function populateStatusFilter() {
     `<optgroup label="その他"><option value="${LOST}">${STATUS_LABELS[LOST]}</option></optgroup>`;
 }
 
+let deadline = DEADLINE;
 function updateDeadlineBanner() {
-  const days = daysUntilDeadline();
+  const days = daysUntilDeadline(deadline);
   const banner = document.getElementById("deadlineBanner");
   const text = document.getElementById("deadlineText");
   banner.style.display = "flex";
@@ -51,7 +52,7 @@ function updateDeadlineBanner() {
   else if (days <= 30) { banner.className = "deadline-banner warn";
     text.textContent = `申請期限まで残り ${days} 日。書類は揃っていますか？`; }
   else { banner.className = "deadline-banner safe";
-    text.textContent = `令和8年度 助成金申請受付中（期限: 2027年3月12日 — あと ${days} 日）`; }
+    text.textContent = `令和8年度 助成金申請受付中（期限: ${deadlineLabel(deadline)} — あと ${days} 日）`; }
 }
 
 let allCases = [];
@@ -289,6 +290,7 @@ onAuthStateChanged(auth, async (user) => {
   }));
   updateSortIndicators();
   updateDeadlineBanner();
+  try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {

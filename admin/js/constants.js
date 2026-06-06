@@ -48,15 +48,27 @@ export const SOURCE_LABELS_SHORT = {
   lp_inquiry: "LP", mitsumori_quote: "見積", manual: "手動",
 };
 
-// 申請期限（将来 B4 で設定化予定）
+// 申請期限の既定値（settings.subsidyDeadline で上書き可＝B4）
 export const DEADLINE = new Date("2027-03-12T23:59:59+09:00");
 export const STALE_DAYS = 7;                          // 停滞とみなす最終更新からの日数
 export const TERMINAL = [4, 13];                      // 失注・完了（停滞/アラート対象外）
 export const ACTIVE_PRE_APPLY = [1, 2, 3, 5, 6, 7, 8, 9]; // 未申請の進行中
 
-// 共通ヘルパ
-export function daysUntilDeadline() {
-  return Math.ceil((DEADLINE - new Date()) / 86400000);
+// settings.subsidyDeadline（"YYYY-MM-DD"）があればその日付を、なければ既定値を返す
+export function resolveDeadline(settings) {
+  const v = settings && settings.subsidyDeadline;
+  if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) return new Date(v + "T23:59:59+09:00");
+  return DEADLINE;
+}
+// 期限の和文ラベル（例: 2027年3月12日）
+export function deadlineLabel(deadline) {
+  const d = deadline instanceof Date ? deadline : DEADLINE;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+// 共通ヘルパ（引数で期限を渡せる。未指定なら既定値 DEADLINE）
+export function daysUntilDeadline(deadline) {
+  const d = deadline instanceof Date ? deadline : DEADLINE;
+  return Math.ceil((d - new Date()) / 86400000);
 }
 export function daysSince(ts) {
   if (!ts) return null;

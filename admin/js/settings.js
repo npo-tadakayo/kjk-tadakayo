@@ -149,6 +149,7 @@ onAuthStateChanged(auth, async (user)=>{
   // 発注メール定型文（未保存ならデフォルト文面）
   $("poMailSubject").value = s.poMailSubject || "【発注書送付】NPO法人タダカヨ（{{発注番号}}）";
   $("poMailBody").value = s.poMailBody || DEFAULT_PO_MAIL_BODY;
+  $("subsidyDeadline").value = s.subsidyDeadline || "";
   $("invoiceIssuerName").value = s.invoiceIssuerName || "";
   $("invoiceRegNo").value = s.invoiceRegNo || "";
   $("billingBankName").value = s.billingBankName || "";
@@ -181,6 +182,7 @@ onAuthStateChanged(auth, async (user)=>{
         supplierAddress: $("supplierAddress").value.trim(),
         poMailSubject: $("poMailSubject").value.trim(),
         poMailBody: $("poMailBody").value,
+        subsidyDeadline: $("subsidyDeadline").value || "",
         invoiceIssuerName: $("invoiceIssuerName").value.trim(),
         invoiceRegNo: $("invoiceRegNo").value.trim(),
         billingBankName: $("billingBankName").value.trim(),

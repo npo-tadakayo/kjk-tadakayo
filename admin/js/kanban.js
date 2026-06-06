@@ -3,12 +3,12 @@ import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
-  doc, updateDoc, addDoc, serverTimestamp }
+  doc, getDoc, updateDoc, addDoc, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS_SHORT, PHASES, LOST,
   phaseOf, phaseEntryStatus, STALE_DAYS, TERMINAL, ACTIVE_PRE_APPLY,
-  daysUntilDeadline, daysSince,
+  DEADLINE, daysUntilDeadline, daysSince, resolveDeadline, deadlineLabel,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -37,8 +37,9 @@ function toast(msg) {
   t._timer = setTimeout(() => { t.style.display = "none"; }, 2500);
 }
 
+let deadline = DEADLINE;
 function updateDeadlineBanner() {
-  const days = daysUntilDeadline();
+  const days = daysUntilDeadline(deadline);
   const banner = document.getElementById("deadlineBanner");
   const text = document.getElementById("deadlineText");
   banner.style.display = "flex";
@@ -47,7 +48,7 @@ function updateDeadlineBanner() {
   else if (days <= 30) { banner.className = "deadline-banner warn";
     text.textContent = `申請期限まで残り ${days} 日。未申請の案件を優先してください`; }
   else { banner.className = "deadline-banner safe";
-    text.textContent = `令和8年度 助成金申請受付中（期限: 2027年3月12日 — あと ${days} 日）`; }
+    text.textContent = `令和8年度 助成金申請受付中（期限: ${deadlineLabel(deadline)} — あと ${days} 日）`; }
 }
 
 let allCases = [];
@@ -62,7 +63,7 @@ function isStale(c) {
 function renderAlerts() {
   const unassigned = allCases.filter((c) => c.status === 1 && !c.assignedUserId).length;
   const stale = allCases.filter(isStale).length;
-  const deadlineNear = daysUntilDeadline() <= 30
+  const deadlineNear = daysUntilDeadline(deadline) <= 30
     ? allCases.filter((c) => ACTIVE_PRE_APPLY.includes(c.status)).length : 0;
   const chips = [
     { cls: unassigned > 0 ? "warn" : "info", icon: "ti-user-question", num: unassigned, label: "未割当の新規案件" },
@@ -200,6 +201,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("searchInput").addEventListener("input", renderBoard);
   document.getElementById("sourceFilter").addEventListener("change", renderBoard);
   updateDeadlineBanner();
+  try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {

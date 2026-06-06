@@ -2,9 +2,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, query, orderBy, onSnapshot }
+import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, daysUntilDeadline }
+import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -18,13 +18,14 @@ const ADOPTED = [11, 12, 13];
 
 function yen(n) { return "¥" + Number(n || 0).toLocaleString("ja-JP"); }
 
+let deadline = DEADLINE;
 function updateDeadlineBanner() {
-  const days = daysUntilDeadline();
+  const days = daysUntilDeadline(deadline);
   const banner = document.getElementById("deadlineBanner");
   banner.style.display = "flex";
   banner.className = days <= 3 ? "deadline-banner danger" : days <= 30 ? "deadline-banner warn" : "deadline-banner safe";
   document.getElementById("deadlineText").textContent =
-    `令和8年度 助成金申請受付中（期限: 2027年3月12日 — あと ${days} 日）`;
+    `令和8年度 助成金申請受付中（期限: ${deadlineLabel(deadline)} — あと ${days} 日）`;
 }
 
 function statCard(icon, num, label, color) {
@@ -40,6 +41,43 @@ function barRow(label, count, total, color) {
     <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div>
     <div class="bar-count">${count}</div>
   </div>`;
+}
+
+// 月次の新規案件推移（直近6か月・receivedAt 基準）— B3
+function monthlyTrend(cases) {
+  const now = new Date();
+  const months = [];
+  const idx = {};
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    idx[key] = months.length;
+    months.push({ key, label: `${d.getMonth() + 1}月`, count: 0 });
+  }
+  cases.forEach((c) => {
+    const ts = c.receivedAt; if (!ts) return;
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    if (key in idx) months[idx[key]].count++;
+  });
+  return months;
+}
+function renderTrend(cases) {
+  const months = monthlyTrend(cases);
+  const max = Math.max(1, ...months.map((m) => m.count));
+  const el = document.getElementById("trendChart");
+  if (months.every((m) => m.count === 0)) {
+    el.innerHTML = `<div class="empty-state" style="padding:20px"><i class="ti ti-chart-bar" aria-hidden="true"></i><p>直近6か月の新規案件はまだありません</p></div>`;
+    return;
+  }
+  el.innerHTML = `<div style="display:flex;align-items:flex-end;gap:10px;height:150px">${months.map((m) => {
+    const h = Math.max(2, Math.round((m.count / max) * 120));
+    return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%">
+      <div style="font-size:12px;font-weight:600">${m.count}</div>
+      <div style="width:100%;max-width:44px;height:${h}px;background:linear-gradient(180deg,#4a86c4,#3a6e9e);border-radius:4px 4px 0 0" title="${m.label} ${m.count}件"></div>
+      <div style="font-size:11px;color:var(--color-ink-muted)">${m.label}</div>
+    </div>`;
+  }).join("")}</div>`;
 }
 
 function render(cases) {
@@ -93,6 +131,8 @@ function render(cases) {
   const srcColors = { lp_inquiry: "#3a6e9e", mitsumori_quote: "#238e3a", manual: "#9a8e78" };
   document.getElementById("sourceBreakdown").innerHTML =
     sources.map((s) => barRow(SOURCE_LABELS[s], cases.filter((c) => c.source === s).length, total, srcColors[s])).join("");
+
+  renderTrend(cases);
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -102,6 +142,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("logoutBtn").addEventListener("click",
     () => signOut(auth).then(() => location.href = "/index.html"));
   updateDeadlineBanner();
+  try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
