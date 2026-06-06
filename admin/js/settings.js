@@ -125,7 +125,8 @@ onAuthStateChanged(auth, async (user)=>{
   $("poIssuerName").value = s.poIssuerName || "";
   $("poIssuerAddr").value = s.poIssuerAddr || "";
   $("poIssuerRep").value = s.poIssuerRep || "";
-  $("poOrdererName").value = s.poOrdererName || "";
+  // 発注者一覧（旧単一値 poOrdererName があれば移行）
+  $("poOrderers").value = (Array.isArray(s.poOrderers) ? s.poOrderers : (s.poOrdererName ? [s.poOrdererName] : [])).join("\n");
   $("poSealText").value = s.poSealText || "";
   poSealImage = s.poSealImage || "";
   updateSealPreview();
@@ -165,7 +166,8 @@ onAuthStateChanged(auth, async (user)=>{
         poIssuerName: $("poIssuerName").value.trim(),
         poIssuerAddr: $("poIssuerAddr").value.trim(),
         poIssuerRep: $("poIssuerRep").value.trim(),
-        poOrdererName: $("poOrdererName").value.trim(),
+        poOrderers: $("poOrderers").value.split("\n").map(x=>x.trim()).filter(Boolean),
+        poOrdererName: ($("poOrderers").value.split("\n").map(x=>x.trim()).filter(Boolean)[0]) || "",
         poSealText: $("poSealText").value.trim(),
         poSealImage: poSealImage || "",
         supplierName: $("supplierName").value.trim(),

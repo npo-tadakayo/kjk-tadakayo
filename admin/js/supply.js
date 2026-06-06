@@ -16,6 +16,12 @@ const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
 
 let products = [];
 let currentUser = null;
+let appSettings = {};
+function ordererList(){
+  return (Array.isArray(appSettings.poOrderers) && appSettings.poOrderers.length)
+    ? appSettings.poOrderers
+    : (appSettings.poOrdererName ? [appSettings.poOrdererName] : ["次田 芳尚"]);
+}
 
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function yen(n){return "¥"+Number(n||0).toLocaleString("ja-JP");}
@@ -198,6 +204,11 @@ function openOrder(o){
   rsel.innerHTML='<option value="">選択しない（手入力）</option>'+
     SHIPPING_FEES.map(r=>`<option value="${r.region}">${r.region}（${r.note}）— ¥${r.fee.toLocaleString("ja-JP")}</option>`).join("");
   rsel.value=""; rsel.onchange=applyShipRegion;
+  // 発注者セレクト（設定の発注者一覧から選択）
+  const osel=document.getElementById("orderOrderer");
+  const olist=ordererList();
+  osel.innerHTML=olist.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  osel.value=(o&&o.ordererName) || olist[0] || "";
   // 編集時は既存の数量を反映
   if(o && Array.isArray(o.items)){ o.items.forEach(it=>{ const inp=document.querySelector(`#orderItems .qty-input[data-sku="${it.sku}"]`); if(inp) inp.value=it.qty; }); }
   document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
@@ -216,6 +227,7 @@ async function saveOrder(){
       orderDate:document.getElementById("orderDate").value||today(),
       desiredDate:document.getElementById("orderDesiredDate").value||"",
       supplier:"AB Circle Japan 株式会社", items, total,
+      ordererName:document.getElementById("orderOrderer").value||"",
       shippingLabel:document.getElementById("orderShipLabel").value.trim(),
       shippingFee:Number(document.getElementById("orderShipFee").value)||0,
       shipTo:document.getElementById("orderShipTo").value.trim(),
@@ -645,6 +657,7 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("userEmail").textContent=user.displayName||user.email;
   document.getElementById("logoutBtn").addEventListener("click",()=>signOut(auth).then(()=>location.href="/index.html"));
   initTabs();
+  try{ const ss=await getDoc(doc(db,"appConfig","settings")); appSettings = ss.exists()?ss.data():{}; }catch(_){}
 
   document.getElementById("newOrderBtn").addEventListener("click",()=>openOrder());
   document.getElementById("closeOrderBtn").addEventListener("click",()=>document.getElementById("orderModal").classList.remove("open"));

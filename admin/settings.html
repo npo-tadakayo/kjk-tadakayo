@@ -49,10 +49,12 @@
             <div class="form-group"><label class="form-label" for="poIssuerName">発行元名</label><input class="form-control" id="poIssuerName" type="text" placeholder="NPO法人タダカヨ"></div>
             <div class="form-group"><label class="form-label" for="poIssuerAddr">発行元住所</label><input class="form-control" id="poIssuerAddr" type="text" placeholder="東京都大田区大森中二丁目1番20-1001号"></div>
             <div class="form-group"><label class="form-label" for="poIssuerRep">代表者（理事長等）</label><input class="form-control" id="poIssuerRep" type="text" placeholder="理事長：佐藤 拡史"></div>
-            <div class="form-row">
-              <div class="form-group"><label class="form-label" for="poOrdererName">発注者氏名</label><input class="form-control" id="poOrdererName" type="text" placeholder="次田 芳尚"></div>
-              <div class="form-group"><label class="form-label" for="poSealText">担当者印の文字（姓・空欄なら発注者氏名から自動）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="次田"></div>
+            <div class="form-group">
+              <label class="form-label" for="poOrderers">発注者一覧（1行に1名・発注時に選択）</label>
+              <textarea class="form-control" id="poOrderers" rows="3" placeholder="次田 芳尚&#10;佐藤 拡史"></textarea>
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">発注書を作るとき、ここから発注者を選べます。印鑑（丸印）は各氏名の姓から自動生成されます。</p>
             </div>
+            <div class="form-group"><label class="form-label" for="poSealText">担当者印の文字（任意・空欄なら発注者の姓を自動）</label><input class="form-control" id="poSealText" type="text" maxlength="4" placeholder="（自動）"></div>
             <div class="form-group">
               <label class="form-label" for="poSealFile">会社角印の画像（任意・タダカヨの印鑑）</label>
               <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 6px">登録すると、請求書・発注書の「NPO法人タダカヨ」名称の右の角印が、この実際の印影画像になります（未登録なら文字の角印）。担当者印（発注者の丸印）は氏名の姓から自動生成されます。黒い背景は自動で透明化します（PNG / JPG）。</p>

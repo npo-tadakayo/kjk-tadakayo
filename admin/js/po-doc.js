@@ -28,6 +28,9 @@ export function renderPOHtml(o, st){
   const issuerName = st.poIssuerName || PO_DEFAULT.issuerName;
   const issuerAddr = st.poIssuerAddr || PO_DEFAULT.issuerAddr;
   const issuerRep  = st.poIssuerRep  || PO_DEFAULT.issuerRep;
+  // 発注者: 注文ごとに選択(o.ordererName)を優先。なければ設定の先頭→旧単一値→既定
+  const ordererName = o.ordererName || (Array.isArray(st.poOrderers) && st.poOrderers[0]) || st.poOrdererName || PO_DEFAULT.ordererName;
+  const sealName = surnameOf(ordererName) || st.poSealText || PO_DEFAULT.sealText;
   const items = (o.items||[]).slice();
   const lines = items.map(i=>({ name:i.name, qty:i.qty, unitPrice:Number(i.unitPrice)||0, amount:(Number(i.unitPrice)||0)*(Number(i.qty)||0) }));
   if (Number(o.shippingFee)>0) lines.push({ name:o.shippingLabel||"送料", qty:1, unitPrice:Number(o.shippingFee), amount:Number(o.shippingFee), plain:true });
@@ -75,8 +78,8 @@ export function renderPOHtml(o, st){
       </tbody></table>
       ${o.note?`<div class="po-note">${esc(o.note)}</div>`:`<div class="po-note">※100台未満のご注文の場合、別途輸送費を申し受けます。</div>`}
       <div class="po-orderer">
-        <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
-        <div class="po-seal" aria-label="担当者印">${esc(st.poSealText || surnameOf(st.poOrdererName || PO_DEFAULT.ordererName) || PO_DEFAULT.sealText)}</div>
+        <div class="po-orderer-name">発注者　${esc(ordererName)}</div>
+        <div class="po-seal" aria-label="担当者印">${esc(sealName)}</div>
       </div>
     </div>`;
 }
