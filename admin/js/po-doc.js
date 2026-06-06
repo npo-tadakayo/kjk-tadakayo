@@ -11,6 +11,18 @@ export const PO_DEFAULT = {
 function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function yen(n){ return "¥"+Number(n||0).toLocaleString("ja-JP"); }
 
+// 角印（会社印・四角）を生成。最大4字を2x2に配置。CSS div方式（html2canvasでも描画される）。
+export function sealKakuHtml(text){
+  const t = String(text || "タダカヨ");
+  const chars = [...t].slice(0, 4);
+  return `<div class="seal-kaku" role="img" aria-label="${esc(t)}の角印">${chars.map(c=>`<span>${esc(c)}</span>`).join("")}</div>`;
+}
+// 氏名から姓（空白前）を取り出す。「次田 芳尚」→「次田」
+export function surnameOf(name){
+  const s = String(name || "").trim();
+  return s ? s.split(/[\s　]+/)[0] : "";
+}
+
 export function renderPOHtml(o, st){
   st = st || {};
   const issuerName = st.poIssuerName || PO_DEFAULT.issuerName;
@@ -40,10 +52,15 @@ export function renderPOHtml(o, st){
         <div class="po-issuer">
           <div class="po-no"><span>NO.</span> ${esc(String(no))}</div>
           <div class="po-no"><span>発行日</span> ${esc(o.orderDate||"")}</div>
-          <div class="po-org">${esc(issuerName)}</div>
-          <div>${esc(PO_DEFAULT.issuerAddrLabel)}</div>
-          <div>${esc(issuerAddr)}</div>
-          <div>${esc(issuerRep)}</div>
+          <div class="po-company">
+            <div class="po-company-info">
+              <div class="po-org">${esc(issuerName)}</div>
+              <div>${esc(PO_DEFAULT.issuerAddrLabel)}</div>
+              <div>${esc(issuerAddr)}</div>
+              <div>${esc(issuerRep)}</div>
+            </div>
+            ${sealKakuHtml(st.poSealKakuText || "タダカヨ")}
+          </div>
           ${o.shipTo?`<div style="margin-top:10px">送付先：</div><div style="white-space:pre-line">${esc(o.shipTo)}</div>`:""}
         </div>
       </div>
@@ -58,8 +75,8 @@ export function renderPOHtml(o, st){
       <div class="po-orderer">
         <div class="po-orderer-name">発注者　${esc(st.poOrdererName || PO_DEFAULT.ordererName)}</div>
         ${st.poSealImage
-          ? `<img class="po-seal-img" src="${st.poSealImage}" alt="印">`
-          : `<div class="po-seal" aria-label="印">${esc(st.poSealText || PO_DEFAULT.sealText)}</div>`}
+          ? `<img class="po-seal-img" src="${st.poSealImage}" alt="担当者印">`
+          : `<div class="po-seal" aria-label="担当者印">${esc(st.poSealText || surnameOf(st.poOrdererName || PO_DEFAULT.ordererName) || PO_DEFAULT.sealText)}</div>`}
       </div>
     </div>`;
 }
@@ -93,6 +110,11 @@ table.po-sum tr.grand td{font-size:16px;border-bottom:none;border-top:1.5px soli
 .po-orderer-name{font-size:15px;}
 .po-seal{width:64px;height:64px;border:2.5px solid #c0392b;border-radius:50%;color:#c0392b;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif JP",serif;font-weight:700;font-size:18px;line-height:1.05;writing-mode:vertical-rl;letter-spacing:3px;transform:rotate(-5deg);}
 .po-seal-img{width:72px;height:72px;object-fit:contain;transform:rotate(-3deg);}
+.seal-kaku{width:78px;height:78px;flex:0 0 auto;display:flex;flex-wrap:wrap;border:3px solid #c0392b;border-radius:6px;color:#c0392b;font-family:"Noto Serif JP",serif;font-weight:700;transform:rotate(-3deg);-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.seal-kaku span{width:50%;height:50%;display:flex;align-items:center;justify-content:center;font-size:23px;line-height:1;}
+.po-company{display:flex;align-items:center;gap:10px;margin-top:8px;}
+.po-company-info{flex:1;}
+.po-company-info .po-org{margin-top:0;}
 `;
 
 // 発注メール定型文のデフォルト（settings.js の同名定数と内容を一致させること）

@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { renderPOHtml } from "/js/po-doc.js";
+import { renderPOHtml, sealKakuHtml } from "/js/po-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -108,7 +108,10 @@ function renderInvoice(s, st){
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
-        <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div></div>
+        <div class="issuer-wrap">
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div>
+          ${sealKakuHtml("タダカヨ")}
+        </div></div>
       <h1 class="inv-title">請　求　書</h1>
       <div class="to">${esc(billName)} 御中</div>
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
