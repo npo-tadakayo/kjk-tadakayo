@@ -7,7 +7,7 @@
 
 ## 🆕 2026-06-06 セッション⑩（CRM最終統合＝出荷の認定事業所卸/送料・請求書計上 ＋ 申請期限の設定化 ＋ 月次推移グラフ）
 
-> 状態: **#1 CRM最終統合 ＋ B4 ＋ B3 ＋ ドキュメント/docpageバグ修正 ＋ D(モバイル/アクセシビリティ) を実装し本番反映済み（hosting:admin）**。コミット `aa12722`/`965a857`/`67ce049`/`ef22f0e`。GitHub同期済（main `ef22f0e`）。全JS構文OK・計算ロジック18項目検証・本番 curl 検証・**Playwright(ログイン状態)でマニュアル/エンジニアノート閲覧＋ダッシュボードの desktop/モバイル(390×844)表示を実機確認**（モバイルヘッダー/ドロワー/1列化/推移グラフ/console error0）。供給管理の実操作（出荷モーダルの送料計算・請求書PDF）は次田さんの @tadakayo 操作確認待ち。
+> 状態: **#1 ＋ B3 ＋ B4 ＋ docpage修正/ドキュメント ＋ D ＋ C2(ファイル分割) ＋ 補助金区分の誤り訂正 をすべて実装し本番反映済み**。コミット `aa12722`/`965a857`/`67ce049`/`ef22f0e`/`1a7abdf`/`71a5fa4`（＋docs）。GitHub同期済。全JS構文OK・C2とドキュメントは本番ログイン状態のブラウザで実機検証（console error0）・補助金訂正はLP本番curl全項目検証済み。残ブラッシュアップ A2/A3 は調査で達成済みと判断＝**本セッションの予定タスクはすべて完了**。供給管理の実操作（出荷モーダルの送料計算・請求書PDF）は次田さんの @tadakayo 操作確認待ち。
 
 ### 実装（本番反映済み）
 - **#1 出荷の最終統合**（`aa12722` / supply.js・supply.html・supply-print.js）:
@@ -19,6 +19,9 @@
 - **ドキュメント＆重大バグ修正**（`67ce049` / docpage.js・manual.html・engineering.html）: docpage.js の `db`(getFirestore) が未定義で `gateRole` がエラー→`showAccessDenied` が呼ばれ「アクセス権限がありません」となり**マニュアル/エンジニアノートがログイン後も閲覧不能だった**のを修正（`getFirestore` import + `const db` 追加）。両ドキュメントに今回の機能（認定事業所卸/配送方法・送料/請求書送料計上/申請期限設定/月次グラフ）を反映。engineering に §7「供給・請求の単価と送料」新設。**本番でログイン状態のブラウザ（Playwright）にて両ドキュメントの閲覧確認済み**（doc=block / Mermaid4図 SVG描画 / hasAccessDenied=false / console error0）。
 
 - **D モバイル/アクセシビリティ底上げ**（`ef22f0e` / crm.css・dashboard/users/supply.js）: rule26＝`.btn`/`.filter-bar`入力の `min-height` を 44px に（行内ミニアクション含むタップターゲット）・`:focus-visible` グローバル追加・画面UIの 11px→12px（印刷物 partner-doc/supply-print は対象外）。rule25整合＝モバイル(1024px以下)でフォーム2カラム→1列（768px から昇格）。**本番ログイン状態のブラウザ（Playwright）で desktop/モバイル(390×844)両方を実機確認**（モバイルヘッダー表示・ドロワー隠れ・コンテンツ1列・月次推移グラフ表示・崩れなし・error0）。crm.css 既存のモバイル基盤（ヘッダー56px・ドロワー280px/240ms・分岐1024px・table-wrap横スクロール）は元から rule25 準拠だった。
+- **C2 肥大化ファイル分割**（`1a7abdf` / `supply-pricing.js`・`case-detail-util.js` 新設）: 機能別分割（発注/出荷を別ファイル）は共有state(products/appSettings/activePartners)・onSnapshot・DOM依存が密でリスク高につき見送り、**state非依存の純粋ロジック/定数/ユーティリティのみ切り出し**（supply.js 798→749行＋pricing45行 ／ case-detail.js 650→592行＋util55行・`SOURCE_LABELS`は`constants.js`へ統合してC1重複排除）。挙動完全不変。**本番ログイン状態のブラウザで供給管理・案件詳細を実機検証**（console error0・全タブ描画・escHtml等のimport解決・アクセス拒否0）。
+- **補助金区分の誤り訂正**（`71a5fa4` / index.html・mitsumori.html・料金md×2・本書）: 令和8年度 交付要綱別添(`r8_jyoseikin.pdf`)と突合し、**居宅療養管理指導(31)・地域密着型通所介護(78)は訪問・通所系¥64,000・3台**と確認（旧資料は居住系¥55,000/その他¥42,000に誤分類＝利用者へ過小案内していた）。LP早見表・注意書き／見積もりカード・35種リスト／料金md／本書の区分表・合意事項を訂正。**LP+見積もりを本番反映(hosting:lp)・curl全項目検証**。見積もりの計算ロジック(区分→上限額)は不変＝サービスの振り分けのみ修正。memory `reference_subsidy_categories.md` に正の区分を記録。介護情報基盤スペースへ告知済み（msg `0SHVO1lHmAg`）。⚠️**過去に居宅療養管理指導/地域密着型通所介護の事業所へ見積もりしていた場合は金額が変わるため要見直し**。
+- **A2/A3 画面整理**: 調査の結果、設定7セクション・供給5タブ・案件詳細6タブで既に十分整理済み＝**達成済みと判断**（追加の意味ある整理なし・本番稼働中につき無理な微調整は見送り）。
 
 ### デプロイ
 - 本番URL: https://kjk-tadakayo-admin.web.app（hosting:admin のみ・functions/rules不変＝誤削除リスクなし）
