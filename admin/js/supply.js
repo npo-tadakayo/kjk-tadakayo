@@ -39,6 +39,12 @@ function initTabs(){
     t.classList.add("active");
     document.getElementById(`tab-${t.dataset.tab}`).classList.add("active");
   }));
+  // 帳票ページから「供給管理へ」で戻ったとき、元のタブ（?tab=）を開く
+  const wanted = new URLSearchParams(location.search).get("tab");
+  if (wanted){
+    const t = document.querySelector(`.tab[data-tab="${wanted}"]`);
+    if (t) t.click();
+  }
 }
 
 // ===== 在庫・商品 =====

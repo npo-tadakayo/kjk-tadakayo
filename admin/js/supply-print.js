@@ -140,6 +140,10 @@ onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user))) return;
   document.getElementById("printBtn").addEventListener("click",()=>window.print());
+  // 「供給管理へ」の戻り先を、この帳票を開いた元タブにする（一覧へ戻す）
+  const backTab = { po:"orders", invoice:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
+  const backBtn = document.querySelector(".btn-back");
+  if (backBtn && backTab) backBtn.href = `/supply.html?tab=${backTab}`;
   const docId = type==="plabel" ? params.get("pid") : id;
   if(!type||!docId){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }
   try{
