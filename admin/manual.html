@@ -41,11 +41,14 @@
 
         <h2>§2 画面の見かた</h2>
         <ul>
-          <li><strong>ダッシュボード</strong>: 件数・補助金額・進捗の全体像</li>
+          <li><strong>ダッシュボード</strong>: 件数・補助金額・進捗の全体像と<strong>月次の新規案件グラフ</strong>（直近6か月）</li>
           <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み・CSV出力</li>
           <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）</li>
           <li><strong>供給管理</strong>: 在庫・発注・出荷・認定事業所の受注</li>
-          <li><strong>設定</strong>: 通知先(Chat)・メール送信元の変更</li>
+          <li><strong>売上シミュレーター</strong>: 件数を入れて年間の売上・利益を試算</li>
+          <li><strong>認定事業所</strong>: 認定事業所の一覧・登録、協定書/説明資料の作成</li>
+          <li><strong>料金・送料</strong>: 認定事業所への卸価格・レターパック/ゆうパック送料の設定</li>
+          <li><strong>設定</strong>: 通知先(Chat)・メール送信元・<strong>助成金の申請期限</strong>・振込先などの変更</li>
         </ul>
 
         <h2>§3 使い方（基本操作）</h2>
@@ -71,8 +74,10 @@
         <h3>カードリーダーの発注・出荷（供給管理）</h3>
         <ul>
           <li><strong>発注</strong>: 「新規発注」で数量入力 → 発注書PDF → 届いたら「入荷登録」（在庫が増えます）</li>
-          <li><strong>出荷</strong>: 「新規出荷」で送付先と数量 → 送付状PDF（在庫が自動で減ります）</li>
+          <li><strong>出荷</strong>: 「新規出荷」で送付先と数量を入力（在庫が自動で減ります）。<strong>配送方法</strong>で「レターパック」「ゆうパック」を選ぶと<strong>送料が自動で入ります</strong>（手修正も可）。送付状・宛名・請求書のPDFを発行できます</li>
+          <li><strong>認定事業所への直送</strong>: 出荷種別を「認定事業所からの依頼（直送）」にすると、単価が<strong>認定事業所向けの卸価格</strong>（「料金・送料」ページの設定値・台数帯別）で計算され、請求書に<strong>送料も明細として計上</strong>されます</li>
         </ul>
+        <div class="callout tip"><strong>料金・送料の設定</strong>：認定事業所への卸価格・レターパック単価・ゆうパック送料表（滋賀発）は「料金・送料」ページで設定し「保存」します。出荷の単価・送料、請求書の送料はこの設定値を使います（保存していない場合は既定値で計算）。</div>
 
         <h3>認定事業所からの発注を受ける</h3>
         <div class="step"><span class="n">1</span>供給管理「パートナー管理」で認定事業所のログイン用メールと名称を登録</div>
@@ -89,7 +94,7 @@
         <div class="callout warn"><strong>ログインできない</strong>：@tadakayo.jp のアカウントでログインしているか確認してください。認定事業所の方は許可リスト登録が必要です。</div>
         <div class="callout tip"><strong>メールが送れない</strong>：設定画面の「メール送信元」が正しいアカウントか確認してください。解決しない場合は事務局へご連絡ください。</div>
 
-        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-04 ／ 詳細は <code>MANUAL.md</code></p>
+        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-06 ／ 詳細は <code>MANUAL.md</code></p>
       </div>
     </main>
   </div>

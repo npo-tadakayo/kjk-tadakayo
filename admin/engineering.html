@@ -117,7 +117,7 @@ erDiagram
   sessions { string sessionDate string summary array photoUrls }
   products { string sku string name int stock int wholesale2_10 }
   purchaseOrders { string poNumber array items int total string status }
-  shipments { string soNumber string officeName array items }
+  shipments { string soNumber string officeName array items int shippingFee }
   partners { string email string partnerName bool active }
   partnerOrders { string partnerEmail array items string status }
         </pre></div>
@@ -131,7 +131,7 @@ erDiagram
           <tr><td><code>products / inventoryMovements</code></td><td>商品マスタ・在庫増減ログ</td></tr>
           <tr><td><code>purchaseOrders / shipments</code></td><td>発注（→AB Circle）・出荷（→事業所）</td></tr>
           <tr><td><code>partners / partnerOrders</code></td><td>認定事業所の許可リスト・受注</td></tr>
-          <tr><td><code>appConfig/settings</code></td><td>Webhook URL・送信元などの設定</td></tr>
+          <tr><td><code>appConfig/settings</code></td><td>Webhook URL・送信元・<strong>認定事業所卸価格(partnerPricing)・送料表(letterpackFee/yupackTable)・申請期限(subsidyDeadline)</strong>・振込先・印影などの設定</td></tr>
           <tr><td><code>_counters</code></td><td>案件番号・発注/出荷番号の採番</td></tr>
         </table>
 
@@ -169,9 +169,18 @@ sequenceDiagram
           <tr><td>リージョン</td><td>asia-northeast1（Vertexのみ global）</td></tr>
           <tr><td>デプロイ</td><td>Node20 / <code>firebase deploy</code></td></tr>
         </table>
-        <div class="callout warn"><strong>注意:</strong> Webhook URL・メール送信元は「設定」画面（appConfig/settings）から変更できます。コード変更・再デプロイは不要です。</div>
+        <div class="callout warn"><strong>注意:</strong> Webhook URL・メール送信元・<strong>認定事業所への卸価格・送料表・申請期限</strong>は「設定」「料金・送料」画面（appConfig/settings）から変更できます。コード変更・再デプロイは不要です（出荷の単価・送料、請求書の送料計上はこの設定値を使用）。</div>
 
-        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-04 ／ 詳細な技術仕様はリポジトリ <code>ENGINEERING_NOTES.md</code> を参照。</p>
+        <h2>§7 供給・請求の単価と送料（2026-06 統合）</h2>
+        <div class="label">RULE｜出荷の単価・送料の決まり方</div>
+        <ul>
+          <li><strong>認定事業所への直送(dropship)</strong>: 単価は <code>appConfig.settings.partnerPricing</code>（台数帯別: 1台 / 2〜10台 / 11〜30台 / 31台〜）を使用。未設定時は商品マスタの卸へフォールバック。</li>
+          <li><strong>事業所への直接出荷(direct)</strong>: 単価はエンドユーザー定価（<code>products.listPrice</code>）。</li>
+          <li><strong>送料</strong>: 配送方法で自動計算 — レターパック=<code>letterpackFee × ⌈総台数/3⌉</code> ／ ゆうパック=<code>yupackTable[サイズ][地域]</code>（滋賀発）。<code>shipments.shippingFee/shippingMethod/shippingLabel</code> に保存。</li>
+          <li><strong>請求書</strong>: 送料(税込実費)を税抜換算し、商品と合算して10%課税（適格請求書の明細に1行計上）。</li>
+        </ul>
+
+        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-06 ／ 詳細な技術仕様はリポジトリ <code>ENGINEERING_NOTES.md</code> を参照。</p>
       </div>
     </main>
   </div>
