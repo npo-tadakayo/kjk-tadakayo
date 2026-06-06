@@ -182,7 +182,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   cursor: pointer;
   border: none;
   transition: opacity 0.15s, background 0.15s;
-  min-height: 36px;
+  min-height: 44px; /* rule26: タップターゲット最小44px（行内ミニアクションも厳守） */
   min-width: 44px;
 }
 
@@ -193,6 +193,13 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 .btn-secondary { background: var(--color-line); color: var(--color-ink); }
 .btn-danger { background: var(--color-danger); color: #fff; }
 .btn-ghost { background: none; color: var(--color-primary); border: 1px solid var(--color-primary); }
+
+/* ========== フォーカス可視化（rule26 / キーボード操作）========== */
+:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.btn:focus-visible, .nav-item:focus-visible, .tab:focus-visible,
+.btn-logout:focus-visible, .mh-burger:focus-visible, a:focus-visible {
+  outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: var(--radius-sm);
+}
 
 /* ========== Card ========== */
 .card {
@@ -289,7 +296,7 @@ tbody tr { cursor: pointer; }
   font-size: 13px;
   background: var(--color-surface);
   color: var(--color-ink);
-  min-height: 36px;
+  min-height: 44px;
 }
 
 .filter-bar input:focus,
@@ -836,10 +843,10 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
   }
   .sidebar.open { transform: translateX(0); }
   .main-content { padding: var(--space-4); }
+  .form-row { grid-template-columns: 1fr; } /* モバイル(ドロワー)時はフォームを1列に（rule25整合） */
 }
 @media (max-width: 768px) {
   #breakdownGrid { grid-template-columns: 1fr !important; }
   .bar-label { flex-basis: 120px; }
-  .form-row { grid-template-columns: 1fr; }
   .table-wrap { overflow-x: auto; }
 }

@@ -275,10 +275,10 @@ function renderOrders(orders){
     const statusLabel={sent:"発注済",received:"入荷済",draft:"下書き"}[o.status]||o.status;
     const badgeN = o.status==="received"?3 : o.status==="draft"?2 : 7;
     const isDraft = o.status==="draft";
-    const sentInfo = o.emailedAt ? `<div style="font-size:11px;color:var(--color-success)">メール送付済</div>` : "";
+    const sentInfo = o.emailedAt ? `<div style="font-size:12px;color:var(--color-success)">メール送付済</div>` : "";
     return `<tr>
       <td><strong>${esc(o.poNumber)}</strong></td>
-      <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:11px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
+      <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td>${yen(o.total)}</td>
       <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}</td>

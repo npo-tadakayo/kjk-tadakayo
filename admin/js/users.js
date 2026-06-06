@@ -21,7 +21,7 @@ function render(list){
   $("usersEmpty").style.display = list.length?"none":"block";
   $("usersBody").innerHTML = list.map(u=>`
     <tr>
-      <td><strong>${esc(u.name||"")}</strong>${u._id===myEmail?' <span style="font-size:11px;color:var(--color-primary)">(あなた)</span>':""}</td>
+      <td><strong>${esc(u.name||"")}</strong>${u._id===myEmail?' <span style="font-size:12px;color:var(--color-primary)">(あなた)</span>':""}</td>
       <td style="font-size:12px">${esc(u._id)}</td>
       <td><span class="badge badge-${ROLE_BADGE[u.role]||2}">${ROLE_LABEL[u.role]||u.role||"—"}</span></td>
       <td>${u.active!==false?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>

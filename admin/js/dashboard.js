@@ -75,7 +75,7 @@ function renderTrend(cases) {
     return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%">
       <div style="font-size:12px;font-weight:600">${m.count}</div>
       <div style="width:100%;max-width:44px;height:${h}px;background:linear-gradient(180deg,#4a86c4,#3a6e9e);border-radius:4px 4px 0 0" title="${m.label} ${m.count}件"></div>
-      <div style="font-size:11px;color:var(--color-ink-muted)">${m.label}</div>
+      <div style="font-size:12px;color:var(--color-ink-muted)">${m.label}</div>
     </div>`;
   }).join("")}</div>`;
 }
