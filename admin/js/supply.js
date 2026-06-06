@@ -7,6 +7,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, orderBy, onSnaps
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
+import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -129,41 +130,12 @@ function itemRows(containerId){
       <td><input class="form-control qty-input" type="number" min="0" value="0" data-sku="${p.id}" style="padding:4px 8px"></td>
     </tr>`).join("")}</tbody></table>`;
 }
-// AB Circle 送料表（税別・全国送料一覧 離島込み）。memory reference_abcircle と一致させること
-const SHIPPING_FEES = [
-  { region:"北海道", fee:1500, note:"北海道" },
-  { region:"北東北", fee:1000, note:"青森・岩手・秋田" },
-  { region:"南東北", fee:1000, note:"宮城・山形・福島" },
-  { region:"関東", fee:900, note:"東京・神奈川・千葉・埼玉・茨城・栃木・群馬" },
-  { region:"甲信越", fee:1000, note:"山梨・新潟・長野" },
-  { region:"北陸・中部", fee:1000, note:"富山・石川・福井・静岡・愛知・岐阜・三重" },
-  { region:"関西", fee:1100, note:"大阪・京都・兵庫・奈良・滋賀・和歌山" },
-  { region:"中国・四国", fee:1200, note:"広島・岡山・山口・鳥取・島根・香川・愛媛・高知・徳島" },
-  { region:"九州", fee:1300, note:"福岡・佐賀・長崎・熊本・大分・宮崎・鹿児島" },
-  { region:"沖縄", fee:1500, note:"沖縄" },
-  { region:"その他離島", fee:2500, note:"離島" },
-];
 function applyShipRegion(){
   const sel=document.getElementById("orderShipRegion");
   const r=SHIPPING_FEES.find(x=>x.region===sel.value);
   if(!r) return; // 「選択しない」は手入力を保持
   document.getElementById("orderShipFee").value=r.fee;
   document.getElementById("orderShipLabel").value=`送料（${r.region}）`;
-}
-// 数量帯別の卸単価（AB Circle価格表: 1台 / 2-10台 / 11-30台 / 31台以上）
-function unitPriceFor(p, qty){
-  if(!p) return 0;
-  if(qty>=31) return Number(p.wholesale31 ?? p.wholesale11_30 ?? p.wholesale2_10 ?? 0);
-  if(qty>=11) return Number(p.wholesale11_30 ?? p.wholesale2_10 ?? 0);
-  if(qty>=2)  return Number(p.wholesale2_10 ?? 0);
-  return Number(p.wholesale1 ?? p.wholesale2_10 ?? 0);
-}
-// 認定事業所卸の数量帯index（partnerPricing配列の並び: [1台, 2〜10台, 11〜30台, 31台〜]）
-function partnerTierIndex(qty){
-  if(qty>=31) return 3;
-  if(qty>=11) return 2;
-  if(qty>=2)  return 1;
-  return 0;
 }
 // 認定事業所への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
 // 未設定時は商品マスタの数量帯別卸（unitPriceFor）にフォールバック＝従来挙動を維持。
@@ -362,16 +334,7 @@ async function deleteOrder(o){
   catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
-// ===== 出荷の送料（料金・送料設定 appConfig を優先。未設定時は下記デフォルト＝pricing.html と一致させること） =====
-const LETTERPACK_FEE_DEF = 600;
-const YUPACK_SIZES_DEF = ["60","80","100","120","140","160","170"];
-const YUPACK_REGIONS_DEF = ["近畿","北陸・東海・中国","関東・信越・四国・九州","東北","北海道","沖縄"];
-const YUPACK_ROWS_DEF = {
-  "60":[820,920,1020,1120,1520,1360], "80":[1130,1240,1350,1470,1930,1760],
-  "100":[1450,1570,1700,1810,2330,2170], "120":[1770,1900,2040,2170,2750,2570],
-  "140":[2040,2210,2360,2500,3120,3000], "160":[2290,2470,2630,2800,3460,3410],
-  "170":[2620,2810,2980,3170,3860,3880],
-};
+// ===== 出荷の送料（料金・送料設定 appConfig を優先。デフォルト値・定数は supply-pricing.js） =====
 function letterpackFee(){ const v=Number(appSettings.letterpackFee); return v>0?v:LETTERPACK_FEE_DEF; }
 function yupackData(){
   const t = appSettings.yupackTable || {};

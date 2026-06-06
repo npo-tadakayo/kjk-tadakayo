@@ -9,7 +9,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import { STATUS_LABELS } from "/js/constants.js";
+import { STATUS_LABELS, SOURCE_LABELS } from "/js/constants.js";
+import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -20,62 +21,7 @@ const functions = getFunctions(app, "asia-northeast1");
 const caseId = new URLSearchParams(location.search).get("id");
 if (!caseId) { location.href = "/cases.html"; }
 
-// STATUS_LABELS は /js/constants.js から import（C1・重複定義を排除）
-
-const SOURCE_LABELS = {
-  lp_inquiry: "LP問い合わせ",
-  mitsumori_quote: "見積もり成約",
-  manual: "手動登録",
-};
-
-const ACTIVITY_ICONS = {
-  phone_in: "ti-phone-incoming",
-  phone_out: "ti-phone-outgoing",
-  email_in: "ti-mail-down",
-  email_out: "ti-mail-up",
-  visit: "ti-map-pin",
-  memo: "ti-notes",
-  gmail_sent: "ti-mail-forward",
-};
-
-const ACTIVITY_LABELS = {
-  phone_in: "電話（着信）",
-  phone_out: "電話（発信）",
-  email_in: "メール（受信）",
-  email_out: "メール（送信）",
-  visit: "訪問・対面",
-  memo: "メモ",
-  gmail_sent: "Gmail送信",
-};
-
-function escHtml(str) {
-  return String(str || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function formatDateTime(ts) {
-  if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function toDateInput(ts) {
-  if (!ts) return "";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toISOString().slice(0, 10);
-}
-
-// 振込予定日: 申請月の翌々月末
-function calcExpectedDeposit(applicationDateStr) {
-  if (!applicationDateStr) return null;
-  const d = new Date(applicationDateStr);
-  const year = d.getFullYear();
-  const month = d.getMonth() + 3; // +2ヶ月 → 翌々月末 = +3ヶ月の0日
-  return new Date(year, month, 0);
-}
+// STATUS_LABELS / SOURCE_LABELS は constants.js、ACTIVITY定数・ユーティリティ（escHtml/日付/振込予定日）は case-detail-util.js から import（C2 / C1重複排除）
 
 let currentCase = null;
 let latestActivities = [];
@@ -398,10 +344,6 @@ async function addSession(userId, userName) {
 
 // ===== AIアシスタント =====
 const aiAssistFn = httpsCallable(functions, "aiAssist");
-const AI_TITLES = {
-  reply_draft: "返信メール下書き", summary_classify: "要約・分類",
-  session_report: "伴走報告文", assistant: "AIの回答",
-};
 
 function buildAiContext() {
   const c = currentCase || {};
