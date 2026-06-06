@@ -7,7 +7,7 @@
 
 ## 🆕 2026-06-06 セッション⑩（CRM最終統合＝出荷の認定事業所卸/送料・請求書計上 ＋ 申請期限の設定化 ＋ 月次推移グラフ）
 
-> 状態: **#1 CRM最終統合 ＋ B4 ＋ B3 を実装し本番反映済み（hosting:admin）**。コミット `aa12722`（供給系）/ `965a857`（B3/B4・設定）。GitHub同期済（main `965a857`）。全7JS構文OK・計算ロジック18項目検証パス・本番 curl 検証で新コード7種の配信を確認（HTTP200）。**認証後UIの実機動作は次田さんの @tadakayo ログイン確認待ち**。
+> 状態: **#1 CRM最終統合 ＋ B4 ＋ B3 ＋ ドキュメント更新/docpage重大バグ修正 を実装し本番反映済み（hosting:admin）**。コミット `aa12722`（供給系）/ `965a857`（B3/B4・設定）/ `67ce049`（docpage修正・ドキュメント）。GitHub同期済（main `67ce049`）。全JS構文OK・計算ロジック18項目検証パス・本番 curl 検証パス。**マニュアル/エンジニアノートは本番でログイン状態のブラウザ（Playwright）にて閲覧確認済み**（doc表示・Mermaid4図描画・アクセス拒否なし・console error 0）。供給管理の実操作（出荷モーダルの送料計算・請求書PDF）は次田さんの @tadakayo 操作確認待ち。
 
 ### 実装（本番反映済み）
 - **#1 出荷の最終統合**（`aa12722` / supply.js・supply.html・supply-print.js）:
@@ -16,6 +16,7 @@
   - 送料を **税込実費→税抜換算して請求書に10%対象明細1行で計上**。出荷サマリー(未請求/請求済/入金済)も送料込みに統一（請求書と税計算一致：sub=商品税抜+送料税抜、tax=floor(sub*0.1)、total=sub+tax）。
 - **B4 申請期限の設定化**（`965a857` / constants.js・settings.html/js・dashboard/cases/kanban.js）: 設定画面に「助成金の申請期限」を追加（`appConfig.settings.subsidyDeadline`）。ダッシュボード/案件一覧/カンバンの3バナーが設定値に追従。期限文字列も `deadlineLabel()` で動的化（年度更新時にコード修正不要）。未設定時は既定 2027-03-12。`daysUntilDeadline(deadline)` を引数対応（後方互換）。
 - **B3 月次推移グラフ**（`965a857` / dashboard.html/js）: ダッシュボードに直近6か月の月次新規案件数の棒グラフ（receivedAt基準・依存ライブラリ追加なし・データ無しは空状態表示）。
+- **ドキュメント＆重大バグ修正**（`67ce049` / docpage.js・manual.html・engineering.html）: docpage.js の `db`(getFirestore) が未定義で `gateRole` がエラー→`showAccessDenied` が呼ばれ「アクセス権限がありません」となり**マニュアル/エンジニアノートがログイン後も閲覧不能だった**のを修正（`getFirestore` import + `const db` 追加）。両ドキュメントに今回の機能（認定事業所卸/配送方法・送料/請求書送料計上/申請期限設定/月次グラフ）を反映。engineering に §7「供給・請求の単価と送料」新設。**本番でログイン状態のブラウザ（Playwright）にて両ドキュメントの閲覧確認済み**（doc=block / Mermaid4図 SVG描画 / hasAccessDenied=false / console error0）。
 
 ### デプロイ
 - 本番URL: https://kjk-tadakayo-admin.web.app（hosting:admin のみ・functions/rules不変＝誤削除リスクなし）
