@@ -19,6 +19,7 @@ const NAV = [
   ["/supply.html","ti-package","供給管理"],
   ["/simulator.html","ti-calculator","売上シミュレーター"],
   ["/partner-admin.html","ti-certificate","認定事業所"],
+  ["/pricing.html","ti-coin","料金・送料"],
   ["/settings.html","ti-settings","設定"],
   ["/users.html","ti-users","ユーザー管理"],
 ];

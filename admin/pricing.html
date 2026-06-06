@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>料金・送料設定 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .price-table th,.price-table td{padding:6px 8px;font-size:13px;border:1px solid var(--color-line);text-align:center}
+    .price-table th{background:var(--color-primary-soft);color:var(--color-primary);font-weight:600;white-space:nowrap}
+    .price-table td:first-child,.price-table th:first-child{text-align:left;white-space:nowrap}
+    .price-num{width:78px;text-align:right;padding:5px 6px}
+    .yu-num{width:64px;text-align:right;padding:4px 5px}
+    .calc-box{background:var(--color-bg);border:1px solid var(--color-line);border-radius:10px;padding:12px 14px;margin-top:12px;font-size:13px}
+    .calc-box .out{font-size:18px;font-weight:700;color:var(--color-primary)}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
+        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
+        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
+        <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
+        <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
+        <a class="nav-item" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
+        <a class="nav-item active" href="/pricing.html"><i class="ti ti-coin" aria-hidden="true"></i>料金・送料</a>
+        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
+        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
+        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
+        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
+        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">料金・送料設定</h1><button class="btn btn-primary" id="saveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i> 保存</button></div>
+      <p style="font-size:13px;color:var(--color-ink-muted);margin:-8px 0 16px">認定事業所への卸価格・送料（レターパック／ゆうパック）を管理します。<strong>発注（AB Circleからの仕入）の単価は供給管理の商品マスタで管理</strong>します（ここでは別管理）。</p>
+
+      <div class="card" id="loadingEl"><div class="card-body"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div></div>
+
+      <div id="app" style="display:none">
+        <!-- 認定事業所 卸価格 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">認定事業所 卸価格（税別・数量帯別）</span>
+            <button class="btn btn-secondary" id="setStdBtn" type="button" style="font-size:12px;padding:5px 10px"><i class="ti ti-wand"></i> 確定値をセット</button></div>
+          <div class="card-body" style="overflow-x:auto">
+            <table class="price-table" style="border-collapse:collapse">
+              <thead><tr><th>商品</th><th>1台</th><th>2〜10台</th><th>11〜30台</th><th>31台〜</th></tr></thead>
+              <tbody id="wholeRows"></tbody>
+            </table>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:8px 0 0">上限価格＝1〜10台の値。大口（11台〜）はこれより割引し、仕入の数量割引分を認定事業所に還元する設計。</p>
+          </div>
+        </div>
+
+        <!-- レターパック -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">送料：介護事業所への直送（レターパック）</span></div>
+          <div class="card-body">
+            <div class="form-group" style="max-width:260px"><label class="form-label" for="lpFee">レターパック単価（税込）</label><input class="form-control" id="lpFee" type="number" value="600"></div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0">ルール：1〜3台＝1通、4台以降は3台ごとに1通追加（＝⌈台数÷3⌉通）。</p>
+            <div class="calc-box">
+              <span>台数 </span><input class="form-control" id="lpQty" type="number" value="3" min="1" style="width:80px;display:inline-block">
+              <span> → 送料：</span><span class="out" id="lpOut">¥600</span>　<span id="lpDetail" style="color:var(--color-ink-muted)"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ゆうパック -->
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">送料：まとめ送付（ゆうパック・滋賀県発）</span></div>
+          <div class="card-body" style="overflow-x:auto">
+            <table class="price-table" style="border-collapse:collapse">
+              <thead><tr id="yuHead"></tr></thead>
+              <tbody id="yuRows"></tbody>
+            </table>
+            <div class="calc-box">
+              サイズ <select class="form-control" id="yuSize" style="width:120px;display:inline-block"></select>
+              地域 <select class="form-control" id="yuRegion" style="width:200px;display:inline-block"></select>
+              → 送料：<span class="out" id="yuOut">¥0</span>
+            </div>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:8px 0 0">列見出し（地域区分）は実態に合わせて編集できます。カードリーダーは小型のため通常60サイズで収まる想定。</p>
+          </div>
+        </div>
+
+        <div id="saveStatus" style="font-size:13px;margin-top:12px"></div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/pricing.js" type="module"></script>
+</body>
+</html>
