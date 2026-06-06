@@ -158,6 +158,24 @@ function unitPriceFor(p, qty){
   if(qty>=2)  return Number(p.wholesale2_10 ?? 0);
   return Number(p.wholesale1 ?? p.wholesale2_10 ?? 0);
 }
+// 認定事業所卸の数量帯index（partnerPricing配列の並び: [1台, 2〜10台, 11〜30台, 31台〜]）
+function partnerTierIndex(qty){
+  if(qty>=31) return 3;
+  if(qty>=11) return 2;
+  if(qty>=2)  return 1;
+  return 0;
+}
+// 認定事業所への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
+// 未設定時は商品マスタの数量帯別卸（unitPriceFor）にフォールバック＝従来挙動を維持。
+function partnerPriceFor(p, qty){
+  if(!p) return 0;
+  const pp = appSettings.partnerPricing && appSettings.partnerPricing[p.id];
+  if(Array.isArray(pp) && pp.length>=4){
+    const v = Number(pp[partnerTierIndex(qty)]);
+    if(v>0) return v;
+  }
+  return unitPriceFor(p, qty);
+}
 function collectItems(kind){
   const items=[];
   document.querySelectorAll(`#${kind} .qty-input`).forEach(inp=>{
@@ -344,6 +362,55 @@ async function deleteOrder(o){
   catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
+// ===== 出荷の送料（料金・送料設定 appConfig を優先。未設定時は下記デフォルト＝pricing.html と一致させること） =====
+const LETTERPACK_FEE_DEF = 600;
+const YUPACK_SIZES_DEF = ["60","80","100","120","140","160","170"];
+const YUPACK_REGIONS_DEF = ["近畿","北陸・東海・中国","関東・信越・四国・九州","東北","北海道","沖縄"];
+const YUPACK_ROWS_DEF = {
+  "60":[820,920,1020,1120,1520,1360], "80":[1130,1240,1350,1470,1930,1760],
+  "100":[1450,1570,1700,1810,2330,2170], "120":[1770,1900,2040,2170,2750,2570],
+  "140":[2040,2210,2360,2500,3120,3000], "160":[2290,2470,2630,2800,3460,3410],
+  "170":[2620,2810,2980,3170,3860,3880],
+};
+function letterpackFee(){ const v=Number(appSettings.letterpackFee); return v>0?v:LETTERPACK_FEE_DEF; }
+function yupackData(){
+  const t = appSettings.yupackTable || {};
+  return {
+    sizes: (Array.isArray(t.sizes)&&t.sizes.length)?t.sizes:YUPACK_SIZES_DEF,
+    regions: (Array.isArray(t.regions)&&t.regions.length)?t.regions:YUPACK_REGIONS_DEF,
+    rows: (t.rows&&Object.keys(t.rows).length)?t.rows:YUPACK_ROWS_DEF,
+  };
+}
+function shipTotalQty(){
+  let n=0; document.querySelectorAll('#shipItems .qty-input').forEach(i=>{ n+=parseInt(i.value,10)||0; }); return n;
+}
+// 配送方法に応じて送料・名目を自動入力（手入力は維持）
+function recalcShipFee(){
+  const method=document.getElementById('shipMethod').value;
+  const feeEl=document.getElementById('shipFee'), labelEl=document.getElementById('shipFeeLabel');
+  document.getElementById('yupackWrap').style.display = method==='yupack' ? '' : 'none';
+  if(method==='letterpack'){
+    const packs=Math.max(1,Math.ceil(shipTotalQty()/3));
+    feeEl.value=packs*letterpackFee(); labelEl.value=`送料（レターパック ${packs}通）`;
+  } else if(method==='yupack'){
+    const d=yupackData(); const size=document.getElementById('shipYuSize').value;
+    const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
+    const arr=d.rows[size]||YUPACK_ROWS_DEF[size]||[];
+    feeEl.value=Number(arr[ri])||0; labelEl.value=`送料（ゆうパック ${size}サイズ・${d.regions[ri]||""}）`;
+  }
+}
+// 出荷モーダルを開くたびに配送方法をリセット＋ゆうパックのサイズ/地域セレクトを最新設定で再構築
+function initShipFeeControls(){
+  const d=yupackData();
+  document.getElementById('shipYuSize').innerHTML=d.sizes.map(s=>`<option value="${s}">${s}サイズ</option>`).join("");
+  document.getElementById('shipYuRegion').innerHTML=d.regions.map((r,i)=>`<option value="${i}">${esc(r)}</option>`).join("");
+  document.getElementById('shipMethod').value="";
+  document.getElementById('shipFee').value="";
+  document.getElementById('shipFeeLabel').value="";
+  document.getElementById('yupackWrap').style.display="none";
+  document.querySelectorAll('#shipItems .qty-input').forEach(i=>i.addEventListener('input',recalcShipFee));
+}
+
 // ===== 出荷モーダル =====
 let activePartners = [];
 function openShip(){ itemRows("shipItems"); document.getElementById("shipDate").value=today();
@@ -354,6 +421,7 @@ function openShip(){ itemRows("shipItems"); document.getElementById("shipDate").
   document.getElementById("shipPartner").innerHTML = '<option value="">選択してください</option>'+
     activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
   document.getElementById("shipPartnerWrap").style.display="none";
+  initShipFeeControls();
   document.getElementById("shipModal").classList.add("open"); }
 
 async function saveShip(){
@@ -365,20 +433,23 @@ async function saveShip(){
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=collectItems("shipItems").map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
-    // 直送(認定事業所)=卸価格(数量帯別) / 直接(事業所)=エンドユーザー定価 をスナップショット
-    const unitPrice = shipType==="dropship" ? unitPriceFor(p, it.qty) : (p.listPrice||0);
+    // 直送(認定事業所)=認定事業所卸(partnerPricing・数量帯別) / 直接(事業所)=エンドユーザー定価 をスナップショット
+    const unitPrice = shipType==="dropship" ? partnerPriceFor(p, it.qty) : (p.listPrice||0);
     return {...it, unitPrice};
   });
   if(!items.length){ alert("数量を入力してください"); return; }
   for(const it of items){ const p=products.find(x=>x.id===it.sku);
     if((p.stock||0)<it.qty){ const w=document.getElementById("shipStockWarn");
       w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
+  const shippingMethod=document.getElementById("shipMethod").value||"manual";
+  const shippingFee=Number(document.getElementById("shipFee").value)||0;
+  const shippingLabel=document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"");
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
   try{
     const soNumber=seqFmt("SH",await nextSeq("shipments"));
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType, partnerEmail, partnerName,
-      status:"shipped",
+      status:"shipped", shippingMethod, shippingFee, shippingLabel,
       shipDate:document.getElementById("shipDate").value||today(),
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
@@ -431,8 +502,12 @@ async function deleteShipment(s){
 
 const SHIP_STATUS = { shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };
 const SHIP_STATUS_BADGE = { shipped:7, invoiced:9, paid:3, canceled:4 };
-function shipTotal(s){ return (s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0); }
-function shipTotalIncl(s){ return Math.floor(shipTotal(s)*1.1); }
+// 出荷の金額（送料込み）。送料は税込実費を税抜換算して小計に含め、請求書(renderInvoice)と同じ税計算にする
+function shipGoodsExcl(s){ return (s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0); }
+function shipFeeExcl(s){ return Math.round((Number(s.shippingFee)||0)/1.1); }
+function shipSubExcl(s){ return shipGoodsExcl(s)+shipFeeExcl(s); }
+function shipTotal(s){ return shipSubExcl(s); }
+function shipTotalIncl(s){ const sub=shipSubExcl(s); return sub+Math.floor(sub*0.1); }
 
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
@@ -533,7 +608,7 @@ async function shipFromOrder(o){
   const sh=o.shipping||{};
   const items=(o.items||[]).map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
-    return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:unitPriceFor(p, Number(it.qty)||0) };
+    return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:partnerPriceFor(p, Number(it.qty)||0) };
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
   for(const it of items){ const p=products.find(x=>x.id===it.sku);
@@ -541,9 +616,11 @@ async function shipFromOrder(o){
   if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
   try{
     const soNumber=seqFmt("SH",await nextSeq("shipments"));
+    const packs=Math.max(1,Math.ceil(items.reduce((a,i)=>a+i.qty,0)/3));
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"shipped", partnerOrderId:o._id,
+      shippingMethod:"letterpack", shippingFee:packs*letterpackFee(), shippingLabel:`送料（レターパック ${packs}通）`,
       shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
@@ -673,6 +750,7 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("shipType").addEventListener("change",(e)=>{
     document.getElementById("shipPartnerWrap").style.display = e.target.value==="dropship"?"":"none";
   });
+  ["shipMethod","shipYuSize","shipYuRegion"].forEach(id=>document.getElementById(id).addEventListener("change",recalcShipFee));
 
   // products（リアルタイム・在庫反映）
   let prefilled=false;

@@ -88,7 +88,10 @@ function renderLetterpack(s, sender, variant){
 function renderInvoice(s, st){
   st = st || {};
   const items=s.items||[];
-  const sub=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
+  const goodsExcl=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
+  const shipFeeIncl=Number(s.shippingFee)||0;
+  const shipExcl=Math.round(shipFeeIncl/1.1); // 送料は税込実費→税抜換算して10%対象明細に計上
+  const sub=goodsExcl+shipExcl;
   const tax=Math.floor(sub*0.1); const total=sub+tax;
   const invNo=(s.soNumber||"").replace(/^SH/,"INV");
   const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
@@ -104,7 +107,8 @@ function renderInvoice(s, st){
     ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div><div style="font-size:12px;color:var(--muted);margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
     : `<div style="font-size:12px;color:var(--muted)">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
   // 適格請求書: 各明細に適用税率を表示
-  const rows2=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("");
+  const rows2=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
+    + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipExcl)}</td><td class="num">${yen(shipExcl)}</td></tr>` : "");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>

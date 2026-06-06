@@ -167,6 +167,27 @@
           <div class="form-group"><label class="form-label" for="shipPhone">電話</label><input class="form-control" type="text" id="shipPhone"></div>
         </div>
         <div id="shipItems"></div>
+        <!-- 送料（配送方法から自動計算・手修正可）。直送=レターパック / まとめ=ゆうパック(滋賀発) -->
+        <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px;margin-top:4px">
+          <label class="form-label" for="shipMethod">配送方法（送料を自動計算）</label>
+          <select class="form-control" id="shipMethod">
+            <option value="">指定しない / 送料を手入力</option>
+            <option value="letterpack">レターパック（直送・3台ごとに1通）</option>
+            <option value="yupack">ゆうパック（まとめ・滋賀発）</option>
+          </select>
+        </div>
+        <div class="form-row" id="yupackWrap" style="display:none">
+          <div class="form-group"><label class="form-label" for="shipYuSize">ゆうパック サイズ</label>
+            <select class="form-control" id="shipYuSize"></select></div>
+          <div class="form-group"><label class="form-label" for="shipYuRegion">お届け地域</label>
+            <select class="form-control" id="shipYuRegion"></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="shipFeeLabel">送料の名目</label>
+            <input class="form-control" id="shipFeeLabel" type="text" placeholder="送料（レターパック 1通）"></div>
+          <div class="form-group"><label class="form-label" for="shipFee">送料（円・税込）</label>
+            <input class="form-control" id="shipFee" type="number" min="0" placeholder="0"></div>
+        </div>
         <div id="shipStockWarn" style="font-size:12px;color:var(--color-danger);display:none"></div>
       </div>
       <div class="modal-footer">
