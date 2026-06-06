@@ -528,6 +528,12 @@ textarea.form-control { resize: vertical; min-height: 80px; }
 
 /* ========== Select ========== */
 select.form-control { cursor: pointer; }
+/* B1: 入力欄インラインエラー */
+.field-error { color: var(--color-danger); font-size: 12px; margin-top: 4px; min-height: 1em; }
+.form-control.has-error { border-color: var(--color-danger); }
+/* ステータス絞り込みの optgroup を見やすく */
+#statusFilter optgroup { font-weight: 700; color: var(--color-ink-muted); }
+#statusFilter option { font-weight: 400; color: var(--color-ink); }
 
 /* ========== Empty state ========== */
 .empty-state {
@@ -715,6 +721,21 @@ select.form-control { cursor: pointer; }
 .kanban-card-office { font-weight: 600; margin: 2px 0 4px; }
 .kanban-card-meta { font-size: 12px; color: var(--color-ink-muted); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .kanban-card-meta .stale-flag { color: var(--color-danger); font-weight: 600; }
+/* ===== カンバン フェーズ表示（A1: 5フェーズ＋失注） ===== */
+.kanban-board.phase-view { gap: var(--space-2); }
+.kanban-board.phase-view .kanban-col { flex: 1 1 0; min-width: 190px; }
+.kanban-col.is-lost { background: #f6f5f2; }
+.kanban-card-sub { margin: 5px 0 6px; }
+.kanban-card .substatus {
+  font-size: 12px; padding: 4px 6px; max-width: 100%;
+  border: 1px solid var(--color-line); border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface); color: var(--color-ink); cursor: pointer;
+}
+.kanban-card .substatus-chip {
+  display: inline-block; font-size: 12px; font-weight: 600;
+  padding: 2px 9px; border-radius: 999px;
+  border: 1px solid var(--c, var(--color-line)); color: var(--c, var(--color-ink-muted)); background: #fff;
+}
 .view-toggle { display: flex; gap: var(--space-2); }
 
 /* ========== ソート可能テーブル ========== */

@@ -63,20 +63,32 @@
           <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="statusSelect">ステータス</label>
-              <select class="form-control" id="statusSelect" style="width:auto;min-width:200px">
-                <option value="1">新規受信</option>
-                <option value="2">確認中</option>
-                <option value="3">受注確定</option>
-                <option value="4">失注</option>
-                <option value="5">担当者決定</option>
-                <option value="6">事前準備中</option>
-                <option value="7">伴走支援待ち</option>
-                <option value="8">伴走支援実施済</option>
-                <option value="9">書類準備完了・申請ガイド中</option>
-                <option value="10">申請完了・採択待ち</option>
-                <option value="11">採択・入金待ち</option>
-                <option value="12">アフターフォロー中</option>
-                <option value="13">案件完了</option>
+              <select class="form-control" id="statusSelect" style="width:auto;min-width:220px">
+                <optgroup label="① 受付・受注">
+                  <option value="1">新規受信</option>
+                  <option value="2">確認中</option>
+                  <option value="3">受注確定</option>
+                </optgroup>
+                <optgroup label="② 準備">
+                  <option value="5">担当者決定</option>
+                  <option value="6">事前準備中</option>
+                </optgroup>
+                <optgroup label="③ 伴走支援">
+                  <option value="7">伴走支援待ち</option>
+                  <option value="8">伴走支援実施済</option>
+                </optgroup>
+                <optgroup label="④ 申請・採択">
+                  <option value="9">書類準備完了・申請ガイド中</option>
+                  <option value="10">申請完了・採択待ち</option>
+                  <option value="11">採択・入金待ち</option>
+                </optgroup>
+                <optgroup label="⑤ 完了・フォロー">
+                  <option value="12">アフターフォロー中</option>
+                  <option value="13">案件完了</option>
+                </optgroup>
+                <optgroup label="その他">
+                  <option value="4">失注</option>
+                </optgroup>
               </select>
             </div>
             <a class="btn btn-ghost" id="reportBtn" href="#" target="_blank" rel="noopener">

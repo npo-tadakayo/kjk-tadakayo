@@ -9,6 +9,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { STATUS_LABELS } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -19,13 +20,7 @@ const functions = getFunctions(app, "asia-northeast1");
 const caseId = new URLSearchParams(location.search).get("id");
 if (!caseId) { location.href = "/cases.html"; }
 
-const STATUS_LABELS = {
-  1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注",
-  5: "担当者決定", 6: "事前準備中", 7: "伴走支援待ち",
-  8: "伴走支援実施済", 9: "書類準備完了・申請ガイド中",
-  10: "申請完了・採択待ち", 11: "採択・入金待ち",
-  12: "アフターフォロー中", 13: "案件完了",
-};
+// STATUS_LABELS は /js/constants.js から import（C1・重複定義を排除）
 
 const SOURCE_LABELS = {
   lp_inquiry: "LP問い合わせ",

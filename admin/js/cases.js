@@ -2,33 +2,24 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, getDocs, limit, doc, runTransaction }
+  addDoc, serverTimestamp, doc, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { gateRole } from "/js/role.js";
+import {
+  STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
+  daysUntilDeadline,
+} from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const STATUS_LABELS = {
-  1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注",
-  5: "担当者決定", 6: "事前準備中", 7: "伴走支援待ち",
-  8: "伴走支援実施済", 9: "書類準備完了・申請ガイド中",
-  10: "申請完了・採択待ち", 11: "採択・入金待ち",
-  12: "アフターフォロー中", 13: "案件完了",
-};
-
-const SOURCE_LABELS = {
-  lp_inquiry: "LP問い合わせ",
-  mitsumori_quote: "見積もり成約",
-  manual: "手動登録",
-};
-
-// 申請期限: 2027-03-12
-const DEADLINE = new Date("2027-03-12T23:59:59+09:00");
-
-function daysUntilDeadline() {
-  return Math.ceil((DEADLINE - new Date()) / (1000 * 60 * 60 * 24));
+function toast(msg) {
+  const t = document.getElementById("toast");
+  if (!t) return;
+  t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.display = "none"; }, 2500);
 }
 
 function formatDate(ts) {
@@ -37,24 +28,30 @@ function formatDate(ts) {
   return d.toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
+// ステータス絞り込みをフェーズ別 optgroup で生成（C1/A1）
+function populateStatusFilter() {
+  const sel = document.getElementById("statusFilter");
+  const groups = PHASES.map((p) =>
+    `<optgroup label="${p.label}">` +
+    p.statuses.map((s) => `<option value="${s}">${STATUS_LABELS[s]}</option>`).join("") +
+    `</optgroup>`).join("");
+  sel.innerHTML = `<option value="">すべてのステータス</option>${groups}` +
+    `<optgroup label="その他"><option value="${LOST}">${STATUS_LABELS[LOST]}</option></optgroup>`;
+}
+
 function updateDeadlineBanner() {
   const days = daysUntilDeadline();
   const banner = document.getElementById("deadlineBanner");
   const text = document.getElementById("deadlineText");
   banner.style.display = "flex";
-  if (days <= 3) {
-    banner.className = "deadline-banner danger";
-    text.textContent = `申請期限まで残り ${days} 日！今すぐ対応が必要な案件を確認してください`;
-  } else if (days <= 14) {
-    banner.className = "deadline-banner warn";
-    text.textContent = `申請期限まで残り ${days} 日。再申請の余裕がなくなります。早めの申請を`;
-  } else if (days <= 30) {
-    banner.className = "deadline-banner warn";
-    text.textContent = `申請期限まで残り ${days} 日。書類は揃っていますか？`;
-  } else {
-    banner.className = "deadline-banner safe";
-    text.textContent = `令和8年度 助成金申請受付中（期限: 2027年3月12日 — あと ${days} 日）`;
-  }
+  if (days <= 3) { banner.className = "deadline-banner danger";
+    text.textContent = `申請期限まで残り ${days} 日！今すぐ対応が必要な案件を確認してください`; }
+  else if (days <= 14) { banner.className = "deadline-banner warn";
+    text.textContent = `申請期限まで残り ${days} 日。再申請の余裕がなくなります。早めの申請を`; }
+  else if (days <= 30) { banner.className = "deadline-banner warn";
+    text.textContent = `申請期限まで残り ${days} 日。書類は揃っていますか？`; }
+  else { banner.className = "deadline-banner safe";
+    text.textContent = `令和8年度 助成金申請受付中（期限: 2027年3月12日 — あと ${days} 日）`; }
 }
 
 let allCases = [];
@@ -86,31 +83,41 @@ function updateSortIndicators() {
   });
 }
 
-function renderCases() {
-  const search = document.getElementById("searchInput").value.toLowerCase();
-  const statusFilter = document.getElementById("statusFilter").value;
-  const sourceFilter = document.getElementById("sourceFilter").value;
+function currentFilters() {
+  return {
+    search: document.getElementById("searchInput").value.toLowerCase(),
+    statusFilter: document.getElementById("statusFilter").value,
+    sourceFilter: document.getElementById("sourceFilter").value,
+  };
+}
+function matchFilters(c, { search, statusFilter, sourceFilter }) {
+  const matchSearch = !search ||
+    (c.officeName || "").toLowerCase().includes(search) ||
+    (c.corpName || "").toLowerCase().includes(search) ||
+    (c.contactName || "").toLowerCase().includes(search);
+  const matchStatus = !statusFilter || String(c.status) === statusFilter;
+  const matchSource = !sourceFilter || c.source === sourceFilter;
+  return matchSearch && matchStatus && matchSource;
+}
 
-  const filtered = sortCases(allCases.filter((c) => {
-    const matchSearch = !search ||
-      (c.officeName || "").toLowerCase().includes(search) ||
-      (c.corpName || "").toLowerCase().includes(search) ||
-      (c.contactName || "").toLowerCase().includes(search);
-    const matchStatus = !statusFilter || String(c.status) === statusFilter;
-    const matchSource = !sourceFilter || c.source === sourceFilter;
-    return matchSearch && matchStatus && matchSource;
-  }));
+function renderCases() {
+  const f = currentFilters();
+  const filtered = sortCases(allCases.filter((c) => matchFilters(c, f)));
 
   const tbody = document.getElementById("casesBody");
   const table = document.getElementById("casesTable");
   const empty = document.getElementById("emptyEl");
-  const loading = document.getElementById("loadingEl");
-
-  loading.style.display = "none";
+  document.getElementById("loadingEl").style.display = "none";
 
   if (filtered.length === 0) {
     table.style.display = "none";
     empty.style.display = "block";
+    // B1: 「条件に合致しない」と「そもそも0件」を区別
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter);
+    const msg = empty.querySelector("p");
+    if (msg) msg.textContent = hasFilter
+      ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
+      : (allCases.length === 0 ? "案件がまだ登録されていません" : "案件がありません");
     return;
   }
 
@@ -135,42 +142,27 @@ function renderCases() {
 
 function escHtml(str) {
   return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-// 現在の絞り込み結果をCSV出力（Excel対応・UTF-8 BOM付き）
 function getFilteredCases() {
-  const search = document.getElementById("searchInput").value.toLowerCase();
-  const statusFilter = document.getElementById("statusFilter").value;
-  const sourceFilter = document.getElementById("sourceFilter").value;
-  return allCases.filter((c) => {
-    const matchSearch = !search ||
-      (c.officeName || "").toLowerCase().includes(search) ||
-      (c.corpName || "").toLowerCase().includes(search) ||
-      (c.contactName || "").toLowerCase().includes(search);
-    const matchStatus = !statusFilter || String(c.status) === statusFilter;
-    const matchSource = !sourceFilter || c.source === sourceFilter;
-    return matchSearch && matchStatus && matchSource;
-  });
+  const f = currentFilters();
+  return allCases.filter((c) => matchFilters(c, f));
 }
 
 function csvCell(v) {
   const s = String(v ?? "");
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
-
 function fmtFull(ts) {
   if (!ts) return "";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
-
 function exportCsv() {
   const rows = getFilteredCases();
+  if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
   const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元",
     "ステータス","担当スタッフ","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
@@ -187,11 +179,8 @@ function exportCsv() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const today = new Date().toLocaleDateString("ja-JP").replace(/\//g, "");
-  a.href = url;
-  a.download = `案件一覧_${today}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = url; a.download = `案件一覧_${today}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -205,10 +194,19 @@ async function getNextCaseNumber() {
   });
 }
 
+function setFieldError(id, msg) {
+  const el = document.getElementById(id + "Err");
+  if (el) el.textContent = msg || "";
+  const input = document.getElementById(id);
+  if (input) input.classList.toggle("has-error", !!msg);
+}
+
 async function createCase(user) {
   const officeName = document.getElementById("officeName").value.trim();
+  setFieldError("officeName", "");
   if (!officeName) {
-    alert("事業所名を入力してください");
+    setFieldError("officeName", "事業所名を入力してください");
+    document.getElementById("officeName").focus();
     return;
   }
 
@@ -218,56 +216,34 @@ async function createCase(user) {
 
   try {
     const now = serverTimestamp();
+    const corpName = document.getElementById("corpName").value.trim();
     const officeRef = await addDoc(collection(db, "offices"), {
-      corpName: document.getElementById("corpName").value.trim(),
-      officeName,
+      corpName, officeName,
       phone: document.getElementById("contactPhone").value.trim(),
-      createdAt: now,
-      updatedAt: now,
+      createdAt: now, updatedAt: now,
     });
-
     const caseNumber = await getNextCaseNumber();
-
     const caseRef = await addDoc(collection(db, "cases"), {
-      caseNumber,
-      officeId: officeRef.id,
-      officeName,
-      corpName: document.getElementById("corpName").value.trim(),
+      caseNumber, officeId: officeRef.id, officeName, corpName,
       contactName: document.getElementById("contactName").value.trim(),
       contactEmail: document.getElementById("contactEmail").value.trim(),
       contactPhone: document.getElementById("contactPhone").value.trim(),
-      source: "manual",
-      status: 1,
-      assignedUserId: null,
-      assignedUserName: null,
-      receivedAt: now,
-      updatedAt: now,
-      cardReaders: [],
-      subsidyCategory: null,
-      expectedSubsidyAmount: null,
-      lostReason: null,
-      orderedAt: null,
-      completedAt: null,
+      source: "manual", status: 1, assignedUserId: null, assignedUserName: null,
+      receivedAt: now, updatedAt: now, cardReaders: [],
+      subsidyCategory: null, expectedSubsidyAmount: null, lostReason: null,
+      orderedAt: null, completedAt: null,
     });
-
     const memo = document.getElementById("newCaseMemo").value.trim();
     if (memo) {
       await addDoc(collection(db, "activities"), {
-        caseId: caseRef.id,
-        type: "memo",
-        occurredAt: now,
-        userId: user.uid,
-        userName: user.displayName || user.email,
-        subject: "初回メモ",
-        body: memo,
-        attachmentUrls: [],
+        caseId: caseRef.id, type: "memo", occurredAt: now,
+        userId: user.uid, userName: user.displayName || user.email,
+        subject: "初回メモ", body: memo, attachmentUrls: [],
       });
     }
-
-    closeModal();
     location.href = `/case-detail.html?id=${caseRef.id}`;
   } catch (e) {
-    alert(`登録に失敗しました: ${e.message}`);
+    toast(`登録に失敗しました: ${e.message}`);
     btn.disabled = false;
     btn.innerHTML = '<i class="ti ti-check"></i>登録する';
   }
@@ -277,31 +253,27 @@ function openModal() {
   document.getElementById("newCaseModal").classList.add("open");
   document.getElementById("officeName").focus();
 }
-
 function closeModal() {
   document.getElementById("newCaseModal").classList.remove("open");
+  setFieldError("officeName", "");
   ["corpName","officeName","contactName","contactPhone","contactEmail","newCaseMemo"]
     .forEach((id) => { document.getElementById(id).value = ""; });
 }
 
 // 初期化
 onAuthStateChanged(auth, async (user) => {
-  if (!user || !user.email?.endsWith("@tadakayo.jp")) {
-    location.href = "/index.html";
-    return;
-  }
+  if (!user || !user.email?.endsWith("@tadakayo.jp")) { location.href = "/index.html"; return; }
   if (!(await gateRole(db, user))) return;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
+  populateStatusFilter();
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
   document.getElementById("newCaseBtn").addEventListener("click", openModal);
   document.getElementById("closeModalBtn").addEventListener("click", closeModal);
   document.getElementById("cancelModalBtn").addEventListener("click", closeModal);
   document.getElementById("saveNewCaseBtn").addEventListener("click", () => createCase(user));
-  document.getElementById("newCaseModal").addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) closeModal();
-  });
+  document.getElementById("newCaseModal").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeModal(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
   document.getElementById("searchInput").addEventListener("input", renderCases);
@@ -316,10 +288,8 @@ onAuthStateChanged(auth, async (user) => {
     renderCases();
   }));
   updateSortIndicators();
-
   updateDeadlineBanner();
 
-  // リアルタイム購読
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
     allCases = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));

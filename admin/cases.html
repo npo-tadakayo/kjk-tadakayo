@@ -65,21 +65,8 @@
       <!-- フィルタ -->
       <div class="filter-bar">
         <input type="search" id="searchInput" placeholder="事業所名・担当者で検索..." style="flex:1; min-width:200px;">
-        <select id="statusFilter">
+        <select id="statusFilter" aria-label="ステータスで絞り込み">
           <option value="">すべてのステータス</option>
-          <option value="1">新規受信</option>
-          <option value="2">確認中</option>
-          <option value="3">受注確定</option>
-          <option value="4">失注</option>
-          <option value="5">担当者決定</option>
-          <option value="6">事前準備中</option>
-          <option value="7">伴走支援待ち</option>
-          <option value="8">伴走支援実施済</option>
-          <option value="9">書類準備完了・申請ガイド中</option>
-          <option value="10">申請完了・採択待ち</option>
-          <option value="11">採択・入金待ち</option>
-          <option value="12">アフターフォロー中</option>
-          <option value="13">案件完了</option>
         </select>
         <select id="sourceFilter">
           <option value="">すべての流入</option>
@@ -135,7 +122,9 @@
           </div>
           <div class="form-group">
             <label class="form-label" for="officeName">事業所名 <span style="color:red">*</span></label>
-            <input class="form-control" type="text" id="officeName" required placeholder="○○苑">
+            <input class="form-control" type="text" id="officeName" required placeholder="○○苑"
+                   aria-describedby="officeNameErr">
+            <div class="field-error" id="officeNameErr" role="alert"></div>
           </div>
         </div>
         <div class="form-row">
@@ -165,6 +154,10 @@
       </div>
     </div>
   </div>
+
+  <!-- トースト -->
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+       style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100;"></div>
 
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>

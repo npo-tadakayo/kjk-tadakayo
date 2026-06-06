@@ -51,26 +51,57 @@ function renderProducts(){
       <td>${yen(p.wholesale2_10)}</td>
       <td><strong style="font-size:16px">${p.stock||0}</strong> 台</td>
       <td>
-        <button class="btn btn-secondary stock-btn" data-sku="${p.id}" data-dir="in" style="font-size:12px;padding:4px 8px">＋入庫</button>
-        <button class="btn btn-secondary stock-btn" data-sku="${p.id}" data-dir="out" style="font-size:12px;padding:4px 8px">－出庫</button>
+        <button class="btn btn-secondary stock-btn" data-sku="${p.id}" style="font-size:12px;padding:4px 10px"><i class="ti ti-adjustments" aria-hidden="true"></i> 在庫調整</button>
       </td>
     </tr>`).join("");
-  document.querySelectorAll(".stock-btn").forEach(b=>b.addEventListener("click",()=>adjustStock(b.dataset.sku,b.dataset.dir)));
+  document.querySelectorAll(".stock-btn").forEach(b=>b.addEventListener("click",()=>openStockModal(b.dataset.sku)));
 }
 
-async function adjustStock(sku, dir){
+// 在庫調整モーダル（B2: prompt廃止）
+let stockSku = null;
+function setStockErr(m){
+  const e = document.getElementById("stockQtyErr"); if (e) e.textContent = m || "";
+  const i = document.getElementById("stockQty"); if (i) i.classList.toggle("has-error", !!m);
+}
+function closeStockModal(){ document.getElementById("stockModal").classList.remove("open"); stockSku = null; }
+function openStockModal(sku){
   const p = products.find(x=>x.id===sku);
-  const qStr = prompt(`${p.name}\n${dir==="in"?"入庫":"出庫"}する台数を入力してください`, "1");
-  if(!qStr) return;
-  const q = parseInt(qStr,10);
-  if(!(q>0)){ alert("正の整数を入力してください"); return; }
-  if(dir==="out" && (p.stock||0)<q){ alert(`在庫不足（現在 ${p.stock||0} 台）`); return; }
-  const delta = dir==="in"? q : -q;
-  await updateDoc(doc(db,"products",sku),{stock:increment(delta)});
-  await addDoc(collection(db,"inventoryMovements"),{
-    sku, delta, reason: dir==="in"?"manual_in":"manual_out",
-    createdAt:serverTimestamp(), userName: currentUser.displayName||currentUser.email });
-  toast(`${p.name} を ${dir==="in"?"+":"-"}${q}台 調整しました`);
+  if (!p) return;
+  stockSku = sku;
+  document.getElementById("stockModalTitle").textContent = `在庫調整：${p.name}`;
+  document.getElementById("stockCurrent").textContent = `現在の在庫：${p.stock||0} 台`;
+  document.getElementById("stockQty").value = "1";
+  document.getElementById("stockReason").value = "manual";
+  setStockErr("");
+  const m = document.getElementById("stockModal");
+  m.classList.add("open");
+  document.getElementById("stockInBtn").onclick = ()=>doStockAdjust("in");
+  document.getElementById("stockOutBtn").onclick = ()=>doStockAdjust("out");
+  document.getElementById("closeStockBtn").onclick = closeStockModal;
+  document.getElementById("cancelStockBtn").onclick = closeStockModal;
+  m.onclick = (e)=>{ if (e.target === m) closeStockModal(); };
+  document.getElementById("stockQty").focus();
+}
+async function doStockAdjust(dir){
+  const p = products.find(x=>x.id===stockSku);
+  if (!p) return;
+  setStockErr("");
+  const q = parseInt(document.getElementById("stockQty").value, 10);
+  if (!(q > 0)) { setStockErr("正の整数を入力してください"); return; }
+  if (dir === "out" && (p.stock||0) < q) { setStockErr(`在庫不足（現在 ${p.stock||0} 台）`); return; }
+  const reason = `${document.getElementById("stockReason").value}_${dir}`;
+  const btnIn = document.getElementById("stockInBtn"), btnOut = document.getElementById("stockOutBtn");
+  btnIn.disabled = true; btnOut.disabled = true;
+  try {
+    const delta = dir === "in" ? q : -q;
+    await updateDoc(doc(db,"products",stockSku), { stock: increment(delta) });
+    await addDoc(collection(db,"inventoryMovements"), {
+      sku: stockSku, delta, reason,
+      createdAt: serverTimestamp(), userName: currentUser.displayName||currentUser.email });
+    toast(`${p.name} を ${dir==="in"?"+":"-"}${q}台 調整しました`);
+    closeStockModal();
+  } catch(e){ setStockErr(`調整に失敗しました: ${e.message}`); }
+  finally { btnIn.disabled = false; btnOut.disabled = false; }
 }
 
 // ===== 発注モーダル =====
