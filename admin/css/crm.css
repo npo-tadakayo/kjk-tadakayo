@@ -7,9 +7,11 @@
   --color-ink: #2C2416;
   --color-ink-muted: #6a5e48;
   --color-ink-light: #9a8e78;
-  --color-primary: #3a6e9e;
-  --color-primary-soft: #e5edf5;
-  --color-success: #238e3a;
+  --color-primary: #E33535;
+  --color-primary-dark: #c02828;
+  --color-primary-soft: #FFE4EC;
+  --app-color: #E33535;
+  --color-success: #2a7a3b;
   --color-success-soft: #e8f5ec;
   --color-warning: #c87a1f;
   --color-warning-soft: #fef3e6;
