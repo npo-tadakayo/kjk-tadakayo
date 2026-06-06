@@ -31,6 +31,33 @@
     // メニュー項目タップで閉じる
     sidebar.addEventListener("click", function(e){ if(e.target.closest(".nav-item")) close(); });
   }
-  if(document.readyState!=="loading") init();
-  else document.addEventListener("DOMContentLoaded", init);
+  // モーダル共通a11y（全画面・rule26 / WCAG 2.1.2・2.4.3）: Escで閉じる＋Tabフォーカストラップ＋開いたら初期フォーカス
+  function modalA11y(){
+    document.addEventListener("keydown", function(e){
+      var modal=document.querySelector(".modal-overlay.open");
+      if(!modal) return;
+      if(e.key==="Escape"){ modal.classList.remove("open"); return; }
+      if(e.key==="Tab"){
+        var f=modal.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        var vis=Array.prototype.filter.call(f,function(el){return el.offsetParent!==null;});
+        if(!vis.length) return;
+        var first=vis[0], last=vis[vis.length-1];
+        if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+        else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+      }
+    });
+    var obs=new MutationObserver(function(muts){
+      muts.forEach(function(m){
+        var t=m.target;
+        if(t.classList && t.classList.contains("modal-overlay") && t.classList.contains("open")){
+          var f=t.querySelector('input:not([disabled]),select,textarea,button');
+          if(f) setTimeout(function(){ try{ f.focus(); }catch(_){} },50);
+        }
+      });
+    });
+    document.querySelectorAll(".modal-overlay").forEach(function(m){ obs.observe(m,{attributes:true,attributeFilter:["class"]}); });
+  }
+  function start(){ init(); modalA11y(); }
+  if(document.readyState!=="loading") start();
+  else document.addEventListener("DOMContentLoaded", start);
 })();

@@ -126,7 +126,7 @@ function renderCases() {
   empty.style.display = "none";
 
   tbody.innerHTML = filtered.map((c) => `
-    <tr onclick="location.href='/case-detail.html?id=${c._id}'">
+    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く">
       <td><strong>#${c.caseNumber || "—"}</strong></td>
       <td>
         <div style="font-weight:500">${escHtml(c.officeName || "—")}</div>
@@ -146,6 +146,18 @@ function escHtml(str) {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+
+// 案件行（tr[data-href]）をマウス／キーボード両方で開けるように（WCAG 2.1.1 キーボード操作）
+document.addEventListener("click", (e) => {
+  const tr = e.target.closest('tr[data-href]');
+  if (tr) location.href = tr.dataset.href;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    const tr = e.target.closest('tr[data-href]');
+    if (tr && document.activeElement === tr) { e.preventDefault(); location.href = tr.dataset.href; }
+  }
+});
 
 function getFilteredCases() {
   const f = currentFilters();

@@ -189,7 +189,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 .btn:hover { opacity: 0.85; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.btn-primary { background: var(--color-primary); color: #fff; }
+.btn-primary { background: var(--color-primary-dark); color: #fff; } /* rule26/WCAG1.4.3: 白文字とのコントラスト確保（#E33535=4.39:1 → #c02828=5.85:1）。ブランド赤#E33535はヘッダー/タグ等の非テキスト用途で使用 */
 .btn-secondary { background: var(--color-line); color: var(--color-ink); }
 .btn-danger { background: var(--color-danger); color: #fff; }
 .btn-ghost { background: none; color: var(--color-primary); border: 1px solid var(--color-primary); }
