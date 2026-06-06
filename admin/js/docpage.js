@@ -10,6 +10,7 @@ const NAV = [
   ["/cases.html","ti-layout-list","案件一覧"],
   ["/kanban.html","ti-layout-kanban","カンバン"],
   ["/supply.html","ti-package","供給管理"],
+  ["/simulator.html","ti-calculator","売上シミュレーター"],
   ["/settings.html","ti-settings","設定"],
   ["/users.html","ti-users","ユーザー管理"],
 ];

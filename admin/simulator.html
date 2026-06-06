@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>売上シミュレーター — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .sim-num{width:84px;text-align:right}
+    .sim-table th,.sim-table td{padding:6px 8px;font-size:13px}
+    .sim-table th{color:var(--color-ink-muted);font-weight:600;text-align:right;white-space:nowrap}
+    .sim-table th:first-child,.sim-table td:first-child{text-align:left}
+    .sim-table td{text-align:right;border-top:1px solid var(--color-line)}
+    .sim-grp td{background:var(--color-surface,#faf7f0);font-weight:600;text-align:left;color:var(--color-ink)}
+    .kpi{display:flex;flex-wrap:wrap;gap:12px}
+    .kpi .box{flex:1;min-width:150px;border:1px solid var(--color-line);border-radius:10px;padding:12px 14px}
+    .kpi .box .lbl{font-size:12px;color:var(--color-ink-muted)}
+    .kpi .box .val{font-size:20px;font-weight:700;margin-top:2px}
+    .bar-row{display:grid;grid-template-columns:140px 1fr 110px;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+    .bar-track{background:var(--color-line);border-radius:6px;height:18px;overflow:hidden}
+    .bar-fill{height:100%;border-radius:6px}
+    .seg{cursor:pointer;padding:6px 14px;border:1px solid var(--color-line);background:#fff;font-size:13px}
+    .seg.active{background:var(--app-color,#238e3a);color:#fff;border-color:var(--app-color,#238e3a)}
+    .seg:first-child{border-radius:8px 0 0 8px}.seg:last-child{border-radius:0 8px 8px 0}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
+        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
+        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
+        <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
+        <a class="nav-item active" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
+        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
+        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
+        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
+        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
+        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">年間売上・利益シミュレーター</h1></div>
+      <p style="font-size:13px;color:var(--color-ink-muted);margin:-8px 0 16px">タダカヨ直販モデル（タダカヨが機器＋伴走を販売し、伴走した会員へ報酬を支払う）。カードリーダーの組み合わせごとに年間件数を入れると、年間の売上・利益を試算します。</p>
+
+      <div class="card" id="loadingEl"><div class="card-body"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div></div>
+
+      <div id="app" style="display:none">
+        <!-- 前提設定 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">前提（編集可）</span></div>
+          <div class="card-body">
+            <div class="form-group">
+              <label class="form-label">伴走1件あたりの寄付額（タダカヨ会員→タダカヨ）</label>
+              <div style="display:flex" id="donSeg">
+                <button class="seg" data-d="3000" type="button">¥3,000</button>
+                <button class="seg active" data-d="5000" type="button">¥5,000</button>
+              </div>
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:6px 0 0">下の結果に「3,000／4,000／5,000円」の3パターン比較も表示します。</p>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="costBT">カードリーダー仕入 BT（税別）</label><input class="form-control" id="costBT" type="number" value="7520"></div>
+              <div class="form-group"><label class="form-label" for="costUSB">カードリーダー仕入 USB（税別）</label><input class="form-control" id="costUSB" type="number" value="3490"></div>
+              <div class="form-group"><label class="form-label" for="reward">会員報酬（1件）</label><input class="form-control" id="reward" type="number" value="10000"></div>
+            </div>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:0">定価：BT ¥14,500／USB ¥6,500（税込）。補助金上限：訪問通所¥64,000／居住入所¥55,000／その他¥42,000。粗利は税別（売上÷1.1）で計算。</p>
+          </div>
+        </div>
+
+        <!-- 件数入力 -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">年間件数の入力（カードリーダー組み合わせ別）</span></div>
+          <div class="card-body" style="overflow-x:auto">
+            <table class="sim-table" style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th>組み合わせ</th><th>件数/年</th><th>CR売上(税込)</th><th>伴走売上(税込)</th><th>純利益/件</th><th>純利益(年)</th>
+              </tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 結果 -->
+        <div class="card">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">年間サマリー</span><button class="btn btn-primary" id="saveBtn" type="button" style="font-size:12px;padding:6px 12px"><i class="ti ti-device-floppy" aria-hidden="true"></i> 件数を保存</button></div>
+          <div class="card-body">
+            <div class="kpi" style="margin-bottom:16px">
+              <div class="box"><div class="lbl">総件数 / 年</div><div class="val" id="kCount">0</div></div>
+              <div class="box"><div class="lbl">カードリーダー売上(税込)</div><div class="val" id="kCR">¥0</div></div>
+              <div class="box"><div class="lbl">伴走支援売上(税込)</div><div class="val" id="kBan">¥0</div></div>
+              <div class="box"><div class="lbl">売上合計(税込)</div><div class="val" id="kSales">¥0</div></div>
+              <div class="box"><div class="lbl">タダカヨ純利益(年・寄付込)</div><div class="val" id="kProfit" style="color:var(--app-color,#238e3a)">¥0</div></div>
+            </div>
+            <div style="font-size:13px;color:var(--color-ink-muted);margin-bottom:6px">内訳（年間）</div>
+            <div id="bars"></div>
+            <div style="border-top:1px solid var(--color-line);margin:14px 0 8px;padding-top:10px;font-size:13px;color:var(--color-ink-muted)">寄付額による純利益の比較（年間）</div>
+            <div class="kpi" id="donCompare"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/simulator.js" type="module"></script>
+</body>
+</html>
