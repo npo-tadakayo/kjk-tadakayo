@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>認定事業所 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
+        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
+        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
+        <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
+        <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
+        <a class="nav-item active" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
+        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
+        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
+        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
+        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
+        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
+      </div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">認定事業所</h1>
+        <button class="btn btn-primary" id="newBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i> 新規登録</button>
+      </div>
+      <p style="font-size:13px;color:var(--color-ink-muted);margin:-8px 0 16px">認定事業所（パートナー）の登録・一覧と、各事業所向けの<strong>協定書・説明資料</strong>の作成（PDF）・閲覧ができます。登録するとその事業所は認定事業所ポータルにログインできるようになります。</p>
+
+      <div class="card" id="loadingEl"><div class="card-body"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div></div>
+
+      <div class="card" id="listCard" style="display:none"><div class="table-wrap">
+        <table>
+          <thead><tr><th>法人名 / 事業所</th><th>担当者</th><th>メール</th><th>状態</th><th>書類</th><th></th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <div id="emptyState" class="empty-state" style="display:none"><i class="ti ti-certificate" aria-hidden="true"></i><p>認定事業所がまだ登録されていません。「新規登録」から追加してください。</p></div>
+      </div></div>
+    </main>
+  </div>
+
+  <!-- 登録・編集モーダル -->
+  <div class="modal-overlay" id="editModal">
+    <div class="modal">
+      <div class="modal-header"><h2 id="editTitle">認定事業所の登録</h2><button class="btn-logout" id="editClose" type="button" aria-label="閉じる"><i class="ti ti-x"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label" for="fEmail">ログイン用メール（Googleアカウント）<span style="color:var(--color-danger)">*</span></label><input class="form-control" id="fEmail" type="email" placeholder="partner@example.com"><p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">このメールで認定事業所ポータルにログインできます。登録後の変更不可。</p></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="fCompany">法人名 <span style="color:var(--color-danger)">*</span></label><input class="form-control" id="fCompany" type="text" placeholder="株式会社〇〇 / 社会福祉法人〇〇"></div>
+          <div class="form-group"><label class="form-label" for="fOffice">事業所名（任意）</label><input class="form-control" id="fOffice" type="text"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="fRep">代表者</label><input class="form-control" id="fRep" type="text" placeholder="代表取締役 〇〇 〇〇"></div>
+          <div class="form-group"><label class="form-label" for="fContact">担当者</label><input class="form-control" id="fContact" type="text"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="fPostal">郵便番号</label><input class="form-control" id="fPostal" type="text" placeholder="000-0000"></div>
+          <div class="form-group"><label class="form-label" for="fPhone">電話番号</label><input class="form-control" id="fPhone" type="text"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="fAddress">住所</label><input class="form-control" id="fAddress" type="text"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="fPartnerId">認定事業所ID（任意）</label><input class="form-control" id="fPartnerId" type="text" placeholder="PARTNER-001"></div>
+          <div class="form-group"><label class="form-label" for="fActive">状態</label><select class="form-control" id="fActive"><option value="true">有効（認定中）</option><option value="false">停止</option></select></div>
+        </div>
+        <div id="editErr" class="field-error"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="editCancel" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="editSave" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i> 保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 書類プレビューモーダル -->
+  <div class="modal-overlay" id="docModal">
+    <div class="modal" style="width:min(860px,96vw)">
+      <div class="modal-header"><h2 id="docTitle">書類プレビュー</h2><button class="btn-logout" id="docClose" type="button" aria-label="閉じる"><i class="ti ti-x"></i></button></div>
+      <div class="modal-body" style="background:#f0ede6">
+        <div id="docPreview" style="background:#fff;margin:0 auto;box-shadow:0 1px 6px rgba(0,0,0,.12)"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="docCloseBtn" type="button">閉じる</button>
+        <button class="btn btn-primary" id="docPdf" type="button"><i class="ti ti-file-type-pdf" aria-hidden="true"></i> PDFをダウンロード</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true" style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:200"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/partner-doc.js" type="module"></script>
+  <script src="/js/partner-admin.js" type="module"></script>
+</body>
+</html>

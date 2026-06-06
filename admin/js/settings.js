@@ -18,6 +18,7 @@ const NAV = [
   ["/kanban.html","ti-layout-kanban","カンバン"],
   ["/supply.html","ti-package","供給管理"],
   ["/simulator.html","ti-calculator","売上シミュレーター"],
+  ["/partner-admin.html","ti-certificate","認定事業所"],
   ["/settings.html","ti-settings","設定"],
   ["/users.html","ti-users","ユーザー管理"],
 ];

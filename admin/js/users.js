@@ -73,6 +73,7 @@ async function save(){
 const NAV=[["/dashboard.html","ti-chart-bar","ダッシュボード"],["/cases.html","ti-layout-list","案件一覧"],
   ["/kanban.html","ti-layout-kanban","カンバン"],["/supply.html","ti-package","供給管理"],
   ["/simulator.html","ti-calculator","売上シミュレーター"],
+  ["/partner-admin.html","ti-certificate","認定事業所"],
   ["/settings.html","ti-settings","設定"],["/users.html","ti-users","ユーザー管理"]];
 function renderNav(){
   $("nav").innerHTML = NAV.map(([h,i,l])=>`<a class="nav-item ${h==="/users.html"?"active":""}" href="${h}"><i class="ti ${i}" aria-hidden="true"></i>${l}</a>`).join("")
