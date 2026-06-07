@@ -178,6 +178,7 @@ sequenceDiagram
           <li><strong>事業所への直接出荷(direct)</strong>: 単価はエンドユーザー定価（<code>products.listPrice</code>）。</li>
           <li><strong>送料</strong>: 配送方法で自動計算 — レターパック=<code>letterpackFee × ⌈総台数/3⌉</code> ／ ゆうパック=<code>yupackTable[サイズ][地域]</code>（滋賀発）。<code>shipments.shippingFee/shippingMethod/shippingLabel</code> に保存。</li>
           <li><strong>請求書</strong>: 送料(税込実費)を税抜換算し、商品と合算して10%課税（適格請求書の明細に1行計上）。</li>
+          <li><strong>直送発注の自動出荷（2段階）</strong>: 発注(<code>purchaseOrders</code>)で「直送する」指定時、発注確定で <code>shipments</code> を <code>status=draft</code> で自動生成（<code>shipType=dropship</code>・<code>fulfillment=direct</code>・単価=認定事業所卸・<strong>在庫は経由しない</strong>・発注に <code>shipmentId</code> 記録で二重防止）。出荷タブで draft →「出荷を確定」で <code>shipped</code>（在庫を動かさず）→ 請求書/送付状。請求先は常に認定事業所。</li>
         </ul>
 
         <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-06-06 ／ 詳細な技術仕様はリポジトリ <code>ENGINEERING_NOTES.md</code> を参照。</p>
