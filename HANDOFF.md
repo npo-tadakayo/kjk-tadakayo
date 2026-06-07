@@ -1,7 +1,49 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-06（更新）
+# タダカヨの介護情報基盤伴走支援 LP / CRM設計 申し送り — 2026-06-07（更新）
 
 > handoff-id: tadakayo
 > サービス名（最新）: **タダカヨの介護情報基盤伴走支援**（サブ：タダサポ＋ シリーズ）
+
+---
+
+## 🆕 2026-06-07 セッション⑪（CRM書類チェック追加 ＋ 開発回答対応：M-1観察フェーズ化／H-3 GCP確認反映）
+
+> 状態: **CRM改修を本番反映済**（hosting:admin・rule05二段階：プレビュー `support-checklist-0607` → 静的アセットcurl検証 → live昇格・本番curlで新JS/HTML配信確認）。①CRM補助金書類チェックに公式必須書類④を追加／②開発回答を受け M-1 を観察フェーズへ（webhook 2本 `APPCHECK_ENFORCE=false` 本番再デプロイ・env確認済）／③ドキュメント反映（SECURITY_REMEDIATION.md・本書）／④**伴走チェックリスト（事前/当日/アフター）をアプリ内記録できる3タブを新設**／⑤検証で出来たテスト案件24を削除済。**開発スペースへ返信＋質問を投稿済**（`spaces/AAAAJTAWTVo` msg `mmBAh3is_gE`）。**残＝次田さんの @tadakayo 実機確認**（認証後UI）。
+
+### ① CRM 補助金申請 書類チェックリストに公式必須書類④を追加（未コミット・未デプロイ）
+- ドキュメント突合（`介護情報基盤伴走支援/01_ナレッジ/03_助成金ナレッジ.md §4-1`）で、CRM の書類チェック（案件詳細→書類チェックタブ）に**公式必須書類④「介護WEBサービス『管理メニュー画面』コピー（事業所番号・名称入り）」が欠落**していたのを発見。タダカヨは伴走支援費＝接続サポート費を必ず申請するため④は毎回必須（欠落＝不交付リスク）。
+- 追加: [admin/case-detail.html](admin/case-detail.html)（`chk-webscreen`／`data-field="webScreenCopyReady"`）＋ [admin/js/case-detail.js](admin/js/case-detail.js)（`renderDocumentChecklist` のマッピング1行）。既存の `[data-field]` 汎用リスナで自動保存＝**追加のみ・既存挙動不変**。Firestore は新フィールド merge 追記のみ（マイグレーション不要）。JS構文OK。
+- なお訪問チェックリスト（`02_伴走支援/01_伴走支援チェックリスト.md`）の方は B-4 で④を既に記載済み＝CRM側だけ欠落していた。
+- **未対応**: hosting:admin への本番反映（rule05 二段階）＋コミット。
+
+### ② M-1（webhook App Check）→ 観察フェーズへ戻す（開発判断・本番反映済）
+- 開発回答: 「攻撃インセンティブ低（介護B2B）＋PITR/Delete Protectionでデータ層保護が厚い」ため **App Check 本対応（強制）は保留・観察フェーズへ移行**。代替＝Cloud Monitoring 異常トラフィックアラート設置済。
+- 対応: `functions/.env` に `APPCHECK_ENFORCE=false` 追記 → webhook 2本（`webhookLpInquiry`/`webhookMitsumori`）のみ名前指定で **本番再デプロイ済**（Node20・firebase deploy --only "functions:..."）。`gcloud functions describe` で両関数 env `APPCHECK_ENFORCE=false` 確認。トークンなしPOSTが観察モードで通過（401でない）ことを確認。
+- ⚠️ **観察モードはリクエストを処理まで通す**ため、検証curlで**空のテスト案件（案件番号24・cases/offices/activities 各1件）が生成**された。**削除は本番Firestore破壊的操作のため許可待ち**（次田さん承認後に Firestore REST DELETE で消す。cases/`yojPWNmR6t3AbtkoXqU0`・offices/`Tx9HTk6fldiq5i8FjqWN`・activities/`52t3ul8EFl3kzYPxyojY`）。今後の検証は env 確認のみに留める。
+- 強制へ戻す場合: `.env` の該当行を削除 or true にして2本を再デプロイ。
+
+### ③ H-3 GCP実機確認を反映
+- 開発が GCP 実機で H-3 完全クローズを確認（appspot editor・旧 compute→kjk-gmail-sa tokenCreator いずれも消滅／全7関数 fn-*-sa で ACTIVE／sendSupplierOrder=fn-mail-sa で entryPoint正常）。SECURITY_REMEDIATION.md のサマリー・状態表に反映済。
+
+### ④ 伴走チェックリストをアプリ内で記録できる3タブを新設（本番反映済）
+- 記録テンプレート（`介護情報基盤伴走支援/02_伴走支援/01_伴走支援チェックリスト.md`・`02_支援記録テンプレート.md`）をアプリ内記録化。案件詳細に **事前確認 / 当日 / アフター** の3タブを「書類チェック」前後（ライフサイクル順）に追加。
+- 新規 [admin/js/support-checklist.js](admin/js/support-checklist.js)：チェックリスト定義＋描画＋`supportChecklists/{caseId}` 購読＋変更即保存（既存 `documentChecklists` と同パターン）。スケルトン1回描画＋populate（フォーカス中は上書きしない）＋change保存＋「保存しました HH:MM(JST)」表示。
+- [admin/case-detail.html](admin/case-detail.html)：3タブのボタン＋空コンテナ。[admin/js/case-detail.js](admin/js/case-detail.js)：import＋`initSupportChecklist(db, caseId)` 1行。**既存タブ・既存コード不変**。firestore.rules は catch-all（登録スタッフ read/write）で `supportChecklists` を自動カバー＝ルール変更不要。
+- 記録粒度（テンプレ忠実・次田さん選択）: 事前確認＝○/△/×＋メモ（8項目）／当日＝訪問日時・場所＋7工程チェック＋メモ＋所感／アフター＝審査・振込・データ移行確認＋経過・定着・満足度・次アクション・消費税報告メモ＋**個人情報取扱い確認3項目（Pマーク準拠）**。
+- 検証: 全JS構文OK／renderスモークテスト（data-path数・aria-label整合）／プレビュー＆本番curlで support-checklist.js・case-detail.{js,html} の新マーカー配信確認。**Firestore保存・タブ切替・populate往復は @tadakayo ログイン必須＝次田さん確認**。
+
+### 開発スペースへの投稿（`spaces/AAAAJTAWTVo`・webhook③・「次田から」名義）
+- 返信＋**質問2点**を投稿（msg `mmBAh3is_gE`）: (a) 異常トラフィックアラートの発火条件（メトリクス/しきい値/通知先） (b) 観察中に異常検知時の enforce 再強制トリガーを定めるか／当面 false 固定か。**回答が来たら SECURITY_REMEDIATION.md の M-1 に補償統制の詳細を追記**。
+
+### 次にやること（優先順）
+1. **次田さんの @tadakayo 実機確認**: (a) 案件詳細の新3タブ（事前/当日/アフター）で入力→「保存しました」表示→再読込で保持されるか (b) 書類チェックに④「介護WEBサービス管理メニュー画面コピー」が出るか (c) M-1観察モード後もLP/見積もりフォームから正常に案件が入るか
+2. 開発からの質問回答を反映（M-1 補償統制＝アラート条件の詳細を SECURITY_REMEDIATION.md M-1 へ追記）
+3. E2E 2件（H-3メール実送信 sendCaseEmail/sendSupplierOrder／直送発注→出荷下書き・@tadakayoログイン）
+
+### 本セッションで完了済（参考）
+- ✅ テスト案件24＋office＋activity 削除（Firestore REST・HTTP200・最新は実データ#19に戻った）
+- ✅ CRM書類チェック④追加・伴走チェックリスト3タブ新設 → hosting:admin 本番反映（プレビュー→curl→live）
+- ✅ M-1 観察モード（webhook 2本 enforce=false 本番再デプロイ）
+- ✅ ドキュメント反映＋開発スペース投稿＋コミット/push
 
 ---
 

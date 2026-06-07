@@ -11,6 +11,7 @@ import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { STATUS_LABELS, SOURCE_LABELS } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
+import { initSupportChecklist } from "/js/support-checklist.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -74,6 +75,7 @@ function renderDocumentChecklist(cl) {
     "chk-bankbook": "bankbookReady",
     "chk-service": "serviceConfirmReady",
     "chk-receipt": "receiptReady",
+    "chk-webscreen": "webScreenCopyReady",
     "chk-myna": "mynaAppCompatibleConfirmed",
     "chk-portal": "portalAccountAcquired",
   };
@@ -473,6 +475,9 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
 
   initTabs();
+
+  // 伴走チェックリスト（事前/当日/アフター）をタブに描画・購読
+  initSupportChecklist(db, caseId);
 
   // 案件データ読み込み
   const caseSnap = await getDoc(doc(db, "cases", caseId));

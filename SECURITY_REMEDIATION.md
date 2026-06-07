@@ -9,7 +9,7 @@
 
 ## サマリー
 
-10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。**2026-06-06 に M-1（Phase B 強制）・H-3（editor 剥奪）まで完了し、指摘10件すべて対応済み**。付帯の Gemini 2.5 retire（2026-10-16）のみ10月期限で残（現行モデルは正常動作）。
+10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。**2026-06-06 に M-1・H-3 まで完了し、指摘10件すべて対応済み**。H-3 は **2026-06-07 に開発（システム開発担当）が GCP 実機で完全クローズを確認**（appspot editor・旧 compute→kjk-gmail-sa tokenCreator いずれも消滅／全7関数が fn-*-sa 配下で ACTIVE）。M-1 は **2026-06-07 に開発判断で観察フェーズへ移行**（App Check の本対応＝強制は保留・`APPCHECK_ENFORCE=false`／代替＝Cloud Monitoring 異常トラフィックアラート＋データ層保護[PITR/Delete Protection]）。付帯の Gemini 2.5 retire（2026-10-16）のみ10月期限で残（現行モデルは正常動作）。
 
 | # | 重大度 | 項目 | 状態 | 反映方法 |
 |---|---|---|---|---|
@@ -20,8 +20,8 @@
 | M-4 | 中 | authorized_domains から localhost 削除 | ✅ 完了 | Auth設定 |
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
-| H-3 | 高 | 関数別SA・最小権限 | ✅ 完全クローズ（2026-06-07・appspot editor＋compute→gmail tokenCreator も剥奪） | IAM＋再デプロイ |
-| M-1 | 中 | Webhook 保護（App Check） | ✅ 完了（2026-06-06・Phase B 強制） | App Check |
+| H-3 | 高 | 関数別SA・最小権限 | ✅ 完全クローズ（2026-06-07・appspot editor＋compute→gmail tokenCreator も剥奪・**開発がGCP実機で確認**） | IAM＋再デプロイ |
+| M-1 | 中 | Webhook 保護（App Check） | ✅ 対応（2026-06-07・**観察フェーズ**／開発判断・`APPCHECK_ENFORCE=false`／代替=Monitoringアラート） | App Check（観察）＋Monitoring |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
 
@@ -184,9 +184,18 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 
 ---
 
-### 1. M-1 Webhook保護（App Check・段階移行）【次の最有力】
+### 1. M-1 Webhook保護（App Check・段階移行）
 
-> ✅ **完了（2026-06-06）: Phase B（強制）まで実施**。コード既定を fail-secure 強制（`APPCHECK_ENFORCE !== "false"`）に変更し2本を本番再デプロイ。**トークンなし curl=401／本番ブラウザの正規トークン=200** を実証（テスト案件削除）。ロールバックは env `APPCHECK_ENFORCE=false`。以下は Phase A（観察）の記録。
+> 🟢 **現状（2026-06-07）: 開発判断で観察フェーズに確定（強制は保留）**。
+> 開発（システム開発担当）が「攻撃インセンティブが低い（介護B2B）＋ PITR/Delete Protection によるデータ層保護が十分に厚い」ことを踏まえ、**App Check の本対応（強制）は保留し観察フェーズへ移行**する判断。代替措置として **Cloud Monitoring に異常トラフィックアラートを設置**（発火条件の詳細＝メトリクス/しきい値/通知先は開発に確認中・回答後に追記）。
+> - 対応: `functions/.env` に `APPCHECK_ENFORCE=false` を追記し webhook 2本（`webhookLpInquiry`/`webhookMitsumori`）のみ名前指定で本番再デプロイ（2026-06-07）。`gcloud functions describe` で両関数の env `APPCHECK_ENFORCE=false` を確認。トークンなし POST が 401 ではなく観察モードで通過することを確認（=正規LPフォームのリード喪失リスクなし）。
+> - **観察モードはリクエストを処理まで通すため、env 確認以外の挙動 curl は空案件を生むので避ける**（検証は `describe` の env 確認に留める）。
+> - 強制（fail-secure）へ戻す場合: `functions/.env` の `APPCHECK_ENFORCE=false` を削除 or `true` にして webhook 2本を再デプロイ。
+>
+> ---
+> 以下は経緯の記録（2026-06-06 に一度 Phase B 強制まで実施 → 2026-06-07 に上記判断で観察へ戻した）。
+>
+> ◯ **Phase B（強制）を一度実施（2026-06-06）**: コード既定を fail-secure 強制（`APPCHECK_ENFORCE !== "false"`）にし2本を本番再デプロイ。トークンなし curl=401／本番ブラウザの正規トークン=200 を実証（テスト案件削除）。→ **2026-06-07 に観察へ戻した（上記）**。
 >
 > ✅ **Phase A（観察モード）実装・本番反映・検証まで完了（2026-06-05 セッション⑥）**
 > - reCAPTCHA Enterprise サイトキー発行（表示名 `kjk-tadakayo-lp` / ドメイン `kjk.tadakayo.jp` / スコアベース・チェックボックスなし）。サイトキー = `6LfHTQ4tAAAAAJ4uIXrIvuCXCyyinUz0FPzhvNNp`（公開キー・ページ埋込）。

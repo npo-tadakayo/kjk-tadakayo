@@ -111,11 +111,20 @@
           <button class="tab" role="tab" data-tab="sessions" aria-selected="false">
             <i class="ti ti-camera" aria-hidden="true"></i> 伴走支援
           </button>
+          <button class="tab" role="tab" data-tab="pre" aria-selected="false">
+            <i class="ti ti-clipboard-check" aria-hidden="true"></i> 事前確認
+          </button>
+          <button class="tab" role="tab" data-tab="onsite" aria-selected="false">
+            <i class="ti ti-checklist" aria-hidden="true"></i> 当日
+          </button>
           <button class="tab" role="tab" data-tab="documents" aria-selected="false">
             <i class="ti ti-files" aria-hidden="true"></i> 書類チェック
           </button>
           <button class="tab" role="tab" data-tab="subsidy" aria-selected="false">
             <i class="ti ti-coin-yen" aria-hidden="true"></i> 申請情報
+          </button>
+          <button class="tab" role="tab" data-tab="after" aria-selected="false">
+            <i class="ti ti-progress-check" aria-hidden="true"></i> アフター
           </button>
           <button class="tab" role="tab" data-tab="ai" aria-selected="false">
             <i class="ti ti-sparkles" aria-hidden="true"></i> AIアシスタント
@@ -211,6 +220,12 @@
           </div>
         </div>
 
+        <!-- 事前確認タブ（support-checklist.js が描画） -->
+        <div class="tab-content" id="tab-pre"></div>
+
+        <!-- 当日タブ（support-checklist.js が描画） -->
+        <div class="tab-content" id="tab-onsite"></div>
+
         <!-- 書類チェックタブ -->
         <div class="tab-content" id="tab-documents">
           <div class="card" style="margin-bottom:var(--space-4)">
@@ -241,6 +256,14 @@
                   領収書（型名・用途記載必須）
                 </label>
                 <span class="check-pending" id="status-receipt"><i class="ti ti-circle" aria-hidden="true"></i></span>
+              </div>
+              <div class="checklist-item">
+                <label for="chk-webscreen">
+                  <input type="checkbox" id="chk-webscreen" data-field="webScreenCopyReady">
+                  <i class="ti ti-device-desktop" aria-hidden="true"></i>
+                  介護WEBサービス「管理メニュー画面」コピー（事業所番号・名称入り／接続サポート費の申請時に必須）
+                </label>
+                <span class="check-pending" id="status-webscreen"><i class="ti ti-circle" aria-hidden="true"></i></span>
               </div>
               <div class="checklist-item">
                 <label for="chk-myna">
@@ -377,6 +400,9 @@
             </div>
           </div>
         </div>
+
+        <!-- アフタータブ（support-checklist.js が描画） -->
+        <div class="tab-content" id="tab-after"></div>
 
         <!-- AIアシスタントタブ -->
         <div class="tab-content" id="tab-ai">
