@@ -79,6 +79,27 @@ function savedSpan(sec) {
   return `<span class="sc-saved" id="sc-saved-${sec}" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>`;
 }
 
+// 任意の選択肢のセレクト（ケアプラン連携タブ用）
+function selectGroup(id, sec, path, label, opts) {
+  const o = opts.map((x) => `<option value="${x.v}">${x.t}</option>`).join("");
+  return `
+    <div class="form-group">
+      <label class="form-label" for="${id}">${label}</label>
+      <select class="form-control" id="${id}" data-sec="${sec}" data-path="${path}" style="max-width:340px">${o}</select>
+    </div>`;
+}
+
+// メモ無しのチェックのみ行
+function checkOnly(sec, id, path, label) {
+  return `
+    <div class="form-group">
+      <label class="checklist-check" style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="${id}" data-sec="${sec}" data-path="${path}">
+        <span>${label}</span>
+      </label>
+    </div>`;
+}
+
 function renderPre() {
   return `
     <div class="card">
@@ -215,6 +236,73 @@ function renderAfter() {
     </div>`;
 }
 
+// ケアプラン連携（ケアプランデータ連携システム）— 別サービスの導入記録
+function renderCp() {
+  return `
+    <div class="card" style="margin-bottom:var(--space-4)">
+      <div class="card-header">
+        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 事前確認</span>
+        ${savedSpan("cp")}
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">介護情報基盤を入れた事業所はKJ-ID・電子証明書が整っていることが多く、ケアプランデータ連携の導入が容易（同じ電子請求受付システムを使う）。</p>
+        ${row3state("cp", { key: "software", label: "介護ソフトが標準仕様に対応しているか" })}
+        ${selectGroup("sc-cp-ebilling", "cp", "eBilling", "介護電子請求の有無（電子証明書の種類判定）", [
+          { v: "", t: "未確認" },
+          { v: "yes", t: "あり（介護保険証明書を流用可・追加費用なし）" },
+          { v: "no", t: "なし（請求委任事業所用ケアプラン証明書を無料取得）" },
+        ])}
+        ${selectGroup("sc-cp-cert", "cp", "certType", "電子証明書の種類", [
+          { v: "", t: "未確認" },
+          { v: "kaigo", t: "介護保険証明書（流用）" },
+          { v: "careplan", t: "請求委任事業所用ケアプラン証明書（無料）" },
+          { v: "none", t: "未取得" },
+        ])}
+        <div class="form-group">
+          <label class="form-label" for="sc-cp-partner">主な連携相手（取引先）の本システム導入状況</label>
+          <input class="form-control" type="text" id="sc-cp-partner" data-sec="cp" data-path="partnerStatus">
+        </div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:var(--space-4)">
+      <div class="card-header">
+        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 導入作業</span>
+      </div>
+      <div class="card-body">
+        ${rowStep("cp", { key: "clientInstall", label: "クライアント（製品）DL・インストール" })}
+        ${rowStep("cp", { key: "certInstall", label: "電子証明書 確認 / インストール" })}
+        ${rowStep("cp", { key: "licenseApply", label: "利用申請（規約同意・正常完了表示）" })}
+        ${rowStep("cp", { key: "csvExport", label: "介護ソフトでCSV出力 確認" })}
+        ${rowStep("cp", { key: "csvImport", label: "介護ソフトへCSV取込 確認" })}
+        ${rowStep("cp", { key: "testSend", label: "テスト送受信（可能なら）" })}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <span style="font-weight:600;font-size:14px">ケアプラン連携 — ライセンス・運用・アフター</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="sc-cp-applyDate">利用申請日</label>
+            <input class="form-control" type="date" id="sc-cp-applyDate" data-sec="cp" data-path="applyDate">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sc-cp-renewal">更新月（毎年・自動更新なし）</label>
+            <input class="form-control" type="text" id="sc-cp-renewal" data-sec="cp" data-path="renewalMonth" placeholder="例: 5月" aria-label="更新月">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sc-cp-device">1事業所1端末の運用担当者・端末</label>
+          <input class="form-control" type="text" id="sc-cp-device" data-sec="cp" data-path="opDevice">
+        </div>
+        ${checkOnly("cp", "sc-cp-first", "afterFirstExchange", "初回の予定送信／実績受信が業務で回っている")}
+        ${checkOnly("cp", "sc-cp-linked", "afterPartnerLinked", "主要な取引先との連携が成立している")}
+        ${checkOnly("cp", "sc-cp-renew", "afterRenewalNoticed", "毎年の更新申請が必要なことを事業所へ申し送り済")}
+      </div>
+    </div>`;
+}
+
 // path（"a.b.c"）で nested に値を set
 function setByPath(obj, path, value) {
   const keys = path.split(".");
@@ -234,19 +322,21 @@ export function initSupportChecklist(db, caseId, userGetter) {
   const elPre = document.getElementById("tab-pre");
   const elOnsite = document.getElementById("tab-onsite");
   const elAfter = document.getElementById("tab-after");
-  if (!elPre || !elOnsite || !elAfter) return; // タブが無ければ何もしない
+  const elCp = document.getElementById("tab-cp");
+  if (!elPre || !elOnsite || !elAfter || !elCp) return; // タブが無ければ何もしない
 
   // スケルトンを1回だけ描画
   elPre.innerHTML = renderPre();
   elOnsite.innerHTML = renderOnsite();
   elAfter.innerHTML = renderAfter();
+  elCp.innerHTML = renderCp();
 
   const ref = doc(db, "supportChecklists", caseId);
-  const state = { pre: {}, onsite: { steps: {} }, after: { privacy: {} } };
+  const state = { pre: {}, onsite: { steps: {} }, after: { privacy: {} }, cp: { steps: {} } };
 
   // 値を流し込む（フォーカス中の要素は上書きしない）
   function populate() {
-    document.querySelectorAll("#tab-pre [data-path], #tab-onsite [data-path], #tab-after [data-path]").forEach((el) => {
+    document.querySelectorAll("#tab-pre [data-path], #tab-onsite [data-path], #tab-after [data-path], #tab-cp [data-path]").forEach((el) => {
       if (el === document.activeElement) return;
       const sec = el.dataset.sec;
       const v = getByPath(state[sec], el.dataset.path);
@@ -278,7 +368,7 @@ export function initSupportChecklist(db, caseId, userGetter) {
     }
   }
 
-  [elPre, elOnsite, elAfter].forEach((container) => {
+  [elPre, elOnsite, elAfter, elCp].forEach((container) => {
     container.addEventListener("change", (e) => {
       const el = e.target;
       if (el && el.dataset && el.dataset.path) onChange(el);
@@ -292,6 +382,8 @@ export function initSupportChecklist(db, caseId, userGetter) {
     if (!state.onsite.steps) state.onsite.steps = {};
     state.after = data.after || { privacy: {} };
     if (!state.after.privacy) state.after.privacy = {};
+    state.cp = data.cp || { steps: {} };
+    if (!state.cp.steps) state.cp.steps = {};
     populate();
   });
 }
