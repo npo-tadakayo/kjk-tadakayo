@@ -20,7 +20,7 @@
 | M-4 | 中 | authorized_domains から localhost 削除 | ✅ 完了 | Auth設定 |
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
-| H-3 | 高 | 関数別SA・最小権限 | ✅ 完了（2026-06-06・editor剥奪→builds.builderのみ） | IAM＋再デプロイ |
+| H-3 | 高 | 関数別SA・最小権限 | ✅ 完全クローズ（2026-06-07・appspot editor＋compute→gmail tokenCreator も剥奪） | IAM＋再デプロイ |
 | M-1 | 中 | Webhook 保護（App Check） | ✅ 完了（2026-06-06・Phase B 強制） | App Check |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
@@ -322,3 +322,74 @@ gcloud services enable recaptchaenterprise.googleapis.com firebaseappcheck.googl
 
 > [!INFO]
 > M-1（リード保護・段階移行で低リスク）→ H-3（破壊的・editor 剥奪は最後）の順は変わらず。両者とも次田さんの着手指示（番号単位の明示認可）を得てから実施。H-3 は editor 剥奪前ならいつでも無停止ロールバック可。
+
+---
+
+## H-3 完全クローズ（2026-06-07・過剰権限2つの剥奪）
+
+H-3 で関数別SA分離＋compute SA の `roles/editor`/`aiplatform.user` 剥奪は完了済みだったが、**どの Cloud Run/Functions からも参照されていない旧SAの過剰権限が2つ残存**していたため、システム開発担当の番号単位明示認可のもと剥奪した。
+
+### 実施内容（dry-run → 適用 → 確認）
+| # | 対象 | 剥奪したロール | 結果 |
+|---|---|---|---|
+| (a) | App Engine default SA `kjk-tadakayo@appspot.gserviceaccount.com` | `roles/editor` | ✅ 剥奪（残存ゼロ確認） |
+| (b) | 旧 compute SA `677262660109-compute@developer.gserviceaccount.com` の `kjk-gmail-sa` への権限 | `roles/iam.serviceAccountTokenCreator` | ✅ 剥奪（残存ゼロ確認） |
+
+### 事前裏取り（剥奪が安全な根拠）
+- **全7関数(gen2/Cloud Run)の実行SAは `fn-*-sa` のみ**（aiassist=fn-ai-sa／dailyfollowup・testchatnotify=fn-batch-sa／sendcaseemail・sendsupplierorder=fn-mail-sa／webhook2本=fn-webhook-sa）。appspot SA・compute SA は実行に未使用。
+- **`kjk-gmail-sa` への tokenCreator は `fn-mail-sa` が保持**しており、(b) で compute SA 分を剥奪してもメール送信（sendCaseEmail/sendSupplierOrder）の経路は無傷（実行SA=fn-mail-sa が impersonate）。
+
+### 剥奪コマンド（config: tadakayo）
+```bash
+GCLOUD=~/Projects/google-cloud-sdk/bin/gcloud
+# (a) App Engine default SA から roles/editor
+$GCLOUD projects remove-iam-policy-binding kjk-tadakayo \
+  --member="serviceAccount:kjk-tadakayo@appspot.gserviceaccount.com" --role="roles/editor"
+# (b) compute SA から kjk-gmail-sa への tokenCreator
+$GCLOUD iam service-accounts remove-iam-policy-binding kjk-gmail-sa@kjk-tadakayo.iam.gserviceaccount.com \
+  --member="serviceAccount:677262660109-compute@developer.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator"
+```
+
+### 動作確認
+- IAM状態: (a)(b)とも残存ゼロ／`fn-mail-sa` の tokenCreator 維持を `get-iam-policy` で確認済み。
+- ⚠️ **管理画面からの実送信確認は @tadakayo ログイン操作が必要（次田さん）**: ①case-detail「AIアシスタント」タブのメール送信（sendCaseEmail）②供給管理→発注→確定送付（sendSupplierOrder）を1件ずつ送信し成功を確認。万一失敗時は compute SA に当該ロールを再付与で無停止ロールバック。
+
+### ロールバック（必要時）
+```bash
+$GCLOUD projects add-iam-policy-binding kjk-tadakayo --member="serviceAccount:kjk-tadakayo@appspot.gserviceaccount.com" --role="roles/editor"
+$GCLOUD iam service-accounts add-iam-policy-binding kjk-gmail-sa@kjk-tadakayo.iam.gserviceaccount.com --member="serviceAccount:677262660109-compute@developer.gserviceaccount.com" --role="roles/iam.serviceAccountTokenCreator"
+```
+
+これで **H-3 は完全クローズ**（関数別SA分離＋全過剰権限の剥奪が完了）。
+
+---
+
+## users コレクション 運用フロー（RBAC 運用手順・2026-06-07 文書化）
+
+2026-06-04 のルール刷新（`isRegistered()` + `isAdmin()` の RBAC）に対応する `users` コレクションの運用手順。
+
+### 前提（firestore.rules）
+`match /users/{email}`:
+- `read`: 本人（自分の登録）または `isAdmin()`
+- `write`: **`isAdmin()` のみ**（＝ `role=='admin'` ＋ `active==true` ＋ `@tadakayo.jp` のユーザーだけが users を追加/編集/無効化できる）
+
+`users/{email}` のフィールド: `role`（`admin` / `staff` / `viewer`）, `active`（bool）, `name`。
+現 admin: `yoshinao-tsukuda@tadakayo.jp`（次田）/ `hiroshi-sato@tadakayo.jp`（佐藤理事長）。
+
+### 1. 新規スタッフ追加
+- **誰が**: 管理者（`role=='admin'`）
+- **どこから**: 管理画面 `https://kjk-tadakayo-admin.web.app/users.html`（ユーザー管理）
+- **手順**: ①対象者に `@tadakayo.jp` の Google アカウントを用意 → ②ユーザー管理で「メール・氏名・role」を登録（`active=true`）→ ③本人が Google ログイン（未登録だと `gateRole()` で弾かれる）
+- **デフォルト role**: `staff`（一般スタッフ）。`viewer` は閲覧のみ。`admin` は下記基準を満たす場合のみ。
+
+### 2. 退職者・異動者の無効化
+- **誰が**: 管理者
+- **トリガー**: 退職・異動の連絡を受けたら**即座**に（遅延させない＝アクセス残存を防ぐ）
+- **手順**: ユーザー管理で対象を `active=false` に設定（削除ではなく無効化＝監査履歴を残す）。`active=false` で `isRegistered()` が false になり、全データアクセス・ログインが即時遮断される。個人情報削除要請等で完全削除が必要な場合のみ users ドキュメントを削除。
+
+### 3. role=='admin' の付与基準と決裁者
+- **付与基準**: 他スタッフの登録/無効化・role 変更・課金/インフラに準ずる運営判断を行う**運営責任者のみ**。原則として最小人数（現状2名）に限定。
+- **決裁者**: NPO法人タダカヨ 理事長（佐藤 拡史）または 次田 芳尚 の承認。admin を増減する際は決裁記録（チャット等）を残す。
+
+> [!WARN]
+> `users` の `write` は admin のみ。**最後の admin を誤って `active=false`／削除すると、誰も users を編集できなくなる（ロックアウト）**。admin の無効化・削除は別の admin が在籍することを確認してから行う。復旧時は Firebase Console（プロジェクトのオーナー権限）から `users/{email}` を直接編集する。
