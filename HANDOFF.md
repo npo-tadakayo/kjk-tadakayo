@@ -7,7 +7,7 @@
 
 ## 🆕 2026-06-06 セッション⑩（CRM最終統合＝出荷の認定事業所卸/送料・請求書計上 ＋ 申請期限の設定化 ＋ 月次推移グラフ）
 
-> 状態: **#1 ＋ B3 ＋ B4 ＋ docpage修正/ドキュメント ＋ D ＋ C2(ファイル分割) ＋ 補助金区分の誤り訂正 をすべて実装し本番反映済み**。コミット `aa12722`/`965a857`/`67ce049`/`ef22f0e`/`1a7abdf`/`71a5fa4`（＋docs）。GitHub同期済。全JS構文OK・C2とドキュメントは本番ログイン状態のブラウザで実機検証（console error0）・補助金訂正はLP本番curl全項目検証済み。残ブラッシュアップ A2/A3 は調査で達成済みと判断＝**本セッションの予定タスクはすべて完了**。供給管理の実操作（出荷モーダルの送料計算・請求書PDF）は次田さんの @tadakayo 操作確認待ち。
+> 状態: **本日(2026-06-07) CRM大規模改修を完了・全て本番反映**（#1出荷統合／B3推移グラフ・B4期限設定化／docpage修正＋ドキュメント／Dモバイル・a11y／C2分割／補助金区分訂正／アクセシビリティ監査修正／**H-3完全クローズ**(過剰権限2つ剥奪)／users運用フロー文書化／**直送発注→出荷下書き自動生成**／本日機能をマニュアル/エンジニアノートに反映）。最新コミット `4c2965a`（main・本日12コミット・GitHub同期済）。全JS構文OK・本番curl/Playwright実機検証済み。**残＝次田さんの @tadakayo 実機操作**: ①出荷の送料計算・請求書PDF ②H-3後のメール実送信(sendCaseEmail/sendSupplierOrder) ③直送発注のE2E(確定→draft自動生成→確定)。
 
 ### 実装（本番反映済み）
 - **#1 出荷の最終統合**（`aa12722` / supply.js・supply.html・supply-print.js）:
@@ -24,6 +24,8 @@
 - **A2/A3 画面整理**: 調査の結果、設定7セクション・供給5タブ・案件詳細6タブで既に十分整理済み＝**達成済みと判断**（追加の意味ある整理なし・本番稼働中につき無理な微調整は見送り）。
 - **アクセシビリティ監査の指摘を修正（WCAG 2.1 AA・`22443a4`）**: `/design:accessibility-review` 監査でCritical/Major検出→修正。①案件一覧の行(`tr onclick`)を**キーボード操作可能化**（`tabindex=0`/`role="link"`/`aria-label`/Enter・Space遷移・WCAG2.1.1）②全画面共通(`mobilenav.js`)のモーダルに**Escクローズ＋Tabフォーカストラップ＋初期フォーカス**(2.1.2/2.4.3)③`.btn-primary`を`#E33535`(白文字4.39:1)→`primary-dark #c02828`(5.85:1)に(1.4.3)。**本番ログイン状態のブラウザで実機検証**(Tab→案件行→Enterで詳細遷移／発注モーダルEscで閉じ／btn背景=rgb(192,40,40)確認)。カンバンのドラッグ移動(代替=サブ状態セレクトでキーボード可)・`--color-ink-light`(装飾のみ)はMinorで見送り。
 - **直送発注→出荷下書き自動生成（2段階・`371331f`）**: 発注モーダルに「**認定事業所へ直送する**」チェック＋請求先の認定事業所セレクト（直送時必須・届け先住所は自動/手入力）。発注「確定して送付」時、直送指定なら `shipments` を **draft で自動生成**（shipType=dropship・単価=認定事業所卸 `partnerPricing`・品目数量は発注から引継ぎ・**在庫は経由しない**・発注に `shipmentId` 記録で二重防止）。`shipments` に **draft 状態を新設**。出荷タブで「下書き」表示＋サマリーに直送・下書き件数 → 「**出荷を確定**」で shipped(在庫動かさず) → 請求書/送付状。本番でUI実機確認（直送チェック表示・チェックONで請求先必須マーク連動・認定事業所3件ロード）。⚠️ **E2E（発注確定→draft生成→確定）は実メール送信を伴うため次田さんがテスト宛先で確認**。設計合意: 請求先=常に認定事業所／届け先=認定事業所orエンド事業所(大ロット時)／在庫経由なし／2段階(draft→確定)。
+- **H-3 完全クローズ（セキュリティ・システム開発担当の指示対応）**: App Engine default SA(`appspot`)の `roles/editor`・旧 compute SA→`kjk-gmail-sa` の `tokenCreator` を剥奪（dry-run→裏取り[全関数fn-*-sa・fn-mail-sa維持]→剥奪→確認）。詳細・ロールバック手順は **SECURITY_REMEDIATION.md**。あわせて **users 運用フロー**（新規追加/退職者active=false/admin付与基準・write=isAdminのみ）を文書化。⚠️ 実機メール送信確認(sendCaseEmail/sendSupplierOrder)は次田さん。
+- **本日機能をドキュメントに反映（`4c2965a`）**: MANUAL.md/manual.html(現場)＋ENGINEERING_NOTES.md/engineering.html(技術)に直送フロー等を**既存と重複なく**追記。ENG_NOTES §16 に本日全改修のサマリー。アプリ内は本番反映・curl確認済み。
 
 ### デプロイ
 - 本番URL: https://kjk-tadakayo-admin.web.app（hosting:admin のみ・functions/rules不変＝誤削除リスクなし）
