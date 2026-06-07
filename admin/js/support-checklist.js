@@ -133,12 +133,12 @@ function cardCpPre() {
         ${selectGroup("sc-cp-ebilling", "cp", "eBilling", "介護電子請求の有無（電子証明書の種類判定）", [
           { v: "", t: "未確認" },
           { v: "yes", t: "あり（介護保険証明書を流用可・追加費用なし）" },
-          { v: "no", t: "なし（請求委任事業所用ケアプラン証明書を無料取得）" },
+          { v: "no", t: "なし（介護DX証明書を無料取得）" },
         ])}
         ${selectGroup("sc-cp-cert", "cp", "certType", "電子証明書の種類", [
           { v: "", t: "未確認" },
           { v: "kaigo", t: "介護保険証明書（流用）" },
-          { v: "careplan", t: "請求委任事業所用ケアプラン証明書（無料）" },
+          { v: "careplan", t: "介護DX証明書（無料・旧称：請求委任事業所用ケアプラン証明書）" },
           { v: "none", t: "未取得" },
         ])}
         <div class="form-group">
