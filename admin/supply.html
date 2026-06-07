@@ -127,10 +127,16 @@
           <div class="form-group"><label class="form-label" for="orderShipLabel">送料の名目</label><input class="form-control" id="orderShipLabel" type="text" placeholder="送料(北海道)"></div>
           <div class="form-group"><label class="form-label" for="orderShipFee">送料（円・税別）</label><input class="form-control" id="orderShipFee" type="number" min="0" placeholder="1500"></div>
         </div>
-        <div class="form-group"><label class="form-label" for="orderPartnerSelect">認定事業所から選ぶ（直送先・任意）</label>
+        <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;min-height:44px">
+            <input type="checkbox" id="orderDropship" style="width:18px;height:18px;accent-color:var(--color-primary)">
+            <span><strong>認定事業所へ直送する</strong>（AB Circleから直送。確定時に出荷の下書きを自動作成・在庫は経由しません）</span>
+          </label>
+        </div>
+        <div class="form-group"><label class="form-label" for="orderPartnerSelect">請求先の認定事業所<span id="dropshipReq" style="color:red;display:none"> *</span></label>
           <select class="form-control" id="orderPartnerSelect"><option value="">（手入力 / 自社で受け取り）</option></select>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">選ぶと下の送付先に住所を自動入力します（手入力での修正も可能）。</p></div>
-        <div class="form-group"><label class="form-label" for="orderShipTo">送付先（AB Circleからの納品先）</label><textarea class="form-control" id="orderShipTo" rows="2" placeholder="〒063-0836&#10;北海道札幌市西区発寒16条12丁目1-20　株式会社279"></textarea></div>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">直送時はここが請求先になります。選ぶと下の届け先に住所を自動入力します（エンド事業所へ送る場合は手入力で上書き）。</p></div>
+        <div class="form-group"><label class="form-label" for="orderShipTo">届け先（AB Circleからの納品先）</label><textarea class="form-control" id="orderShipTo" rows="2" placeholder="〒000-0000&#10;住所　事業所名"></textarea></div>
         <div class="form-group"><label class="form-label" for="orderNote">備考（未入力時は「※100台未満〜」を表示）</label><textarea class="form-control" id="orderNote" rows="2"></textarea></div>
         <p id="orderTotal" style="text-align:right;font-weight:700"></p>
       </div>
