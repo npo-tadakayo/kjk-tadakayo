@@ -52,7 +52,9 @@
 ### 次にやること（優先順）
 1. **次田さんの @tadakayo 実機確認**: (a) 案件詳細の新4タブ（事前/当日/アフター/**ケアプラン連携**）で入力→「保存しました」表示→再読込で保持されるか (b) 書類チェックに④「介護WEBサービス管理メニュー画面コピー」が出るか (c) M-1観察モード後もLP/見積もりフォームから正常に案件が入るか
 2. 開発からの質問回答を反映（M-1 補償統制＝アラート条件の詳細を SECURITY_REMEDIATION.md M-1 へ追記）
-3. E2E 2件（H-3メール実送信 sendCaseEmail/sendSupplierOrder／直送発注→出荷下書き・@tadakayoログイン）
+3. E2E 残（@tadakayoログイン）:
+   - ✅ **`sendCaseEmail` 実機確認OK（2026-06-07 20:58）**: 案件#19から `y.tsukuda@279279.net` 宛にテスト送信→CRM「送信しました」＋本人受信トレイに `kjk-staff@tadakayo.jp` 差出で着信を確認。**fn-mail-sa→kjk-gmail-sa→Gmail送信の経路がH-3後も正常**（= `sendSupplierOrder` も同一 SA_MAIL・同一 gmailAccessToken のため認証経路は実証済。残差分は PDF添付のみ）。
+   - ⏳ `sendSupplierOrder`（発注書PDF添付送付）／直送発注→出荷下書き の実機確認
 
 ### 本セッションで完了済（参考）
 - ✅ テスト案件24＋office＋activity 削除（Firestore REST・HTTP200・最新は実データ#19に戻った）
