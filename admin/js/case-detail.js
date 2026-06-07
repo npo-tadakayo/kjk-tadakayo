@@ -476,8 +476,8 @@ onAuthStateChanged(auth, async (user) => {
 
   initTabs();
 
-  // 伴走チェックリスト（事前/当日/アフター）をタブに描画・購読
-  initSupportChecklist(db, caseId);
+  // 伴走チェックリスト（事前/当日/アフター・ケアプラン連携統合）をタブに描画・購読
+  initSupportChecklist(db, caseId, storage);
 
   // 案件データ読み込み
   const caseSnap = await getDoc(doc(db, "cases", caseId));
