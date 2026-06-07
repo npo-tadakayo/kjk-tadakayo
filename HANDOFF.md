@@ -43,7 +43,11 @@
 - 検証: 全JS構文OK／renderスモーク（事前2カード/当日4カード+写真/アフター3カード・data-path数整合）／プレビュー `tab-merge-0607`→本番curlで「cpタブ廃止・証憑写真配信」確認。**認証後の写真UP/保存は @tadakayo 実機で次田さん確認**。
 
 ### 開発スペースへの投稿（`spaces/AAAAJTAWTVo`・webhook③・「次田から」名義）
-- 返信＋**質問2点**を投稿（msg `mmBAh3is_gE`）: (a) 異常トラフィックアラートの発火条件（メトリクス/しきい値/通知先） (b) 観察中に異常検知時の enforce 再強制トリガーを定めるか／当面 false 固定か。**回答が来たら SECURITY_REMEDIATION.md の M-1 に補償統制の詳細を追記**。
+- 返信＋質問2点を投稿（msg `mmBAh3is_gE`）→ **開発から回答受領・記録済**（msg `cZNKrFiTpkU` で受領返信）。
+  - M-1 = 「**管理状態**（App Check強制せず暫定運用＋Monitoring補償統制・残リスク明示・H-3完全クローズと区別）」で確定。
+  - 補償統制アラート: Policy `4495119028582973062`／`run.googleapis.com/request_count` > 100/h × 5分連続（webhookLpInquiry・webhookMitsumori 各独立）→ 通知 `17803807182395282661`（運用アラートメール）。
+  - enforce復帰トリガー: ①alert発火 ②LP問合せ10x ③類似攻撃事例。1〜2か月後めどに閾値再評価。強制移行時は GCP側整理＋webhook側SDK組込・再デプロイを別途依頼。
+  - → SECURITY_REMEDIATION.md（サマリー・状態表・M-1詳細）に全反映済。H-3 は先方 ARCHITECTURE.md §8.1 / CLAUDE.md と「完全クローズ」表記が一致。
 
 ### 次にやること（優先順）
 1. **次田さんの @tadakayo 実機確認**: (a) 案件詳細の新4タブ（事前/当日/アフター/**ケアプラン連携**）で入力→「保存しました」表示→再読込で保持されるか (b) 書類チェックに④「介護WEBサービス管理メニュー画面コピー」が出るか (c) M-1観察モード後もLP/見積もりフォームから正常に案件が入るか

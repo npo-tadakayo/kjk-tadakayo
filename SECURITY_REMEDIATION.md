@@ -9,7 +9,7 @@
 
 ## サマリー
 
-10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。**2026-06-06 に M-1・H-3 まで完了し、指摘10件すべて対応済み**。H-3 は **2026-06-07 に開発（システム開発担当）が GCP 実機で完全クローズを確認**（appspot editor・旧 compute→kjk-gmail-sa tokenCreator いずれも消滅／全7関数が fn-*-sa 配下で ACTIVE）。M-1 は **2026-06-07 に開発判断で観察フェーズへ移行**（App Check の本対応＝強制は保留・`APPCHECK_ENFORCE=false`／代替＝Cloud Monitoring 異常トラフィックアラート＋データ層保護[PITR/Delete Protection]）。付帯の Gemini 2.5 retire（2026-10-16）のみ10月期限で残（現行モデルは正常動作）。
+10件中 **8件が対応完了**（うち H-4 は調査の結果リスクが存在せず実態クリア、M-5 は 2026-06-05 実装完了、M-3 は管理画面が Google SSO 一本のため Workspace 2段階認証で充足）。**2026-06-06 に M-1・H-3 まで完了し、指摘10件すべて対応済み**。H-3 は **2026-06-07 に開発（システム開発担当）が GCP 実機で完全クローズを確認**（appspot editor・旧 compute→kjk-gmail-sa tokenCreator いずれも消滅／全7関数が fn-*-sa 配下で ACTIVE）。M-1 は **2026-06-07 に開発判断で「管理状態」へ**（App Check 強制ではない暫定運用＝`APPCHECK_ENFORCE=false`／補償統制＝Cloud Monitoring 異常トラフィックアラート[Policy `4495119028582973062`・100req/h×5分でメール通知]＋データ層保護[PITR/Delete Protection]。**残リスク明示・復帰トリガー定義済**で H-3 の「完全クローズ」とは区別）。付帯の Gemini 2.5 retire（2026-10-16）のみ10月期限で残（現行モデルは正常動作）。
 
 | # | 重大度 | 項目 | 状態 | 反映方法 |
 |---|---|---|---|---|
@@ -21,7 +21,7 @@
 | H-4 | 高 | kjk-gmail-sa の鍵廃止 | 🟢 実態クリア | 鍵ゼロを確認 |
 | M-5 | 中 | Cloud Monitoring アラート | ✅ 完了 | gcloud |
 | H-3 | 高 | 関数別SA・最小権限 | ✅ 完全クローズ（2026-06-07・appspot editor＋compute→gmail tokenCreator も剥奪・**開発がGCP実機で確認**） | IAM＋再デプロイ |
-| M-1 | 中 | Webhook 保護（App Check） | ✅ 対応（2026-06-07・**観察フェーズ**／開発判断・`APPCHECK_ENFORCE=false`／代替=Monitoringアラート） | App Check（観察）＋Monitoring |
+| M-1 | 中 | Webhook 保護（App Check） | 🟢 管理状態（2026-06-07・**暫定運用＝強制せず＋Monitoring補償統制**／残リスク明示／復帰トリガー定義済・H-3の完全クローズとは区別） | App Check（暫定off）＋Monitoring alert |
 | M-3 | 中 | 管理者MFA | ✅ 充足 | Workspace 2段階認証（管理画面は Google SSO 一本） |
 | 付帯 | — | Gemini 2.5 retire（2026-10-16） | 🟡 計画 | Gemini 3 移行 |
 
@@ -186,11 +186,24 @@ $GCLOUD alpha monitoring channels list --project=$PROJECT --account=$ACCT
 
 ### 1. M-1 Webhook保護（App Check・段階移行）
 
-> 🟢 **現状（2026-06-07）: 開発判断で観察フェーズに確定（強制は保留）**。
-> 開発（システム開発担当）が「攻撃インセンティブが低い（介護B2B）＋ PITR/Delete Protection によるデータ層保護が十分に厚い」ことを踏まえ、**App Check の本対応（強制）は保留し観察フェーズへ移行**する判断。代替措置として **Cloud Monitoring に異常トラフィックアラートを設置**（発火条件の詳細＝メトリクス/しきい値/通知先は開発に確認中・回答後に追記）。
-> - 対応: `functions/.env` に `APPCHECK_ENFORCE=false` を追記し webhook 2本（`webhookLpInquiry`/`webhookMitsumori`）のみ名前指定で本番再デプロイ（2026-06-07）。`gcloud functions describe` で両関数の env `APPCHECK_ENFORCE=false` を確認。トークンなし POST が 401 ではなく観察モードで通過することを確認（=正規LPフォームのリード喪失リスクなし）。
+> 🟢 **現状（2026-06-07）: 「管理状態」＝App Check 強制ではない暫定運用 ＋ Cloud Monitoring 補償統制（開発確定）**。
+> 開発（システム開発担当）が「攻撃インセンティブが低い（介護B2B）＋ PITR/Delete Protection によるデータ層保護が十分に厚い」ことを踏まえ、**App Check の本対応（強制）は保留し暫定運用**とする判断。**残リスク（App Check 未強制）を明示**のうえ、下記トリガーで強制モード移行を再判断する位置づけ（**H-3 の「完全クローズ」とは区別**）。
+> - 対応: `functions/.env` に `APPCHECK_ENFORCE=false` を追記し webhook 2本（`webhookLpInquiry`/`webhookMitsumori`）のみ名前指定で本番再デプロイ（2026-06-07）。`gcloud functions describe` で両関数の env `APPCHECK_ENFORCE=false` を確認。トークンなし POST が観察モードで通過することを確認。
 > - **観察モードはリクエストを処理まで通すため、env 確認以外の挙動 curl は空案件を生むので避ける**（検証は `describe` の env 確認に留める）。
-> - 強制（fail-secure）へ戻す場合: `functions/.env` の `APPCHECK_ENFORCE=false` を削除 or `true` にして webhook 2本を再デプロイ。
+> - 強制（fail-secure）へ戻す場合: `functions/.env` の `APPCHECK_ENFORCE=false` を削除 or `true` にして webhook 2本を再デプロイ（＋ App Check SDK 組込が必要なら GCP 側から依頼）。
+>
+> **補償統制＝異常トラフィックアラート（開発が GCP 実機で 2026-06-07 設置・確定）**:
+> - Alert Policy: `projects/kjk-tadakayo/alertPolicies/4495119028582973062`（表示名「Webhook 関数 異常 traffic 検知 (M-1 補完)」・enabled）
+> - メトリクス: `run.googleapis.com/request_count`（Cloud Run revision）／対象 service: `webhookLpInquiry` または `webhookMitsumori`（**各 service ごとに独立評価・2関数合算ではない**）
+> - 集約 ALIGN_SUM・alignmentPeriod 3600s（1時間合計）／**閾値 > 100 リクエスト**／継続 **300s（5分連続）**
+> - 通知チャネル: `projects/kjk-tadakayo/notificationChannels/17803807182395282661`「タダカヨ運用アラート(メール)」→ `yoshinao-tsukuda@tadakayo.jp`
+> - = 「どちらかの webhook で 1時間あたり request_count が 100件超を5分連続で満たすとメール通知」。Policy の documentation に発火時手順（Firestore状態確認→関数ログで送信元IP偏り確認→兆候あれば App Check 本対応へ移行）を埋込済。
+>
+> **enforce 復帰（強制モード移行）トリガー（開発確定）**: 次のいずれかで再判断 ——
+> 1. 上記 alert 発火（100req/h × 5分連続）
+> 2. LP 月間問合せ数の 10倍成長
+> 3. 業界類似攻撃事例の発生
+> ＋ baseline 蓄積後（目安 1〜2か月後・固定期限ではない）に閾値の妥当性を再評価。強制移行の判断は GCP 側で整理し、必要時に webhook 側 SDK 組込・再デプロイを改めて依頼される。
 >
 > ---
 > 以下は経緯の記録（2026-06-06 に一度 Phase B 強制まで実施 → 2026-06-07 に上記判断で観察へ戻した）。
