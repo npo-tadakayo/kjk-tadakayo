@@ -5,6 +5,35 @@
 
 ---
 
+## 🆕 2026-06-12 セッション⑫（案件の削除/統合/対象外・LPアクセス解析新設・卸価格新版反映）
+
+> 状態: **3件すべて本番反映済**。コミット `e5bed9e`(CRM整理機能/解析ページ) / `80457ad`(価格) / `4ee5027`(解析OAuth+LP GA4差替) ＝ **3コミット未push**（origin=`tsuku-29/kjk-tadakayo`・現Git認証が `ytsukuda4470` のため403。tsuku-29 のPATで要push）。当日対応を**介護情報基盤スペース**（`AAQAkcdopcA`・次田から）へ投稿済。
+
+### ① 案件の削除・重複統合・対象外化（hosting:admin 本番反映済）
+- `cases.js/html`・`case-detail.js/html`・`constants.js`・`dashboard.js`・`kanban.js`。「対象外」＝ソフトアーカイブ（`archived`/`archivedReason`：test/duplicate/spam/not_adopted/other）。一覧は既定で非表示（「対象外も表示」チェック）。dashboard/kanban 集計からも除外。
+- 重複候補：メール/電話/事業所名で自動検出（union-find）→ 一覧バナー＋詳細画面で「この案件に統合」（記録/セッションを付替・連絡先補完・統合元を対象外(duplicate)化・差分はタイムラインに保存）。
+- 完全削除＝**管理者のみ**（クライアントgate）。⚠️ Firestoreルールは catch-all で登録スタッフ削除可のまま＝サーバ側admin限定にするには rules 再構成が別途必要（未対応）。
+- テスト案件#26の削除はこの機能で次田さんが実施想定。
+
+### ② LPアクセス解析ページ新設＋GA4/Search Console 日次収集（本番反映済・実データ稼働）
+- 新規 `admin/analytics.html` + `admin/js/analytics.js`（KPI・PV推移SVG・人気ページ・検索クエリ・流入・直リンク・今すぐ更新）。サイドバー導線（dashboard/cases）。
+- Functions 新規 `functions/analytics.js`：`collectAnalytics`（毎朝6:30 JST）/`collectAnalyticsNow`（onCall）。`index.js` で再export。
+- **GA4はタダカヨ側に新プロパティを作成し差替**（旧 `G-0NZY6PM3FG` は279でもタダカヨでもない別アカウント）→ 新 **`G-V70326L8MW` / プロパティID `541485334`**。LP `index.html` の測定ID差替＋ hosting:lp 再デプロイ済。
+- **認証方式＝ユーザーOAuthトークン**（GA4 UI/gcloud が SA を受け付けない/制限スコープ取得不可のため）。次田さん(プロパティ管理者)の refresh_token を **Secret Manager `ANALYTICS_OAUTH_TOKEN`**（JSON: refresh_token/client_id/client_secret・`analytics.readonly`+`webmasters.readonly`）に保管。関数は `defineSecret`＋`secrets:[...]`（SAアクセスは deploy 時に自動付与）。取得スクリプト `functions/ga-oauth.cjs`（loopback OAuth・再取得用）。
+- 設定 `appConfig/analytics = { enabled:true, ga4PropertyId:"541485334", scSiteUrl:"https://kjk.tadakayo.jp/" }`。Search Console は `https://kjk.tadakayo.jp/`（siteOwner・検証済）を自動連携。
+- 実行確認：scheduler 手動トリガで `analyticsSummary/latest` 書込（28日：**SEO クリック29/表示204/CTR14.2%/掲載順位3.0**・GA4は新規で0）。GA4 Data API/SC とも 200 を実測。
+- SA `fn-analytics-sa@kjk-tadakayo.iam.gserviceaccount.com`（datastore.user）＋ API `analyticsdata`/`searchconsole`/`analyticsadmin` 有効化済。
+
+### ③ カードリーダー卸価格 新版（パススルー）反映（本番反映済）
+- `pricing.js` PRODUCTS デフォルト・`partner-doc.js` 例示を新版へ：BT `7650/7520/7050/7050`・USB-A `3580/3490/3000/2950`・USB-C `3770/3680/3160/3100`（税別・数量帯）。
+- Firestore：`products`（仕入）は**既に新版だった**。`appConfig/settings.partnerPricing`（卸）を `functions/update-prices.cjs --apply` で明示設定。正本 `カードリーダー価格表・送料規定.md` の [要決定] を確定済みに更新。送料(SHIPPING_FEES/レターパック¥600/ゆうパック表)は正本と一致＝変更不要。
+
+### 重要な方針（今後）
+- **今後タダカヨ作業で279アカウントを使わない**（次田さん指示・2026-06-12）。価格反映時に一時付与した `y.tsukuda@279279.net` の datastore.user は削除済。ローカルADCは `gcloud auth application-default login` でタダカヨに切替済。
+- ⚠️ firebase MCP は別プロジェクト接続（kjk-tadakayo の products/appConfig が空で返る）＝MCPで書かない。Firestore直操作は ADC(タダカヨ)＋スクリプトで。
+
+---
+
 ## 🆕 2026-06-07 セッション⑪（CRM書類チェック追加 ＋ 開発回答対応：M-1観察フェーズ化／H-3 GCP確認反映）
 
 > 状態: **CRM改修を本番反映済**（hosting:admin・rule05二段階：プレビュー `support-checklist-0607` → 静的アセットcurl検証 → live昇格・本番curlで新JS/HTML配信確認）。①CRM補助金書類チェックに公式必須書類④を追加／②開発回答を受け M-1 を観察フェーズへ（webhook 2本 `APPCHECK_ENFORCE=false` 本番再デプロイ・env確認済）／③ドキュメント反映（SECURITY_REMEDIATION.md・本書）／④**伴走チェックリスト（事前/当日/アフター）をアプリ内記録できる3タブを新設**／⑤検証で出来たテスト案件24を削除済。**開発スペースへ返信＋質問を投稿済**（`spaces/AAAAJTAWTVo` msg `mmBAh3is_gE`）。**残＝次田さんの @tadakayo 実機確認**（認証後UI）。
