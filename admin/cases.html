@@ -27,6 +27,7 @@
         <a class="nav-item" href="/kanban.html">
           <i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン
         </a>
+        <a class="nav-item" href="/analytics.html"><i class="ti ti-chart-arcs" aria-hidden="true"></i>アクセス解析</a>
         <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
         <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
         <a class="nav-item" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
@@ -65,6 +66,15 @@
         <span id="deadlineText"></span>
       </div>
 
+      <!-- 重複候補バナー -->
+      <div id="dupBanner" class="deadline-banner warn" style="display:none">
+        <i class="ti ti-copy" aria-hidden="true"></i>
+        <span id="dupBannerText" style="flex:1"></span>
+        <button class="btn btn-ghost" id="dupCheckBtn" type="button" style="white-space:nowrap">
+          <i class="ti ti-eye" aria-hidden="true"></i>重複を確認
+        </button>
+      </div>
+
       <!-- フィルタ -->
       <div class="filter-bar">
         <input type="search" id="searchInput" placeholder="事業所名・担当者で検索..." style="flex:1; min-width:200px;">
@@ -77,6 +87,9 @@
           <option value="mitsumori_quote">見積もり成約</option>
           <option value="manual">手動登録</option>
         </select>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-ink-muted);white-space:nowrap;min-height:44px">
+          <input type="checkbox" id="showArchived">対象外も表示
+        </label>
       </div>
 
       <!-- 案件テーブル -->
@@ -154,6 +167,24 @@
         <button class="btn btn-primary" id="saveNewCaseBtn" type="button">
           <i class="ti ti-check" aria-hidden="true"></i>登録する
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 重複候補モーダル -->
+  <div class="modal-overlay" id="dupModal" role="dialog" aria-modal="true" aria-label="重複候補">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>重複候補</h2>
+        <button class="btn btn-secondary" id="dupModalClose" type="button" aria-label="閉じる">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
+          メール・電話・事業所名が一致する案件です。残したい案件を開き、「重複を統合」から他方をまとめてください。
+        </p>
+        <div id="dupModalBody"></div>
       </div>
     </div>
   </div>

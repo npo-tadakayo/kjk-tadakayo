@@ -146,7 +146,7 @@ onAuthStateChanged(auth, async (user) => {
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
-    const cases = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    const cases = snap.docs.map((d) => ({ _id: d.id, ...d.data() })).filter((c) => !c.archived);
     document.getElementById("loadingEl").style.display = "none";
     document.getElementById("dashContent").style.display = "block";
     render(cases);

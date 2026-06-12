@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>アクセス解析 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav">
+        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
+        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
+        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
+        <a class="nav-item active" href="/analytics.html"><i class="ti ti-chart-arcs" aria-hidden="true"></i>アクセス解析</a>
+        <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
+        <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
+        <a class="nav-item" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
+        <a class="nav-item" href="/pricing.html"><i class="ti ti-coin" aria-hidden="true"></i>料金・送料</a>
+        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
+        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
+        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
+        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
+        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button">
+          <i class="ti ti-logout" aria-hidden="true"></i>ログアウト
+        </button>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">アクセス解析（LP）</h1>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span id="updatedAt" style="font-size:12px;color:var(--color-ink-muted)"></span>
+          <button class="btn btn-ghost" id="refreshBtn" type="button">
+            <i class="ti ti-refresh" aria-hidden="true"></i>今すぐ更新
+          </button>
+        </div>
+      </div>
+
+      <!-- 外部ダッシュボードへの直リンク -->
+      <div class="filter-bar" style="gap:8px">
+        <a class="btn btn-ghost" href="https://analytics.google.com/" target="_blank" rel="noopener"><i class="ti ti-brand-google-analytics" aria-hidden="true"></i> GA4</a>
+        <a class="btn btn-ghost" href="https://search.google.com/search-console" target="_blank" rel="noopener"><i class="ti ti-search" aria-hidden="true"></i> Search Console</a>
+        <a class="btn btn-ghost" href="https://clarity.microsoft.com/projects/view/wax7x03bg8" target="_blank" rel="noopener"><i class="ti ti-click" aria-hidden="true"></i> Clarity</a>
+        <a class="btn btn-ghost" href="https://kjk.tadakayo.jp" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> LPを開く</a>
+      </div>
+
+      <div id="loadingEl" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div>
+
+      <!-- 未設定/データなしの案内 -->
+      <div id="emptyEl" class="card" style="display:none;padding:var(--space-5);text-align:center">
+        <i class="ti ti-chart-arcs" style="font-size:40px;color:var(--color-ink-muted)" aria-hidden="true"></i>
+        <p id="emptyMsg" style="margin-top:8px;color:var(--color-ink-muted)">まだ解析データがありません。</p>
+        <p style="font-size:12px;color:var(--color-ink-muted);max-width:560px;margin:8px auto 0;line-height:1.7">
+          初回は <code>appConfig/analytics</code> に <code>ga4PropertyId</code>（GA4プロパティID・数値）と
+          <code>scSiteUrl</code>（例: <code>sc-domain:tadakayo.jp</code>）を設定し、
+          サービスアカウントを GA4・Search Console に追加したうえで「今すぐ更新」を押してください。
+        </p>
+      </div>
+
+      <div id="content" style="display:none">
+        <!-- KPIカード -->
+        <div id="kpiGrid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px"></div>
+
+        <!-- PV推移 -->
+        <div class="card" style="padding:var(--space-4);margin-bottom:16px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:6px">閲覧数（PV）の推移 <span style="font-weight:400;color:var(--color-ink-muted);font-size:12px">— 直近28日</span></div>
+          <div id="pvChart"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="twoCol">
+          <!-- 人気ページ -->
+          <div class="card" style="padding:var(--space-4)">
+            <div style="font-weight:700;font-size:14px;margin-bottom:8px">人気ページ Top10</div>
+            <div id="topPages"></div>
+          </div>
+          <!-- 検索クエリ -->
+          <div class="card" style="padding:var(--space-4)">
+            <div style="font-weight:700;font-size:14px;margin-bottom:8px">検索クエリ Top10 <span style="font-weight:400;color:var(--color-ink-muted);font-size:12px">— Search Console</span></div>
+            <div id="topQueries"></div>
+          </div>
+        </div>
+
+        <!-- 流入チャネル -->
+        <div class="card" style="padding:var(--space-4);margin-top:16px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:8px">流入チャネル</div>
+          <div id="channels"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+       style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100;"></div>
+
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/analytics.js" type="module"></script>
+</body>
+</html>

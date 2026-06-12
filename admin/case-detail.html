@@ -100,7 +100,31 @@
             <a class="btn btn-ghost" id="shipFromCaseBtn" href="#">
               <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷を作成
             </a>
+            <button class="btn btn-ghost" id="archiveBtn" type="button" style="display:none">
+              <i class="ti ti-archive" aria-hidden="true"></i> 対象外にする
+            </button>
+            <button class="btn btn-ghost" id="unarchiveBtn" type="button" style="display:none">
+              <i class="ti ti-archive-off" aria-hidden="true"></i> 対象外を解除
+            </button>
+            <button class="btn btn-ghost" id="deleteBtn" type="button" style="display:none;color:var(--color-danger)">
+              <i class="ti ti-trash" aria-hidden="true"></i> 完全削除
+            </button>
           </div>
+        </div>
+
+        <!-- 対象外バナー -->
+        <div id="archivedBanner" class="deadline-banner warn" style="display:none;margin-top:var(--space-3)">
+          <i class="ti ti-archive" aria-hidden="true"></i>
+          <span></span>
+        </div>
+
+        <!-- 重複候補 -->
+        <div class="card" id="dupCandidates" style="display:none;margin-top:var(--space-3);padding:var(--space-4)">
+          <div style="font-weight:700;font-size:14px;display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <i class="ti ti-copy" aria-hidden="true"></i> 重複の可能性がある案件
+          </div>
+          <div style="font-size:12px;color:var(--color-ink-muted)">メール・電話・事業所名が一致します。残す案件（この案件）に統合できます。</div>
+          <div id="dupCandidatesBody"></div>
         </div>
 
         <!-- タブ -->
@@ -484,6 +508,43 @@
         </div>
       </div><!-- /mainContent -->
     </main>
+  </div>
+
+  <!-- 対象外にする モーダル -->
+  <div class="modal-overlay" id="archiveModal" role="dialog" aria-modal="true" aria-label="対象外にする">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>対象外にする</h2>
+        <button class="btn btn-secondary" id="archiveCancelBtn" type="button" aria-label="閉じる">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
+          一覧から非表示にします（データは残り、「対象外も表示」で確認・解除できます）。
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="archiveReason">理由</label>
+          <select class="form-control" id="archiveReason">
+            <option value="test">テスト送信</option>
+            <option value="duplicate">重複</option>
+            <option value="spam">スパム</option>
+            <option value="not_adopted">採用しない</option>
+            <option value="other">その他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="archiveNote">メモ（任意）</label>
+          <textarea class="form-control" id="archiveNote" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="archiveCancelBtn2" type="button" onclick="document.getElementById('archiveModal').classList.remove('open')">キャンセル</button>
+        <button class="btn btn-primary" id="archiveConfirmBtn" type="button">
+          <i class="ti ti-archive" aria-hidden="true"></i>対象外にする
+        </button>
+      </div>
+    </div>
   </div>
 
   <script src="/js/mobilenav.js"></script>

@@ -2,14 +2,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, addDoc,
-  collection, query, where, orderBy, onSnapshot, serverTimestamp }
+import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
+  collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import { STATUS_LABELS, SOURCE_LABELS } from "/js/constants.js";
+import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 
@@ -27,6 +27,8 @@ if (!caseId) { location.href = "/cases.html"; }
 let currentCase = null;
 let latestActivities = [];
 let latestSessions = [];
+let isAdmin = false;
+let currentUser = null;
 
 function renderCaseHeader(c) {
   document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
@@ -44,6 +46,59 @@ function renderCaseHeader(c) {
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
+}
+
+// 対象外バナー・操作ボタンの表示状態
+function renderCaseActions() {
+  const c = currentCase;
+  const banner = document.getElementById("archivedBanner");
+  const archiveBtn = document.getElementById("archiveBtn");
+  const unarchiveBtn = document.getElementById("unarchiveBtn");
+  const deleteBtn = document.getElementById("deleteBtn");
+  if (c.archived) {
+    if (banner) {
+      banner.style.display = "flex";
+      banner.querySelector("span").textContent =
+        `この案件は対象外です（${ARCHIVE_REASONS[c.archivedReason] || c.archivedReason || "—"}）` +
+        (c.mergedInto ? "／別案件に統合済み" : "");
+    }
+    if (archiveBtn) archiveBtn.style.display = "none";
+    if (unarchiveBtn) unarchiveBtn.style.display = "";
+  } else {
+    if (banner) banner.style.display = "none";
+    if (archiveBtn) archiveBtn.style.display = "";
+    if (unarchiveBtn) unarchiveBtn.style.display = "none";
+  }
+  if (deleteBtn) deleteBtn.style.display = isAdmin ? "" : "none";
+}
+
+// 重複候補カード
+async function renderDuplicateCandidates() {
+  const card = document.getElementById("dupCandidates");
+  const body = document.getElementById("dupCandidatesBody");
+  if (!card || !body) return;
+  let cands = [];
+  try { cands = await loadDuplicateCandidates(); } catch (_) { cands = []; }
+  if (!cands.length) { card.style.display = "none"; return; }
+  card.style.display = "block";
+  body.innerHTML = cands.map((c) => `
+    <div style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-top:1px solid var(--color-line)">
+      <a href="/case-detail.html?id=${c._id}" style="flex:1;text-decoration:none;color:inherit">
+        <strong>#${c.caseNumber || "—"}</strong>
+        ${escHtml(c.officeName || "—")}
+        <span style="font-size:12px;color:var(--color-ink-muted)">${SOURCE_LABELS[c.source] || c.source || ""} ／ ${STATUS_LABELS[c.status] || ""}</span>
+      </a>
+      <button class="btn btn-ghost" type="button" data-merge="${c._id}" style="white-space:nowrap">
+        <i class="ti ti-arrow-merge" aria-hidden="true"></i>この案件に統合
+      </button>
+    </div>`).join("");
+  // 統合ボタン（このカード内に限定）
+  body.querySelectorAll("[data-merge]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const other = cands.find((x) => x._id === btn.dataset.merge);
+      if (other) mergeInto(other);
+    });
+  });
 }
 
 function renderTimeline(activities) {
@@ -200,6 +255,121 @@ async function changeStatus(newStatus, userId, userName) {
     body: "",
     attachmentUrls: [],
   });
+}
+
+// ===== 対象外化 / 解除 / 完全削除 / 統合 =====
+
+async function logActivity(subject, body) {
+  await addDoc(collection(db, "activities"), {
+    caseId, type: "memo", occurredAt: serverTimestamp(),
+    userId: currentUser?.uid || null,
+    userName: currentUser?.displayName || currentUser?.email || "",
+    subject, body: body || "", attachmentUrls: [],
+  });
+}
+
+// 対象外（アーカイブ）にする
+async function archiveCase(reason, note) {
+  await updateDoc(doc(db, "cases", caseId), {
+    archived: true, archivedReason: reason,
+    archivedAt: serverTimestamp(),
+    archivedBy: currentUser?.displayName || currentUser?.email || "",
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity(`対象外に設定（${ARCHIVE_REASONS[reason] || reason}）`, note);
+  showToast("対象外にしました");
+  setTimeout(() => location.reload(), 600);
+}
+
+// 対象外を解除
+async function unarchiveCase() {
+  await updateDoc(doc(db, "cases", caseId), {
+    archived: false, archivedReason: null, mergedInto: null,
+    updatedAt: serverTimestamp(),
+  });
+  await logActivity("対象外を解除", "");
+  showToast("対象外を解除しました");
+  setTimeout(() => location.reload(), 600);
+}
+
+// 完全削除（管理者のみ）。関連ドキュメントもまとめて削除する。
+async function hardDeleteCase() {
+  if (!isAdmin) { alert("完全削除は管理者のみ可能です"); return; }
+  const num = currentCase?.caseNumber || "";
+  if (!confirm(`案件 #${num}「${currentCase?.officeName || ""}」を完全に削除します。\nこの操作は元に戻せません。よろしいですか？`)) return;
+
+  try {
+    // 関連サブデータ（caseId 参照）を一括削除
+    const batch = writeBatch(db);
+    for (const col of ["activities", "sessions"]) {
+      const snap = await getDocs(query(collection(db, col), where("caseId", "==", caseId)));
+      snap.forEach((d) => batch.delete(d.ref));
+    }
+    for (const col of ["documentChecklists", "subsidyApplications", "supportChecklists"]) {
+      batch.delete(doc(db, col, caseId));
+    }
+    batch.delete(doc(db, "cases", caseId));
+    await batch.commit();
+    alert(`案件 #${num} を削除しました`);
+    location.href = "/cases.html";
+  } catch (e) {
+    alert(`削除に失敗しました: ${e.message || e}`);
+  }
+}
+
+// 重複候補（自分以外・アクティブ・キー一致）を取得
+async function loadDuplicateCandidates() {
+  const myKeys = new Set(dupKeys(currentCase));
+  if (!myKeys.size) return [];
+  const snap = await getDocs(collection(db, "cases"));
+  return snap.docs
+    .map((d) => ({ _id: d.id, ...d.data() }))
+    .filter((c) => c._id !== caseId && !c.archived && dupKeys(c).some((k) => myKeys.has(k)));
+}
+
+// other を当案件（primary）に統合する
+async function mergeInto(other) {
+  if (!confirm(`案件 #${other.caseNumber || ""}「${other.officeName || ""}」を、この案件 #${currentCase.caseNumber || ""} に統合します。\n統合元は「対象外（重複）」になります。よろしいですか？`)) return;
+  try {
+    const batch = writeBatch(db);
+    // 統合元の記録・セッションを当案件へ付け替え
+    for (const col of ["activities", "sessions"]) {
+      const snap = await getDocs(query(collection(db, col), where("caseId", "==", other._id)));
+      snap.forEach((d) => batch.update(d.ref, { caseId }));
+    }
+    // 当案件に欠けている連絡先を統合元から補完
+    const fill = {};
+    ["contactName", "contactEmail", "contactPhone", "corpName"].forEach((f) => {
+      if (!currentCase[f] && other[f]) fill[f] = other[f];
+    });
+    fill.updatedAt = serverTimestamp();
+    batch.update(doc(db, "cases", caseId), fill);
+    // 統合元を対象外（重複）に
+    batch.update(doc(db, "cases", other._id), {
+      archived: true, archivedReason: "duplicate", mergedInto: caseId,
+      archivedAt: serverTimestamp(),
+      archivedBy: currentUser?.displayName || currentUser?.email || "",
+      updatedAt: serverTimestamp(),
+    });
+    await batch.commit();
+    // 内容差分を失わないよう、統合元の要点を当案件のタイムラインに残す
+    const detail = [
+      `流入元: ${SOURCE_LABELS[other.source] || other.source || "—"}`,
+      `ステータス: ${STATUS_LABELS[other.status] || "—"}`,
+      other.contactName ? `担当者: ${other.contactName}` : "",
+      other.contactEmail ? `メール: ${other.contactEmail}` : "",
+      other.contactPhone ? `電話: ${other.contactPhone}` : "",
+      other.subsidyCategory ? `補助区分: ${other.subsidyCategory}` : "",
+      other.expectedSubsidyAmount ? `想定補助額: ${other.expectedSubsidyAmount}` : "",
+      Array.isArray(other.cardReaders) && other.cardReaders.length
+        ? `カードリーダー: ${JSON.stringify(other.cardReaders)}` : "",
+    ].filter(Boolean).join("\n");
+    await logActivity(`重複案件 #${other.caseNumber || ""} を統合`, detail);
+    showToast("統合しました");
+    setTimeout(() => location.reload(), 700);
+  } catch (e) {
+    alert(`統合に失敗しました: ${e.message || e}`);
+  }
 }
 
 // 対応記録追加
@@ -469,7 +639,10 @@ onAuthStateChanged(auth, async (user) => {
     location.href = "/index.html";
     return;
   }
-  if (!(await gateRole(db, user))) return;
+  const myRole = await gateRole(db, user);
+  if (!myRole) return;
+  isAdmin = myRole.role === "admin";
+  currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
@@ -491,12 +664,28 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  renderCaseActions();
+  renderDuplicateCandidates();
 
   // ステータス変更
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
     await changeStatus(e.target.value, user.uid, user.displayName || user.email);
     showToast(`ステータスを「${STATUS_LABELS[e.target.value]}」に変更しました`);
   });
+
+  // 対象外にする（理由モーダル）
+  const archiveModal = document.getElementById("archiveModal");
+  document.getElementById("archiveBtn")?.addEventListener("click", () => archiveModal?.classList.add("open"));
+  document.getElementById("archiveCancelBtn")?.addEventListener("click", () => archiveModal?.classList.remove("open"));
+  archiveModal?.addEventListener("click", (e) => { if (e.target === e.currentTarget) archiveModal.classList.remove("open"); });
+  document.getElementById("archiveConfirmBtn")?.addEventListener("click", () => {
+    const reason = document.getElementById("archiveReason").value;
+    const note = document.getElementById("archiveNote").value.trim();
+    archiveModal?.classList.remove("open");
+    archiveCase(reason, note);
+  });
+  document.getElementById("unarchiveBtn")?.addEventListener("click", unarchiveCase);
+  document.getElementById("deleteBtn")?.addEventListener("click", hardDeleteCase);
 
   // 対応記録追加
   document.getElementById("addActivityBtn").addEventListener("click", () => addActivity(user.uid, user.displayName || user.email));

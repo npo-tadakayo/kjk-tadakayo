@@ -44,6 +44,35 @@ export const STATUS_ORDER = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 4];
 export const SOURCE_LABELS = {
   lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり成約", manual: "手動登録",
 };
+
+// 対象外（アーカイブ）理由。テスト送信・重複・スパム・採用しない 等を非表示にする。
+export const ARCHIVE_REASONS = {
+  test: "テスト送信", duplicate: "重複", spam: "スパム",
+  not_adopted: "採用しない", other: "その他",
+};
+
+// 重複判定キー（メール／電話の数字のみ／事業所名）。1件が複数キーを持ちうる。
+export function dupKeys(c) {
+  const keys = [];
+  const e = (c.contactEmail || "").trim().toLowerCase(); if (e) keys.push("e:" + e);
+  const p = (c.contactPhone || "").replace(/[^0-9]/g, "");  if (p) keys.push("p:" + p);
+  const o = (c.officeName || "").trim();                     if (o) keys.push("o:" + o);
+  return keys;
+}
+
+// 共有キーで連結した重複グループ（union-find）。2件以上のグループのみ返す。
+export function computeDuplicateGroups(cases) {
+  const parent = {};
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  cases.forEach((c) => { parent[c._id] = c._id; });
+  const seen = {};
+  cases.forEach((c) => dupKeys(c).forEach((k) => {
+    if (seen[k]) parent[find(c._id)] = find(seen[k]); else seen[k] = c._id;
+  }));
+  const groups = {};
+  cases.forEach((c) => { const r = find(c._id); (groups[r] = groups[r] || []).push(c); });
+  return Object.values(groups).filter((g) => g.length > 1);
+}
 export const SOURCE_LABELS_SHORT = {
   lp_inquiry: "LP", mitsumori_quote: "見積", manual: "手動",
 };

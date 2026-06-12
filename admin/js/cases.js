@@ -8,6 +8,7 @@ import { gateRole } from "/js/role.js";
 import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
+  ARCHIVE_REASONS, computeDuplicateGroups,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -89,9 +90,12 @@ function currentFilters() {
     search: document.getElementById("searchInput").value.toLowerCase(),
     statusFilter: document.getElementById("statusFilter").value,
     sourceFilter: document.getElementById("sourceFilter").value,
+    showArchived: !!document.getElementById("showArchived")?.checked,
   };
 }
-function matchFilters(c, { search, statusFilter, sourceFilter }) {
+function matchFilters(c, { search, statusFilter, sourceFilter, showArchived }) {
+  // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
+  if (c.archived && !showArchived) return false;
   const matchSearch = !search ||
     (c.officeName || "").toLowerCase().includes(search) ||
     (c.corpName || "").toLowerCase().includes(search) ||
@@ -126,10 +130,10 @@ function renderCases() {
   empty.style.display = "none";
 
   tbody.innerHTML = filtered.map((c) => `
-    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く">
+    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く"${c.archived ? ' style="opacity:.55"' : ""}>
       <td><strong>#${c.caseNumber || "—"}</strong></td>
       <td>
-        <div style="font-weight:500">${escHtml(c.officeName || "—")}</div>
+        <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
         ${c.corpName ? `<div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(c.corpName)}</div>` : ""}
       </td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}</td>
@@ -140,6 +144,42 @@ function renderCases() {
     </tr>
   `).join("");
 }
+
+function archivedBadge(c) {
+  const label = ARCHIVE_REASONS[c.archivedReason] || "対象外";
+  return ` <span style="font-size:11px;font-weight:600;color:#8a6d3b;background:#FCF3E6;border:1px solid #e6cfa0;border-radius:10px;padding:1px 7px;margin-left:6px">対象外・${escHtml(label)}</span>`;
+}
+
+// 重複候補バナー（アクティブ案件のみ対象）
+function renderDuplicateBanner() {
+  const banner = document.getElementById("dupBanner");
+  if (!banner) return;
+  const groups = computeDuplicateGroups(allCases.filter((c) => !c.archived));
+  if (!groups.length) { banner.style.display = "none"; return; }
+  const n = groups.reduce((s, g) => s + g.length, 0);
+  banner.style.display = "flex";
+  document.getElementById("dupBannerText").textContent =
+    `重複の可能性がある案件が ${groups.length} 組（計 ${n} 件）あります。統合は各案件の詳細画面から行えます。`;
+  banner._groups = groups;
+}
+
+function openDupModal() {
+  const groups = document.getElementById("dupBanner")?._groups || [];
+  const body = document.getElementById("dupModalBody");
+  body.innerHTML = groups.map((g, i) => `
+    <div style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-weight:600;font-size:13px;margin-bottom:6px">重複候補 ${i + 1}（${g.length}件）</div>
+      ${g.map((c) => `
+        <a href="/case-detail.html?id=${c._id}" style="display:flex;gap:10px;align-items:center;padding:6px 4px;text-decoration:none;color:inherit;border-top:1px solid var(--color-line)">
+          <strong style="min-width:46px">#${c.caseNumber || "—"}</strong>
+          <span style="flex:1">${escHtml(c.officeName || "—")}${c.corpName ? ` <span style="color:var(--color-ink-muted);font-size:12px">${escHtml(c.corpName)}</span>` : ""}</span>
+          <span style="font-size:12px;color:var(--color-ink-muted)">${SOURCE_LABELS[c.source] || c.source || ""}</span>
+          <span class="badge badge-${c.status}" style="font-size:11px">${STATUS_LABELS[c.status] || ""}</span>
+        </a>`).join("")}
+    </div>`).join("");
+  document.getElementById("dupModal").classList.add("open");
+}
+function closeDupModal() { document.getElementById("dupModal").classList.remove("open"); }
 
 function escHtml(str) {
   return String(str)
@@ -292,7 +332,11 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("searchInput").addEventListener("input", renderCases);
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
+  document.getElementById("showArchived")?.addEventListener("change", renderCases);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
+  document.getElementById("dupCheckBtn")?.addEventListener("click", openDupModal);
+  document.getElementById("dupModalClose")?.addEventListener("click", closeDupModal);
+  document.getElementById("dupModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeDupModal(); });
   document.querySelectorAll("th.sortable").forEach((th) => th.addEventListener("click", () => {
     const f = th.dataset.sort;
     if (sortState.field === f) sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
@@ -308,5 +352,6 @@ onAuthStateChanged(auth, async (user) => {
   onSnapshot(q, (snap) => {
     allCases = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
     renderCases();
+    renderDuplicateBanner();
   });
 });

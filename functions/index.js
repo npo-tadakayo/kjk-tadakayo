@@ -647,3 +647,9 @@ exports.sendSupplierOrder = onCall(
     }
   }
 );
+
+// ===== LP アクセス解析（GA4 + Search Console 日次収集） =====
+// 実装は ./analytics.js（このファイルを肥大化させないため分離）
+const analytics = require("./analytics");
+exports.collectAnalytics = analytics.collectAnalytics;
+exports.collectAnalyticsNow = analytics.collectAnalyticsNow;
