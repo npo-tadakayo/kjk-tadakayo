@@ -15,22 +15,29 @@
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-const { GoogleAuth } = require("google-auth-library");
+const { defineSecret } = require("firebase-functions/params");
 
 const REGION = "asia-northeast1";
 const SA_ANALYTICS = "fn-analytics-sa@kjk-tadakayo.iam.gserviceaccount.com";
 
-const auth = new GoogleAuth({
-  scopes: [
-    "https://www.googleapis.com/auth/analytics.readonly",
-    "https://www.googleapis.com/auth/webmasters.readonly",
-  ],
-});
+// GA4 UI / gcloud では SA を GA4・Search Console に追加できないため、
+// GA4プロパティ管理者(次田さん)のユーザーOAuthトークンで Data API / SC を読む。
+// Secret 値 = JSON {refresh_token, client_id, client_secret}（analytics.readonly + webmasters.readonly）
+const ANALYTICS_OAUTH_TOKEN = defineSecret("ANALYTICS_OAUTH_TOKEN");
 
 async function accessToken() {
-  const client = await auth.getClient();
-  const t = await client.getAccessToken();
-  return typeof t === "string" ? t : t.token;
+  const cfg = JSON.parse(ANALYTICS_OAUTH_TOKEN.value());
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: cfg.client_id, client_secret: cfg.client_secret,
+      refresh_token: cfg.refresh_token, grant_type: "refresh_token",
+    }).toString(),
+  });
+  const t = await r.json();
+  if (!t.access_token) throw new Error("OAuth refresh failed: " + JSON.stringify(t).slice(0, 200));
+  return t.access_token;
 }
 
 async function apiPost(url, body, token) {
@@ -188,13 +195,13 @@ async function collectCore() {
 
 // 毎日 6:30 JST（GA4/SCの前日分が揃う頃）
 exports.collectAnalytics = onSchedule(
-  { schedule: "30 6 * * *", timeZone: "Asia/Tokyo", region: REGION, serviceAccount: SA_ANALYTICS, timeoutSeconds: 120 },
+  { schedule: "30 6 * * *", timeZone: "Asia/Tokyo", region: REGION, serviceAccount: SA_ANALYTICS, timeoutSeconds: 120, secrets: [ANALYTICS_OAUTH_TOKEN] },
   async () => { const r = await collectCore(); console.log("collectAnalytics:", JSON.stringify(r)); }
 );
 
 // 管理画面の「今すぐ更新」ボタン用（登録スタッフのみ）
 exports.collectAnalyticsNow = onCall(
-  { region: REGION, serviceAccount: SA_ANALYTICS, timeoutSeconds: 120 },
+  { region: REGION, serviceAccount: SA_ANALYTICS, timeoutSeconds: 120, secrets: [ANALYTICS_OAUTH_TOKEN] },
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
