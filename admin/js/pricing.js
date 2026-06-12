@@ -11,10 +11,12 @@ const yen = (n)=>"¥"+Math.round(Number(n)||0).toLocaleString("ja-JP");
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 
 // 商品（認定事業所 卸価格・確定値）
+// 2026-06-06 AB Circle 正式回答準拠（税別・数量帯: 1台 / 2〜10台 / 11〜30台 / 31台〜）。
+// 卸＝仕入と同額（パススルー・2026-06-11 次田 確定）。正本: 介護情報基盤伴走支援/04_認定基準/カードリーダー価格表・送料規定.md §2
 const PRODUCTS = [
-  ["cir415a-01","CIR415A-01（BT）",[8000,8000,7530,7530]],
-  ["cir315a-02","CIR315A-02（USB Type-A）",[4000,4000,3510,3460]],
-  ["cir315a-04","CIR315A-04（USB Type-C）",[4000,4000,3670,3610]],
+  ["cir415a-01","CIR415A-01（BT）",[7650,7520,7050,7050]],
+  ["cir315a-02","CIR315A-02（USB Type-A）",[3580,3490,3000,2950]],
+  ["cir315a-04","CIR315A-04（USB Type-C）",[3770,3680,3160,3100]],
 ];
 const TIER_KEYS = ["1台","2〜10台","11〜30台","31台〜"];
 const REGIONS_DEF = ["近畿","北陸・東海・中国","関東・信越・四国・九州","東北","北海道","沖縄"];
