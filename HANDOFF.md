@@ -24,9 +24,14 @@
 - 実行確認：scheduler 手動トリガで `analyticsSummary/latest` 書込（28日：**SEO クリック29/表示204/CTR14.2%/掲載順位3.0**・GA4は新規で0）。GA4 Data API/SC とも 200 を実測。
 - SA `fn-analytics-sa@kjk-tadakayo.iam.gserviceaccount.com`（datastore.user）＋ API `analyticsdata`/`searchconsole`/`analyticsadmin` 有効化済。
 
-### ③ カードリーダー卸価格 新版（パススルー）反映（本番反映済）
-- `pricing.js` PRODUCTS デフォルト・`partner-doc.js` 例示を新版へ：BT `7650/7520/7050/7050`・USB-A `3580/3490/3000/2950`・USB-C `3770/3680/3160/3100`（税別・数量帯）。
-- Firestore：`products`（仕入）は**既に新版だった**。`appConfig/settings.partnerPricing`（卸）を `functions/update-prices.cjs --apply` で明示設定。正本 `カードリーダー価格表・送料規定.md` の [要決定] を確定済みに更新。送料(SHIPPING_FEES/レターパック¥600/ゆうパック表)は正本と一致＝変更不要。
+### ③ カードリーダー卸価格（本番反映済）※当初パススルー化→2026-06-13 非パススルーへ訂正
+- ⚠️ 経緯：当初279経由依頼で「卸＝仕入と同額（パススルー）」に設定したが、**これは既存設計（前セッションで確立：認定事業所卸=partnerPricing・数量帯別・卸益+¥480/¥510）を壊す誤り**だった。次田さん指摘で訂正。
+- **確定（2026-06-13・コミット 3627fee）＝非パススルー**：卸はAB Circle仕入＋一定卸益の数量帯別テーブル。
+  - `appConfig/settings.partnerPricing`（卸・実値）= BT `[8000,8000,7530,7530]`／USB-A `[4000,4000,3510,3460]`／USB-C `[4000,4000,3670,3610]`（税別）
+  - `products.wholesale`（=AB Circle仕入原価・発注単価の基準）は据え置き：BT `7650/7520/7050/7050` 他 → 卸益 概ね BT¥480/USB¥510
+  - `pricing.js` PRODUCTS 既定値も上記卸へ・`partner-doc.js` 例示も非パススルー表記・hosting:admin デプロイ済
+  - 正本 `カードリーダー価格表・送料規定.md §2` を非パススルーに書き換え（仕入原価を内部参考併記）。`functions/update-prices.cjs` は旧パススルー版＝再実行禁止の注記
+- エンド見積(mitsumori.html)＝補助金上限ぴったり方式（補助対象は自己負担¥0／補助枚数超過分は補助対象外で別自己負担）＝設計どおり（変更不要）。送料(SHIPPING_FEES/レターパック¥600/ゆうパック表)も正本一致。
 
 ### 重要な方針（今後）
 - **今後タダカヨ作業で279アカウントを使わない**（次田さん指示・2026-06-12）。価格反映時に一時付与した `y.tsukuda@279279.net` の datastore.user は削除済。ローカルADCは `gcloud auth application-default login` でタダカヨに切替済。
