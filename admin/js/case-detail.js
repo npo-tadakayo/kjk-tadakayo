@@ -9,7 +9,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys } from "/js/constants.js";
+import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 
@@ -321,10 +321,16 @@ async function hardDeleteCase() {
 async function loadDuplicateCandidates() {
   const myKeys = new Set(dupKeys(currentCase));
   if (!myKeys.size) return [];
-  const snap = await getDocs(collection(db, "cases"));
+  const [snap, ndSnap] = await Promise.all([
+    getDocs(collection(db, "cases")),
+    getDocs(collection(db, "notDuplicates")),
+  ]);
+  const dismissed = new Set(ndSnap.docs.map((d) => d.id));
   return snap.docs
     .map((d) => ({ _id: d.id, ...d.data() }))
-    .filter((c) => c._id !== caseId && !c.archived && dupKeys(c).some((k) => myKeys.has(k)));
+    .filter((c) => c._id !== caseId && !c.archived
+      && dupKeys(c).some((k) => myKeys.has(k))
+      && !dismissed.has(pairKey(caseId, c._id)));
 }
 
 // other を当案件（primary）に統合する

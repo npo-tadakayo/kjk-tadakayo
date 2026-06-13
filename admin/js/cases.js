@@ -2,13 +2,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
-  addDoc, serverTimestamp, doc, getDoc, runTransaction }
+  addDoc, setDoc, serverTimestamp, doc, getDoc, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { gateRole } from "/js/role.js";
 import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
-  ARCHIVE_REASONS, computeDuplicateGroups,
+  ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -150,16 +150,19 @@ function archivedBadge(c) {
   return ` <span style="font-size:11px;font-weight:600;color:#8a6d3b;background:#FCF3E6;border:1px solid #e6cfa0;border-radius:10px;padding:1px 7px;margin-left:6px">対象外・${escHtml(label)}</span>`;
 }
 
-// 重複候補バナー（アクティブ案件のみ対象）
+// 「重複ではない」と確定したペアキーの集合（notDuplicates 購読で更新）
+let dismissedPairs = new Set();
+
+// 重複候補バナー（アクティブ案件のみ・「重複ではない」確定組は除外）
 function renderDuplicateBanner() {
   const banner = document.getElementById("dupBanner");
   if (!banner) return;
-  const groups = computeDuplicateGroups(allCases.filter((c) => !c.archived));
+  const groups = computeDuplicateGroups(allCases.filter((c) => !c.archived), dismissedPairs);
   if (!groups.length) { banner.style.display = "none"; return; }
   const n = groups.reduce((s, g) => s + g.length, 0);
   banner.style.display = "flex";
   document.getElementById("dupBannerText").textContent =
-    `重複の可能性がある案件が ${groups.length} 組（計 ${n} 件）あります。統合は各案件の詳細画面から行えます。`;
+    `重複の可能性がある案件が ${groups.length} 組（計 ${n} 件）あります。統合は各案件の詳細画面から、別事業所なら「重複ではない」で解除できます。`;
   banner._groups = groups;
 }
 
@@ -168,7 +171,12 @@ function openDupModal() {
   const body = document.getElementById("dupModalBody");
   body.innerHTML = groups.map((g, i) => `
     <div style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-      <div style="font-weight:600;font-size:13px;margin-bottom:6px">重複候補 ${i + 1}（${g.length}件）</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-weight:600;font-size:13px;flex:1">重複候補 ${i + 1}（${g.length}件）</span>
+        <button type="button" class="btn btn-ghost not-dup-btn" data-ids="${g.map((c) => c._id).join(",")}" style="font-size:12px;white-space:nowrap">
+          <i class="ti ti-circle-x" aria-hidden="true"></i>重複ではない
+        </button>
+      </div>
       ${g.map((c) => `
         <a href="/case-detail.html?id=${c._id}" style="display:flex;gap:10px;align-items:center;padding:6px 4px;text-decoration:none;color:inherit;border-top:1px solid var(--color-line)">
           <strong style="min-width:46px">#${c.caseNumber || "—"}</strong>
@@ -177,9 +185,33 @@ function openDupModal() {
           <span class="badge badge-${c.status}" style="font-size:11px">${STATUS_LABELS[c.status] || ""}</span>
         </a>`).join("")}
     </div>`).join("");
+  body.querySelectorAll(".not-dup-btn").forEach((btn) => {
+    btn.addEventListener("click", () => markNotDuplicate(btn.dataset.ids.split(",")));
+  });
   document.getElementById("dupModal").classList.add("open");
 }
 function closeDupModal() { document.getElementById("dupModal").classList.remove("open"); }
+
+// グループ内の全ペアを「重複ではない」として記録（以後この組は重複候補に出ない）
+async function markNotDuplicate(ids) {
+  if (!Array.isArray(ids) || ids.length < 2) return;
+  const user = auth.currentUser;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        await setDoc(doc(db, "notDuplicates", pairKey(ids[i], ids[j])), {
+          a: ids[i], b: ids[j],
+          dismissedBy: user?.displayName || user?.email || "",
+          dismissedAt: serverTimestamp(),
+        });
+      }
+    }
+    toast("「重複ではない」として記録しました");
+    closeDupModal();
+  } catch (e) {
+    toast(`記録に失敗しました: ${e.message}`);
+  }
+}
 
 function escHtml(str) {
   return String(str)
@@ -347,6 +379,12 @@ onAuthStateChanged(auth, async (user) => {
   updateSortIndicators();
   updateDeadlineBanner();
   try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
+
+  // 「重複ではない」確定ペアを購読（重複候補から除外する）
+  onSnapshot(collection(db, "notDuplicates"), (snap) => {
+    dismissedPairs = new Set(snap.docs.map((d) => d.id));
+    renderDuplicateBanner();
+  });
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {

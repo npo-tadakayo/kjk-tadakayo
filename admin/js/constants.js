@@ -60,15 +60,26 @@ export function dupKeys(c) {
   return keys;
 }
 
+// 2件の案件IDから順不同のペアキーを作る（「重複ではない」確定の記録キー）
+export function pairKey(a, b) { return a < b ? `${a}__${b}` : `${b}__${a}`; }
+
 // 共有キーで連結した重複グループ（union-find）。2件以上のグループのみ返す。
-export function computeDuplicateGroups(cases) {
+// dismissed: 「重複ではない」と確定したペアキーの Set。その組は連結しない。
+export function computeDuplicateGroups(cases, dismissed) {
+  const dis = dismissed || new Set();
   const parent = {};
   const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
   cases.forEach((c) => { parent[c._id] = c._id; });
-  const seen = {};
-  cases.forEach((c) => dupKeys(c).forEach((k) => {
-    if (seen[k]) parent[find(c._id)] = find(seen[k]); else seen[k] = c._id;
-  }));
+  // 同一キーを持つ案件どうしをペアで連結（「重複ではない」確定の組はスキップ）
+  const byKey = {};
+  cases.forEach((c) => dupKeys(c).forEach((k) => { (byKey[k] = byKey[k] || []).push(c._id); }));
+  Object.values(byKey).forEach((ids) => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        if (!dis.has(pairKey(ids[i], ids[j]))) parent[find(ids[i])] = find(ids[j]);
+      }
+    }
+  });
   const groups = {};
   cases.forEach((c) => { const r = find(c._id); (groups[r] = groups[r] || []).push(c); });
   return Object.values(groups).filter((g) => g.length > 1);
