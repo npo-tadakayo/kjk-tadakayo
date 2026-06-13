@@ -7,10 +7,10 @@
   --color-ink: #2C2416;
   --color-ink-muted: #6a5e48;
   --color-ink-light: #9a8e78;
-  --color-primary: #E33535;
-  --color-primary-dark: #c02828;
-  --color-primary-soft: #FFE4EC;
-  --app-color: #E33535;
+  --color-primary: #E03030;
+  --color-primary-dark: #b82626;
+  --color-primary-soft: #fdecec;
+  --app-color: #E03030;
   --color-success: #2a7a3b;
   --color-success-soft: #e8f5ec;
   --color-warning: #c87a1f;
@@ -68,6 +68,15 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   border-bottom: 1px solid var(--color-line);
 }
 
+/* タダカヨ ロゴ（全ページ共通・CSS注入） */
+.sidebar-brand::before {
+  content: "";
+  display: block;
+  height: 30px;
+  margin-bottom: var(--space-3);
+  background: url("/images/tadakayo_logo.png") left center / contain no-repeat;
+}
+
 .sidebar-brand .app-name {
   font-family: 'Noto Serif JP', serif;
   font-size: 15px;
@@ -103,7 +112,8 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 }
 
 .nav-item:hover { background: var(--color-bg); color: var(--color-ink); }
-.nav-item.active { background: var(--color-primary-soft); color: var(--color-primary); }
+/* rule26/WCAG1.4.3: #E03030 on #fdecec=3.97:1(NG) → primary-dark #b82626=5.49:1 で確保 */
+.nav-item.active { background: var(--color-primary-soft); color: var(--color-primary-dark); }
 .nav-item i { font-size: 18px; flex-shrink: 0; }
 
 .sidebar-footer {
@@ -554,6 +564,15 @@ select.form-control { cursor: pointer; }
 .empty-state i { font-size: 48px; margin-bottom: var(--space-3); opacity: 0.4; }
 .empty-state p { font-size: 14px; }
 
+/* キャラ入り空状態（多田佳代ちゃん・控えめ） */
+.empty-state-chara img {
+  width: 140px;
+  height: auto;
+  display: block;
+  margin: 0 auto var(--space-2);
+  opacity: 0.92;
+}
+
 /* ========== Loading ========== */
 .loading {
   text-align: center;
@@ -580,17 +599,31 @@ select.form-control { cursor: pointer; }
 }
 
 .login-logo {
-  width: 56px;
-  height: 56px;
+  width: 132px;
+  min-height: 132px;
   background: var(--color-primary-soft);
   border-radius: var(--radius-lg);
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto var(--space-4);
+  padding: var(--space-3);
 }
 
 .login-logo i { font-size: 28px; color: var(--color-primary); }
+.login-logo img {
+  width: 100%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}
+
+.login-brand-logo {
+  height: 26px;
+  width: auto;
+  display: block;
+  margin: 0 auto var(--space-2);
+}
 
 .login-title {
   font-size: 20px;
