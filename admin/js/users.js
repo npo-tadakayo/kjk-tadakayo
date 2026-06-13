@@ -71,7 +71,8 @@ async function save(){
 }
 
 const NAV=[["/dashboard.html","ti-chart-bar","ダッシュボード"],["/cases.html","ti-layout-list","案件一覧"],
-  ["/kanban.html","ti-layout-kanban","カンバン"],["/supply.html","ti-package","供給管理"],
+  ["/kanban.html","ti-layout-kanban","カンバン"],["/analytics.html","ti-chart-arcs","アクセス解析"],
+  ["/supply.html","ti-package","供給管理"],
   ["/simulator.html","ti-calculator","売上シミュレーター"],
   ["/partner-admin.html","ti-certificate","認定事業所"],
   ["/pricing.html","ti-coin","料金・送料"],
