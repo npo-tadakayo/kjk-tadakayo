@@ -5,19 +5,30 @@
 
 ---
 
-## 🔜 次セッション開始タスク（2026-06-13 次田さん指示）— UIリブランド：タダカヨ赤＋キャラで遊び心
+## 🆕 2026-06-13 セッション⑬（CRM UIリブランド：タダカヨ赤＋多田佳代ちゃん 第1弾・本番反映/push済）
 
-**やること**：CRM（kjk-tadakayo-admin）/ LP のUIを **タダカヨカラー（赤）** に変更し、下記キャラを使って**少し遊び心のあるUI**にする。
-- ※対象がCRM管理画面かLPか両方か、最初に次田さんへ確認（おそらく両方／まずCRM）。
-- タダカヨ赤の基調色は配布PDFで使った **`#E03030`**（見出し/アクセント）が目安。確定値は次田さんに確認。
+> 状態: **CRM管理画面（hosting:admin live）に本番反映・コミット `c46fc78`・origin push 済**。次田さん実機（@tadakayo）でログイン後UI確認済の流れで「本番へ」承認→昇格。
 
-**キャラ素材（実在確認済み 2026-06-13）**
-- **ケアプー**：`/Users/yoshinaotsukuda/Projects/セミナー資料/共有して使う資料/ケアプー`
-  - `img_chara_main.svg`・`img_feature_01〜04.svg`（SVG＝UI埋め込み向き）、ポスター/壁紙PNG多数
-- **多田佳代ちゃん**：`/Users/yoshinaotsukuda/Projects/セミナー資料/共有して使う資料/タダカヨ`
-  - `多田 佳代3/4/6/10/11/12.png`・`多田佳代ちゃん-Google-ドライブ (1〜10).png`（各ポーズ）、`NPO法人タダカヨロゴ.png`、`タダカヨちゃん 反転.jpg`
-- 配置案：空状態(empty state)・ログイン画面・トースト・サイドバーロゴ等にキャラを少量。やり過ぎず業務UIの可読性は維持。
-- ⚠️ 画像はリポジトリ外（Drive/別Projects）。使うものは `public/` 等へコピーして配信（CDNパス整理）。SVGはそのまま埋め込み可。
+### やったこと（CRM `admin/` のみ・LPは未着手）
+- **色トークンを #E03030 系へ統一**（[admin/css/crm.css](admin/css/crm.css)）: `--color-primary` `#E33535`→**`#E03030`** / `--color-primary-dark` `#c02828`→**`#b82626`** / `--color-primary-soft` ピンク`#FFE4EC`→赤淡色**`#fdecec`** / `--app-color` も #E03030。CSSトークンなので全管理画面に一括反映。
+- **多田佳代ちゃんを控えめに3か所**（業務可読性維持）:
+  - ログイン（[admin/index.html](admin/index.html)）= 指さしポーズ＋「タダカヨ」ロゴ＋「多田佳代ちゃんがお待ちしています」。`.login-logo` は淡赤の角丸パネル＋`object-fit:contain`（※初回は円形`overflow:hidden`で手が切れ→パネル化で修正済）。
+  - サイドバー上部ロゴ = `.sidebar-brand::before` の背景画像でCSS注入＝**13ページのHTMLを触らず全画面反映**。
+  - 案件一覧の空状態（[admin/cases.html](admin/cases.html)）= ノートPC操作の多田佳代ちゃん（`.empty-state-chara`・幅140px）。
+- **素材を `admin/images/` に配置**（admin hosting はリポジトリ外Drive素材を配信不可）: `tadakayo_logo.png`(=images/tadakayo_logo_remove.png) / `chara_welcome.png`(=images/chara_11.png) / `chara_empty.png`(=images/chara_2.png)。元の `images/chara_*.png` は多田佳代ちゃん各ポーズ（LP流用）。
+- **a11y（/design:accessibility-review 実施）**: アクティブなナビ `#E03030`/`#fdecec`=3.97:1（AA NG）→ `--color-primary-dark`(#b82626)=**5.49:1** に修正（[admin/css/crm.css:116](admin/css/crm.css)）。他（装飾画像 alt=""・ブランドロゴ alt・focus-visible・タップ44/48px・primaryボタン白文字6.28:1・リンク4.54:1）は合格。
+
+### 検証
+- rule05 二段階: プレビューチャネル `redbrand-0613`（https://kjk-tadakayo-admin--redbrand-0613-0feuo47g.web.app ・2026-06-27まで）→ Playwright実描画（ログイン全身表示・サイドバーロゴ・空状態・nav-active色）→ 本番curl（#E03030/nav-active=primary-dark/画像3枚200/参照あり）→ live昇格。
+- **本番URL**: https://kjk-tadakayo-admin.web.app
+
+### 次にやること（このリブランドの続き・任意）
+1. **LP（kjk.tadakayo.jp / index.html）のリブランド**: 未着手。LPも primary `#E33535`→`#E03030` へ／キャラは既に多用（chara_*）なので色合わせ中心。hosting:lp。
+2. **CRMへのキャラ追加（任意）**: トースト「保存しました」にOKポーズ（chara_8 = images/chara_8.png 相当）、ダッシュボード歓迎など。やり過ぎ注意。
+3. キャラ素材の出どころ（リポジトリ外）: ケアプー `…/セミナー資料/共有して使う資料/ケアプー`（`img_chara_main.svg`等）／多田佳代ちゃん `…/タダカヨ`。使う物は `admin/images/`（or LP用 `images/`）へコピーして配信。
+
+### push 手順メモ（重要・再発する）
+- origin=`tsuku-29/kjk-tadakayo` だが git のhttps認証は `ytsukuda4470` で403。**`gh auth switch --user tsuku-29` → `gh auth setup-git` → `git push` → `gh auth switch --user ytsukuda4470`（元に戻す）** で成功。tsuku-29/ytsukuda4470 とも gh keyring 済。
 
 ---
 
