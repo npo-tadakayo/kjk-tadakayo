@@ -12,24 +12,7 @@ const functions = getFunctions(app, "asia-northeast1");
 function $(id){ return document.getElementById(id); }
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 
-const NAV = [
-  ["/dashboard.html","ti-chart-bar","ダッシュボード"],
-  ["/cases.html","ti-layout-list","案件一覧"],
-  ["/kanban.html","ti-layout-kanban","カンバン"],
-  ["/analytics.html","ti-chart-arcs","アクセス解析"],
-  ["/supply.html","ti-package","供給管理"],
-  ["/simulator.html","ti-calculator","売上シミュレーター"],
-  ["/partner-admin.html","ti-certificate","認定事業所"],
-  ["/pricing.html","ti-coin","料金・送料"],
-  ["/settings.html","ti-settings","設定"],
-  ["/users.html","ti-users","ユーザー管理"],
-];
-function renderNav(active){
-  $("nav").innerHTML = NAV.map(([h,i,l])=>`<a class="nav-item ${h===active?"active":""}" href="${h}"><i class="ti ${i}" aria-hidden="true"></i>${l}</a>`).join("")
-    + `<div style="height:1px;background:var(--color-line);margin:8px 12px"></div>`
-    + `<a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>`
-    + `<a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>`;
-}
+// サイドメニューは sidebar.js（SSOT・非module）が #nav に描画する。ここでは扱わない。
 
 function escAttr(s){ return String(s||"").replace(/"/g,"&quot;").replace(/</g,"&lt;"); }
 function addSenderRow(d){
@@ -112,7 +95,6 @@ const testFn = httpsCallable(functions, "testChatNotify");
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user,{adminOnly:true}))) return;
-  renderNav("/settings.html");
   $("userEmail").textContent = user.displayName || user.email;
   $("logoutBtn").addEventListener("click", ()=>signOut(auth).then(()=>location.href="/index.html"));
 

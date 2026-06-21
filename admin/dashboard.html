@@ -16,27 +16,7 @@
         <div class="app-name">タダカヨ CRM</div>
         <div class="app-sub">介護情報基盤伴走支援</div>
       </div>
-      <nav class="sidebar-nav">
-        <a class="nav-item active" href="/dashboard.html">
-          <i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード
-        </a>
-        <a class="nav-item" href="/cases.html">
-          <i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧
-        </a>
-        <a class="nav-item" href="/kanban.html">
-          <i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン
-        </a>
-        <a class="nav-item" href="/analytics.html"><i class="ti ti-chart-arcs" aria-hidden="true"></i>アクセス解析</a>
-        <a class="nav-item" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
-        <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
-        <a class="nav-item" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
-        <a class="nav-item" href="/pricing.html"><i class="ti ti-coin" aria-hidden="true"></i>料金・送料</a>
-        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
-        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
-        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
-        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
-        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
-      </nav>
+      <nav class="sidebar-nav" id="nav"></nav>
       <div class="sidebar-footer">
         <div class="user-info" id="userEmail"></div>
         <button class="btn-logout" id="logoutBtn" type="button">
@@ -90,6 +70,8 @@
       </div>
     </main>
   </div>
+
+  <script src="/js/sidebar.js"></script>
 
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>

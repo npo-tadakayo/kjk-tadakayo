@@ -16,21 +16,7 @@
         <div class="app-name">タダカヨ CRM</div>
         <div class="app-sub">介護情報基盤伴走支援</div>
       </div>
-      <nav class="sidebar-nav">
-        <a class="nav-item" href="/dashboard.html"><i class="ti ti-chart-bar" aria-hidden="true"></i>ダッシュボード</a>
-        <a class="nav-item" href="/cases.html"><i class="ti ti-layout-list" aria-hidden="true"></i>案件一覧</a>
-        <a class="nav-item" href="/kanban.html"><i class="ti ti-layout-kanban" aria-hidden="true"></i>カンバン</a>
-        <a class="nav-item" href="/analytics.html"><i class="ti ti-chart-arcs" aria-hidden="true"></i>アクセス解析</a>
-        <a class="nav-item active" href="/supply.html"><i class="ti ti-package" aria-hidden="true"></i>供給管理</a>
-        <a class="nav-item" href="/simulator.html"><i class="ti ti-calculator" aria-hidden="true"></i>売上シミュレーター</a>
-        <a class="nav-item" href="/partner-admin.html"><i class="ti ti-certificate" aria-hidden="true"></i>認定事業所</a>
-        <a class="nav-item" href="/pricing.html"><i class="ti ti-coin" aria-hidden="true"></i>料金・送料</a>
-        <a class="nav-item" href="/settings.html"><i class="ti ti-settings" aria-hidden="true"></i>設定</a>
-        <a class="nav-item" href="/users.html"><i class="ti ti-users" aria-hidden="true"></i>ユーザー管理</a>
-        <div style="height:1px;background:var(--color-line);margin:8px 12px"></div>
-        <a class="nav-item" href="/manual.html"><i class="ti ti-book-2" aria-hidden="true"></i>マニュアル</a>
-        <a class="nav-item" href="/engineering.html"><i class="ti ti-notebook" aria-hidden="true"></i>エンジニアノート</a>
-      </nav>
+      <nav class="sidebar-nav" id="nav"></nav>
       <div class="sidebar-footer">
         <div class="user-info" id="userEmail"></div>
         <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button>
@@ -51,7 +37,7 @@
       <!-- 在庫・商品 -->
       <div class="tab-content active" id="tab-inventory">
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th>卸価格(2-10台)</th><th>在庫</th><th>調整</th></tr></thead>
+          <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th class="num">卸価格(2-10台)</th><th>在庫</th><th>調整</th></tr></thead>
           <tbody id="productsBody"></tbody></table>
         </div></div>
       </div>
@@ -63,7 +49,7 @@
           <button class="btn btn-primary" id="newOrderBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規発注</button>
         </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>発注番号</th><th>発注日</th><th>内容</th><th>金額(税別)</th><th>ステータス</th><th></th></tr></thead>
+          <table><thead><tr><th>発注番号</th><th>発注日</th><th>内容</th><th class="num">金額(税別)</th><th>ステータス</th><th></th></tr></thead>
           <tbody id="ordersBody"></tbody></table>
           <div id="ordersEmpty" class="empty-state" style="display:none"><i class="ti ti-shopping-cart" aria-hidden="true"></i><p>発注がありません</p></div>
         </div></div>
@@ -290,6 +276,7 @@
     style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
+  <script src="/js/sidebar.js"></script>
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/supply.js" type="module"></script>

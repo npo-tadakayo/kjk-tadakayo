@@ -139,11 +139,16 @@
     gtag('config', 'G-V70326L8MW');
   </script>
 
-  <!-- Google Fonts: Noto Sans JP（非同期読み込みでレンダリングブロック回避） -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700;900&display=swap"></noscript>
+  <!-- Noto Sans JP（自己ホスト・Pマーク: Google CDN非経由 / サブセット可変woff2・全ウェイト1ファイル）。文言追加時は fonts/build-subset.sh を再実行 -->
+  <style>
+    @font-face {
+      font-family: 'Noto Sans JP';
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+      src: url('fonts/NotoSansJP-subset.woff2') format('woff2');
+    }
+  </style>
 
   <!-- Tabler Icons v3.24.0（非同期読み込み） -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" media="print" onload="this.media='all'">

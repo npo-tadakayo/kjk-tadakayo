@@ -61,7 +61,7 @@ function renderProducts(){
       <td><strong>${esc(p.id)}</strong></td>
       <td>${esc(p.name)}</td>
       <td>${esc(p.connection||"")}</td>
-      <td>${yen(p.wholesale2_10)}</td>
+      <td class="num">${yen(p.wholesale2_10)}</td>
       <td><strong style="font-size:16px">${p.stock||0}</strong> 台</td>
       <td>
         <button class="btn btn-secondary stock-btn" data-sku="${p.id}" style="font-size:12px;padding:4px 10px"><i class="ti ti-adjustments" aria-hidden="true"></i> 在庫調整</button>
@@ -263,7 +263,7 @@ function renderOrders(orders){
       <td><strong>${esc(o.poNumber)}</strong></td>
       <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
-      <td>${yen(o.total)}</td>
+      <td class="num">${yen(o.total)}</td>
       <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}</td>
       <td style="white-space:nowrap">
         <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
