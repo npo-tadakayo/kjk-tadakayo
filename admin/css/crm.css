@@ -7,10 +7,10 @@
   --color-ink: #2C2416;
   --color-ink-muted: #6a5e48;
   --color-ink-light: #9a8e78;
-  --color-primary: #E03030;
-  --color-primary-dark: #b82626;
-  --color-primary-soft: #fdecec;
-  --app-color: #E03030;
+  --color-primary: #E33535;      /* タダカヨレッド（ブランド指示書 正本） */
+  --color-primary-dark: #c02828; /* 白文字5.9:1・ピンク面4.9:1（WCAG AA） */
+  --color-primary-soft: #FFE4EC; /* タダカヨピンク（ブランド指示書 正本） */
+  --app-color: #E33535;
   --color-success: #2a7a3b;
   --color-success-soft: #e8f5ec;
   --color-warning: #c87a1f;
@@ -123,7 +123,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 .nav-divider-line { height: 1px; background: var(--color-line); margin: var(--space-2) var(--space-3); }
 
 .nav-item:hover { background: var(--color-bg); color: var(--color-ink); }
-/* rule26/WCAG1.4.3: #E03030 on #fdecec=3.97:1(NG) → primary-dark #b82626=5.49:1 で確保 */
+/* rule26/WCAG1.4.3: primary直はソフト面で4.5:1未満 → primary-dark #c02828=4.9:1 で確保 */
 .nav-item.active { background: var(--color-primary-soft); color: var(--color-primary-dark); }
 .nav-item i { font-size: 18px; flex-shrink: 0; }
 
@@ -212,7 +212,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-.btn-primary { background: var(--color-primary-dark); color: #fff; } /* rule26/WCAG1.4.3: 白文字とのコントラスト確保（#E03030=4.54:1 → #b82626=6.28:1） */
+.btn-primary { background: var(--color-primary-dark); color: #fff; } /* rule26/WCAG1.4.3: 白文字とのコントラスト確保（primary直=4.4:1 → #c02828=5.9:1） */
 .btn-primary:hover { background: #9e2020; box-shadow: 0 2px 8px rgba(184,38,38,.28); }
 .btn-secondary { background: var(--color-line); color: var(--color-ink); }
 .btn-secondary:hover { background: #ded8cd; }
@@ -314,7 +314,7 @@ tbody tr { cursor: pointer; }
 /* ステータスバッジ統制パレット（13ステータス → 意味4トーン・WCAG AA）
    赤=新規/着手 ・ 青=進行中 ・ 緑=完了/良好 ・ くすみ=失注/停止
    番号は status の SSOT（constants.js）に対応。cases/users/supply/partner で共用。 */
-.badge-1  { background: #fdecec; color: #b82626; } /* 新規受信 */
+.badge-1  { background: #FFE4EC; color: #c02828; } /* 新規受信 */
 .badge-2  { background: #e9eef5; color: #2f5878; } /* 確認中 / 下書き / 直接 */
 .badge-3  { background: #e8f3ec; color: #246b34; } /* 受注確定 / 有効 / 出荷済 */
 .badge-4  { background: #efe7e7; color: #785151; } /* 失注 / 停止 */
