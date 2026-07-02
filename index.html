@@ -103,6 +103,30 @@
               "@type": "Answer",
               "text": "はい、別々の制度です。「介護テクノロジー導入支援事業（ICT補助金）」は都道府県を通じた補助率型（最大3/4）の補助金で、介護ソフトやタブレット等が対象です。「介護情報基盤 助成金」は国保中央会ポータルを通じた定額型の助成金で、カードリーダーと接続サポート費が対象です。カードリーダー導入には「介護情報基盤 助成金」の方が有利です。"
             }
+          },
+          {
+            "@type": "Question",
+            "name": "支払いはいつ？ 一時的な立て替えは必要ですか？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "助成金は領収書にもとづく後払い精算のため、サポート費用はいったんお支払いいただく必要があります。その後、申請月の翌月に審査、翌々月に指定口座へ振り込まれます。申請はセットアップ当日にその場で一緒に行うので、入金までの流れも含めてタダカヨがサポートします。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "対応地域はどこですか？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "ご相談は全国から受け付けています。地域や状況に応じて、NPO法人タダカヨまたはタダカヨ認定事業所がサポートを担当します。まずはお気軽にお問い合わせください。"
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "導入にはどのくらい時間がかかりますか？",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "セットアップ当日は、機器の設定・ポータルの初回登録・助成金申請まで合わせて90〜120分が目安です。事前にID・パスワード類の確認を一緒に済ませておくので、当日スムーズに進められます。"
+            }
           }
         ]
       },
@@ -151,8 +175,9 @@
   </style>
 
   <!-- Tabler Icons v3.24.0（非同期読み込み） -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css" media="print" onload="this.media='all'">
-  <noscript><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css"></noscript>
+  <!-- Tabler Icons（自己ホスト・Pマーク: CDN非経由 / 使用アイコンのみサブセット8KB）。アイコン追加時は fonts/build-tabler-subset.sh を再実行 -->
+  <link rel="preload" href="fonts/tabler-icons-subset.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/tabler-icons-subset.css">
 
   <style>
     /* ======== CSS Variables ======== */
@@ -927,13 +952,14 @@
   </header>
 
   <!-- ======== ALERT BANNER ======== -->
-  <div class="alert-banner" role="alert">
+  <div class="alert-banner">
     <div class="container">
       <div class="alert-inner">
         <i class="ti ti-calendar-check alert-icon" aria-hidden="true"></i>
         <p class="alert-text">
           <strong>令和8年度 助成金の申請受付中です！</strong>
-          　申請期間：2026年5月7日〜2027年3月12日（予定）
+          　申請期間：2026年5月7日〜2027年3月12日（予定）<br>
+          <span style="font-size:12px;">※予算の上限に達すると期間内でも受付終了となります。受付は書類が整った順のため、お早めのご準備がおすすめです。</span>
         </p>
         <span class="alert-badge">今すぐ申請OK</span>
       </div>
@@ -947,8 +973,9 @@
     <div class="container">
       <div class="hero-inner">
         <div class="hero-content">
-          <div style="margin-bottom:20px;">
+          <div style="margin-bottom:20px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;">
             <span class="tdkplus-chip with-icon">タダサポ＋</span>
+            <span style="font-size:12px;color:var(--color-text-muted);">＝NPO法人タダカヨの有償伴走支援サービス</span>
           </div>
           <h1 class="hero-title" id="hero-heading">
             NPO法人タダカヨの<br>
@@ -1003,7 +1030,7 @@
             <p class="subsidy-note">※税込価格で計算。助成金は2026/5/7〜2027/3/12申請受付中。</p>
           </div>
           <div style="text-align:center;margin-top:20px;">
-            <img src="images/chara_11.png" alt="" role="presentation" width="202" height="350" fetchpriority="high" style="height:170px;width:auto;filter:drop-shadow(0 4px 14px rgba(0,0,0,0.10));">
+            <img src="images/chara_11.webp" alt="" role="presentation" width="202" height="350" fetchpriority="high" style="height:170px;width:auto;filter:drop-shadow(0 4px 14px rgba(0,0,0,0.10));">
           </div>
         </div>
       </div>
@@ -1054,7 +1081,7 @@
       </div>
 
       <div class="chara-bubble">
-        <img src="images/chara_6.png" alt="" width="218" height="310" loading="lazy">
+        <img src="images/chara_6.webp" alt="" width="218" height="310" loading="lazy">
         <div class="chara-speech">「まだカードリーダーが用意できていない…」という事業所さん、ご安心ください。助成金を使えば、タダカヨの伴走支援で¥0から始められます！</div>
       </div>
     </div>
@@ -1436,7 +1463,7 @@
       </div>
 
       <div class="chara-bubble right" style="margin-top:40px;">
-        <img src="images/chara_9.png" alt="" width="242" height="332" loading="lazy">
+        <img src="images/chara_9.webp" alt="" width="242" height="332" loading="lazy">
         <div class="chara-speech">スマホ・タブレット中心ならBluetooth（CIR415A）、PCメインなら有線USB（CIR315A）がおすすめ。迷ったらご相談ください！</div>
       </div>
 
@@ -1646,6 +1673,93 @@
     </div>
   </section>
 
+  <!-- ======== FLOW: 導入の流れ ======== -->
+  <section id="flow" class="flow-section section" aria-labelledby="flow-heading" style="background:var(--color-neutral);">
+    <div class="container">
+      <div class="text-center">
+        <span class="section-label">導入の流れ</span>
+        <h2 class="section-title" id="flow-heading">ご相談から導入完了まで、6つのステップ</h2>
+        <p class="section-desc center">
+          お問い合わせいただいてから、機器の設定・助成金申請・入金確認まで、
+          タダカヨがずっと伴走します。
+        </p>
+      </div>
+
+      <div class="logic-box" style="margin-top:28px;">
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">1</div>
+          <div class="logic-content">
+            <h4>無料相談（フォームから約3分）</h4>
+            <p>
+              下のフォームからサービス種別と台数の希望をお知らせください。
+              2営業日以内にタダカヨのスタッフからご連絡し、
+              事業所に合った構成と助成金の見込み額をご案内します。
+            </p>
+          </div>
+        </div>
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">2</div>
+          <div class="logic-content">
+            <h4>お見積り・お申し込み</h4>
+            <p>
+              構成が決まったらお見積書をお渡しします（<a href="/mitsumori.html" style="color:var(--color-primary);font-weight:700;text-decoration:underline;">見積書作成ツール</a>でもその場で作成できます）。
+              内容にご納得いただけたらお申し込みください。
+            </p>
+          </div>
+        </div>
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">3</div>
+          <div class="logic-content">
+            <h4>事前確認・日程調整</h4>
+            <p>
+              セットアップ当日に必要なID・パスワード類（電子請求受付システムのID等）が
+              お手元に揃っているかを事前に一緒に確認します。
+              足りないものがあれば再発行の手順からご案内するので、当日に「進められない」がありません。
+            </p>
+          </div>
+        </div>
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">4</div>
+          <div class="logic-content">
+            <h4>カードリーダーお届け＋セットアップ（90〜120分）</h4>
+            <p>
+              カードリーダーをお届けし、マイナ資格確認アプリの設定・
+              介護情報基盤ポータルの初回登録までを一緒に進めます。
+              初回セットアップと助成金申請を合わせて90〜120分が目安です。
+            </p>
+          </div>
+        </div>
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">5</div>
+          <div class="logic-content">
+            <h4>助成金申請（その場でオンライン申請まで）</h4>
+            <p>
+              領収書をもとに、介護情報基盤ポータルからのオンライン申請を一緒に行います。
+              費用はいったんお支払いいただき、助成金は<em>申請月の翌月に審査、翌々月に指定口座へ振込</em>されます（後払い精算）。
+            </p>
+          </div>
+        </div>
+        <div class="logic-row">
+          <div class="logic-step" aria-hidden="true">6</div>
+          <div class="logic-content">
+            <h4>1年間の伴走サポート</h4>
+            <p>
+              導入して終わりではありません。振込の確認から日々の運用の困りごとまで、
+              チャット・メール・電話で1年間サポートします。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:28px;text-align:center;">
+        <a href="#contact" class="btn btn-primary btn-lg">
+          <i class="ti ti-message-circle" aria-hidden="true"></i>
+          まずは無料で相談する
+        </a>
+      </div>
+    </div>
+  </section>
+
   <!-- ======== STRENGTHS ======== -->
   <section class="strengths-section section" aria-labelledby="strengths-heading">
     <div class="container">
@@ -1695,7 +1809,7 @@
       </div>
 
       <div class="chara-bubble" style="margin-top:40px;">
-        <img src="images/chara_8.png" alt="" width="230" height="302" loading="lazy">
+        <img src="images/chara_8.webp" alt="" width="230" height="302" loading="lazy">
         <div class="chara-speech">「タダでカイゴをヨクしよう」を掲げるNPO法人タダカヨが、最後まで一緒に伴走します。安心してお任せください！</div>
       </div>
     </div>
@@ -1736,7 +1850,7 @@
       </div>
 
       <div class="chara-bubble right" style="margin-bottom:8px;">
-        <img src="images/chara_2.png" alt="" width="386" height="344" loading="lazy">
+        <img src="images/chara_2.webp" alt="" width="386" height="344" loading="lazy">
         <div class="chara-speech">よくいただくご質問をまとめました。解決しない場合はお気軽にお問い合わせください！</div>
       </div>
 
@@ -1832,6 +1946,58 @@
           </div>
         </div>
 
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a6">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>支払いはいつ？ 一時的な立て替えは必要ですか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a6" role="region">
+            <p>
+              助成金は領収書にもとづく<strong>後払い精算</strong>のため、サポート費用はいったんお支払いいただく必要があります。
+              その後、申請月の翌月に審査、<strong>翌々月に指定口座へ振り込まれます</strong>。
+              例えば7月に申請すると、8月に審査、9月末までに入金という流れです。
+              申請はセットアップ当日にその場で一緒に行うので、入金までの流れも含めてタダカヨがサポートします。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a7">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>対応地域はどこですか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a7" role="region">
+            <p>
+              ご相談は<strong>全国から</strong>受け付けています。
+              地域や状況に応じて、NPO法人タダカヨまたはタダカヨ認定事業所がサポートを担当します。
+              まずはお気軽にお問い合わせください。お住まいの地域での対応方法をご案内します。
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false" aria-controls="faq-a8">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="faq-q-icon" aria-hidden="true"><i class="ti ti-circle-letter-q"></i></span>
+              <span>導入にはどのくらい時間がかかりますか？</span>
+            </div>
+            <i class="ti ti-chevron-down faq-arrow" aria-hidden="true"></i>
+          </button>
+          <div class="faq-answer" id="faq-a8" role="region">
+            <p>
+              セットアップ当日は、機器の設定・ポータルの初回登録・助成金申請まで合わせて<strong>90〜120分</strong>が目安です。
+              事前にID・パスワード類の確認を一緒に済ませておくので、当日スムーズに進められます。
+              食事・入浴介助などの繁忙時間帯を避けて日程を調整しますので、現場の負担はほとんどありません。
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
   </section>
@@ -1854,7 +2020,7 @@
           <strong>「ITを賢く活用し、現場にゆとりを生む」</strong>という高いクオリティを実証している事業者です。
           地域に密着した支援活動を行いながら、テクノロジーと対人援助の質を高い水準で両立させ、
           その実践から生まれた知見で地域の介護力向上に貢献しています。
-          現在、全国で複数の事業所が認定されており、<strong>随時更新中</strong>です。
+          認定事業所は<strong>順次拡大中</strong>で、このページで随時ご紹介していきます。
         </p>
       </div>
 
@@ -1936,10 +2102,10 @@
       <!-- ／事業所カード一覧 -->
 
       <div class="certified-update-note">
-        <p>他にも認定を受けた事業所が全国に複数あり、随時更新中です。</p>
+        <p>認定事業所は今後も増えていきます。認定にご興味のある事業者さまも、お気軽にご相談ください。</p>
         <div class="certified-update-badge">
           <i class="ti ti-refresh" aria-hidden="true"></i>
-          認定事業所は随時更新中
+          認定事業所は順次拡大中
         </div>
       </div>
 
@@ -2057,7 +2223,7 @@
           <a href="https://www.kaigo-kiban-portal.jp/" target="_blank" rel="noopener noreferrer">介護情報基盤ポータル</a>
         </div>
         <p class="footer-copy">
-          © 2026 NPO法人タダカヨ　|　本LPに記載の助成金情報は2026年5月時点のものです。最新情報は介護情報基盤ポータル（国保中央会）でご確認ください。
+          © 2026 NPO法人タダカヨ　|　本LPに記載の助成金情報は2026年7月時点のものです。最新情報は介護情報基盤ポータル（国保中央会）でご確認ください。
         </p>
       </div>
     </div>
