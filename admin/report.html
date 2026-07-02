@@ -7,15 +7,16 @@
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
   <style>
     :root {
       --ink: #2C2416; --muted: #6a5e48; --line: #E8E4DC;
-      --brand: #238e3a; --bg: #FAFAF8;
+      --brand: #E33535; --bg: #FAFAF8;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0; background: var(--bg); color: var(--ink);
-      font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+      font-family: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
       font-size: 13px; line-height: 1.7;
     }
     .toolbar {
@@ -27,7 +28,7 @@
       border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px;
       cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
     }
-    .btn-print { background: var(--brand); color: #fff; }
+    .btn-print { background: #b82626; color: #fff; } /* 白文字コントラスト確保のため primary-dark（crm.cssと同値） */
     .btn-back { background: var(--line); color: var(--ink); text-decoration: none; }
     .sheet {
       max-width: 800px; margin: 20px auto; background: #fff;
@@ -48,7 +49,7 @@
     table.kv th, table.kv td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
     table.kv th { width: 32%; color: var(--muted); font-weight: 600; background: var(--bg); }
     .timeline-item, .session-item { padding: 10px 0; border-bottom: 1px solid var(--line); }
-    .ti-date { font-weight: 600; font-size: 12px; color: var(--brand); }
+    .ti-date { font-weight: 600; font-size: 12px; color: #b82626; } /* 小サイズ文字のためコントラストの高い primary-dark */
     .ti-body { white-space: pre-wrap; margin-top: 2px; }
     .muted { color: var(--muted); }
     .footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); text-align: center; }

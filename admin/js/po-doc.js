@@ -111,9 +111,9 @@ table.po-sum tr.grand td{font-size:16px;border-bottom:none;border-top:1.5px soli
 .po-note{margin-top:24px;font-size:12px;color:#555;}
 .po-orderer{display:flex;justify-content:flex-end;align-items:center;gap:16px;margin-top:36px;}
 .po-orderer-name{font-size:15px;}
-.po-seal{width:64px;height:64px;border:2.5px solid #c0392b;border-radius:50%;color:#c0392b;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif JP",serif;font-weight:700;font-size:18px;line-height:1.05;writing-mode:vertical-rl;letter-spacing:3px;}
+.po-seal{width:64px;height:64px;border:2.5px solid #D3381C;border-radius:50%;color:#D3381C;display:flex;align-items:center;justify-content:center;font-family:"Noto Serif JP",serif;font-weight:700;font-size:18px;line-height:1.05;writing-mode:vertical-rl;letter-spacing:3px;}
 .po-seal-img{width:72px;height:72px;object-fit:contain;}
-.seal-kaku{width:78px;height:78px;flex:0 0 auto;display:flex;flex-wrap:wrap;border:3px solid #c0392b;border-radius:6px;color:#c0392b;font-family:"Noto Serif JP",serif;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.seal-kaku{width:78px;height:78px;flex:0 0 auto;display:flex;flex-wrap:wrap;border:3px solid #D3381C;border-radius:6px;color:#D3381C;font-family:"Noto Serif JP",serif;font-weight:700;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
 .seal-kaku span{width:50%;height:50%;display:flex;align-items:center;justify-content:center;font-size:23px;line-height:1;}
 .po-company{display:flex;align-items:center;gap:10px;margin-top:8px;}
 .po-company-info{flex:1;}

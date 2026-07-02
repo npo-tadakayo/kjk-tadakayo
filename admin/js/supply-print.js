@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { renderPOHtml, sealKakuHtml } from "/js/po-doc.js";
+import { renderPOHtml } from "/js/po-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -99,7 +99,7 @@ function renderInvoice(s, st){
   const regNo = st.invoiceRegNo || "";
   const regLine = regNo
     ? `登録番号: <strong>${esc(regNo)}</strong>`
-    : `<span style="color:#c0392b">登録番号: 未登録（設定で登録してください）</span>`;
+    : `<span style="color:#b84a4a">登録番号: 未登録（設定で登録してください）</span>`;
   // お振込先（設定 appConfig/settings.billing* / 未設定なら従来の案内文言）
   const bankName=st.billingBankName||"", branch=st.billingBranchName||"", acctType=st.billingAccountType||"普通", acctNo=st.billingAccountNumber||"", acctHolder=st.billingAccountHolder||"";
   const hasBank = bankName && acctNo;
@@ -114,9 +114,7 @@ function renderInvoice(s, st){
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
           <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div>
-          ${st.poSealImage
-            ? `<img class="seal-kaku-img" src="${st.poSealImage}" alt="タダカヨの角印">`
-            : sealKakuHtml("タダカヨ")}
+          <img class="seal-kaku-img" src="${st.poSealImage || "/images/seal-tadakayo.png"}" alt="タダカヨの角印">
         </div></div>
       <h1 class="inv-title">請　求　書</h1>
       <div class="to">${esc(billName)} 御中</div>
@@ -139,13 +137,121 @@ function renderInvoice(s, st){
     </div>`;
 }
 
-const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 "};
+// 領収書（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
+//   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
+//   内訳＝見積のような編集可能な明細表（伴走支援サポート費など行を追加できる）。）
+// 用途区分（助成金: A=カードリーダー / B=接続サポート等経費 / X=対象外）
+const RCPT_KINDS=[["A","カードリーダー"],["B","接続サポート等経費"],["X","対象外(送料等)"]];
+function rcptRow(r){
+  r=r||{};
+  const opts=RCPT_KINDS.map(([v,l])=>`<option value="${v}"${(r.kind||"A")===v?" selected":""}>${l}</option>`).join("");
+  return `<tr>
+      <td class="rcpt-noprint"><select class="ri-kind">${opts}</select></td>
+      <td><input class="ri-name" value="${esc(r.name||"")}"></td>
+      <td><input class="ri-qty num" type="number" min="0" step="1" value="${Number(r.qty)||0}"></td>
+      <td><input class="ri-price num" type="number" min="0" step="1" value="${Number(r.price)||0}"></td>
+      <td class="num ri-amt"></td>
+      <td class="rcpt-noprint"><button type="button" class="ri-del" aria-label="行を削除"><i class="ti ti-x"></i></button></td>
+    </tr>`;
+}
+function renderReceipt(s, st){
+  st = st || {};
+  const items=s.items||[];
+  // 初期明細＝出荷の商品（A:カードリーダー・型名/用途を明記）＋送料（X:対象外）。あとから編集・行追加できる
+  const rowsInit = items.map(i=>({
+    kind:"A",
+    name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
+    qty:Number(i.qty)||0, price:Number(i.unitPrice)||0,
+  }));
+  if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Math.round(Number(s.shippingFee)/1.1)});
+  const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
+  const toName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
+  const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
+  const regNo = st.invoiceRegNo || "";
+  const regLine = regNo
+    ? `登録番号: <strong>${esc(regNo)}</strong>`
+    : `<span style="color:#b84a4a">登録番号: 未登録（設定で登録してください）</span>`;
+  const issueDate = s.paidAt ? esc(s.paidAt) : today;
+  const sealSrc = st.poSealImage || "/images/seal-tadakayo.png";
+  return `
+    <div class="inv">
+      <div class="doc-head"><div></div>
+        <div class="issuer-wrap">
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${issueDate}</div>
+          <img class="seal-kaku-img" src="${sealSrc}" alt="タダカヨの角印">
+        </div></div>
+      <h1 class="inv-title">領　収　書</h1>
+      <div class="to">${esc(toName)} 御中</div>
+      <div class="meta">領収書番号: ${esc(rcptNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
+      <div class="grand">領収金額（税込）　<strong id="rcptTotal">¥0</strong></div>
+      <p style="margin:14px 0 4px">但　<span id="rcptNoteText">介護情報基盤の導入（カードリーダー・接続サポート等経費）として</span></p>
+      <p style="margin:4px 0 12px">上記正に領収いたしました。</p>
+      <table class="items rcpt-items"><thead><tr>
+        <th class="rcpt-noprint" style="width:150px">用途区分</th>
+        <th>品名（型名・用途）</th>
+        <th style="width:60px">数量</th>
+        <th style="width:104px">単価(税抜)</th>
+        <th style="width:116px">金額(税抜)</th>
+        <th class="rcpt-noprint" style="width:38px"></th>
+      </tr></thead>
+        <tbody id="rcptItems">${rowsInit.map(rcptRow).join("")}</tbody></table>
+      <div class="rcpt-noprint" style="margin:6px 0 2px"><button type="button" id="rcptAddRow" class="btn btn-secondary" style="font-size:12px;padding:5px 10px"><i class="ti ti-plus"></i> 行を追加</button></div>
+      <div style="display:flex;gap:20px;align-items:flex-start">
+        <table class="po-sum rcpt-sum" style="flex:1"><thead><tr><th>区分</th><th class="num">税抜</th><th class="num">消費税(10%)</th><th class="num">税込</th></tr></thead>
+        <tbody>
+          <tr><td class="lbl">カードリーダー費（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
+          <tr><td class="lbl">接続サポート等経費（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
+          <tr id="xRow" style="display:none"><td class="lbl">対象外（送料等）</td><td class="num" id="xExcl">¥0</td><td class="num" id="xTax">¥0</td><td class="num" id="xIncl">¥0</td></tr>
+          <tr class="grand"><td class="lbl">合計（税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="rcptGrand">¥0</strong></td></tr>
+        </tbody></table>
+        <div id="rcptStamp" style="display:none;border:1px solid var(--muted);width:120px;height:80px;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted)">収入印紙<br>（5万円以上を紙で<br>発行する場合に貼付）</div>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">※ 助成金の申請額は「カードリーダー費（対象A・税込）」＋「接続サポート等経費（対象B・税込）」です（対象外の送料等は申請対象に含みません）。カードリーダーはマイナ資格確認アプリ対応品です。</p>
+      <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
+    </div>`;
+}
+
+// 領収書の明細表を編集可能にし、用途区分A/B/対象外ごとの税込小計・領収金額・収入印紙欄を自動再計算する
+function wireReceiptEditor(){
+  const tbody=document.getElementById("rcptItems"); if(!tbody) return;
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=yen(v); };
+  const incl=e=>e+Math.floor(e*0.1), taxOf=e=>Math.floor(e*0.1);
+  function recompute(){
+    const sub={A:0,B:0,X:0};
+    tbody.querySelectorAll("tr").forEach(tr=>{
+      const k=tr.querySelector(".ri-kind")?.value||"A";
+      const q=Number(tr.querySelector(".ri-qty")?.value)||0;
+      const p=Number(tr.querySelector(".ri-price")?.value)||0;
+      const amt=q*p; sub[k]=(sub[k]||0)+amt;
+      const cell=tr.querySelector(".ri-amt"); if(cell) cell.textContent=yen(amt);
+    });
+    set("aExcl",sub.A); set("aTax",taxOf(sub.A)); set("aIncl",incl(sub.A));
+    set("bExcl",sub.B); set("bTax",taxOf(sub.B)); set("bIncl",incl(sub.B));
+    const xRow=document.getElementById("xRow"); if(xRow) xRow.style.display = sub.X>0 ? "" : "none";
+    set("xExcl",sub.X); set("xTax",taxOf(sub.X)); set("xIncl",incl(sub.X));
+    const total=incl(sub.A)+incl(sub.B)+incl(sub.X);
+    set("rcptGrand",total); set("rcptTotal",total);
+    const stamp=document.getElementById("rcptStamp"); if(stamp) stamp.style.display = total>=50000 ? "flex" : "none";
+  }
+  tbody.addEventListener("input", recompute);
+  tbody.addEventListener("change", recompute);
+  tbody.addEventListener("click", e=>{ const b=e.target.closest(".ri-del"); if(b){ b.closest("tr").remove(); recompute(); } });
+  const add=document.getElementById("rcptAddRow");
+  if(add) add.addEventListener("click", ()=>{
+    tbody.insertAdjacentHTML("beforeend", rcptRow({kind:"B",name:"",qty:1,price:0}));
+    recompute();
+    const last=tbody.querySelector("tr:last-child .ri-name"); if(last) last.focus();
+  });
+  recompute();
+}
+
+const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収書 "};
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user))) return;
-  document.getElementById("printBtn").addEventListener("click",()=>window.print());
+  document.getElementById("printBtn").addEventListener("click",()=>{ try{ document.activeElement&&document.activeElement.blur(); }catch(_){} window.print(); });
   // 「供給管理へ」の戻り先を、この帳票を開いた元タブにする（一覧へ戻す）
-  const backTab = { po:"orders", invoice:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
+  const backTab = { po:"orders", invoice:"shipments", receipt:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
   const backBtn = document.querySelector(".btn-back");
   if (backBtn && backTab) backBtn.href = `/supply.html?tab=${backTab}`;
   const docId = type==="plabel" ? params.get("pid") : id;
@@ -184,9 +290,24 @@ onAuthStateChanged(auth, async (user)=>{
       return;
     }
 
-    if(type==="po" || type==="invoice"){
+    if(type==="po" || type==="invoice" || type==="receipt"){
       let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
-      document.getElementById("body").innerHTML = type==="po" ? renderPO(d, settings) : renderInvoice(d, settings);
+      document.getElementById("body").innerHTML =
+        type==="po" ? renderPO(d, settings)
+        : type==="invoice" ? renderInvoice(d, settings)
+        : renderReceipt(d, settings);
+      // 領収書: 明細表を編集可能に（行追加で伴走支援サポート費など見積内容を記載）＋但し書き編集
+      if(type==="receipt"){
+        wireReceiptEditor();
+        const out=document.getElementById("rcptNoteText");
+        const ctrl=document.getElementById("rcptControls");
+        const inp=document.getElementById("rcptNote");
+        if(out && ctrl && inp){
+          ctrl.style.display="flex";
+          inp.value = out.textContent;
+          inp.addEventListener("input", ()=>{ out.textContent = inp.value; });
+        }
+      }
       return;
     }
     document.getElementById("body").innerHTML = renderShip(d);
