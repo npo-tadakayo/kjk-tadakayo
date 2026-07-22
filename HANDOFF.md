@@ -10,7 +10,7 @@
 
 - LP（https://kjk.tadakayo.jp）・CRM管理画面（https://kjk-tadakayo-admin.web.app）とも本番稼働中。
 - **リポジトリは GitHub組織 `npo-tadakayo/kjk-tadakayo` に移譲済み**（2026-07-18・旧 tsuku-29/kjk-tadakayo はリダイレクト）。ローカル origin も新URLに更新済み。
-- 未コミット0・全push済み（最新 `b0d637c`）。
+- 未コミット0・全push済み（最新 `31c32cb`）。
 
 ## 今セッション（⑭・2026-07-02〜03 作業＋2026-07-18 移譲）でやったこと
 
@@ -20,7 +20,7 @@
 - ドキュメント反映（`9d8c9b0`）: MANUAL.md / ENGINEERING_NOTES.md §16 / アプリ内 manual・engineering（§7に領収書仕様追記）。
 - デプロイ: hosting:admin をプレビュー（`receipt-0702` → `brand-e33535-0703`）→ curl検証 → live昇格。本番配信確認済み。
 - **リポジトリ移譲**: tsuku-29 個人 → 組織 `npo-tadakayo`（`gh api repos/.../transfer`・即時完了・承認待ちなし）。`git remote set-url origin https://github.com/npo-tadakayo/kjk-tadakayo.git` 済み・fetch疎通OK。
-- （並行セッション分・push済み）LPブラッシュアップ `52b4286`〜`b0d637c`: 導入の流れ6ステップ・FAQ3問追加・Tablerフォント自己ホスト化・キャラ画像WebP化・キャラ画像の縦横比/キャッシュ/横潰れ修正。
+- （並行セッション分・push済み）LPブラッシュアップ `52b4286`〜`b0d637c`: 導入の流れ6ステップ・FAQ3問追加・Tablerフォント自己ホスト化・キャラ画像WebP化・キャラ画像の縦横比/キャッシュ/横潰れ修正。詳細は ENGINEERING_NOTES §16（2026-07-03 LPブラッシュアップ行・`31c32cb` で記録済み）。残タスク「実績・お客様の声」は [Issue #1](https://github.com/npo-tadakayo/kjk-tadakayo/issues/1) に起票済み（パイロット結果待ち）。
 
 ## 次回やること（優先順）
 
