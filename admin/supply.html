@@ -71,8 +71,12 @@
 
       <!-- 受注（認定事業所から） -->
       <div class="tab-content" id="tab-partnerorders">
+        <div class="page-header" style="margin-bottom:12px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業所ポータルからの発注と、メールで届いた発注ファイル（CSV／JSON）の取込</span>
+          <button class="btn btn-primary" id="importOrderBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>発注ファイルを取り込む</button>
+        </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th></th></tr></thead>
+          <table><thead><tr><th>受注番号 / 受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th></th></tr></thead>
           <tbody id="poBody"></tbody></table>
           <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業所からの受注はありません</p></div>
         </div></div>
@@ -178,8 +182,9 @@
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="shipFeeLabel">送料の名目</label>
             <input class="form-control" id="shipFeeLabel" type="text" placeholder="送料（レターパック 1通）"></div>
-          <div class="form-group"><label class="form-label" for="shipFee">送料（円・税込）</label>
-            <input class="form-control" id="shipFee" type="number" min="0" placeholder="0"></div>
+          <div class="form-group"><label class="form-label" for="shipFee">送料（円・税抜）</label>
+            <input class="form-control" id="shipFee" type="number" min="0" placeholder="0">
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">請求書には税抜のまま明細に載り、消費税は最後にまとめて計算されます。配送方法を選ぶと実費（税込）から税抜に換算して自動入力します。</p></div>
         </div>
         <div id="shipStockWarn" style="font-size:12px;color:var(--color-danger);display:none"></div>
       </div>
@@ -268,6 +273,40 @@
         <button class="btn btn-secondary" id="cancelStockBtn" type="button">キャンセル</button>
         <button class="btn btn-secondary" id="stockOutBtn" type="button"><i class="ti ti-arrow-up" aria-hidden="true"></i>出庫（－）</button>
         <button class="btn btn-primary" id="stockInBtn" type="button"><i class="ti ti-arrow-down" aria-hidden="true"></i>入庫（＋）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 発注ファイル取込モーダル（仕様書§3 のCSV/JSONをメールで受け取った場合） -->
+  <div class="modal-overlay" id="importModal" role="dialog" aria-modal="true" aria-label="発注ファイルの取込">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header"><h2>発注ファイルを取り込む</h2>
+        <button class="btn btn-secondary" id="closeImportBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px">
+          認定事業所さまからメールで届いた <strong>発注テンプレート.csv</strong> / <strong>発注スキーマサンプル.json</strong> をそのまま読み込めます。
+          同じ <code>partner_order_no</code> の行は1件の受注にまとまります。複数ファイルを一度に選べます。
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="importFiles">ファイル（.csv / .json）</label>
+          <input class="form-control" id="importFiles" type="file" accept=".csv,.json,text/csv,application/json" multiple>
+        </div>
+        <div id="importErrors" role="alert"
+          style="display:none;font-size:12px;color:var(--color-danger);background:#fff4f4;border:1px solid #f3c9c9;border-radius:8px;padding:10px;margin-bottom:12px;max-height:180px;overflow:auto"></div>
+        <div id="importPreview" style="display:none">
+          <div class="label" style="font-size:12px;font-weight:600;margin-bottom:6px">取り込む内容</div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>発注番号</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>希望納期</th></tr></thead>
+            <tbody id="importBody"></tbody>
+          </table></div>
+        </div>
+        <div id="importEmpty" class="empty-state" style="display:none;padding:24px">
+          <i class="ti ti-file-import" aria-hidden="true"></i><p>読み込めた受注がありません</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelImportBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="doImportBtn" type="button" disabled><i class="ti ti-check" aria-hidden="true"></i>受注として登録</button>
       </div>
     </div>
   </div>

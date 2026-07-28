@@ -2,12 +2,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, query, orderBy, onSnapshot,
+import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
   addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
+import { parseOrderFile } from "/js/partner-order-import.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -37,6 +38,8 @@ async function nextSeq(counterId){
   });
 }
 function seqFmt(prefix,n){ return `${prefix}-2026-${String(n).padStart(4,"0")}`; }
+/** 税込の実費（郵便料金など）を税抜へ。送料は税抜で保存する（2026-07-28 統一） */
+function taxExcl(inclusive){ return Math.round((Number(inclusive)||0)/1.1); }
 
 // ===== タブ =====
 function initTabs(){
@@ -388,14 +391,15 @@ function recalcShipFee(){
   const method=document.getElementById('shipMethod').value;
   const feeEl=document.getElementById('shipFee'), labelEl=document.getElementById('shipFeeLabel');
   document.getElementById('yupackWrap').style.display = method==='yupack' ? '' : 'none';
+  // 料金表（レターパック・ゆうパック）は税込の実費 → 送料欄は税抜なので換算して入れる
   if(method==='letterpack'){
     const packs=Math.max(1,Math.ceil(shipTotalQty()/3));
-    feeEl.value=packs*letterpackFee(); labelEl.value=`送料（レターパック ${packs}通）`;
+    feeEl.value=taxExcl(packs*letterpackFee()); labelEl.value=`送料（レターパック ${packs}通）`;
   } else if(method==='yupack'){
     const d=yupackData(); const size=document.getElementById('shipYuSize').value;
     const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
     const arr=d.rows[size]||YUPACK_ROWS_DEF[size]||[];
-    feeEl.value=Number(arr[ri])||0; labelEl.value=`送料（ゆうパック ${size}サイズ・${d.regions[ri]||""}）`;
+    feeEl.value=taxExcl(Number(arr[ri])||0); labelEl.value=`送料（ゆうパック ${size}サイズ・${d.regions[ri]||""}）`;
   }
 }
 // 出荷モーダルを開くたびに配送方法をリセット＋ゆうパックのサイズ/地域セレクトを最新設定で再構築
@@ -503,7 +507,8 @@ const SHIP_STATUS = { draft:"下書き", shipped:"発送済", invoiced:"請求�
 const SHIP_STATUS_BADGE = { draft:2, shipped:7, invoiced:9, paid:3, canceled:4 };
 // 出荷の金額（送料込み）。送料は税込実費を税抜換算して小計に含め、請求書(renderInvoice)と同じ税計算にする
 function shipGoodsExcl(s){ return (s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0); }
-function shipFeeExcl(s){ return Math.round((Number(s.shippingFee)||0)/1.1); }
+// 送料は税抜で保存する（2026-07-28 統一。発注側の送料欄が元から「税別」だったのに揃えた）
+function shipFeeExcl(s){ return Number(s.shippingFee)||0; }
 function shipSubExcl(s){ return shipGoodsExcl(s)+shipFeeExcl(s); }
 function shipTotal(s){ return shipSubExcl(s); }
 function shipTotalIncl(s){ const sub=shipSubExcl(s); return sub+Math.floor(sub*0.1); }
@@ -592,7 +597,7 @@ function renderPartnerOrders(orders){
       ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
       : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
     return `<tr>
-      <td>${fmtDT(o.createdAt)}</td>
+      <td>${o.soNumber?`<strong>${esc(o.soNumber)}</strong><div style="font-size:12px;color:var(--color-ink-muted)">${fmtDT(o.createdAt)}</div>`:fmtDT(o.createdAt)}${o.partnerOrderNo?`<div style="font-size:12px;color:var(--color-ink-muted)">先方No: ${esc(o.partnerOrderNo)}</div>`:""}</td>
       <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
       <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
       <td style="font-size:12px">${esc(sum)}</td>
@@ -607,6 +612,91 @@ function renderPartnerOrders(orders){
   document.querySelectorAll(".po-ship").forEach(b=>b.addEventListener("click",()=>{
     const o=orders.find(x=>x._id===b.dataset.id); if(o) shipFromOrder(o);
   }));
+}
+
+/* ===== 発注ファイル（CSV/JSON）の取込 — 仕様書§3 =====
+   認定事業所ポータルを使わず、メールでファイルを送ってくる相手の受け口。
+   パースと検証は partner-order-import.js（副作用なし・単体テスト済み）に分離している。 */
+let importCandidates = [];
+
+function openImportModal(){
+  importCandidates = [];
+  document.getElementById("importFiles").value = "";
+  document.getElementById("importErrors").style.display = "none";
+  document.getElementById("importPreview").style.display = "none";
+  document.getElementById("importEmpty").style.display = "none";
+  document.getElementById("doImportBtn").disabled = true;
+  document.getElementById("importModal").classList.add("open");
+}
+function closeImportModal(){ document.getElementById("importModal").classList.remove("open"); }
+
+async function onImportFilesPicked(e){
+  const files = [...(e.target.files || [])];
+  const errors = [];
+  const orders = [];
+  const findProduct = (sku)=> products.find(p=>p.id===sku);
+
+  for(const f of files){
+    const text = await f.text();
+    const r = parseOrderFile(f.name, text, findProduct);
+    r.errors.forEach(msg=>errors.push(`${f.name}: ${msg}`));
+    orders.push(...r.orders);
+  }
+  // 同じ発注番号が既に取り込まれていないか（二重取込の防止）
+  const dup = new Set();
+  for(const o of orders){
+    const q = await getDocs(query(collection(db,"partnerOrders"),where("partnerOrderNo","==",o.partnerOrderNo)));
+    if(!q.empty) dup.add(o.partnerOrderNo);
+  }
+  dup.forEach(no=>errors.push(`発注番号 ${no} はすでに取り込み済みです（重複のため登録しません）`));
+  importCandidates = orders.filter(o=>!dup.has(o.partnerOrderNo));
+
+  const errBox = document.getElementById("importErrors");
+  errBox.style.display = errors.length ? "block" : "none";
+  errBox.innerHTML = errors.map(esc).join("<br>");
+
+  const has = importCandidates.length > 0;
+  document.getElementById("importPreview").style.display = has ? "block" : "none";
+  document.getElementById("importEmpty").style.display = (!has && files.length) ? "block" : "none";
+  document.getElementById("doImportBtn").disabled = !has;
+  document.getElementById("importBody").innerHTML = importCandidates.map(o=>{
+    const sum = o.items.map(i=>`${i.sku}×${i.qty}`).join(", ");
+    const sh = o.shipping || {};
+    return `<tr>
+      <td>${esc(o.partnerOrderNo)}<div style="font-size:12px;color:var(--color-ink-muted)">${esc(o.partnerId||"")}</div></td>
+      <td>${esc(o.partnerEmail||"")}</td>
+      <td>${esc(sh.officeName||"")}<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.address||"")}</div></td>
+      <td style="font-size:12px">${esc(sum)}</td>
+      <td>${esc(o.desiredDeliveryDate||"—")}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function runImport(){
+  const btn = document.getElementById("doImportBtn");
+  btn.disabled = true;
+  try{
+    for(const o of importCandidates){
+      // 認定事業所名は partners マスタから解決（メール一致・無ければファイルの値のまま）
+      const partner = activePartners.find(p=>p._id===o.partnerEmail) || {};
+      const soNumber = seqFmt("SO", await nextSeq("partnerOrders"));
+      await addDoc(collection(db,"partnerOrders"),{
+        soNumber, partnerOrderNo:o.partnerOrderNo,
+        partnerId:o.partnerId||"", partnerEmail:o.partnerEmail||"",
+        partnerName:partner.partnerName||o.partnerName||"",
+        contact:o.contact, items:o.items, shipping:o.shipping,
+        orderDate:o.orderDate||"", desiredDeliveryDate:o.desiredDeliveryDate||"",
+        isSubsidyApplied:!!o.isSubsidyApplied, subsidyCategory:o.subsidyCategory||"",
+        note:o.note||"", source:o.source, status:"received",
+        createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email,
+      });
+    }
+    toast(`${importCandidates.length}件の受注を取り込みました`);
+    closeImportModal();
+  }catch(e){
+    const errBox = document.getElementById("importErrors");
+    errBox.style.display="block"; errBox.textContent=`登録に失敗しました: ${e.message}`;
+  }finally{ btn.disabled = false; }
 }
 
 // 受注（認定事業所）→ 出荷（直送）へ変換
@@ -626,7 +716,7 @@ async function shipFromOrder(o){
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"shipped", partnerOrderId:o._id,
-      shippingMethod:"letterpack", shippingFee:packs*letterpackFee(), shippingLabel:`送料（レターパック ${packs}通）`,
+      shippingMethod:"letterpack", shippingFee:taxExcl(packs*letterpackFee()), shippingLabel:`送料（レターパック ${packs}通）`,
       shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
@@ -778,6 +868,12 @@ onAuthStateChanged(auth, async (user)=>{
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
     renderPartnerOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
   });
+  // 発注ファイル（CSV/JSON）の取込 — 仕様書§3
+  document.getElementById("importOrderBtn").addEventListener("click",openImportModal);
+  document.getElementById("closeImportBtn").addEventListener("click",closeImportModal);
+  document.getElementById("cancelImportBtn").addEventListener("click",closeImportModal);
+  document.getElementById("importFiles").addEventListener("change",onImportFilesPicked);
+  document.getElementById("doImportBtn").addEventListener("click",runImport);
   // パートナー名簿
   document.getElementById("newPartnerBtn").addEventListener("click",()=>openPartnerModal(null));
   document.getElementById("closePartnerBtn").addEventListener("click",()=>document.getElementById("partnerModal").classList.remove("open"));

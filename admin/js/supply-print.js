@@ -89,8 +89,9 @@ function renderInvoice(s, st){
   st = st || {};
   const items=s.items||[];
   const goodsExcl=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
-  const shipFeeIncl=Number(s.shippingFee)||0;
-  const shipExcl=Math.round(shipFeeIncl/1.1); // 送料は税込実費→税抜換算して10%対象明細に計上
+  // 送料は税抜で保存する（2026-07-28 統一。発注側の送料欄が元から「税別」だったのに揃えた）
+  const shipExcl=Number(s.shippingFee)||0;
+  const shipFeeIncl=shipExcl; // 明細行を出すかの判定に使う
   const sub=goodsExcl+shipExcl;
   const tax=Math.floor(sub*0.1); const total=sub+tax;
   const invNo=(s.soNumber||"").replace(/^SH/,"INV");
@@ -163,7 +164,7 @@ function renderReceipt(s, st){
     name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
     qty:Number(i.qty)||0, price:Number(i.unitPrice)||0,
   }));
-  if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Math.round(Number(s.shippingFee)/1.1)});
+  if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
   const toName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
