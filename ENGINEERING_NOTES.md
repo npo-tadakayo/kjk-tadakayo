@@ -265,6 +265,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-06-06 | **角印の役割を整理**（次田さん指示）: アップロード印影画像(`poSealImage`)を「会社角印（タダカヨ）」として請求書・発注書の**名称の右**に表示（未登録なら文字の角印にフォールバック・82px）。発注書の**発注者印は`poSealImage`を使わず常に姓から自動生成の丸印**に変更（会社角印と担当者印を分離）。設定文言も「会社角印の画像／担当者印の文字」に更新。hosting:admin 昇格 |
 | 2026-06-06 | **帳票の発注者を複数選択化＋微調整**: ABサークル発注の発注者を設定で複数登録（`poOrderers`・1行1名／旧 `poOrdererName` から移行）→発注モーダルで選択し `purchaseOrders.ordererName` に保存。POの発注者名・担当者印（姓）が選択に追従（`po-doc.js`）。あわせて印鑑の傾き(`transform:rotate`)を全廃し直立に／帳票から「供給管理へ」で元タブ（出荷/発注/受注/パートナー）の一覧へ戻るよう `?tab=` 対応（supply-print.js/supply.js）。いずれも hosting:admin 昇格 |
 | 2026-07-28 | **受注のCSV/JSON取込を新設＋送料を税抜に統一＋発注/出荷データを実態へ整備**: ①仕様書『認定事業所向け_発注受注管理仕様書.md』§3にあってCRMに無かった**発注ファイル（CSV/JSON）の取込**を実装。パースと検証は副作用のない `admin/js/partner-order-import.js` に分離（RFC4180相当のCSVパーサ・同一 partner_order_no の複数行を1受注に集約・未知sku/数量0/不正なshipping_type/direct時の住所必須/助成金区分/日付形式を検証）。受注タブに取込モーダル（プレビュー＋二重取込の防止）。取込時に**受注番号 SO-2026-NNNN を採番**（仕様書§4）し一覧に表示。単体テスト26項目＋配布中のテンプレート2ファイルで検証。②**shippingFee を税込→税抜に統一**（発注側の送料欄が元から「税別」だったのに揃えた）。請求書・領収書の `÷1.1` 換算を廃止し、料金表（レターパック・ゆうパックは税込実費）は自動入力時に `taxExcl()` で換算。既存4件は請求額が変わらないことを確認して移行。③発注5件・出荷4件を実態（次田さん確定: 5〜6月 30台+30台 → 279様30台・プラスエス様10台販売／7〜8月 200台在庫+100台279様直送+60台プラスエス様直送）へ整備。卸単価は数量帯別をやめ**8,000円固定**。AB Circleの送料は**1便100台以上が無料**。在庫20台は据え置き（200台は未入荷）。未請求 ¥1,763,779 | (未コミット→本コミット) |
+| 2026-07-30 | **入金・未集金・領収書記録＋発注の下書き戻し（セッション⑯）**: ①**入金を部分入金対応に**（`shipments.payments[]` に履歴・`prompt`廃止→モーダル・残額0で `paid`／残ありは `invoiced` のまま・入金の取消で自動巻き戻し・旧 `paymentAmount/paidAt` は `payList()` で1件の履歴として読替）。②**未集金の可視化**（`dueDateOf()`=請求月の翌月末・`overdueDays()`・サマリーに「未集金・残額／うち支払期限超過」・**請求先ごとの未集金表**（残額・対象出荷・最長超過日数、超過が上）・受注タブに「請求・入金」列を追加し `partnerOrderId` 経由で残額表示）。③**領収書の発行記録**（`receipts/{shipmentId}` に番号/発行日/金額/但し書き/明細/用途区分集計をスナップショット・出荷に `receiptIssuedAt` 書き戻し・**再表示時に復元して同内容で再発行**・一覧のボタンに「発行済 MM/DD」）。④**催促メール**（新 callable `sendPartnerMail`＝SA_MAIL/DWDキーレス・`mailLog[]`＋`dunningSentAt/dunningCount` 記録・文面は `DEFAULT_DUNNING_*`／`settings.dunningMailSubject/Body` で上書き）。⑤発注に**「下書きに戻す」**（`sent`→`draft`・`revertedAt/By` 記録・入荷済は対象外）、**直送発注は「入荷登録」を非表示**（在庫の誤加算防止・状態欄に「直送（入荷なし）」）、**送料100台以上無料を自動入力に反映**。⑥データ整備: PO-0046/0047/0048 を下書き→発注日2026-07-30で再送信（3件送信済み・CC控え確認）、PO-0047/0048 に直送フラグ・請求先・出荷下書きIDを紐付け、SH-2026-0003 を100→200台（¥1,600,000）に修正、出荷予定日を2026-07-30に。⑦**Functions デプロイの注意（実測）**: `functions/node_modules` が Google Drive 上にあるため `require('./index.js')` に **12分23秒**（同じコードをローカルにコピーすると 0.1秒）。Firebase CLI の解析タイムアウトは10秒なので Drive 上のままでは構造的にデプロイ不可（`Error: User code failed to load. Cannot determine backend specification. Timeout after 10000`）。**手順**: ①`rsync -a --exclude node_modules functions/ <ローカル>/functions/` ②`.firebaserc` をコピーし `firebase.json` は `{"functions":{"source":"functions"}}` のみ ③`npm ci --omit=dev` ④`npx firebase-tools deploy --only "functions:<名前>" --project kjk-tadakayo --account yoshinao-tsukuda@tadakayo.jp`。**`--account` 必須**（一時ディレクトリには `login:use` の設定が無く、既定の279アカウントで `iam.serviceAccounts.ActAs` 403 になる） | (本セッション) |
 | 2026-06-07 | **CRM大規模改修（1日）**: ①出荷を認定事業所卸(`partnerPricing`)接続＋送料自動計算(レターパック/ゆうパック)＋請求書に送料明細計上 ②B3月次推移グラフ・B4申請期限の設定化(`subsidyDeadline`) ③**docpage重大バグ修正**(db未定義で `gateRole` 失敗→マニュアル/エンジニアノートが閲覧不能だったのを解消) ④Dモバイル/WCAG2.1AA底上げ(タップ44px・`:focus-visible`・最小フォント12px・案件行キーボード操作・モーダルEsc/フォーカストラップ・btn-primaryコントラスト#c02828) ⑤C2肥大化ファイル分割(`supply-pricing.js`/`case-detail-util.js`・挙動不変) ⑥**補助金区分訂正**(31居宅療養管理指導・78地域密着型通所介護を令和8年度交付要綱別添 `r8_jyoseikin.pdf` と突合し**訪問・通所系¥64,000・3台**に・LP/見積もり/料金md反映) ⑦**H-3完全クローズ**(App Engine default SAの`editor`・旧compute SA→`kjk-gmail-sa`の`tokenCreator`剥奪)＋users運用フロー文書化(SECURITY_REMEDIATION.md) ⑧**直送発注→出荷下書き自動生成**(発注確定時に`shipments`をdraftで自動作成・`shipType=dropship`・在庫経由なし・2段階)。全て本番反映・GitHub同期・実機/curl検証済み |
 | 2026-06-06 | **CRM最終統合＋設定化＋推移グラフ（セッション⑩・`aa12722`/`965a857`）**: #1=出荷dropship単価を商品マスタ仕入パススルー(`unitPriceFor`)から認定事業所卸(`partnerPricing`・数量帯別 `partnerPriceFor`)へ接続（卸価格の二重性を解消・未設定時フォールバック）＋出荷モーダルに配送方法（レターパック`¥600×⌈台数/3⌉`／ゆうパック表・滋賀発）を追加し送料を税抜換算して請求書に10%対象明細で計上＋出荷サマリーも送料込みに統一（supply/supply-print）。B4=申請期限を `settings.subsidyDeadline` で設定可能化し dashboard/cases/kanban のバナーが追従＋`deadlineLabel()` で期限ラベル動的化（`daysUntilDeadline(deadline)` 引数対応）。B3=ダッシュボードに月次新規案件グラフ（receivedAt基準・依存なし）。hosting:admin プレビュー(`supply-b34-0606`)→本番昇格・curl検証で新コード7種配信確認。残ブラッシュアップ（A2/A3ほぼ済・C2分割・Dモバイル）は次セッション |
 | 2026-07-02 | **領収書発行を追加＋帳票デザインをタダカヨ赤に統一（`e713f30`）**: 入金済み出荷（`status=paid`）に「領収書」ボタン→ `supply-print.html?type=receipt`。`renderReceipt`（supply-print.js）＝請求書と同じ発行元・登録番号・角印（印影は `settings.poSealImage`、無ければ `admin/images/seal-tadakayo.png` を常時表示＝請求書側も同フォールバックに統一）。明細は編集可能（`wireReceiptEditor`・行追加/削除・画面上のみでFirestoreには保存しない）。各行に助成金用途区分 A=カードリーダー/B=接続サポート等経費/X=対象外(送料等) を持ち、区分別の税抜/消費税/税込小計を自動再計算（申請額突合用）。但し書きはツールバーの入力で編集（印刷非表示 `rcpt-noprint`）。税込5万円以上で収入印紙欄を表示。あわせてデザイン統一＝supply-print/report の旧・緑 `#238e3a`→タダカヨ赤 `#E33535`（白文字ボタンは `#b82626` でWCAG確保）／CSS疑似印の色 `#c0392b`→朱色 `#D3381C`（po-doc.js含む）／Noto Serif/Sans JP webフォント読込追加／未定義だった `.btn-secondary` 定義追加。hosting:admin プレビュー(`receipt-0702`)→本番昇格・curl検証（renderReceipt/ti-receipt-2/E33535/seal png 200） |
@@ -343,6 +344,8 @@ erDiagram
   cases ||--|| subsidyApplications : "申請情報"
   partners ||--o{ partnerOrders : "認定事業所の発注"
   products ||--o{ inventoryMovements : "在庫増減"
+  partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
+  shipments ||--|| receipts : "領収書の発行記録"
   cases {
     int caseNumber
     string officeName
@@ -356,10 +359,25 @@ erDiagram
   sessions { string sessionDate string summary array photoUrls }
   products { string sku string name int stock int wholesale2_10 }
   purchaseOrders { string poNumber array items int total string status }
-  shipments { string soNumber string officeName array items }
+  shipments { string soNumber string officeName array items array payments string dueDate string receiptNo int creditApplied int overpayUsed }
   partners { string email string partnerName bool active }
   partnerOrders { string partnerEmail array items string status }
+  receipts { string receiptNo string issuedAt int amountIncl array items }
 ```
+
+**入金・未集金・領収書（2026-07-30 追加）**
+
+| 項目 | 仕様 |
+|---|---|
+| 入金 | `shipments.payments[] = {amount(税込), date, note, recordedBy, recordedAt}` に履歴で積む。**部分入金・分割払い対応**。合計は `paymentAmount` にも同期（旧フィールド互換）。旧形式（`paymentAmount`+`paidAt` の1回きり）は `payList()` が1件の履歴として読み替える |
+| ステータス遷移 | 残額>0 → `invoiced` のまま（一部入金）／残額≤0 → `paid` + `paidAt`=最終入金日。入金の取消でも同じ判定で自動的に戻る |
+| 支払期限 | `dueDateOf()` = `shipments.dueDate` があれば優先、無ければ **請求月（`invoicedAt`、無ければ `shipDate`）の翌月末**（請求書の記載と同じ）。`overdueDays()` が超過日数を返す |
+| 返金（2026-08-01） | `shipments.refunds[] = {amount, date, method(振込/現金/相殺), note, recordedBy, recordedAt}`。**判定は純入金 `netPaid = 入金合計 − 返金合計`** で行う（`payRemain`・`overpayOf`・チップの「入金済・累計」・受注タブの表示すべて純額）。旧フィールド同期は `paymentAmount`=純額・`refundAmount`=返金合計。過入金の返金で `creditBalanceOf` が0になる（返金分は次回請求へ回らない）。**請求額まで返金すると `paid`→`invoiced` に戻る**（取引取消は出荷削除＝在庫も戻す運用）。入金・返金は履歴を日付順にマージして純入金の推移を表示、どちらも個別に取消可 |
+| 入金が複数回 | `payments[]` に追記するだけ（回数の上限なし）。一覧に「入金N回」を表示。二重入金は「満額×2」＝過入金として扱い、①次回請求へ充当 ②返金 のいずれかで解消する |
+| 過入金の充当（2026-08-01） | 請求額を超えた入金は返金せず**次回請求へ充当**する。`billableIncl(s) = 税込合計 − creditApplied`（充当後の請求額）／`payRemain = billableIncl − 入金合計`／`overpayOf = 入金合計 − billableIncl`／未充当残高 `creditBalanceOf = overpayOf − overpayUsed`。充当先に `creditApplied`（累計）と `creditFrom[{shipmentId,soNumber,amount,date,appliedBy}]`、充当元に `overpayUsed` を積む。**請求先の同一判定は `billToKey()`**（直送=`partnerEmail`／直接=`company`or`officeName`）、**充当は古い `shipDate` の過入金から FIFO**。充当額は `min(請求先の未充当残高, 残額)` で、引ききれない分は残高として次回に残る。充当で残額0になれば `paid` に遷移。トリガーは①「請求済にする」直後の確認②請求済の行の「過入金を充当」③入金モーダルのボタン。請求書(`renderInvoice`)は税込合計の下に「前回お預かり分の充当 −¥X（充当元SO番号）」＋「今回お支払額」を出し、ヘッダーの大きい金額も充当後の額にする |
+| 未集金の定義 | `status==="invoiced" && 残額>0`（発送済・未請求は「未請求」として別カウント）。請求先ごとに集約して残額・最長超過日数を表示 |
+| 領収書の発行記録 | `receipts/{shipmentId}` に `receiptNo`（出荷番号の SH→RCPT 置換・既発行の紙と整合）・`issuedAt`・`amountIncl`・`note`（但し書き）・`items[{usage,name,qty,unitPrice}]`・`usageTotalsIncl{A,B,X}` をスナップショット保存。出荷側に `receiptNo/receiptIssuedAt/receiptIssuedBy/receiptAmountIncl` を書き戻す。**再表示時は保存内容を復元**（同じ領収書を再発行できる・発行日も保存値を使う） |
+| 催促メール | callable `sendPartnerMail`（`sendSupplierOrder` と同じ SA_MAIL / DWD キーレス / `gmail.send`）。送信成功で `shipments.mailLog[]` に追記、`kind==="dunning"` なら `dunningSentAt`・`dunningCount` も更新。文面の既定は `supply.js` の `DEFAULT_DUNNING_SUBJECT/BODY`、`appConfig/settings.dunningMailSubject/Body` で上書き可 |
 
 | コレクション | 役割 |
 |---|---|
@@ -371,6 +389,7 @@ erDiagram
 | `products / inventoryMovements` | 商品マスタ・在庫増減ログ |
 | `purchaseOrders / shipments` | 発注（→AB Circle）・出荷（→事業所） |
 | `partners / partnerOrders` | 認定事業所の許可リスト・受注 |
+| `receipts` | 領収書の発行記録（docId=出荷ID・番号/発行日/金額/明細のスナップショット） |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定 |
 | `_counters` | 案件番号・発注/出荷番号の採番 |
 
