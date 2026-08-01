@@ -62,6 +62,9 @@
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
+        <h3 style="font-size:14px;margin:16px 0 8px">未集金（請求先ごと）</h3>
+        <div id="arSummary" style="margin-bottom:16px"></div>
+        <h3 style="font-size:14px;margin:16px 0 8px">出荷の一覧</h3>
         <div class="card"><div class="table-wrap">
           <table><thead><tr><th>出荷番号 / 状態</th><th>出荷日</th><th>送付先・請求先</th><th>内容</th><th></th></tr></thead>
           <tbody id="shipBody"></tbody></table>
@@ -76,7 +79,7 @@
           <button class="btn btn-primary" id="importOrderBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>発注ファイルを取り込む</button>
         </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>受注番号 / 受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th></th></tr></thead>
+          <table><thead><tr><th>受注番号 / 受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th>請求・入金</th><th></th></tr></thead>
           <tbody id="poBody"></tbody></table>
           <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業所からの受注はありません</p></div>
         </div></div>
@@ -247,6 +250,85 @@
   </div>
 
   <!-- 在庫調整モーダル（B2: prompt廃止） -->
+  <!-- 入金の記録（部分入金・履歴・取消） -->
+  <div class="modal-overlay" id="payModal" role="dialog" aria-modal="true" aria-label="入金の記録">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h2 id="payModalTitle">入金の記録</h2>
+        <button class="btn btn-secondary" id="closePayBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="payBillTo" style="font-size:13px;margin:0 0 4px"></p>
+        <p id="paySummary" style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <div id="payCredit" class="callout" style="display:none;font-size:13px;margin:0 0 12px;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)"></div>
+        <div style="border-top:1px solid var(--color-line);padding-top:12px">
+          <h3 style="font-size:13px;margin:0 0 8px">入金・返金の履歴</h3>
+          <div id="payHistory"></div>
+        </div>
+        <div style="border-top:1px solid var(--color-line);margin-top:12px;padding-top:12px">
+          <h3 style="font-size:13px;margin:0 0 8px">入金を追加する</h3>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="payAmount">入金額（税込・円） <span style="color:red">*</span></label>
+              <input class="form-control" id="payAmount" type="number" min="1" step="1" inputmode="numeric"></div>
+            <div class="form-group"><label class="form-label" for="payDate">入金日 <span style="color:red">*</span></label>
+              <input class="form-control" id="payDate" type="date"></div>
+          </div>
+          <div class="form-group"><label class="form-label" for="payNote">備考</label>
+            <input class="form-control" id="payNote" type="text" placeholder="振込手数料差引・一部入金 など">
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">残額が0になると「入金済」になり、領収書が発行できます。残る場合は「請求済」のまま一部入金として記録します。<strong>入金は何回でも記録できます</strong>（2回・3回に分かれた振込もそのまま積み上がります）。</p></div>
+        </div>
+        <div style="border-top:1px solid var(--color-line);margin-top:12px;padding-top:12px">
+          <h3 style="font-size:13px;margin:0 0 8px">返金を記録する</h3>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px">過入金をお返しした場合、返品・キャンセルでお返しした場合に記録します（次回請求に充当せず返金するとき）。</p>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="refundAmount">返金額（税込・円）</label>
+              <input class="form-control" id="refundAmount" type="number" min="1" step="1" inputmode="numeric"></div>
+            <div class="form-group"><label class="form-label" for="refundDate">返金日</label>
+              <input class="form-control" id="refundDate" type="date"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="refundMethod">返金方法</label>
+              <select class="form-control" id="refundMethod">
+                <option value="振込">振込</option>
+                <option value="現金">現金</option>
+                <option value="相殺">相殺（他の請求と）</option>
+              </select></div>
+            <div class="form-group"><label class="form-label" for="refundNote">備考</label>
+              <input class="form-control" id="refundNote" type="text" placeholder="二重入金分の返金 など"></div>
+          </div>
+          <button class="btn btn-secondary" id="saveRefundBtn" type="button"><i class="ti ti-arrow-back-up" aria-hidden="true"></i>この返金を記録</button>
+        </div>
+        <div class="field-error" id="payError" role="alert" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelPayBtn" type="button">閉じる</button>
+        <button class="btn btn-secondary" id="applyCreditBtn" type="button" style="display:none"><i class="ti ti-arrow-down-circle" aria-hidden="true"></i>過入金を充当する</button>
+        <button class="btn btn-primary" id="savePayBtn" type="button"><i class="ti ti-cash" aria-hidden="true"></i>この入金を記録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 未集金の催促メール -->
+  <div class="modal-overlay" id="dunModal" role="dialog" aria-modal="true" aria-label="催促メール">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header"><h2>お振込みのご確認メール</h2>
+        <button class="btn btn-secondary" id="closeDunBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="dunInfo" style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <div class="form-group"><label class="form-label" for="dunTo">宛先 <span style="color:red">*</span></label>
+          <input class="form-control" id="dunTo" type="email" placeholder="partner@example.com"></div>
+        <div class="form-group"><label class="form-label" for="dunSubject">件名 <span style="color:red">*</span></label>
+          <input class="form-control" id="dunSubject" type="text"></div>
+        <div class="form-group"><label class="form-label" for="dunBody">本文 <span style="color:red">*</span></label>
+          <textarea class="form-control" id="dunBody" rows="14" style="font-family:inherit"></textarea>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">送信元は発注書メールと同じ事務局アドレスです。送信すると出荷に送信日が記録されます（何度でも送れます）。</p></div>
+        <div class="field-error" id="dunError" role="alert" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelDunBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="sendDunBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i>送信する</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="stockModal" role="dialog" aria-modal="true" aria-label="在庫調整">
     <div class="modal" style="max-width:420px">
       <div class="modal-header"><h2 id="stockModalTitle">在庫調整</h2>

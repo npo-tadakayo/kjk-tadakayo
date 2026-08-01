@@ -1,7 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { renderPOHtml } from "/js/po-doc.js";
 
 const app = initializeApp(firebaseConfig);
@@ -94,6 +94,10 @@ function renderInvoice(s, st){
   const shipFeeIncl=shipExcl; // 明細行を出すかの判定に使う
   const sub=goodsExcl+shipExcl;
   const tax=Math.floor(sub*0.1); const total=sub+tax;
+  // 過入金の充当（前回多くお振込みいただいた分を今回の請求から差し引く。税込金額に対する充当）
+  const credit=Math.min(Number(s.creditApplied)||0, total);
+  const payable=total-credit;
+  const creditFrom=(Array.isArray(s.creditFrom)?s.creditFrom:[]).map(c=>c.soNumber).filter(Boolean).join("・");
   const invNo=(s.soNumber||"").replace(/^SH/,"INV");
   const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
@@ -122,13 +126,15 @@ function renderInvoice(s, st){
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
       <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>
-      <div class="grand">ご請求金額（税込）　<strong>${yen(total)}</strong></div>
+      <div class="grand">${credit>0?"今回お支払額（税込・充当後）":"ご請求金額（税込）"}　<strong>${yen(payable)}</strong></div>
       <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(税抜)</th><th style="width:116px">金額(税抜)</th></tr></thead>
         <tbody>${rows2}</tbody></table>
       <table class="po-sum" style="margin-top:10px"><tbody>
         <tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
         <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>
-        <tr class="grand"><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
+        <tr${credit>0?"":' class="grand"'}><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
+        ${credit>0?`<tr><td class="lbl">前回お預かり分の充当${creditFrom?`（${esc(creditFrom)} の過入金）`:""}</td><td class="num">−${yen(credit)}</td></tr>
+        <tr class="grand"><td class="lbl">今回お支払額（税込）</td><td class="num"><strong>${yen(payable)}</strong></td></tr>`:""}
       </tbody></table>
       <div class="pay">
         <div style="font-weight:700;margin-bottom:4px">お振込先</div>
@@ -155,16 +161,22 @@ function rcptRow(r){
       <td class="rcpt-noprint"><button type="button" class="ri-del" aria-label="行を削除"><i class="ti ti-x"></i></button></td>
     </tr>`;
 }
-function renderReceipt(s, st){
+function renderReceipt(s, st, saved){
   st = st || {};
   const items=s.items||[];
-  // 初期明細＝出荷の商品（A:カードリーダー・型名/用途を明記）＋送料（X:対象外）。あとから編集・行追加できる
-  const rowsInit = items.map(i=>({
-    kind:"A",
-    name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
-    qty:Number(i.qty)||0, price:Number(i.unitPrice)||0,
-  }));
-  if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
+  // 明細: 発行を記録済みならその内容を復元（同じ領収書を再発行できる）。無ければ出荷から組み立てる
+  let rowsInit;
+  if(saved && Array.isArray(saved.items) && saved.items.length){
+    rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
+  }else{
+    // 初期明細＝出荷の商品（A:カードリーダー・型名/用途を明記）＋送料（X:対象外）。あとから編集・行追加できる
+    rowsInit = items.map(i=>({
+      kind:"A",
+      name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
+      qty:Number(i.qty)||0, price:Number(i.unitPrice)||0,
+    }));
+    if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
+  }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
   const toName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
@@ -172,7 +184,9 @@ function renderReceipt(s, st){
   const regLine = regNo
     ? `登録番号: <strong>${esc(regNo)}</strong>`
     : `<span style="color:#b84a4a">登録番号: 未登録（設定で登録してください）</span>`;
-  const issueDate = s.paidAt ? esc(s.paidAt) : today;
+  // 発行日: 記録済みならその発行日（再発行しても同じ日付）→ 入金日 → 今日
+  const issueDate = saved?.issuedAt ? esc(saved.issuedAt) : (s.paidAt ? esc(s.paidAt) : today);
+  const noteText = saved?.note || "介護情報基盤の導入（カードリーダー・接続サポート等経費）として";
   const sealSrc = st.poSealImage || "/images/seal-tadakayo.png";
   return `
     <div class="inv">
@@ -185,7 +199,7 @@ function renderReceipt(s, st){
       <div class="to">${esc(toName)} 御中</div>
       <div class="meta">領収書番号: ${esc(rcptNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="grand">領収金額（税込）　<strong id="rcptTotal">¥0</strong></div>
-      <p style="margin:14px 0 4px">但　<span id="rcptNoteText">介護情報基盤の導入（カードリーダー・接続サポート等経費）として</span></p>
+      <p style="margin:14px 0 4px">但　<span id="rcptNoteText">${esc(noteText)}</span></p>
       <p style="margin:4px 0 12px">上記正に領収いたしました。</p>
       <table class="items rcpt-items"><thead><tr>
         <th class="rcpt-noprint" style="width:150px">用途区分</th>
@@ -246,6 +260,53 @@ function wireReceiptEditor(){
   recompute();
 }
 
+// 領収書の発行記録: 画面の明細・但し書き・用途区分の集計を receipts/{出荷ID} にスナップショット保存し、
+// 出荷側にも発行日を書き戻す（誰にいつ何を発行したか後から確認でき、再発行も同じ内容で出せる）
+function collectReceiptSnapshot(){
+  const tbody=document.getElementById("rcptItems");
+  const num=(t)=>Number(String(t||"").replace(/[^0-9-]/g,""))||0;
+  const items=[...(tbody?tbody.querySelectorAll("tr"):[])].map(tr=>({
+    usage: tr.querySelector(".ri-kind")?.value||"A",
+    name: tr.querySelector(".ri-name")?.value||"",
+    qty: Number(tr.querySelector(".ri-qty")?.value)||0,
+    unitPrice: Number(tr.querySelector(".ri-price")?.value)||0,
+  })).filter(r=>r.name||r.qty);
+  return {
+    items,
+    usageTotalsIncl: {
+      A: num(document.getElementById("aIncl")?.textContent),
+      B: num(document.getElementById("bIncl")?.textContent),
+      X: num(document.getElementById("xIncl")?.textContent),
+    },
+    amountIncl: num(document.getElementById("rcptGrand")?.textContent),
+    note: document.getElementById("rcptNoteText")?.textContent || "",
+  };
+}
+async function saveReceiptIssue(s, shipmentId, userEmail){
+  const btn=document.getElementById("rcptSaveBtn");
+  const info=document.getElementById("rcptSaveInfo");
+  const snap=collectReceiptSnapshot();
+  if(!(snap.amountIncl>0)){ info.textContent="金額が0円です（明細を入力してください）"; return; }
+  const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
+  const issuedAt=new Date().toISOString().slice(0,10);
+  btn.disabled=true;
+  try{
+    await setDoc(doc(db,"receipts",shipmentId),{
+      receiptNo, shipmentId, soNumber:s.soNumber||"",
+      billToName: s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||""),
+      billToEmail: s.partnerEmail||"",
+      ...snap, issuedAt, issuedBy:userEmail, updatedAt:serverTimestamp(),
+    },{merge:true});
+    await updateDoc(doc(db,"shipments",shipmentId),{
+      receiptNo, receiptIssuedAt:issuedAt, receiptIssuedBy:userEmail,
+      receiptAmountIncl:snap.amountIncl, updatedAt:serverTimestamp(),
+    });
+    info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`;
+    btn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
+  }catch(e){ info.textContent=`記録に失敗: ${e.message}`; }
+  finally{ btn.disabled=false; }
+}
+
 const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収書 "};
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
@@ -293,10 +354,15 @@ onAuthStateChanged(auth, async (user)=>{
 
     if(type==="po" || type==="invoice" || type==="receipt"){
       let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
+      // 領収書: 発行を記録済みなら保存内容（明細・但し書き・発行日）を復元して同じものを再発行できるようにする
+      let savedReceipt=null;
+      if(type==="receipt"){
+        try{ const rs=await getDoc(doc(db,"receipts",docId)); if(rs.exists()) savedReceipt=rs.data(); }catch(_){}
+      }
       document.getElementById("body").innerHTML =
         type==="po" ? renderPO(d, settings)
         : type==="invoice" ? renderInvoice(d, settings)
-        : renderReceipt(d, settings);
+        : renderReceipt(d, settings, savedReceipt);
       // 領収書: 明細表を編集可能に（行追加で伴走支援サポート費など見積内容を記載）＋但し書き編集
       if(type==="receipt"){
         wireReceiptEditor();
@@ -307,6 +373,16 @@ onAuthStateChanged(auth, async (user)=>{
           ctrl.style.display="flex";
           inp.value = out.textContent;
           inp.addEventListener("input", ()=>{ out.textContent = inp.value; });
+        }
+        // 発行記録（receipts コレクション）。既に発行済みなら日付を出して「記録を更新」に
+        const saveBtn=document.getElementById("rcptSaveBtn");
+        const saveInfo=document.getElementById("rcptSaveInfo");
+        if(saveBtn){
+          if(d.receiptIssuedAt){
+            saveBtn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
+            if(saveInfo) saveInfo.textContent=`発行済 ${d.receiptIssuedAt}（${d.receiptNo||""}）`;
+          }
+          saveBtn.addEventListener("click",()=>saveReceiptIssue(d, docId, user.email));
         }
       }
       return;

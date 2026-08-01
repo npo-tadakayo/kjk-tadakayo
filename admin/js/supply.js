@@ -15,10 +15,13 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app, "asia-northeast1");
 const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
+const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
 
 let products = [];
 let currentUser = null;
 let appSettings = {};
+let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
+let partnerOrdersCache = []; // 受注一覧（出荷の更新時に再描画するため保持）
 function ordererList(){
   return (Array.isArray(appSettings.poOrderers) && appSettings.poOrderers.length)
     ? appSettings.poOrderers
@@ -137,8 +140,11 @@ function applyShipRegion(){
   const sel=document.getElementById("orderShipRegion");
   const r=SHIPPING_FEES.find(x=>x.region===sel.value);
   if(!r) return; // 「選択しない」は手入力を保持
-  document.getElementById("orderShipFee").value=r.fee;
-  document.getElementById("orderShipLabel").value=`送料（${r.region}）`;
+  // AB Circle は1便100台以上で送料無料。100台以上のときは地域を選んでも0円にする
+  const qty=collectItems("orderItems").reduce((s,i)=>s+i.qty,0);
+  const free=qty>=100;
+  document.getElementById("orderShipFee").value=free?0:r.fee;
+  document.getElementById("orderShipLabel").value=free?`送料（${r.region}・100台以上で無料）`:`送料（${r.region}）`;
 }
 // 認定事業所への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
 // 未設定時は商品マスタの数量帯別卸（unitPriceFor）にフォールバック＝従来挙動を維持。
@@ -262,21 +268,25 @@ function renderOrders(orders){
     const badgeN = o.status==="received"?3 : o.status==="draft"?2 : 7;
     const isDraft = o.status==="draft";
     const sentInfo = o.emailedAt ? `<div style="font-size:12px;color:var(--color-success)">メール送付済</div>` : "";
+    // 直送は仕入先から届け先へ直行＝自社在庫を経由しないので「入荷登録」は出さない（在庫の誤加算を防ぐ）
+    const dropInfo = o.dropship ? `<div style="font-size:12px;color:var(--color-ink-muted)">直送（入荷なし）${o.dropshipPartnerName?`／請求先 ${esc(o.dropshipPartnerName)}`:""}</div>` : "";
     return `<tr>
       <td><strong>${esc(o.poNumber)}</strong></td>
       <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td class="num">${yen(o.total)}</td>
-      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}</td>
+      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}${dropInfo}</td>
       <td style="white-space:nowrap">
         <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
         ${isDraft?`<button class="btn btn-secondary edit-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
         <button class="btn btn-primary confirm-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>確定</button>
         <button class="btn btn-danger del-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px" aria-label="削除"><i class="ti ti-trash"></i></button>`:""}
-        ${o.status==="sent"?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
+        ${o.status==="sent"&&!o.dropship?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
+        ${o.status==="sent"?`<button class="btn btn-secondary undo-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>下書きに戻す</button>`:""}
       </td></tr>`;
   }).join("");
   document.querySelectorAll(".recv-btn").forEach(b=>b.addEventListener("click",()=>receiveOrder(b.dataset.id,orders)));
+  document.querySelectorAll(".undo-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) revertOrderToDraft(o); }));
   document.querySelectorAll(".edit-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) openOrder(o); }));
   document.querySelectorAll(".confirm-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) confirmOrder(o); }));
   document.querySelectorAll(".del-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) deleteOrder(o); }));
@@ -290,6 +300,20 @@ async function receiveOrder(id, orders){
     await updateDoc(doc(db,"purchaseOrders",id),{status:"received",receivedAt:serverTimestamp()});
     toast(`${o.poNumber} を入荷登録しました`);
   }catch(e){ alert(`入荷登録失敗: ${e.message}`);}
+}
+// 発注済(sent) → 下書き(draft) に戻す（発注を取り消して内容を直すとき）
+// 入荷済(received)は在庫が動いているため対象外＝ボタンを出していない
+async function revertOrderToDraft(o){
+  const warn = [];
+  if(o.emailedAt) warn.push("・この発注は仕入先へメール送付済みです。取り消しの連絡はメールで別途行ってください（送付の記録は残ります）");
+  if(o.shipmentId) warn.push("・直送の出荷下書きが作成済みです。不要な場合は出荷タブで削除してください（再確定しても二重には作られません）");
+  if(!confirm(`発注 ${o.poNumber} を下書きに戻します。編集・削除ができる状態になります。\n${warn.join("\n")}${warn.length?"\n":""}\nよろしいですか？`)) return;
+  try{
+    await updateDoc(doc(db,"purchaseOrders",o._id),{
+      status:"draft", revertedAt:serverTimestamp(), revertedBy:currentUser.displayName||currentUser.email,
+      updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+    toast(`${o.poNumber} を下書きに戻しました`);
+  }catch(e){ alert(`下書きに戻せませんでした: ${e.message}`); }
 }
 // 下書き → 確定して送付（発注書PDFを添付してABサークルへメール）
 let confirmingOrder = null;
@@ -513,6 +537,64 @@ function shipSubExcl(s){ return shipGoodsExcl(s)+shipFeeExcl(s); }
 function shipTotal(s){ return shipSubExcl(s); }
 function shipTotalIncl(s){ const sub=shipSubExcl(s); return sub+Math.floor(sub*0.1); }
 
+// ===== 入金・未集金（2026-07-30 追加）=====
+// 入金は payments[] に履歴として積む（部分入金・分割払い対応）。
+// 旧形式（paymentAmount/paidAt の1回きり）のデータは1件の履歴として読み替える。
+function payList(s){
+  if(Array.isArray(s.payments) && s.payments.length) return s.payments;
+  if(Number(s.paymentAmount)>0) return [{ amount:Number(s.paymentAmount), date:s.paidAt||"", note:"（旧形式の記録）" }];
+  return [];
+}
+function paidSum(s){ return payList(s).reduce((a,p)=>a+(Number(p.amount)||0),0); }
+// 返金（2026-08-01 追加）: 過入金を返した／返品・キャンセルで返した分。入金から差し引いて「純入金」で判定する
+function refundList(s){ return Array.isArray(s.refunds)?s.refunds:[]; }
+function refundSum(s){ return refundList(s).reduce((a,r)=>a+(Number(r.amount)||0),0); }
+function netPaid(s){ return paidSum(s)-refundSum(s); }
+// 過入金の充当（2026-08-01 追加）: 前の請求で多く入金された分を、この請求から差し引く
+// creditApplied = この請求に充当された額 ／ overpayUsed = この出荷の過入金のうち他の請求へ回した額
+function creditApplied(s){ return Number(s.creditApplied)||0; }
+// 充当後の請求額（＝相手に実際に支払ってもらう額）
+function billableIncl(s){ return Math.max(0, shipTotalIncl(s)-creditApplied(s)); }
+function payRemain(s){ return Math.max(0, billableIncl(s)-netPaid(s)); }
+// 過入金＝請求額（充当後）より多く入った分（返金済みの分は除く）。うち未充当の残りが次回に回せる金額
+function overpayOf(s){ return Math.max(0, netPaid(s)-billableIncl(s)); }
+function creditBalanceOf(s){ return Math.max(0, overpayOf(s)-(Number(s.overpayUsed)||0)); }
+// 請求先の同一判定キー（直送＝認定事業所のメール／直接＝事業所名）
+function billToKey(s){
+  return s.shipType==="dropship" ? (s.partnerEmail||s.partnerName||"") : (s.company||s.officeName||"");
+}
+// ある出荷と同じ請求先で、まだ充当していない過入金がある出荷（古い順＝先に入った分から使う）
+function creditSourcesFor(s){
+  const key=billToKey(s);
+  return shipments
+    .filter(x=>x._id!==s._id && x.status!=="canceled" && billToKey(x)===key && creditBalanceOf(x)>0)
+    .sort((a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")));
+}
+function creditBalanceForBillTo(s){ return creditSourcesFor(s).reduce((a,x)=>a+creditBalanceOf(x),0); }
+// 支払期限＝請求月の翌月末（請求書の記載と同じ）。shipments.dueDate があればそれを優先
+function dueDateOf(s){
+  if(s.dueDate) return s.dueDate;
+  const base=s.invoicedAt||s.shipDate||"";
+  const m=/^(\d{4})-(\d{2})/.exec(base);
+  if(!m) return "";
+  const d=new Date(Number(m[1]), Number(m[2])+1, 0); // 翌月末
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+// 期限超過の日数（未超過・期限不明は0）
+function overdueDays(s){
+  const due=dueDateOf(s);
+  if(!due) return 0;
+  const diff=Math.floor((new Date(`${today()}T00:00:00`)-new Date(`${due}T00:00:00`))/86400000);
+  return diff>0?diff:0;
+}
+// 未集金＝請求済（invoiced）で残額があるもの。発送済で未請求のものは「未請求」として別に数える
+function isUnpaid(s){ return s.status==="invoiced" && payRemain(s)>0; }
+function billToOf(s){ return s.shipType==="dropship" ? (s.partnerName||s.partnerEmail||"") : (s.company||s.officeName||""); }
+function billToEmailOf(s){
+  if(s.shipType==="dropship") return s.partnerEmail||"";
+  return s.email||s.contactEmail||"";
+}
+
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
@@ -522,13 +604,19 @@ function renderShipments(ships){
   const unbilled = active.filter(s=>s.status==="shipped");
   const billed = active.filter(s=>s.status==="invoiced");
   const paid = active.filter(s=>s.status==="paid");
+  const unpaid = active.filter(isUnpaid);
+  const overdue = unpaid.filter(s=>overdueDays(s)>0);
   const sumBox=document.getElementById("shipSummary");
   if(sumBox) sumBox.innerHTML = [
     drafts.length?`<div class="alert-chip info"><i class="ti ti-file-pencil"></i><div><div class="alert-num">${drafts.length}</div><div class="alert-label">直送・下書き（要確定）</div></div></div>`:"",
     `<div class="alert-chip warn"><i class="ti ti-package-export"></i><div><div class="alert-num">${unbilled.length}</div><div class="alert-label">未請求（発送済）</div></div></div>`,
-    `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(billed.reduce((a,s)=>a+shipTotalIncl(s),0))}</div><div class="alert-label">請求済・未入金（税込）</div></div></div>`,
-    `<div class="alert-chip info"><i class="ti ti-cash"></i><div><div class="alert-num">${yen(paid.reduce((a,s)=>a+(Number(s.paymentAmount)||shipTotalIncl(s)),0))}</div><div class="alert-label">入金済（税込）</div></div></div>`,
+    `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(unpaid.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">未集金・残額（税込 ${unpaid.length}件）</div></div></div>`,
+    overdue.length?`<div class="alert-chip danger"><i class="ti ti-alarm"></i><div><div class="alert-num">${yen(overdue.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">うち支払期限超過（${overdue.length}件）</div></div></div>`:"",
+    `<div class="alert-chip info"><i class="ti ti-cash"></i><div><div class="alert-num">${yen(active.reduce((a,s)=>a+netPaid(s),0))}</div><div class="alert-label">入金済・累計（税込・返金差引後）</div></div></div>`,
+    active.some(s=>creditBalanceOf(s)>0)
+      ? `<div class="alert-chip warn"><i class="ti ti-arrow-down-circle"></i><div><div class="alert-num">${yen(active.reduce((a,s)=>a+creditBalanceOf(s),0))}</div><div class="alert-label">過入金・未充当（次回請求に充当）</div></div></div>`:"",
   ].join("");
+  renderReceivables(unpaid, active);
 
   body.innerHTML = ships.map(s=>{
     const summary=(s.items||[]).map(i=>`${i.sku}×${i.qty}`).join(", ");
@@ -536,21 +624,40 @@ function renderShipments(ships){
       ? `<span class="badge badge-6">直送(認定)</span>` : `<span class="badge badge-2">直接</span>`;
     const st=s.status||"shipped";
     const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${SHIP_STATUS[st]||st}</span>`;
-    const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
+    const billName = billToOf(s);
+    // 入金・残額・支払期限（請求済以降のみ表示）
+    const done=paidSum(s), remain=payRemain(s), od=overdueDays(s), due=dueDateOf(s);
+    let payInfo="";
+    if(st==="invoiced"||st==="paid"){
+      const dueTxt = due?`期限 ${esc(due)}${od>0?`・<strong style="color:var(--color-danger)">${od}日超過</strong>`:""}` : "";
+      const creditTxt = creditApplied(s)>0
+        ? `<div style="font-size:12px;color:var(--color-ink-muted)">過入金の充当 −${yen(creditApplied(s))}（請求 ${yen(billableIncl(s))}）</div>` : "";
+      const bal=creditBalanceOf(s);
+      const balTxt = bal>0 ? `<div style="font-size:12px;color:var(--color-warn,#c87a1f)">過入金 ${yen(bal)}（次回請求に充当できます）</div>` : "";
+      const usedTxt = (Number(s.overpayUsed)||0)>0 ? `<div style="font-size:12px;color:var(--color-ink-muted)">過入金 ${yen(Number(s.overpayUsed))} を他の請求に充当済み</div>` : "";
+      const refTxt = refundSum(s)>0 ? `<div style="font-size:12px;color:var(--color-danger)">返金 −${yen(refundSum(s))}（${esc(refundList(s).slice(-1)[0]?.date||"")}）</div>` : "";
+      const payCount = payList(s).length>1 ? `<div style="font-size:12px;color:var(--color-ink-muted)">入金${payList(s).length}回</div>` : "";
+      payInfo = (remain>0
+        ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(remain)}${netPaid(s)>0?`（入金済 ${yen(netPaid(s))}）`:""}</div>${dueTxt?`<div style="font-size:12px;color:var(--color-ink-muted)">${dueTxt}</div>`:""}`
+        : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(netPaid(s))}${s.paidAt?`（${esc(s.paidAt)}）`:""}</div>`)
+        + payCount + refTxt + creditTxt + balTxt + usedTxt;
+    }
     let lifeBtns="";
     if(st==="draft") lifeBtns=`<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>出荷を確定</button>`;
     else if(st==="shipped") lifeBtns=`<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`;
-    else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`;
-    else if(st==="paid") lifeBtns=`<span style="font-size:12px;color:var(--color-success)">入金 ${esc(s.paidAt||"")}</span>`;
+    else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`
+      + (creditBalanceForBillTo(s)>0?`<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`:"")
+      + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メール${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"");
+    else if(st==="paid") lifeBtns=`<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金履歴</button>`;
     return `<tr>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div></td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td style="white-space:nowrap">
         ${lifeBtns}
         <a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>
-        ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収書</a>` : ""}
+        ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収書${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : ""}
         <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
         <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
@@ -564,24 +671,308 @@ function renderShipments(ships){
     const s=ships.find(x=>x._id===b.dataset.id); if(s) confirmDraftShipment(s);
   }));
   document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",async()=>{
+    const s=ships.find(x=>x._id===b.dataset.id);
     await updateDoc(doc(db,"shipments",b.dataset.id),{status:"invoiced",invoicedAt:today(),updatedAt:serverTimestamp()});
     toast("請求済にしました");
+    // 同じ請求先に未充当の過入金があれば、その場で「次回の請求から引く」を提案する
+    if(s){
+      const cur={...s, status:"invoiced", invoicedAt:today()};
+      if(creditBalanceForBillTo(cur)>0) applyOverpayCredit(cur);
+    }
   }));
   document.querySelectorAll(".mark-paid").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) recordPayment(s);
   }));
+  document.querySelectorAll(".dun-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openDunning(s);
+  }));
+  document.querySelectorAll(".apply-credit").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) applyOverpayCredit(s);
+  }));
 }
 
-async function recordPayment(s){
-  const def=shipTotalIncl(s);
-  const amtStr=prompt(`入金額（税込）を入力してください\n${s.soNumber} / 請求先: ${s.shipType==="dropship"?s.partnerName:(s.company||s.officeName)}`, String(def));
-  if(amtStr===null) return;
-  const amt=parseInt(String(amtStr).replace(/[^0-9]/g,""),10);
-  if(!(amt>=0)){ alert("金額を正しく入力してください"); return; }
-  const dateStr=prompt("入金日（YYYY-MM-DD）", today());
-  if(dateStr===null) return;
-  await updateDoc(doc(db,"shipments",s._id),{status:"paid",paymentAmount:amt,paidAt:dateStr,updatedAt:serverTimestamp()});
-  toast(`入金を記録しました（${yen(amt)}）`);
+// ===== 未集金一覧（認定事業所・事業所ごとの残額と最長超過日数）=====
+function renderReceivables(unpaid, active){
+  const box=document.getElementById("arSummary");
+  if(!box) return;
+  // 請求先ごとの未充当の過入金（未集金が無くても残高は見せる）
+  const creditByBill=new Map();
+  (active||[]).forEach(s=>{
+    const bal=creditBalanceOf(s); if(!(bal>0)) return;
+    const key=billToOf(s)||"（請求先未設定）";
+    const cur=creditByBill.get(key)||{ credit:0, ships:[] };
+    cur.credit+=bal; cur.ships.push(s); creditByBill.set(key,cur);
+  });
+  if(!unpaid.length && !creditByBill.size){ box.innerHTML=`<div class="card" style="padding:12px;font-size:13px;color:var(--color-ink-muted)"><i class="ti ti-circle-check" aria-hidden="true"></i> 未集金はありません（請求済のものはすべて入金済）</div>`; return; }
+  // 請求先ごとに集約（残額の多い順・超過があるものを上に）
+  const byBill=new Map();
+  unpaid.forEach(s=>{
+    const key=billToOf(s)||"（請求先未設定）";
+    const cur=byBill.get(key)||{ name:key, email:billToEmailOf(s), remain:0, count:0, maxOverdue:0, oldestDue:"", ships:[] };
+    cur.remain+=payRemain(s); cur.count++; cur.email=cur.email||billToEmailOf(s);
+    const od=overdueDays(s); if(od>cur.maxOverdue){ cur.maxOverdue=od; cur.oldestDue=dueDateOf(s); }
+    cur.ships.push(s);
+    byBill.set(key,cur);
+  });
+  // 過入金だけある請求先も行として出す（次回請求で引く分が見えるように）
+  creditByBill.forEach((v,key)=>{ if(!byBill.has(key)) byBill.set(key,{ name:key, email:billToEmailOf(v.ships[0]), remain:0, count:0, maxOverdue:0, oldestDue:"", ships:[] }); });
+  const rows=[...byBill.values()].sort((a,b)=>(b.maxOverdue-a.maxOverdue)||(b.remain-a.remain)).map(r=>{
+    const c=creditByBill.get(r.name);
+    return `<tr>
+      <td><strong>${esc(r.name)}</strong>${r.email?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(r.email)}</div>`:""}</td>
+      <td class="num"><strong>${yen(r.remain)}</strong></td>
+      <td class="num">${c?`<strong style="color:var(--color-warn,#c87a1f)">−${yen(c.credit)}</strong><div style="font-size:12px;color:var(--color-ink-muted)">${c.ships.map(s=>esc(s.soNumber)).join(", ")}</div>`:"—"}</td>
+      <td class="num">${yen(Math.max(0, r.remain-(c?c.credit:0)))}</td>
+      <td>${r.count?(r.count+"件"):"—"}<div style="font-size:12px;color:var(--color-ink-muted)">${r.ships.map(s=>esc(s.soNumber)).join(", ")}</div></td>
+      <td>${r.maxOverdue>0
+        ? `<span class="badge badge-4">${r.maxOverdue}日超過</span><div style="font-size:12px;color:var(--color-ink-muted)">期限 ${esc(r.oldestDue)}</div>`
+        : `<span style="font-size:12px;color:var(--color-ink-muted)">${r.count?"期限内":"未集金なし"}</span>`}</td>
+    </tr>`;
+  }).join("");
+  box.innerHTML=`<div class="card"><div class="table-wrap">
+    <table><thead><tr><th>請求先</th><th class="num">未集金・残額（税込）</th><th class="num">過入金（充当できる分）</th><th class="num">差引後の請求</th><th>対象の出荷</th><th>支払期限</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>
+    ${creditByBill.size?`<p style="font-size:12px;color:var(--color-ink-muted);padding:8px 12px;margin:0">過入金は請求済の行の「過入金を充当」で差し引けます（「請求済にする」を押したときにも確認が出ます）。</p>`:""}
+  </div>`;
+}
+
+// ===== 入金の記録（部分入金・履歴・取消）=====
+let payingShip=null;
+function recordPayment(s){
+  payingShip=s;
+  const total=shipTotalIncl(s), done=paidSum(s), ref=refundSum(s), remain=payRemain(s);
+  document.getElementById("payModalTitle").textContent=`入金・返金の記録（${s.soNumber}）`;
+  document.getElementById("payBillTo").textContent=`${billToOf(s)}／請求額（税込）${yen(total)}`
+    + (creditApplied(s)>0?`　過入金の充当 −${yen(creditApplied(s))} → ${yen(billableIncl(s))}`:"");
+  document.getElementById("paySummary").innerHTML=
+    `入金合計 <strong>${yen(done)}</strong>${ref>0?`　／　返金 <strong style="color:var(--color-danger)">−${yen(ref)}</strong>　／　純入金 <strong>${yen(netPaid(s))}</strong>`:""}`
+    + `　／　残額 <strong style="color:${remain>0?"var(--color-danger)":"var(--color-success)"}">${yen(remain)}</strong>`
+    + (dueDateOf(s)?`　／　支払期限 ${esc(dueDateOf(s))}${overdueDays(s)>0?`（<strong style="color:var(--color-danger)">${overdueDays(s)}日超過</strong>）`:""}`:"");
+  // 過入金の案内（この出荷で多く入っている分 ／ 同じ請求先に充当できる分）
+  const myBal=creditBalanceOf(s), billBal=creditBalanceForBillTo(s);
+  const cbox=document.getElementById("payCredit");
+  const cbtn=document.getElementById("applyCreditBtn");
+  if(myBal>0){
+    cbox.style.display="block";
+    cbox.innerHTML=`<strong>過入金 ${yen(myBal)}</strong> があります（請求額を超えて入金された分・二重に入金された場合も同じ扱いです）。`
+      + `<br>選べる対応は2つです。<strong>①次回の請求から差し引く</strong>（次の請求を「請求済」にしたときに確認が出ます）／<strong>②返金する</strong>（下の「返金を記録する」に既定でこの金額が入っています）。`;
+    cbtn.style.display="none";
+  }else if(billBal>0 && remain>0){
+    cbox.style.display="block";
+    cbox.innerHTML=`${esc(billToOf(s))} には未充当の<strong>過入金 ${yen(billBal)}</strong>があります。この請求から <strong>${yen(Math.min(billBal,remain))}</strong> を差し引けます。`;
+    cbtn.style.display="";
+  }else{
+    cbox.style.display="none";
+    cbtn.style.display="none";
+  }
+  // 入金と返金を日付順にまとめて表示（入金が複数回・返金ありでも通帳のように追える）
+  const list=payList(s), rlist=refundList(s);
+  const hist=[
+    ...list.map((p,i)=>({kind:"pay", idx:i, date:p.date||"", amount:Number(p.amount)||0, note:p.note||""})),
+    ...rlist.map((r,i)=>({kind:"refund", idx:i, date:r.date||"", amount:Number(r.amount)||0,
+      note:[r.method?`返金方法: ${r.method}`:"", r.note||""].filter(Boolean).join(" / ")})),
+  ].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  let run=0;
+  document.getElementById("payHistory").innerHTML = hist.length
+    ? `<table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">日付</th><th style="text-align:left">区分</th><th class="num">金額</th><th class="num">純入金の累計</th><th style="text-align:left">備考</th><th></th></tr></thead><tbody>${
+        hist.map(h=>{
+          run += h.kind==="pay" ? h.amount : -h.amount;
+          return `<tr><td>${esc(h.date||"—")}</td>
+          <td>${h.kind==="pay"?`<span class="badge badge-3">入金</span>`:`<span class="badge badge-4">返金</span>`}</td>
+          <td class="num" style="${h.kind==="refund"?"color:var(--color-danger)":""}">${h.kind==="refund"?"−":""}${yen(h.amount)}</td>
+          <td class="num">${yen(run)}</td>
+          <td style="font-size:12px">${esc(h.note)}</td>
+          <td><button class="btn btn-danger ${h.kind==="pay"?"pay-del":"refund-del"}" data-idx="${h.idx}" style="font-size:11px;padding:2px 6px" aria-label="この記録を取り消す"><i class="ti ti-x"></i></button></td></tr>`;
+        }).join("")
+      }</tbody></table>`
+    : `<p style="font-size:13px;color:var(--color-ink-muted);margin:0">入金・返金の記録はまだありません</p>`;
+  document.getElementById("payAmount").value = remain>0?String(remain):"";
+  document.getElementById("payDate").value = today();
+  document.getElementById("payNote").value = "";
+  document.getElementById("refundAmount").value = creditBalanceOf(s)>0?String(creditBalanceOf(s)):"";
+  document.getElementById("refundDate").value = today();
+  document.getElementById("refundNote").value = "";
+  document.getElementById("payError").style.display="none";
+  document.querySelectorAll(".pay-del").forEach(b=>b.addEventListener("click",()=>deletePayment(Number(b.dataset.idx))));
+  document.querySelectorAll(".refund-del").forEach(b=>b.addEventListener("click",()=>deleteRefund(Number(b.dataset.idx))));
+  document.getElementById("payModal").classList.add("open");
+}
+// payments[] / refunds[] を書き戻し、残額0で入金済・残ありは請求済のまま（部分入金）に整える
+async function savePayments(s, list, msg, refunds){
+  const rlist = refunds || refundList(s);
+  const sum=list.reduce((a,p)=>a+(Number(p.amount)||0),0);
+  const rsum=rlist.reduce((a,r)=>a+(Number(r.amount)||0),0);
+  const net=sum-rsum;
+  const remain=shipTotalIncl(s)-creditApplied(s)-net; // 過入金の充当分・返金分を差し引いた残額で判定
+  const lastDate=list.length?(list[list.length-1].date||today()):"";
+  await updateDoc(doc(db,"shipments",s._id),{
+    payments:list,
+    refunds:rlist,
+    paymentAmount:net,                          // 旧フィールドは純額で同期（集計・請求書との互換）
+    refundAmount:rsum,
+    paidAt: remain<=0 ? lastDate : "",
+    status: remain<=0 ? "paid" : "invoiced",
+    updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+  document.getElementById("payModal").classList.remove("open");
+  payingShip=null;
+  toast(msg);
+}
+// 返金の記録（過入金を返した／返品・キャンセルで返した）
+async function addRefund(){
+  const s=payingShip; if(!s) return;
+  const err=document.getElementById("payError"); err.style.display="none";
+  const amt=parseInt(String(document.getElementById("refundAmount").value).replace(/[^0-9]/g,""),10);
+  const date=document.getElementById("refundDate").value;
+  if(!(amt>0)){ err.textContent="返金額を入力してください（1円以上）"; err.style.display="block"; return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ err.textContent="返金日を選んでください"; err.style.display="block"; return; }
+  const bal=creditBalanceOf(s);
+  if(amt>bal){
+    const over=amt-bal;
+    if(!confirm(`未充当の過入金は ${yen(bal)} です。${yen(amt)} を返金すると ${yen(over)} 分だけ入金が請求額を下回り、この出荷は「請求済（未集金 ${yen(over)}）」に戻ります。\n\n返品・キャンセルに伴う返金ならこのまま進めてください（出荷そのものを取り消す場合は、出荷の削除でキャンセルしてください）。\n\n続けますか？`)) return;
+  }
+  const list=refundList(s).concat([{ amount:amt, date,
+    method:document.getElementById("refundMethod").value||"振込",
+    note:document.getElementById("refundNote").value.trim(),
+    recordedBy:currentUser.displayName||currentUser.email, recordedAt:new Date().toISOString() }]);
+  const btn=document.getElementById("saveRefundBtn"); btn.disabled=true;
+  try{ await savePayments(s, payList(s), `返金を記録しました（${yen(amt)}）`, list); }
+  catch(e){ err.textContent=`記録に失敗: ${e.message}`; err.style.display="block"; }
+  finally{ btn.disabled=false; }
+}
+async function deleteRefund(idx){
+  const s=payingShip; if(!s) return;
+  const list=refundList(s).slice();
+  const r=list[idx]; if(!r) return;
+  if(!confirm(`${r.date||""} の返金 ${yen(Number(r.amount)||0)} を取り消します。よろしいですか？`)) return;
+  list.splice(idx,1);
+  try{ await savePayments(s, payList(s), "返金の記録を取り消しました", list); }
+  catch(e){ alert(`取消に失敗: ${e.message}`); }
+}
+async function addPayment(){
+  const s=payingShip; if(!s) return;
+  const err=document.getElementById("payError"); err.style.display="none";
+  const amt=parseInt(String(document.getElementById("payAmount").value).replace(/[^0-9]/g,""),10);
+  const date=document.getElementById("payDate").value;
+  if(!(amt>0)){ err.textContent="入金額を入力してください（1円以上）"; err.style.display="block"; return; }
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ err.textContent="入金日を選んでください"; err.style.display="block"; return; }
+  const remain=payRemain(s);
+  if(amt>remain && !confirm(`残額 ${yen(remain)} を超える入金です（${yen(amt)}）。\n差額 ${yen(amt-remain)} は過入金として記録し、同じ請求先の次回の請求から差し引けます。\n\nこの金額で記録しますか？`)) return;
+  const list=payList(s).concat([{ amount:amt, date, note:document.getElementById("payNote").value.trim(),
+    recordedBy:currentUser.displayName||currentUser.email, recordedAt:new Date().toISOString() }]);
+  const btn=document.getElementById("savePayBtn"); btn.disabled=true;
+  try{ await savePayments(s, list, `入金を記録しました（${yen(amt)}）`); }
+  catch(e){ err.textContent=`記録に失敗: ${e.message}`; err.style.display="block"; }
+  finally{ btn.disabled=false; }
+}
+async function deletePayment(idx){
+  const s=payingShip; if(!s) return;
+  const list=payList(s).slice();
+  const p=list[idx]; if(!p) return;
+  if(!confirm(`${p.date||""} の入金 ${yen(Number(p.amount)||0)} を取り消します。よろしいですか？`)) return;
+  list.splice(idx,1);
+  try{ await savePayments(s, list, "入金の記録を取り消しました"); }
+  catch(e){ alert(`取消に失敗: ${e.message}`); }
+}
+
+// ===== 過入金を次回の請求に充当する =====
+// 同じ請求先の未充当の過入金を、古い出荷の分から順に使って、この請求の残額から差し引く。
+// 充当元には overpayUsed を積み、充当先には creditApplied と充当元の内訳（creditFrom）を残す。
+async function applyOverpayCredit(s){
+  const sources=creditSourcesFor(s);
+  const balance=sources.reduce((a,x)=>a+creditBalanceOf(x),0);
+  const remain=payRemain(s);
+  if(!(balance>0)){ alert(`${billToOf(s)} に充当できる過入金はありません`); return; }
+  if(!(remain>0)){ alert(`${s.soNumber} は残額がないため充当できません`); return; }
+  const use=Math.min(balance, remain);
+  const detail=sources.map(x=>`　・${x.soNumber}（${x.shipDate||""}）の過入金 ${yen(creditBalanceOf(x))}`).join("\n");
+  if(!confirm(`${billToOf(s)} の過入金を ${s.soNumber} の請求に充当します。\n\n充当元:\n${detail}\n\n充当額: ${yen(use)}（請求 ${yen(billableIncl(s))} → 残額 ${yen(remain-use)}）\n\nよろしいですか？`)) return;
+  try{
+    let rest=use;
+    const from=[];
+    for(const src of sources){
+      if(rest<=0) break;
+      const take=Math.min(creditBalanceOf(src), rest);
+      await updateDoc(doc(db,"shipments",src._id),{
+        overpayUsed:(Number(src.overpayUsed)||0)+take,
+        updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+      from.push({ shipmentId:src._id, soNumber:src.soNumber||"", amount:take, date:today(),
+        appliedBy:currentUser.displayName||currentUser.email });
+      rest-=take;
+    }
+    const applied=creditApplied(s)+use;
+    const newRemain=Math.max(0, shipTotalIncl(s)-applied-netPaid(s));
+    const lastPay=payList(s).slice(-1)[0];
+    await updateDoc(doc(db,"shipments",s._id),{
+      creditApplied:applied,
+      creditFrom:(Array.isArray(s.creditFrom)?s.creditFrom:[]).concat(from),
+      status: newRemain<=0 ? "paid" : "invoiced",
+      paidAt: newRemain<=0 ? (lastPay?.date || today()) : "",
+      updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+    document.getElementById("payModal").classList.remove("open");
+    payingShip=null;
+    toast(`過入金 ${yen(use)} を ${s.soNumber} に充当しました${newRemain<=0?"（入金済になりました）":""}`);
+  }catch(e){ alert(`充当に失敗: ${e.message}`); }
+}
+
+// ===== 未集金の催促メール（期限超過の請求先へ・発注書メールと同じGmail基盤）=====
+const DEFAULT_DUNNING_SUBJECT = "【ご確認のお願い】お振込みの状況について（{{請求先}}）";
+const DEFAULT_DUNNING_BODY = `{{請求先}}
+ご担当者様
+
+いつもお世話になっております。NPO法人タダカヨです。
+
+下記のご請求につきまして、本日時点でお振込みの確認ができておりません。
+恐れ入りますが、ご確認いただけますでしょうか。
+
+　請求書番号：{{請求書番号}}
+　ご請求金額（税込）：{{金額}}
+　お支払期限：{{支払期限}}
+
+行き違いでお振込みいただいておりましたら申し訳ございません。
+その場合は本メールをご放念ください。
+
+ご不明点がございましたら、本メールにご返信ください。
+よろしくお願いいたします。
+
+--
+NPO法人タダカヨ 介護情報基盤事務局`;
+let dunningShip=null;
+async function openDunning(s){
+  dunningShip=s;
+  let st={};
+  try{ const ss=await getDoc(doc(db,"appConfig","settings")); st=ss.exists()?ss.data():{}; }catch(_){}
+  const invNo=(s.soNumber||"").replace(/^SH/,"INV");
+  const fill=(t)=>String(t||"")
+    .split("{{請求先}}").join(billToOf(s))
+    .split("{{請求書番号}}").join(invNo)
+    .split("{{出荷番号}}").join(s.soNumber||"")
+    .split("{{金額}}").join("¥"+payRemain(s).toLocaleString("ja-JP"))
+    .split("{{支払期限}}").join(dueDateOf(s)||"（未設定）")
+    .split("{{超過日数}}").join(String(overdueDays(s)));
+  document.getElementById("dunTo").value = billToEmailOf(s)||"";
+  document.getElementById("dunSubject").value = fill(st.dunningMailSubject || DEFAULT_DUNNING_SUBJECT);
+  document.getElementById("dunBody").value = fill(st.dunningMailBody || DEFAULT_DUNNING_BODY);
+  document.getElementById("dunInfo").textContent =
+    `${s.soNumber}／${billToOf(s)}／未集金 ${yen(payRemain(s))}（税込）／支払期限 ${dueDateOf(s)||"未設定"}・${overdueDays(s)}日超過`;
+  document.getElementById("dunError").style.display="none";
+  document.getElementById("dunModal").classList.add("open");
+}
+async function sendDunning(){
+  const s=dunningShip; if(!s) return;
+  const to=document.getElementById("dunTo").value.trim();
+  const subject=document.getElementById("dunSubject").value.trim();
+  const body=document.getElementById("dunBody").value;
+  const err=document.getElementById("dunError"); err.style.display="none";
+  if(!to||!subject||!body.trim()){ err.textContent="宛先・件名・本文は必須です"; err.style.display="block"; return; }
+  const btn=document.getElementById("sendDunBtn"); const orig=btn.innerHTML;
+  btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
+  try{
+    await sendPartnerMailFn({ to, subject, body, shipmentId:s._id, kind:"dunning" });
+    document.getElementById("dunModal").classList.remove("open");
+    dunningShip=null;
+    toast(`${s.soNumber} の催促メールを送信しました`);
+  }catch(e){ err.textContent=`送信に失敗: ${e.message||e}`; err.style.display="block"; }
+  finally{ btn.disabled=false; btn.innerHTML=orig; }
 }
 
 // ===== 受注（認定事業所から）=====
@@ -596,12 +987,22 @@ function renderPartnerOrders(orders){
     const shipBtn = o.status==="shipped"
       ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
       : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
+    // この受注に紐づく出荷の請求・入金状況（受注一覧からも入金確認できるように）
+    const rel=shipments.filter(s=>s.partnerOrderId===o._id && s.status!=="canceled");
+    const relRemain=rel.reduce((a,s)=>a+payRemain(s),0);
+    const relOverdue=rel.some(s=>isUnpaid(s)&&overdueDays(s)>0);
+    const payCell = !rel.length ? `<span style="font-size:12px;color:var(--color-ink-muted)">—</span>`
+      : rel.some(s=>s.status==="shipped") && relRemain===0 ? `<span style="font-size:12px;color:var(--color-ink-muted)">未請求</span>`
+      : relRemain>0
+        ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(relRemain)}${relOverdue?"（期限超過）":""}</div><div style="font-size:12px;color:var(--color-ink-muted)">${rel.map(s=>esc(s.soNumber)).join(", ")}</div>`
+        : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(rel.reduce((a,s)=>a+netPaid(s),0))}</div><div style="font-size:12px;color:var(--color-ink-muted)">${rel.map(s=>esc(s.soNumber)).join(", ")}</div>`;
     return `<tr>
       <td>${o.soNumber?`<strong>${esc(o.soNumber)}</strong><div style="font-size:12px;color:var(--color-ink-muted)">${fmtDT(o.createdAt)}</div>`:fmtDT(o.createdAt)}${o.partnerOrderNo?`<div style="font-size:12px;color:var(--color-ink-muted)">先方No: ${esc(o.partnerOrderNo)}</div>`:""}</td>
       <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
       <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
       <td style="font-size:12px">${esc(sum)}</td>
       <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select></td>
+      <td>${payCell}</td>
       <td>${shipBtn}</td>
     </tr>`;
   }).join("");
@@ -860,14 +1261,27 @@ onAuthStateChanged(auth, async (user)=>{
   onSnapshot(query(collection(db,"purchaseOrders"),orderBy("createdAt","desc")),(snap)=>{
     renderOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
   });
-  // 出荷一覧
+  // 出荷一覧（受注タブの入金状況にも使うので保持して再描画する）
   onSnapshot(query(collection(db,"shipments"),orderBy("createdAt","desc")),(snap)=>{
-    renderShipments(snap.docs.map(d=>({_id:d.id,...d.data()})));
+    shipments=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    renderShipments(shipments);
+    if(partnerOrdersCache.length) renderPartnerOrders(partnerOrdersCache);
   });
   // 受注（認定事業所から）
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
-    renderPartnerOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
+    partnerOrdersCache=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    renderPartnerOrders(partnerOrdersCache);
   });
+  // 入金の記録モーダル
+  document.getElementById("closePayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
+  document.getElementById("cancelPayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
+  document.getElementById("savePayBtn").addEventListener("click",addPayment);
+  document.getElementById("applyCreditBtn").addEventListener("click",()=>{ if(payingShip) applyOverpayCredit(payingShip); });
+  document.getElementById("saveRefundBtn").addEventListener("click",addRefund);
+  // 催促メールモーダル
+  document.getElementById("closeDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
+  document.getElementById("cancelDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
+  document.getElementById("sendDunBtn").addEventListener("click",sendDunning);
   // 発注ファイル（CSV/JSON）の取込 — 仕様書§3
   document.getElementById("importOrderBtn").addEventListener("click",openImportModal);
   document.getElementById("closeImportBtn").addEventListener("click",closeImportModal);

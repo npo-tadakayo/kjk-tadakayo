@@ -648,6 +648,59 @@ exports.sendSupplierOrder = onCall(
   }
 );
 
+// 認定事業所・事業所へのメール送付（未集金の催促など）。送信成功で出荷に送信履歴を記録
+exports.sendPartnerMail = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    const { to, cc, subject, body, shipmentId, kind } = request.data || {};
+    if (!to || !subject || !body) {
+      throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
+    }
+    try {
+      const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
+      const token = await gmailAccessToken(sender);
+      const raw = buildRawMessage({ to, cc, subject, body, sender });
+      const res = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
+        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ raw }) }
+      );
+      if (!res.ok) {
+        const t = await res.text();
+        console.error("Gmail send (partner) failed:", res.status, t);
+        throw new HttpsError("internal", `Gmail送信に失敗しました（${res.status}）。DWD登録と送信元をご確認ください`);
+      }
+      const sent = await res.json();
+      if (shipmentId) {
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const day = new Date().toISOString().slice(0, 10);
+        const log = { kind: kind || "mail", to, subject, sentAt: day, sentBy: email };
+        const update = {
+          mailLog: admin.firestore.FieldValue.arrayUnion(log),
+          updatedAt: now,
+        };
+        if ((kind || "") === "dunning") {
+          update.dunningSentAt = day;
+          update.dunningCount = admin.firestore.FieldValue.increment(1);
+        }
+        await db.collection("shipments").doc(shipmentId).update(update);
+      }
+      return { ok: true, id: sent.id };
+    } catch (e) {
+      if (e instanceof HttpsError) throw e;
+      console.error("sendPartnerMail error:", e);
+      throw new HttpsError("internal", `送信処理に失敗しました: ${e.message}`);
+    }
+  }
+);
+
 // ===== LP アクセス解析（GA4 + Search Console 日次収集） =====
 // 実装は ./analytics.js（このファイルを肥大化させないため分離）
 const analytics = require("./analytics");
