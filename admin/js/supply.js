@@ -774,7 +774,7 @@ function recordPayment(s){
   ].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
   let run=0;
   document.getElementById("payHistory").innerHTML = hist.length
-    ? `<table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">日付</th><th style="text-align:left">区分</th><th class="num">金額</th><th class="num">純入金の累計</th><th style="text-align:left">備考</th><th></th></tr></thead><tbody>${
+    ? `<div class="table-wrap"><table style="width:100%;font-size:13px"><thead><tr><th style="text-align:left">日付</th><th style="text-align:left">区分</th><th class="num">金額</th><th class="num">純入金の累計</th><th style="text-align:left">備考</th><th>操作</th></tr></thead><tbody>${
         hist.map(h=>{
           run += h.kind==="pay" ? h.amount : -h.amount;
           return `<tr><td>${esc(h.date||"—")}</td>
@@ -782,9 +782,9 @@ function recordPayment(s){
           <td class="num" style="${h.kind==="refund"?"color:var(--color-danger)":""}">${h.kind==="refund"?"−":""}${yen(h.amount)}</td>
           <td class="num">${yen(run)}</td>
           <td style="font-size:12px">${esc(h.note)}</td>
-          <td><button class="btn btn-danger ${h.kind==="pay"?"pay-del":"refund-del"}" data-idx="${h.idx}" style="font-size:11px;padding:2px 6px" aria-label="この記録を取り消す"><i class="ti ti-x"></i></button></td></tr>`;
+          <td style="white-space:nowrap"><button class="btn btn-danger ${h.kind==="pay"?"pay-del":"refund-del"}" data-idx="${h.idx}" style="font-size:11px;padding:2px 8px" aria-label="この記録を取り消す"><i class="ti ti-x" aria-hidden="true"></i> 取消</button></td></tr>`;
         }).join("")
-      }</tbody></table>`
+      }</tbody></table></div>`
     : `<p style="font-size:13px;color:var(--color-ink-muted);margin:0">入金・返金の記録はまだありません</p>`;
   document.getElementById("payAmount").value = remain>0?String(remain):"";
   document.getElementById("payDate").value = today();
