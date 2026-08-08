@@ -3,7 +3,7 @@ import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment }
+  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
@@ -1143,6 +1143,7 @@ function renderPartners(partners){
       <td>${p.active!==false?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary edit-partner" data-email="${esc(p._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
+        <button class="btn btn-secondary guide-partner" data-email="${esc(p._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>発注案内${p.guideSentAt?`（済 ${esc(p.guideSentAt.slice(5).replace("-","/"))}）`:""}</button>
         <a class="btn btn-secondary" href="/supply-print.html?type=plabel&pid=${encodeURIComponent(p._id)}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
         <button class="btn btn-secondary toggle-partner" data-email="${esc(p._id)}" data-active="${p.active!==false}" style="font-size:12px;padding:4px 8px">${p.active!==false?"停止":"有効化"}</button>
         <button class="btn btn-danger del-partner" data-email="${esc(p._id)}" data-name="${esc(p.partnerName||"")}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
@@ -1151,6 +1152,9 @@ function renderPartners(partners){
   }).join("");
   document.querySelectorAll(".edit-partner").forEach(b=>b.addEventListener("click",()=>{
     const p=partnersCache.find(x=>x._id===b.dataset.email); if(p) openPartnerModal(p);
+  }));
+  document.querySelectorAll(".guide-partner").forEach(b=>b.addEventListener("click",()=>{
+    const p=partnersCache.find(x=>x._id===b.dataset.email); if(p) openGuideMail(p);
   }));
   document.querySelectorAll(".toggle-partner").forEach(b=>b.addEventListener("click",async()=>{
     await updateDoc(doc(db,"partners",b.dataset.email),{active: b.dataset.active!=="true"});
@@ -1223,6 +1227,84 @@ async function savePartner(){
   toast(`${name} を保存しました`);
 }
 
+// ===== 発注方法のご案内メール（認定事業所へ・催促メールと同じGmail基盤）=====
+const PORTAL_URL = "https://kjk-tadakayo-admin.web.app/partner";
+const ORDER_TEMPLATE_URL = "https://kjk.tadakayo.jp/発注テンプレート.csv";
+const DEFAULT_GUIDE_SUBJECT = "【タダカヨ】カードリーダーのご発注方法のご案内（{{事業所名}}）";
+const DEFAULT_GUIDE_BODY = `{{事業所名}}
+ご担当者様
+
+いつもお世話になっております。NPO法人タダカヨです。
+カードリーダーのご発注方法をご案内いたします。
+下記のどちらか、ご都合のよい方法でご発注ください。
+
+■ 方法1: 発注ポータルから（おすすめ）
+次のURLを開き、Googleアカウントでログインしてご発注いただけます。
+　{{ポータルURL}}
+　ログイン用メールアドレス: {{ログインメール}}
+　※上記メールアドレスのGoogleアカウントでログインしてください。
+　　別のアドレスではログインできません（変更をご希望の場合はご連絡ください）。
+　※ログイン後、画面の案内に沿って品目・数量・お届け先をご入力ください。
+
+■ 方法2: 発注ファイルをメールで送る
+ポータルをお使いにならない場合は、次のテンプレート（CSV）にご記入のうえ、
+本メールへの返信に添付してお送りください。
+　テンプレート: {{テンプレートURL}}
+　※1行目が項目名、2行目が記入例です。記入例を書き換えてお使いください。
+　※複数の品目をご注文の場合は、同じ発注番号で行を分けてご記入ください。
+
+ご不明な点がございましたら、本メールにご返信ください。
+よろしくお願いいたします。
+
+--
+NPO法人タダカヨ 介護情報基盤事務局`;
+let guidingPartner=null;
+async function openGuideMail(p){
+  guidingPartner=p;
+  let st={};
+  try{ const ss=await getDoc(doc(db,"appConfig","settings")); st=ss.exists()?ss.data():{}; }catch(_){}
+  const fill=(t)=>String(t||"")
+    .split("{{事業所名}}").join(p.partnerName||"")
+    .split("{{法人名}}").join(p.corpName||"")
+    .split("{{ログインメール}}").join(p._id||"")
+    .split("{{ポータルURL}}").join(PORTAL_URL)
+    .split("{{テンプレートURL}}").join(ORDER_TEMPLATE_URL);
+  document.getElementById("guideTo").value = p._id||"";
+  // 連絡用メールがログイン用と別に登録されていれば CC に入れておく（不要なら消せる）
+  document.getElementById("guideCc").value = (p.contactEmail && p.contactEmail!==p._id) ? p.contactEmail : "";
+  document.getElementById("guideSubject").value = fill(st.guideMailSubject || DEFAULT_GUIDE_SUBJECT);
+  document.getElementById("guideBody").value = fill(st.guideMailBody || DEFAULT_GUIDE_BODY);
+  document.getElementById("guideInfo").textContent =
+    `${p.partnerName||""}${p.corpName?`（${p.corpName}）`:""}／ログイン用メール ${p._id}`
+    + (p.guideSentAt?`／前回送信 ${p.guideSentAt}`:"");
+  document.getElementById("guideError").style.display="none";
+  document.getElementById("guideModal").classList.add("open");
+}
+async function sendGuideMail(){
+  const p=guidingPartner; if(!p) return;
+  const to=document.getElementById("guideTo").value.trim();
+  const cc=document.getElementById("guideCc").value.trim();
+  const subject=document.getElementById("guideSubject").value.trim();
+  const body=document.getElementById("guideBody").value;
+  const err=document.getElementById("guideError"); err.style.display="none";
+  if(!to||!subject||!body.trim()){ err.textContent="宛先・件名・本文は必須です"; err.style.display="block"; return; }
+  const btn=document.getElementById("sendGuideBtn"); const orig=btn.innerHTML;
+  btn.disabled=true; btn.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
+  try{
+    await sendPartnerMailFn({ to, cc: cc||undefined, subject, body, kind:"guide" });
+    const day=today();
+    await updateDoc(doc(db,"partners",p._id),{
+      guideSentAt: day,
+      guideMailLog: arrayUnion({ to, cc, subject, sentAt: day, sentBy: currentUser.displayName||currentUser.email }),
+      updatedAt: serverTimestamp(),
+    });
+    document.getElementById("guideModal").classList.remove("open");
+    guidingPartner=null;
+    toast(`${p.partnerName||to} へ発注方法のご案内を送信しました`);
+  }catch(e){ err.textContent=`送信に失敗: ${e.message||e}`; err.style.display="block"; }
+  finally{ btn.disabled=false; btn.innerHTML=orig; }
+}
+
 // ===== 初期化 =====
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
@@ -1282,6 +1364,10 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
   document.getElementById("cancelDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
   document.getElementById("sendDunBtn").addEventListener("click",sendDunning);
+  // 発注方法のご案内メールモーダル
+  document.getElementById("closeGuideBtn").addEventListener("click",()=>document.getElementById("guideModal").classList.remove("open"));
+  document.getElementById("cancelGuideBtn").addEventListener("click",()=>document.getElementById("guideModal").classList.remove("open"));
+  document.getElementById("sendGuideBtn").addEventListener("click",sendGuideMail);
   // 発注ファイル（CSV/JSON）の取込 — 仕様書§3
   document.getElementById("importOrderBtn").addEventListener("click",openImportModal);
   document.getElementById("closeImportBtn").addEventListener("click",closeImportModal);

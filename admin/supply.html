@@ -329,6 +329,33 @@
     </div>
   </div>
 
+  <!-- 発注方法のご案内メール（認定事業所へ・送信前に内容を確認して編集できる） -->
+  <div class="modal-overlay" id="guideModal" role="dialog" aria-modal="true" aria-label="発注方法のご案内メール">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header"><h2>発注方法のご案内メール</h2>
+        <button class="btn btn-secondary" id="closeGuideBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="guideInfo" style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="guideTo">宛先 <span style="color:red">*</span></label>
+            <input class="form-control" id="guideTo" type="email" placeholder="partner@example.com"></div>
+          <div class="form-group"><label class="form-label" for="guideCc">CC（任意）</label>
+            <input class="form-control" id="guideCc" type="email" placeholder="連絡用メールがあれば"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="guideSubject">件名 <span style="color:red">*</span></label>
+          <input class="form-control" id="guideSubject" type="text"></div>
+        <div class="form-group"><label class="form-label" for="guideBody">本文 <span style="color:red">*</span></label>
+          <textarea class="form-control" id="guideBody" rows="18" style="font-family:inherit"></textarea>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この画面が送信前のプレビューです。内容は自由に書き換えられます。送信元は発注書・催促メールと同じ事務局アドレスです（何度でも送れます）。</p></div>
+        <div class="field-error" id="guideError" role="alert" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelGuideBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="sendGuideBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i>この内容で送信する</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="stockModal" role="dialog" aria-modal="true" aria-label="在庫調整">
     <div class="modal" style="max-width:420px">
       <div class="modal-header"><h2 id="stockModalTitle">在庫調整</h2>
