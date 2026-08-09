@@ -22,6 +22,7 @@
 - **認定事業所への「発注方法のご案内メール」を追加**（`907cc11`・本番反映済み）: パートナー管理の「発注案内」ボタン → 宛先/CC/件名/本文をプレビューで編集して送信（基盤は `sendPartnerMail` 流用・Functions変更なし）。送信で `partners` に `guideSentAt`/`guideMailLog` 記録・ボタンに「済 月/日」。定型文は `appConfig.settings.guideMailSubject/guideMailBody` で差替可。preview `guide-mail` で検証→次田さんが live 昇格。
 - **PO-2026-0046（200台）は入荷済を確認**（在庫220台）。PO-2026-0049（50台・8/5発注）が入荷待ちに追加。
 - タダカヨの firebase CLI は次田さんが `firebase login --reauth` で復旧済み（gcloud はまだ）。
+- **供給事業サマリー資料（PNG・ドキュメント貼付用）を作成**: 在庫220台／仕入累計¥402.4万（570台）／販売300台・粗利¥28.5万（2社別内訳）。正本 `タダカヨ_project/_アウトボックス/20260808_介護情報基盤_供給事業サマリー/`（HTML原本つき・数字が動いたらHTML修正→ヘッドレスChromeでPNG再生成）。データはCRM本番Firestoreから集計（ログイン済みブラウザの javascript_tool で Firebase SDK を dynamic import して読み取り）。
 
 ## 前セッション（⑯・2026-07-30〜08-01）でやったこと
 
