@@ -62,8 +62,14 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 
 構文チェック＋id存在チェック（各デプロイ前）／期限計算8ケース（年末越え・月末・上書き・日付不明）／入金・返金・充当の通し4シナリオ（分割入金・二重入金→返金・一部返金＋充当・全額返金で未集金へ復帰）／preview 配信10項目＋本番配信10項目を curl 検証。すべて合格。
 
+## 今セッション（⑱・2026-08-10）でやったこと
+
+- **LPに動画セクション `#movie` を追加**（`b8fdffd`）: YouTube「【5分でわかる】ケアプーが介護情報基盤にお引っ越し！？」（4:18・自社チャンネル）を「2026年4月から変わったこと」の直後に掲載。クリックするまでYouTubeへ通信しない click-to-play（サムネは自己ホスト `images/movie_kjk_2027.webp`・再生時のみ youtube-nocookie）。見どころ4点＋チャプター送り＋出典・8/26説明会の注記。WHYからの導線・FAQ9件目・構造化データ VideoObject も追加。ローカル（1280/390px）で表示・再生・JSON-LD・フォントサブセットを検証済み。**本番未反映**
+- 🔴 **本番LPから内部ファイルが公開されていたのを発見・設定修正**（`3ae3185`）: `admin-*.png`（実在の事業所名・担当者名・携帯番号・メールが写った管理画面スクショ）・パートナーシップ協定書ドラフト.docx・有償事業化企画書.docx・料金シミュレーション等のPDF・商品マスタ.csv・firestore.rules などが 200 で取得できた。firebase.json の lp ignore に追記して 45→34ファイルに（検証は firebase-tools の listFiles）。**実際に消えるのは次の live デプロイ後**
+
 ## 次回やること（優先順）
 
+0. 🔴 **上記2件を本番へ反映**（`git push` と live デプロイ。手順は「ハマりポイント」の下部）。**公開中の個人情報を消すには live デプロイが必要**
 1. **PO-2026-0049（50台・8/5発注）の入荷登録**: 届いたら発注タブの「入荷登録」→ 在庫 220→270台
 2. **過入金 ¥93 の処理**: プラスエスさんへの次回請求で「過入金を充当」（急がない・放置でも実害なし）
 3. 実機での取込確認（要ログイン）: 受注タブ →「発注ファイルを取り込む」→ `発注テンプレート.csv` → SO番号採番まで
@@ -96,6 +102,9 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 - **デプロイは rule05 二段階**: `hosting:channel:deploy {ch} --only admin` → curl検証 → `hosting:clone …:live`（live 昇格は自動承認でブロックされるため次田さんが実行）
 - 帳票ページ（supply-print / report）は crm.css を読まない独立CSS。ブランド色を変える時は両方直す
 - `/supply.html` は 301 で `/supply` にリダイレクト（curl 検証時は `-L` を付ける）
+- **hosting lp の public は `.`（リポジトリ直下）**。git 管理外のファイルもデプロイされるので、**ルート直下に内部資料を置いたら firebase.json の ignore に必ず追記する**。確認は `node -e "const{listFiles}=require('/opt/homebrew/lib/node_modules/firebase-tools/lib/listFiles.js');console.log(listFiles('.',JSON.parse(require('fs').readFileSync('firebase.json','utf8')).hosting[0].ignore).sort().join('\n'))"`（hosting エミュレータは ignore を無視するので検証に使えない）
+- **ignore に日本語パスを書くときは濁点に注意**: Drive上のフォルダ名は NFD（濁点分解）なので、JSON に NFC で書いた `議事録など/**` はマッチしない。濁点を含まない前方一致（`議事*/**`）にする
+- **タダカヨの firebase CLI が kjk-tadakayo を見られない**（2026-08-10 時点）: `firebase login:list` は tadakayo アカウントを active と表示するが `projects:list` に kjk-tadakayo が出ず、`hosting:channel:deploy` が「Failed to get Firebase project」で失敗する。**デプロイ前に `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（次田さん操作）が必要**
 - **タダカヨの gcloud ユーザー認証が期限切れ**（2026-08-08 時点）。Firestore REST 直叩きの前に `gcloud auth login`（tadakayo 設定）を通す。ADC は 279 アカウント（y.tsukuda@279279.net）のままなので kjk-tadakayo には使えない
 
 ## 再開コマンド
