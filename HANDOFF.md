@@ -67,9 +67,13 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 - **LPに動画セクション `#movie` を追加**（`b8fdffd`）: YouTube「【5分でわかる】ケアプーが介護情報基盤にお引っ越し！？」（4:18・自社チャンネル）を「2026年4月から変わったこと」の直後に掲載。クリックするまでYouTubeへ通信しない click-to-play（サムネは自己ホスト `images/movie_kjk_2027.webp`・再生時のみ youtube-nocookie）。見どころ4点＋チャプター送り＋出典・8/26説明会の注記。WHYからの導線・FAQ9件目・構造化データ VideoObject も追加。ローカル（1280/390px）で表示・再生・JSON-LD・フォントサブセットを検証済み。**本番未反映**
 - 🔴 **本番LPから内部ファイルが公開されていたのを発見・設定修正**（`3ae3185`）: `admin-*.png`（実在の事業所名・担当者名・携帯番号・メールが写った管理画面スクショ）・パートナーシップ協定書ドラフト.docx・有償事業化企画書.docx・料金シミュレーション等のPDF・商品マスタ.csv・firestore.rules などが 200 で取得できた。firebase.json の lp ignore に追記して 45→34ファイルに（検証は firebase-tools の listFiles）。**実際に消えるのは次の live デプロイ後**
 
+- **preview チャンネル `movie-2027` へデプロイ済み・verify 通過**: https://kjk-tadakayo--movie-2027-lrtwdj1q.web.app （有効期限 2026-08-17）。version `5d9e8149b852ceec`。必要ファイル8件が200／内部ファイル7件が404／動画セクションの要素9項目／キャッシュヘッダー（アセット immutable・HTML no-cache）／初期表示でYouTubeへのリクエスト0件を確認
+- **firebase CLI が使えず Hosting REST API で直接デプロイした**（下記ハマりポイント参照）
+- **CRMのメール送信元を確認**: 依頼のあった `kjk-staff@tadakayo.jp` は既に設定済みだった（Firestore `appConfig/settings.gmailSender`=2026-07-27保存／env `GMAIL_SENDER` 未設定／コード既定値も同じ）。7-30・8-5 の発注メール送信実績あり・エラーログ0件。変更不要
+
 ## 次回やること（優先順）
 
-0. 🔴 **上記2件を本番へ反映**（`git push` と live デプロイ。手順は「ハマりポイント」の下部）。**公開中の個人情報を消すには live デプロイが必要**
+0. 🔴 **live 昇格（`hosting:clone` で preview `movie-2027` を live へ）と `git push`**。**公開中の個人情報（admin-*.png）を消すのは live 昇格**。Claude 側は自動モードでブロックされるため次田さんの実行が必要
 1. **PO-2026-0049（50台・8/5発注）の入荷登録**: 届いたら発注タブの「入荷登録」→ 在庫 220→270台
 2. **過入金 ¥93 の処理**: プラスエスさんへの次回請求で「過入金を充当」（急がない・放置でも実害なし）
 3. 実機での取込確認（要ログイン）: 受注タブ →「発注ファイルを取り込む」→ `発注テンプレート.csv` → SO番号採番まで
@@ -104,7 +108,8 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 - `/supply.html` は 301 で `/supply` にリダイレクト（curl 検証時は `-L` を付ける）
 - **hosting lp の public は `.`（リポジトリ直下）**。git 管理外のファイルもデプロイされるので、**ルート直下に内部資料を置いたら firebase.json の ignore に必ず追記する**。確認は `node -e "const{listFiles}=require('/opt/homebrew/lib/node_modules/firebase-tools/lib/listFiles.js');console.log(listFiles('.',JSON.parse(require('fs').readFileSync('firebase.json','utf8')).hosting[0].ignore).sort().join('\n'))"`（hosting エミュレータは ignore を無視するので検証に使えない）
 - **ignore に日本語パスを書くときは濁点に注意**: Drive上のフォルダ名は NFD（濁点分解）なので、JSON に NFC で書いた `議事録など/**` はマッチしない。濁点を含まない前方一致（`議事*/**`）にする
-- **タダカヨの firebase CLI が kjk-tadakayo を見られない**（2026-08-10 時点）: `firebase login:list` は tadakayo アカウントを active と表示するが `projects:list` に kjk-tadakayo が出ず、`hosting:channel:deploy` が「Failed to get Firebase project」で失敗する。**デプロイ前に `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（次田さん操作）が必要**
+- **タダカヨの firebase CLI の認証情報が279のものと入れ替わっている**（2026-08-10 判明）: `login:list` は `yoshinao-tsukuda@tadakayo.jp` を active と表示するのに、`projects:list` に出るのは tougou-db / voice-memo など**279のプロジェクト**で、kjk-tadakayo が無い（→ `hosting:channel:deploy` が「Failed to get Firebase project」）。復旧は `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（ブラウザ＝次田さん操作）
+  - **回避策（CLI復旧まで）**: gcloud のタダカヨ認証は生きているので、**Hosting REST API で直接デプロイできる**。`gcloud auth print-access-token --account yoshinao-tsukuda@tadakayo.jp` ＋ ヘッダー `x-goog-user-project: kjk-tadakayo`（これが無いと quota project 未設定で403）。versions作成 → populateFiles → gzipしたファイルをhash単位でアップロード → FINALIZE → releases。⚠️ **firebase.json の headers/redirects は REST では形が違う**（`source`→`glob`、`[{key,value}]`→`{k:v}`、`type`→`statusCode`）。スクリプトは `/private/tmp/.../scratchpad/deploy-hosting.mjs`（セッション破棄で消えるので必要なら repo に移す）
 - **タダカヨの gcloud ユーザー認証が期限切れ**（2026-08-08 時点）。Firestore REST 直叩きの前に `gcloud auth login`（tadakayo 設定）を通す。ADC は 279 アカウント（y.tsukuda@279279.net）のままなので kjk-tadakayo には使えない
 
 ## 再開コマンド
