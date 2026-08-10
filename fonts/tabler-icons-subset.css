@@ -38,12 +38,15 @@
 .ti-headset:before { content: "\eb90"; }
 .ti-heart-handshake:before { content: "\f0f3"; }
 .ti-id-badge-2:before { content: "\f076"; }
+.ti-list-check:before { content: "\eb6a"; }
 .ti-list-details:before { content: "\ef40"; }
 .ti-lock:before { content: "\eae2"; }
 .ti-map-pin:before { content: "\eae8"; }
 .ti-message-2:before { content: "\eaec"; }
 .ti-message-circle:before { content: "\eaed"; }
 .ti-package:before { content: "\eaff"; }
+.ti-player-play:before { content: "\ed46"; }
+.ti-player-play-filled:before { content: "\f691"; }
 .ti-refresh:before { content: "\eb13"; }
 .ti-rosette:before { content: "\f599"; }
 .ti-school:before { content: "\ecf7"; }
