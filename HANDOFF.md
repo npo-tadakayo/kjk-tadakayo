@@ -1,4 +1,4 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM 申し送り — 2026-08-10
+# タダカヨの介護情報基盤伴走支援 LP / CRM 申し送り — 2026-08-11
 
 > handoff-id: tadakayo
 > サービス名: **タダカヨの介護情報基盤伴走支援**（サブ：タダサポ＋ シリーズ）
@@ -14,8 +14,37 @@
 - **過入金の充当・返金の記録は本番反映済み**（2026-08-08 の hosting デプロイで main ごと昇格。preview `undo-draft-0730` は役目終了）。
 - **請求4件（¥2,643,872）はすべて入金済・未集金 ¥0**。残るのは SH-2026-0001 の実過入金 **¥93**（請求 ¥88,919 に対し ¥89,012 入金）のみ＝次回請求で充当か放置で可。
 - Cloud Function `sendPartnerMail`（催促メール）は**本番作成済み**（gcfv2 / asia-northeast1）。
+- **経理への請求書発行報告（⑱・2026-08-11）は Functions とルールが本番／UIは preview 止まり**。下の「⑱」の残作業3点（Storage IAM・live昇格・設定画面への入力）が済むまで**現場は使えない**。
 
-## 今セッション（⑰・2026-08-08）でやったこと
+## 今セッション（⑱・2026-08-11）でやったこと
+
+**請求書を発行したら経理へ報告する機能**を実装（コミット `1e6ddcb` / push済み）。
+
+- 「請求済にする」→ **確認ダイアログ**。`経理へ報告する`（初期ON・**既報告済みならOFF**）で送信可否を選ぶ＝**再発行では送らない**運用。
+- 送ると ①経理スペースへ Chat カード投稿（請求先・金額・支払期限＋「請求書PDFを開く」「CRMで開く」）②経理担当へ**請求書PDF添付メール**。Chat本文に「〇〇さんにもメールを送信しました」。
+- **⚠️ Google Chat の Incoming Webhook はファイル添付不可**（添付の `media.upload` は**ユーザーOAuth認証のみ**対応でSA・Webhookは不可＝[公式ドキュメント](https://developers.google.com/workspace/chat/upload-media-attachments)で裏取り済み）。**この結論は蒸し返さない**。PDF本体はメール添付・ChatはStorageのPDFリンク（download token 付きURL）で代替した。
+- 設定（`accountingChatWebhookUrl` / `accountingEmail` / `accountingContactName` / `accountingEmailCc` / `invoiceMailSubject` / `invoiceMailBody`）は**すべて設定画面から変更可**。LP通知用の `chatWebhookUrl` とは**別スペース**。
+- 請求書描画を `admin/js/invoice-doc.js` に共通化（`po-doc.js` と同じ作法）。`supply-print.js` は委譲、`supply.js` は同じ関数でPDF生成。報告金額は一覧と同じ `billableIncl()` を正とする。
+- メール／Chatは**片方失敗でも他方を続行**し `warnings[]` を返す。報告漏れ・失敗は請求済の行の**「経理へ報告」**ボタンで後追い可（ステータスは変えない）。
+
+### デプロイ状況（⑱）
+
+| 対象 | 状態 |
+|---|---|
+| Function `reportInvoiceToAccounting` | ✅ **本番作成済み**（gcfv2 / asia-northeast1 / 256MB / nodejs20）。未認証POST→403「このアプリの利用権限がありません」で権限ゲート確認済み |
+| `storage.rules`（`invoices/**` 追加） | ✅ **本番反映済み**（compile OK・released） |
+| 管理画面UI | ⏳ **preview のみ** → https://kjk-tadakayo-admin--keiri-report-6ur5xcso.web.app （**expires 2026-08-18**）。curl で invoice-doc.js(200)・モーダル13要素・設定6項目・callable参照を確認済み |
+
+### ⑱の残作業（これが済むまで機能しない）
+
+1. **Storage 書き込み権限の付与**（gcloud が再認証待ちで Claude から実行できず）。`gcloud auth login` の後:
+   `gcloud storage buckets add-iam-policy-binding gs://kjk-tadakayo.firebasestorage.app --member=serviceAccount:fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/storage.objectAdmin --project=kjk-tadakayo`
+   未付与でも**メール添付は成功し、ChatのPDFリンクだけ欠ける**（`warnings[]` に出る）。
+2. **live 昇格**: `npx firebase-tools hosting:clone kjk-tadakayo-admin:keiri-report kjk-tadakayo-admin:live --account yoshinao-tsukuda@tadakayo.jp`
+3. **設定画面に入力**（Claudeはコードに書かない＝Webhook URLハードコード禁止）: 経理スペースの Chat Webhook URL を「設定」→「経理への請求書発行報告」に貼る。経理メールは `hidetoshi-tanaka@tadakayo.jp`・呼び名 `田中` が既定で入っている。
+4. **実機検証は未実施**（実際のChat投稿・メール送信は実在の田中さん宛になるため Claude 側では送っていない）。テスト用出荷1件で1回流して確認する。
+
+## 前セッション（⑰・2026-08-08）でやったこと
 
 - **入金・返金履歴の「取消」ボタンが押せない不具合を修正**（`b99c826`）: 履歴テーブルだけ `.table-wrap` 未適用でモーダル幅（560px）から備考列・取消列がはみ出していた。横スクロール化＋ボタンに「取消」文字ラベル追加。
 - `firebase deploy --only hosting:admin` で**本番へ直接デプロイ**（操作不能バグ＋誤データ滞留のため二段階手順を省略・curl で反映確認済み）。副産物として preview 止まりだった過入金充当・返金も本番化。
