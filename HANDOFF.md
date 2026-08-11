@@ -9,12 +9,12 @@
 ## 現在の状態
 
 - LP（https://kjk.tadakayo.jp）・CRM管理画面（https://kjk-tadakayo-admin.web.app）とも本番稼働中。**LPは2026-08-10 に動画セクション＋公開設定修正を live 反映済み**。
-- リポジトリは GitHub組織 `npo-tadakayo/kjk-tadakayo`。未コミット0・push済み（`8551710`）。
+- リポジトリは GitHub組織 `npo-tadakayo/kjk-tadakayo`。未コミット0・push済み（`dffbd8a` + 本申し送り更新）。
 - **CRMのメール送信元は `kjk-staff@tadakayo.jp`**（From: `タダカヨ事務局 <kjk-staff@tadakayo.jp>`）。変更はCRMの設定画面「メール送信元アドレス」から可（コード修正・デプロイ不要）。ただし**実在のメールボックスであること**が必須（委任はユーザーとして送る方式のためエイリアス不可）。
 - **過入金の充当・返金の記録は本番反映済み**（2026-08-08 の hosting デプロイで main ごと昇格。preview `undo-draft-0730` は役目終了）。
 - **請求4件（¥2,643,872）はすべて入金済・未集金 ¥0**。残るのは SH-2026-0001 の実過入金 **¥93**（請求 ¥88,919 に対し ¥89,012 入金）のみ＝次回請求で充当か放置で可。
 - Cloud Function `sendPartnerMail`（催促メール）は**本番作成済み**（gcfv2 / asia-northeast1）。
-- **経理への請求書発行報告（⑲・2026-08-11）は Functions とルールが本番／UIは preview 止まり**。下の「⑲」の残作業3点（Storage IAM・live昇格・設定画面への入力）が済むまで**現場は使えない**。
+- **経理への請求書発行報告（⑲・2026-08-11）は Functions・ルール・UI・設定すべて本番反映済み＝使える状態**。ただし**実際の送信検証は未実施**（本番送信が田中さんに届くため）。次回まず1件流して確認する。
 
 ## 今セッション（⑲・2026-08-11）でやったこと
 
@@ -27,22 +27,21 @@
 - 請求書描画を `admin/js/invoice-doc.js` に共通化（`po-doc.js` と同じ作法）。`supply-print.js` は委譲、`supply.js` は同じ関数でPDF生成。報告金額は一覧と同じ `billableIncl()` を正とする。
 - メール／Chatは**片方失敗でも他方を続行**し `warnings[]` を返す。報告漏れ・失敗は請求済の行の**「経理へ報告」**ボタンで後追い可（ステータスは変えない）。
 
-### デプロイ状況（⑲）
+### デプロイ状況（⑲）— **すべて本番反映済み・使える状態**
 
 | 対象 | 状態 |
 |---|---|
-| Function `reportInvoiceToAccounting` | ✅ **本番作成済み**（gcfv2 / asia-northeast1 / 256MB / nodejs20）。未認証POST→403「このアプリの利用権限がありません」で権限ゲート確認済み |
-| `storage.rules`（`invoices/**` 追加） | ✅ **本番反映済み**（compile OK・released） |
-| 管理画面UI | ⏳ **preview のみ** → https://kjk-tadakayo-admin--keiri-report-6ur5xcso.web.app （**expires 2026-08-18**）。curl で invoice-doc.js(200)・モーダル13要素・設定6項目・callable参照を確認済み |
+| Function `reportInvoiceToAccounting` | ✅ 本番稼働（gcfv2 / asia-northeast1 / 256MB / nodejs20）。未認証POST→403「このアプリの利用権限がありません」で権限ゲート確認済み |
+| `storage.rules`（`invoices/**` 追加） | ✅ 本番反映済み（compile OK・released） |
+| 管理画面UI | ✅ **live 反映済み**（preview `keiri-report` で検証 → 次田さんが `hosting:clone` で昇格）。live で `invoice-doc.js` 200・モーダル13/13要素・設定6/6項目・callable参照・`supply-print.js` の委譲を curl 確認 |
+| Storage 書き込み権限 | ✅ `fn-mail-sa` に `roles/storage.objectAdmin`（**もともと付与済みだった**＝追加付与は不要だった） |
+| 設定（`appConfig/settings`） | ✅ 入力済み（Firestore REST で確認）: Chat Webhook＝スペース `AAAA8jZ0ZJk`（形式OK・**LP通知用 `chatWebhookUrl` とは別スペース**）／`accountingEmail`=hidetoshi-tanaka@tadakayo.jp ／`accountingContactName`=`田中（ヒデスさん）` ／CC空 ／件名・本文テンプレ保存済み |
 
-### ⑲の残作業（これが済むまで機能しない）
+### ⑲で未確認のこと（次回の最初に確認する）
 
-1. **Storage 書き込み権限の付与**（gcloud が再認証待ちで Claude から実行できず）。`gcloud auth login` の後:
-   `gcloud storage buckets add-iam-policy-binding gs://kjk-tadakayo.firebasestorage.app --member=serviceAccount:fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/storage.objectAdmin --project=kjk-tadakayo`
-   未付与でも**メール添付は成功し、ChatのPDFリンクだけ欠ける**（`warnings[]` に出る）。
-2. **live 昇格**: `npx firebase-tools hosting:clone kjk-tadakayo-admin:keiri-report kjk-tadakayo-admin:live --account yoshinao-tsukuda@tadakayo.jp`
-3. **設定画面に入力**（Claudeはコードに書かない＝Webhook URLハードコード禁止）: 経理スペースの Chat Webhook URL を「設定」→「経理への請求書発行報告」に貼る。経理メールは `hidetoshi-tanaka@tadakayo.jp`・呼び名 `田中` が既定で入っている。
-4. **実機検証は未実施**（実際のChat投稿・メール送信は実在の田中さん宛になるため Claude 側では送っていない）。テスト用出荷1件で1回流して確認する。
+- **実機の送信検証はしていない**。実際のChat投稿・メール送信は**実在の田中さん宛の本番送信**になるため Claude 側では打っていない。テスト用出荷1件で1回流して、Chatカードの見え方・メールの添付・PDFリンクが開けるかを確認する。
+- **呼び名が `田中（ヒデスさん）`** なので、Chat本文は「**田中（ヒデスさん）さん**にもメールを送信しました」、メール宛名は「田中（ヒデスさん） さん」になる（「さん」は自動付与）。二重敬称が気になるなら設定画面で呼び名を短くする（保存だけ・デプロイ不要）。
+- 文面・カードの項目を直したくなった場合、**件名・本文は設定画面で変更可**。Chatカードの構造だけは `functions/index.js` の `invoiceChatMessage()` 修正＋Functions再デプロイが必要。
 
 ## 前セッション（⑰・2026-08-08）でやったこと
 
@@ -103,6 +102,7 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 
 ## 次回やること（優先順）
 
+00. **経理への請求書発行報告の実機検証（⑲の続き・所要5分）**: 発送済の出荷1件で「請求済にする」→ ダイアログで「経理へ報告する」ON → 送信。①経理スペースのChatカードが出るか ②「請求書PDFを開く」で実際にPDFが開けるか（Storage の download token URL）③田中さんのメールにPDFが添付されて届くか ④一覧が「経理へ報告済み MM/DD」になるか を確認。**練習だけなら「経理へ報告する」を外せば送信なしで請求済にできる**。呼び名 `田中（ヒデスさん）` の二重敬称が気になるなら設定画面で短くする。
 0. 🔴 **公開されていた個人情報の事後調査（次田さんと合意して次セッションへ持ち越し・2026-08-10）**
    - **検索エンジン・キャッシュへの残存確認**: `site:kjk.tadakayo.jp` で `admin-*.png` 等がインデックスされていないか。残っていれば Search Console から削除リクエスト（GA4/Clarity ではなく Search Console 側）
    - **実際に取得されたかの確認**: Hosting のアクセスログで `admin-*.png` / `*.docx` / `*.csv` へのリクエスト有無を見る（Cloud Logging の `requests` か、Hosting の使用状況）。7/2〜8/10 が対象期間
