@@ -14,9 +14,9 @@
 - **過入金の充当・返金の記録は本番反映済み**（2026-08-08 の hosting デプロイで main ごと昇格。preview `undo-draft-0730` は役目終了）。
 - **請求4件（¥2,643,872）はすべて入金済・未集金 ¥0**。残るのは SH-2026-0001 の実過入金 **¥93**（請求 ¥88,919 に対し ¥89,012 入金）のみ＝次回請求で充当か放置で可。
 - Cloud Function `sendPartnerMail`（催促メール）は**本番作成済み**（gcfv2 / asia-northeast1）。
-- **経理への請求書発行報告（⑱・2026-08-11）は Functions とルールが本番／UIは preview 止まり**。下の「⑱」の残作業3点（Storage IAM・live昇格・設定画面への入力）が済むまで**現場は使えない**。
+- **経理への請求書発行報告（⑲・2026-08-11）は Functions とルールが本番／UIは preview 止まり**。下の「⑲」の残作業3点（Storage IAM・live昇格・設定画面への入力）が済むまで**現場は使えない**。
 
-## 今セッション（⑱・2026-08-11）でやったこと
+## 今セッション（⑲・2026-08-11）でやったこと
 
 **請求書を発行したら経理へ報告する機能**を実装（コミット `1e6ddcb` / push済み）。
 
@@ -27,7 +27,7 @@
 - 請求書描画を `admin/js/invoice-doc.js` に共通化（`po-doc.js` と同じ作法）。`supply-print.js` は委譲、`supply.js` は同じ関数でPDF生成。報告金額は一覧と同じ `billableIncl()` を正とする。
 - メール／Chatは**片方失敗でも他方を続行**し `warnings[]` を返す。報告漏れ・失敗は請求済の行の**「経理へ報告」**ボタンで後追い可（ステータスは変えない）。
 
-### デプロイ状況（⑱）
+### デプロイ状況（⑲）
 
 | 対象 | 状態 |
 |---|---|
@@ -35,7 +35,7 @@
 | `storage.rules`（`invoices/**` 追加） | ✅ **本番反映済み**（compile OK・released） |
 | 管理画面UI | ⏳ **preview のみ** → https://kjk-tadakayo-admin--keiri-report-6ur5xcso.web.app （**expires 2026-08-18**）。curl で invoice-doc.js(200)・モーダル13要素・設定6項目・callable参照を確認済み |
 
-### ⑱の残作業（これが済むまで機能しない）
+### ⑲の残作業（これが済むまで機能しない）
 
 1. **Storage 書き込み権限の付与**（gcloud が再認証待ちで Claude から実行できず）。`gcloud auth login` の後:
    `gcloud storage buckets add-iam-policy-binding gs://kjk-tadakayo.firebasestorage.app --member=serviceAccount:fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/storage.objectAdmin --project=kjk-tadakayo`
@@ -92,7 +92,7 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 
 構文チェック＋id存在チェック（各デプロイ前）／期限計算8ケース（年末越え・月末・上書き・日付不明）／入金・返金・充当の通し4シナリオ（分割入金・二重入金→返金・一部返金＋充当・全額返金で未集金へ復帰）／preview 配信10項目＋本番配信10項目を curl 検証。すべて合格。
 
-## 今セッション（⑱・2026-08-10）でやったこと
+## 前セッション（⑱・2026-08-10）でやったこと
 
 - **LPに動画セクション `#movie` を追加**（`b8fdffd`・**本番反映済み**）: YouTube「【5分でわかる】ケアプーが介護情報基盤にお引っ越し！？」（4:18・自社チャンネル・8/3公開）を「2026年4月から変わったこと」の直後に掲載。クリックするまでYouTubeへ通信しない click-to-play（サムネは自己ホスト `images/movie_kjk_2027.webp`・再生時のみ youtube-nocookie）。見どころ4点＋チャプター送り（1:30/1:57/3:04/3:25）＋出典・8/26説明会の注記。WHYからの導線・FAQ9件目・構造化データ VideoObject も追加
 - 🔴 **本番LPから内部ファイルが公開されていたのを発見・修正**（`3ae3185`・**本番反映済み＝公開停止**）: `admin-*.png` 10件（実在の事業所名・担当者名・携帯番号・メールが写った管理画面スクショ）・パートナーシップ協定書ドラフト.docx・有償事業化企画書.docx・料金シミュレーション等のPDF・商品マスタ.csv・発注テンプレート.csv・firestore.rules・.DS_Store が 200 で取得できた。原因は hosting lp の `public` が `.`（リポジトリ直下）で、.gitignore 済みのファイルもデプロイされていたこと。firebase.json の ignore に追記
