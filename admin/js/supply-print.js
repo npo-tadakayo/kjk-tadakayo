@@ -3,6 +3,7 @@ import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { renderPOHtml } from "/js/po-doc.js";
+import { renderInvoiceHtml } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -84,65 +85,8 @@ function renderLetterpack(s, sender, variant){
     <p style="font-size:11px;color:var(--muted);margin-top:14px">※ ラベルサイズは実物のレターパック宛名欄に合わせています。上部で種別（赤/青）と差出人を切り替えできます。差出人は「設定」で登録します。</p>`;
 }
 
-// 請求書（見積書の赤系を踏襲・認定事業所向け／卸価格・税別→税込）
-function renderInvoice(s, st){
-  st = st || {};
-  const items=s.items||[];
-  const goodsExcl=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
-  // 送料は税抜で保存する（2026-07-28 統一。発注側の送料欄が元から「税別」だったのに揃えた）
-  const shipExcl=Number(s.shippingFee)||0;
-  const shipFeeIncl=shipExcl; // 明細行を出すかの判定に使う
-  const sub=goodsExcl+shipExcl;
-  const tax=Math.floor(sub*0.1); const total=sub+tax;
-  // 過入金の充当（前回多くお振込みいただいた分を今回の請求から差し引く。税込金額に対する充当）
-  const credit=Math.min(Number(s.creditApplied)||0, total);
-  const payable=total-credit;
-  const creditFrom=(Array.isArray(s.creditFrom)?s.creditFrom:[]).map(c=>c.soNumber).filter(Boolean).join("・");
-  const invNo=(s.soNumber||"").replace(/^SH/,"INV");
-  const billName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
-  const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
-  const regNo = st.invoiceRegNo || "";
-  const regLine = regNo
-    ? `登録番号: <strong>${esc(regNo)}</strong>`
-    : `<span style="color:#b84a4a">登録番号: 未登録（設定で登録してください）</span>`;
-  // お振込先（設定 appConfig/settings.billing* / 未設定なら従来の案内文言）
-  const bankName=st.billingBankName||"", branch=st.billingBranchName||"", acctType=st.billingAccountType||"普通", acctNo=st.billingAccountNumber||"", acctHolder=st.billingAccountHolder||"";
-  const hasBank = bankName && acctNo;
-  const payInner = hasBank
-    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div><div style="font-size:12px;color:var(--muted);margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
-    : `<div style="font-size:12px;color:var(--muted)">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
-  // 適格請求書: 各明細に適用税率を表示
-  const rows2=items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
-    + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipExcl)}</td><td class="num">${yen(shipExcl)}</td></tr>` : "");
-  return `
-    <div class="inv">
-      <div class="doc-head"><div></div>
-        <div class="issuer-wrap">
-          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${today}</div>
-          <img class="seal-kaku-img" src="${st.poSealImage || "/images/seal-tadakayo.png"}" alt="タダカヨの角印">
-        </div></div>
-      <h1 class="inv-title">請　求　書</h1>
-      <div class="to">${esc(billName)} 御中</div>
-      <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
-      <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
-      <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>
-      <div class="grand">${credit>0?"今回お支払額（税込・充当後）":"ご請求金額（税込）"}　<strong>${yen(payable)}</strong></div>
-      <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(税抜)</th><th style="width:116px">金額(税抜)</th></tr></thead>
-        <tbody>${rows2}</tbody></table>
-      <table class="po-sum" style="margin-top:10px"><tbody>
-        <tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
-        <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>
-        <tr${credit>0?"":' class="grand"'}><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
-        ${credit>0?`<tr><td class="lbl">前回お預かり分の充当${creditFrom?`（${esc(creditFrom)} の過入金）`:""}</td><td class="num">−${yen(credit)}</td></tr>
-        <tr class="grand"><td class="lbl">今回お支払額（税込）</td><td class="num"><strong>${yen(payable)}</strong></td></tr>`:""}
-      </tbody></table>
-      <div class="pay">
-        <div style="font-weight:700;margin-bottom:4px">お振込先</div>
-        ${payInner}
-      </div>
-      <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
-    </div>`;
-}
+// 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
+function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: today }); }
 
 // 領収書（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。

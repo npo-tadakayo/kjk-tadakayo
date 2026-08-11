@@ -3,6 +3,11 @@ import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
+
+// 経理報告の既定値（未設定のときの初期表示）
+const DEFAULT_ACCOUNTING_EMAIL = "hidetoshi-tanaka@tadakayo.jp";
+const DEFAULT_ACCOUNTING_NAME = "田中";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -140,6 +145,13 @@ onAuthStateChanged(auth, async (user)=>{
   $("billingAccountType").value = s.billingAccountType || "普通";
   $("billingAccountNumber").value = s.billingAccountNumber || "";
   $("billingAccountHolder").value = s.billingAccountHolder || "";
+  // 経理への請求書発行報告（Chat Webhook はファイル添付不可のため、Chatにはリンク／メールにPDF添付）
+  $("accountingChatWebhookUrl").value = s.accountingChatWebhookUrl || "";
+  $("accountingEmail").value = s.accountingEmail || DEFAULT_ACCOUNTING_EMAIL;
+  $("accountingContactName").value = s.accountingContactName || DEFAULT_ACCOUNTING_NAME;
+  $("accountingEmailCc").value = s.accountingEmailCc || "";
+  $("invoiceMailSubject").value = s.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT;
+  $("invoiceMailBody").value = s.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY;
   $("loadingEl").style.display = "none";
   $("form").style.display = "block";
 
@@ -173,6 +185,12 @@ onAuthStateChanged(auth, async (user)=>{
         billingAccountType: $("billingAccountType").value,
         billingAccountNumber: $("billingAccountNumber").value.trim(),
         billingAccountHolder: $("billingAccountHolder").value.trim(),
+        accountingChatWebhookUrl: $("accountingChatWebhookUrl").value.trim(),
+        accountingEmail: $("accountingEmail").value.trim(),
+        accountingContactName: $("accountingContactName").value.trim(),
+        accountingEmailCc: $("accountingEmailCc").value.trim(),
+        invoiceMailSubject: $("invoiceMailSubject").value.trim(),
+        invoiceMailBody: $("invoiceMailBody").value,
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";

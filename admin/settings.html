@@ -111,6 +111,27 @@
             </div>
             <div class="form-group"><label class="form-label" for="billingAccountHolder">口座名義</label><input class="form-control" id="billingAccountHolder" type="text" placeholder="トクヒ）タダカヨ"></div>
           </div>
+          <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">経理への請求書発行報告</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">出荷を「請求済にする」とき、確認ダイアログで「経理へ報告する」を選ぶと、下記のChatスペースへ報告を投稿し、経理担当へ請求書PDFを添付したメールを送ります。<strong>Google Chatの Webhook はファイルを添付できない仕様</strong>のため、Chatには請求書PDFへのリンクを載せます。</p>
+            <div class="form-group">
+              <label class="form-label" for="accountingChatWebhookUrl">経理スペースの Google Chat Webhook URL</label>
+              <input class="form-control" id="accountingChatWebhookUrl" type="text" placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...">
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">上の「通知・送信の設定」のWebhook（LP問い合わせ用）とは<strong>別のスペース</strong>です。空欄にすると Chat への投稿は行いません（メールのみ）。変更は即時反映（最大60秒）。</p>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="accountingEmail">経理担当のメールアドレス</label><input class="form-control" id="accountingEmail" type="email" placeholder="hidetoshi-tanaka@tadakayo.jp"></div>
+              <div class="form-group"><label class="form-label" for="accountingContactName">経理担当の呼び名</label><input class="form-control" id="accountingContactName" type="text" placeholder="田中"></div>
+            </div>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 10px">呼び名は Chat の報告文「<strong>田中さんにもメールを送信しました</strong>」とメール本文の宛名に使われます（「さん」は自動で付きます）。メールアドレスを空欄にするとメール送信は行いません（Chatのみ）。</p>
+            <div class="form-group"><label class="form-label" for="accountingEmailCc">メールのCC（任意・カンマ区切り）</label><input class="form-control" id="accountingEmailCc" type="text" placeholder="kjk-staff@tadakayo.jp"></div>
+            <div class="form-group"><label class="form-label" for="invoiceMailSubject">報告メールの件名</label><input class="form-control" id="invoiceMailSubject" type="text"></div>
+            <div class="form-group">
+              <label class="form-label" for="invoiceMailBody">報告メールの本文</label>
+              <textarea class="form-control" id="invoiceMailBody" rows="14"></textarea>
+              <p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">差し込み: <code>{{経理担当}}</code> <code>{{請求書番号}}</code> <code>{{請求先}}</code> <code>{{納品先}}</code> <code>{{請求金額}}</code> <code>{{支払期限}}</code> <code>{{出荷番号}}</code> <code>{{出荷日}}</code>（送信前にダイアログで修正できます）</p>
+            </div>
+          </div>
           <div id="saveStatus" style="font-size:13px;margin-bottom:8px"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
             <button class="btn btn-secondary" id="testBtn" type="button"><i class="ti ti-bell" aria-hidden="true"></i> Chatにテスト通知</button>

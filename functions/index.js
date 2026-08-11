@@ -701,6 +701,199 @@ exports.sendPartnerMail = onCall(
   }
 );
 
+// ===== 経理への請求書発行報告（2026-08-11 追加）=====
+// 請求書を発行（出荷を「請求済にする」）したとき、経理へ Chat + メールで報告する。
+// ⚠️ Google Chat の Incoming Webhook は仕様上ファイルを添付できない
+//   （添付アップロード media.upload はユーザーOAuth認証のみ対応・SAもWebhookも不可）ため、
+//   PDF本体はメールに添付し、Chat には Storage 上のPDFへのリンクを載せる。
+const CRM_BASE_URL = "https://kjk-tadakayo-admin.web.app";
+const INVOICE_BUCKET = `${VERTEX_PROJECT}.firebasestorage.app`;
+
+// 請求書PDFを Storage に保存し、恒久ダウンロードURL（Firebaseのdownload token方式）を返す。
+// token は推測不可のUUID。漏れた場合は shipments.invoicePdfPath のオブジェクトのメタデータを差し替えれば無効化できる。
+async function saveInvoicePdf(shipmentId, filename, pdfBase64) {
+  const token = require("crypto").randomUUID();
+  const path = `invoices/${shipmentId}/${filename}`;
+  const file = admin.storage().bucket(INVOICE_BUCKET).file(path);
+  await file.save(Buffer.from(pdfBase64, "base64"), {
+    resumable: false,
+    metadata: {
+      contentType: "application/pdf",
+      metadata: { firebaseStorageDownloadTokens: token },
+    },
+  });
+  const url = `https://firebasestorage.googleapis.com/v0/b/${INVOICE_BUCKET}`
+    + `/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
+  return { path, url };
+}
+
+// 経理スペースへ投稿するカード。cardsV2 は Webhook でも使える（添付だけが不可）
+function invoiceChatMessage(d) {
+  const rows = [
+    ["ti", "請求先", d.billName],
+    ["ti", "納品先", d.deliverTo],
+    ["ti", "請求金額（税込）", d.amountText],
+    ["ti", "支払期限", d.dueDate || "（未設定）"],
+    ["ti", "対応出荷", d.soNumber ? `${d.soNumber}${d.shipDate ? `（${d.shipDate}）` : ""}` : ""],
+  ].filter((r) => r[2]);
+  const buttons = [];
+  if (d.pdfUrl) buttons.push({ text: "請求書PDFを開く", onClick: { openLink: { url: d.pdfUrl } } });
+  buttons.push({ text: "CRMで開く", onClick: { openLink: { url: `${CRM_BASE_URL}/supply-print.html?type=invoice&id=${d.shipmentId}` } } });
+  // メール送信の有無を報告文に明記（「田中さんにもメールを送信しました」）
+  const mailNote = d.mailedToName
+    ? `${d.mailedToName}さんにもメールを送信しました（請求書PDFを添付）。`
+    : "※ 経理担当のメールアドレスが未設定のため、メールは送信していません。";
+  const notes = [mailNote];
+  if (!d.pdfUrl) notes.push("※ 請求書PDFの保存に失敗したため、リンクは付いていません。");
+  return {
+    // 通知・一覧で意味が分かるようテキストも併記する
+    text: `🧾 請求書を発行しました — ${d.billName}（${d.invNo}／${d.amountText}）`,
+    cardsV2: [{
+      cardId: `invoice-${d.shipmentId}`,
+      card: {
+        header: {
+          title: "請求書を発行しました",
+          subtitle: `${d.invNo}　発行者: ${d.issuedBy}`,
+        },
+        sections: [
+          {
+            widgets: rows.map(([, label, value]) => ({
+              decoratedText: { topLabel: label, text: String(value) },
+            })),
+          },
+          { widgets: [{ buttonList: { buttons } }] },
+          { widgets: notes.map((t) => ({ textParagraph: { text: t } })) },
+        ],
+      },
+    }],
+  };
+}
+
+async function postChatCard(webhookUrl, message) {
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(message),
+  });
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Chat投稿に失敗しました（${res.status}）: ${t.slice(0, 200)}`);
+  }
+}
+
+exports.reportInvoiceToAccounting = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    const {
+      shipmentId, pdfBase64, filename, subject, body,
+      invNo, billName, deliverTo, amountText, dueDate, soNumber, shipDate,
+    } = request.data || {};
+    if (!shipmentId) throw new HttpsError("invalid-argument", "出荷IDは必須です");
+    if (!pdfBase64) throw new HttpsError("invalid-argument", "請求書PDFの生成に失敗しています");
+    if (!subject || !body) throw new HttpsError("invalid-argument", "件名・本文は必須です");
+
+    const st = await getSettings();
+    const webhookUrl = st.accountingChatWebhookUrl || "";
+    const to = (st.accountingEmail || "").trim();
+    const cc = (st.accountingEmailCc || "").trim();
+    const contactName = (st.accountingContactName || "").trim();
+    if (!webhookUrl && !to) {
+      throw new HttpsError("failed-precondition",
+        "経理への報告先が未設定です。「設定」画面で Chat Webhook URL または経理のメールアドレスを登録してください");
+    }
+    if (to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new HttpsError("invalid-argument", "設定の経理メールアドレスの形式が不正です");
+    }
+
+    const pdfName = filename || `${invNo || shipmentId}.pdf`;
+    const result = { ok: true, mailed: false, posted: false, pdfUrl: "", warnings: [] };
+
+    // 1) PDFをStorageへ（失敗してもメール添付は成立するので処理は続ける）
+    let saved = null;
+    try {
+      saved = await saveInvoicePdf(shipmentId, pdfName, pdfBase64);
+      result.pdfUrl = saved.url;
+    } catch (e) {
+      console.error("saveInvoicePdf failed:", e);
+      result.warnings.push(`請求書PDFの保存に失敗しました（Chatのリンクは省略されます）: ${e.message}`);
+    }
+
+    // 2) 経理へPDF添付メール
+    if (to) {
+      try {
+        const sender = st.gmailSender || GMAIL_SENDER;
+        const token = await gmailAccessToken(sender);
+        const raw = buildRawMessage({
+          to, cc, subject, body, sender,
+          attachments: [{ filename: pdfName, mimeType: "application/pdf", contentBase64: pdfBase64 }],
+        });
+        const res = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
+          { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ raw }) }
+        );
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`Gmail送信に失敗しました（${res.status}）: ${t.slice(0, 200)}`);
+        }
+        result.mailed = true;
+      } catch (e) {
+        console.error("reportInvoiceToAccounting mail failed:", e);
+        result.warnings.push(`経理へのメール送信に失敗しました: ${e.message}`);
+      }
+    }
+
+    // 3) 経理スペースへChat投稿（メールを送れた場合だけ「メールも送りました」と書く）
+    if (webhookUrl) {
+      try {
+        await postChatCard(webhookUrl, invoiceChatMessage({
+          shipmentId, invNo: invNo || shipmentId, billName: billName || "（請求先未設定）",
+          deliverTo: deliverTo || "", amountText: amountText || "", dueDate: dueDate || "",
+          soNumber: soNumber || "", shipDate: shipDate || "",
+          issuedBy: email,
+          mailedToName: result.mailed ? (contactName || to) : "",
+          pdfUrl: result.pdfUrl,
+        }));
+        result.posted = true;
+      } catch (e) {
+        console.error("reportInvoiceToAccounting chat failed:", e);
+        result.warnings.push(`Chatへの投稿に失敗しました: ${e.message}`);
+      }
+    }
+
+    if (!result.mailed && !result.posted) {
+      throw new HttpsError("internal", `経理への報告がすべて失敗しました。${result.warnings.join(" / ")}`);
+    }
+
+    // 4) 出荷に報告履歴を記録（再発行時に「報告済み」と分かるようにする）
+    try {
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const day = new Date().toISOString().slice(0, 10);
+      const update = {
+        accountingReportedAt: day,
+        accountingReportedBy: email,
+        accountingReportCount: admin.firestore.FieldValue.increment(1),
+        accountingReportLog: admin.firestore.FieldValue.arrayUnion({
+          reportedAt: day, reportedBy: email, mailed: result.mailed, mailedTo: result.mailed ? to : "",
+          posted: result.posted, invNo: invNo || "", amountText: amountText || "",
+        }),
+        updatedAt: now,
+      };
+      if (saved) { update.invoicePdfUrl = saved.url; update.invoicePdfPath = saved.path; }
+      await db.collection("shipments").doc(shipmentId).update(update);
+    } catch (e) {
+      console.error("reportInvoiceToAccounting record failed:", e);
+      result.warnings.push(`報告履歴の記録に失敗しました: ${e.message}`);
+    }
+
+    return result;
+  }
+);
+
 // ===== LP アクセス解析（GA4 + Search Console 日次収集） =====
 // 実装は ./analytics.js（このファイルを肥大化させないため分離）
 const analytics = require("./analytics");

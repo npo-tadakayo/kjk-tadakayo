@@ -7,6 +7,8 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, 
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
+import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf,
+  DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
 
@@ -16,6 +18,7 @@ const db = getFirestore(app);
 const functions = getFunctions(app, "asia-northeast1");
 const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
 const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
+const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
 
 let products = [];
 let currentUser = null;
@@ -640,14 +643,20 @@ function renderShipments(ships){
       payInfo = (remain>0
         ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(remain)}${netPaid(s)>0?`（入金済 ${yen(netPaid(s))}）`:""}</div>${dueTxt?`<div style="font-size:12px;color:var(--color-ink-muted)">${dueTxt}</div>`:""}`
         : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(netPaid(s))}${s.paidAt?`（${esc(s.paidAt)}）`:""}</div>`)
-        + payCount + refTxt + creditTxt + balTxt + usedTxt;
+        + payCount + refTxt + creditTxt + balTxt + usedTxt
+        // 経理への請求書発行報告（未報告なら気づけるように出す）
+        + (s.accountingReportedAt
+            ? `<div style="font-size:12px;color:var(--color-ink-muted)">経理へ報告済み ${esc(String(s.accountingReportedAt).slice(5))}</div>`
+            : `<div style="font-size:12px;color:var(--color-warn,#c87a1f)">経理へ未報告</div>`);
     }
     let lifeBtns="";
     if(st==="draft") lifeBtns=`<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>出荷を確定</button>`;
     else if(st==="shipped") lifeBtns=`<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`;
     else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`
       + (creditBalanceForBillTo(s)>0?`<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`:"")
-      + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メール${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"");
+      + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メール${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
+      // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
+      + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告</button>`);
     else if(st==="paid") lifeBtns=`<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金履歴</button>`;
     return `<tr>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
@@ -670,15 +679,13 @@ function renderShipments(ships){
   document.querySelectorAll(".confirm-draft-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) confirmDraftShipment(s);
   }));
-  document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",async()=>{
-    const s=ships.find(x=>x._id===b.dataset.id);
-    await updateDoc(doc(db,"shipments",b.dataset.id),{status:"invoiced",invoicedAt:today(),updatedAt:serverTimestamp()});
-    toast("請求済にしました");
-    // 同じ請求先に未充当の過入金があれば、その場で「次回の請求から引く」を提案する
-    if(s){
-      const cur={...s, status:"invoiced", invoicedAt:today()};
-      if(creditBalanceForBillTo(cur)>0) applyOverpayCredit(cur);
-    }
+  // 請求済にする → 確認ダイアログ（経理への報告を送るか選ぶ）。過入金の充当提案はダイアログ側で行う
+  document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openInvoiceReport(s);
+  }));
+  // すでに請求済のものを後から経理へ報告する（ステータスは変えない）
+  document.querySelectorAll(".report-acct").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openInvoiceReport(s,{reportOnly:true});
   }));
   document.querySelectorAll(".mark-paid").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) recordPayment(s);
@@ -973,6 +980,148 @@ async function sendDunning(){
     toast(`${s.soNumber} の催促メールを送信しました`);
   }catch(e){ err.textContent=`送信に失敗: ${e.message||e}`; err.style.display="block"; }
   finally{ btn.disabled=false; btn.innerHTML=orig; }
+}
+
+// ===== 請求済にする＋経理へ請求書発行を報告（2026-08-11 追加）=====
+// Google Chat の Webhook はファイルを添付できない仕様のため、PDFはメールに添付し Chat にはリンクを載せる。
+// 「経理へ報告する」を外せば報告なしで請求済にできる（再発行のときはこちら）。
+let invReportShip = null;
+let invReportOnly = false; // true = すでに請求済のものを後から報告する（ステータスは変えない）
+async function openInvoiceReport(s, opts){
+  invReportShip = s;
+  invReportOnly = !!(opts && opts.reportOnly);
+  let st = {};
+  try{ const ss=await getDoc(doc(db,"appConfig","settings")); st=ss.exists()?ss.data():{}; }catch(_){}
+  const invNo = invoiceNoOf(s);
+  // 金額は一覧と同じ billableIncl（＝税込合計−過入金の充当）を使う。
+  // invoice-doc.js の invoiceTotals().payable と同値だが、一覧表示とズレないよう supply.js 側の関数を正とする
+  const amountText = yen(billableIncl(s));
+  // 請求月: 新規はこれから請求済にするので当日。後追い報告は既存の請求日を使う（請求書の記載とズレないように）
+  const invoicedAt = invReportOnly ? (s.invoicedAt || today()) : today();
+  // 支払期限は請求書の記載（請求月の翌月末）と一致させる
+  const due = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+  const deliverTo = [s.company, s.officeName].filter(Boolean).join(" / ");
+  const contactName = (st.accountingContactName || "").trim();
+  const acctEmail = (st.accountingEmail || "").trim();
+  const webhook = (st.accountingChatWebhookUrl || "").trim();
+
+  const fill=(t)=>String(t||"")
+    .split("{{経理担当}}").join(contactName || "経理ご担当")
+    .split("{{請求書番号}}").join(invNo)
+    .split("{{請求先}}").join(billToOf(s))
+    .split("{{納品先}}").join(deliverTo)
+    .split("{{請求金額}}").join(amountText)
+    .split("{{支払期限}}").join(due || "（未設定）")
+    .split("{{出荷番号}}").join(s.soNumber||"")
+    .split("{{出荷日}}").join(s.shipDate||"");
+
+  document.getElementById("invReportTitle").textContent = invReportOnly
+    ? `経理へ報告（${s.soNumber}）` : `請求済にする（${s.soNumber}）`;
+  document.getElementById("invReportSummary").innerHTML =
+    `<div><strong>請求書番号</strong>　${esc(invNo)}</div>`
+    + `<div><strong>請求先</strong>　${esc(billToOf(s))}</div>`
+    + (deliverTo?`<div><strong>納品先</strong>　${esc(deliverTo)}</div>`:"")
+    + `<div><strong>請求金額（税込）</strong>　${esc(amountText)}</div>`
+    + `<div><strong>支払期限</strong>　${esc(due||"（未設定）")}</div>`
+    + (s.accountingReportedAt
+        ? `<div style="color:var(--color-warn,#c87a1f);margin-top:4px"><i class="ti ti-alert-triangle"></i> この出荷は ${esc(s.accountingReportedAt)} に経理へ報告済みです（再発行ならチェックを外してください）</div>`
+        : "");
+
+  // 報告先の表示（未設定なら設定画面へ促す）
+  const destParts = [];
+  if(webhook) destParts.push("経理スペースへChat投稿"); else destParts.push("Chat未設定（投稿しません）");
+  if(acctEmail) destParts.push(`${acctEmail} へPDF添付メール${contactName?`（${contactName}さん）`:""}`);
+  else destParts.push("経理メール未設定（送信しません）");
+  const ready = !!(webhook || acctEmail);
+  document.getElementById("invReportDest").innerHTML = ready
+    ? esc(destParts.join(" ／ "))
+    : `<span style="color:var(--color-danger)">報告先が未設定です。「設定」画面の「経理への請求書発行報告」で登録してください</span>`;
+
+  const cb = document.getElementById("invReportSend");
+  // 再発行（すでに報告済み）と報告先未設定のときは既定OFF。それ以外はON
+  // 後追い報告は「報告する」以外の用がないので常にON・チェックボックス自体を隠す
+  cb.checked = ready && (invReportOnly || !s.accountingReportedAt);
+  cb.disabled = !ready;
+  // 報告先が未設定のときは後追い報告でも表示する（理由がわからないと直せないため）
+  cb.closest("label").style.display = (invReportOnly && ready) ? "none" : "flex";
+  document.getElementById("invReportSubject").value = fill(st.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT);
+  document.getElementById("invReportBody").value = fill(st.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY);
+  // PDF生成の対象。請求書の発行日は請求済にする当日＝請求書PDFの記載と支払期限を揃える
+  document.getElementById("invReportPreview").innerHTML =
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt }, st);
+  document.getElementById("invReportError").style.display="none";
+  syncInvReportFields();
+  document.getElementById("invReportModal").classList.add("open");
+}
+// 「経理へ報告する」のON/OFFで、メール件名・本文・プレビューの表示とボタン名を切り替える
+function syncInvReportFields(){
+  const on = document.getElementById("invReportSend").checked;
+  document.getElementById("invReportFields").style.display = on ? "block" : "none";
+  document.getElementById("doInvReportBtn").innerHTML = invReportOnly
+    ? '<i class="ti ti-send" aria-hidden="true"></i>経理へ報告する'
+    : (on ? '<i class="ti ti-send" aria-hidden="true"></i>請求済にして報告'
+          : '<i class="ti ti-check" aria-hidden="true"></i>請求済にする（報告なし）');
+}
+async function doInvoiceReport(){
+  const s = invReportShip; if(!s) return;
+  const send = document.getElementById("invReportSend").checked;
+  const subject = document.getElementById("invReportSubject").value.trim();
+  const body = document.getElementById("invReportBody").value;
+  const err = document.getElementById("invReportError"); err.style.display="none";
+  if(send && (!subject || !body.trim())){ err.textContent="件名・本文は必須です"; err.style.display="block"; return; }
+  if(invReportOnly && !send){ err.textContent="報告先が未設定です。「設定」画面で登録してください"; err.style.display="block"; return; }
+  const btn = document.getElementById("doInvReportBtn"); const orig = btn.innerHTML;
+  btn.disabled = true;
+  try{
+    // 1) まず請求済にする（報告が失敗しても請求済の記録は残す）。後追い報告のときは状態を変えない
+    let cur;
+    if(invReportOnly){
+      cur = { ...s };
+    }else{
+      btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 請求済にしています...';
+      const invoicedAt = today();
+      await updateDoc(doc(db,"shipments",s._id),{ status:"invoiced", invoicedAt, updatedAt:serverTimestamp() });
+      cur = { ...s, status:"invoiced", invoicedAt };
+    }
+
+    // 2) 経理へ報告（PDFはブラウザで生成 → 関数がStorage保存・メール添付・Chat投稿）
+    let warn = [];
+    if(send){
+      btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 請求書PDFを作成中...';
+      const el = document.querySelector("#invReportPreview .inv");
+      if(!el) throw new Error("請求書プレビューが見つかりません");
+      const invNo = invoiceNoOf(s);
+      const filename = `${invNo}.pdf`;
+      const opt = { margin:[10,8,10,8], filename, image:{type:"jpeg",quality:0.95},
+        html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"} };
+      const dataUri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
+      const pdfBase64 = String(dataUri).split(",")[1] || "";
+      btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 経理へ報告中...';
+      const res = await reportInvoiceFn({
+        shipmentId: s._id, pdfBase64, filename, subject, body,
+        invNo, billName: billToOf(s),
+        deliverTo: [s.company, s.officeName].filter(Boolean).join(" / "),
+        amountText: yen(billableIncl(s)),
+        dueDate: dueDateOf(cur) || "",
+        soNumber: s.soNumber || "", shipDate: s.shipDate || "",
+      });
+      warn = (res && res.data && res.data.warnings) || [];
+    }
+
+    document.getElementById("invReportModal").classList.remove("open");
+    const wasReportOnly = invReportOnly;
+    invReportShip = null;
+    if(warn.length) toast(`経理への報告に一部失敗しました: ${warn[0]}`);
+    else if(wasReportOnly) toast("経理へ報告しました");
+    else if(send) toast("請求済にして経理へ報告しました");
+    else toast("請求済にしました（経理への報告なし）");
+    if(warn.length) console.warn("経理報告の警告:", warn);
+
+    // 3) 同じ請求先に未充当の過入金があれば、その場で「次回の請求から引く」を提案する（従来の挙動を維持）
+    if(!wasReportOnly && creditBalanceForBillTo(cur)>0) applyOverpayCredit(cur);
+  }catch(e){
+    err.textContent = `失敗: ${e.message||e}`; err.style.display="block";
+  }finally{ btn.disabled=false; btn.innerHTML=orig; }
 }
 
 // ===== 受注（認定事業所から）=====
@@ -1360,6 +1509,11 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("savePayBtn").addEventListener("click",addPayment);
   document.getElementById("applyCreditBtn").addEventListener("click",()=>{ if(payingShip) applyOverpayCredit(payingShip); });
   document.getElementById("saveRefundBtn").addEventListener("click",addRefund);
+  // 請求済にする＋経理へ報告モーダル
+  document.getElementById("closeInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
+  document.getElementById("cancelInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
+  document.getElementById("invReportSend").addEventListener("change",syncInvReportFields);
+  document.getElementById("doInvReportBtn").addEventListener("click",doInvoiceReport);
   // 催促メールモーダル
   document.getElementById("closeDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
   document.getElementById("cancelDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
