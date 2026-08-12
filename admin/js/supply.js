@@ -574,6 +574,15 @@ function creditSourcesFor(s){
     .sort((a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")));
 }
 function creditBalanceForBillTo(s){ return creditSourcesFor(s).reduce((a,x)=>a+creditBalanceOf(x),0); }
+// 別請求先（グループ会社など）の未充当の過入金（2026-08-12 追加）。
+// 自動では絶対に跨がない。充当モーダルで「どの過入金を回すか」を人が選んだときだけ使う。
+function crossCreditSourcesFor(s){
+  const key=billToKey(s);
+  return shipments
+    .filter(x=>x._id!==s._id && x.status!=="canceled" && billToKey(x)!==key && creditBalanceOf(x)>0)
+    .sort((a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")));
+}
+function crossCreditBalanceFor(s){ return crossCreditSourcesFor(s).reduce((a,x)=>a+creditBalanceOf(x),0); }
 // 支払期限＝請求月の翌月末（請求書の記載と同じ）。shipments.dueDate があればそれを優先
 function dueDateOf(s){
   if(s.dueDate) return s.dueDate;
@@ -653,7 +662,12 @@ function renderShipments(ships){
     if(st==="draft") lifeBtns=`<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>出荷を確定</button>`;
     else if(st==="shipped") lifeBtns=`<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`;
     else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`
-      + (creditBalanceForBillTo(s)>0?`<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`:"")
+      // 同じ請求先の過入金は金額つきで、別請求先（グループ）の分しか無いときは「別請求先」と明示して出す
+      + (creditBalanceForBillTo(s)>0
+          ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`
+          : (crossCreditBalanceFor(s)>0
+              ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（別請求先 ${yen(Math.min(crossCreditBalanceFor(s),remain))}）</button>`
+              : ""))
       + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メール${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
       // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
       + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告</button>`);
@@ -667,6 +681,7 @@ function renderShipments(ships){
         ${lifeBtns}
         <a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>
         ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収書${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : ""}
+        ${refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : ""}
         <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
         <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
@@ -694,7 +709,7 @@ function renderShipments(ships){
     const s=ships.find(x=>x._id===b.dataset.id); if(s) openDunning(s);
   }));
   document.querySelectorAll(".apply-credit").forEach(b=>b.addEventListener("click",()=>{
-    const s=ships.find(x=>x._id===b.dataset.id); if(s) applyOverpayCredit(s);
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openCreditModal(s);
   }));
 }
 
@@ -755,8 +770,8 @@ function recordPayment(s){
     `入金合計 <strong>${yen(done)}</strong>${ref>0?`　／　返金 <strong style="color:var(--color-danger)">−${yen(ref)}</strong>　／　純入金 <strong>${yen(netPaid(s))}</strong>`:""}`
     + `　／　残額 <strong style="color:${remain>0?"var(--color-danger)":"var(--color-success)"}">${yen(remain)}</strong>`
     + (dueDateOf(s)?`　／　支払期限 ${esc(dueDateOf(s))}${overdueDays(s)>0?`（<strong style="color:var(--color-danger)">${overdueDays(s)}日超過</strong>）`:""}`:"");
-  // 過入金の案内（この出荷で多く入っている分 ／ 同じ請求先に充当できる分）
-  const myBal=creditBalanceOf(s), billBal=creditBalanceForBillTo(s);
+  // 過入金の案内（この出荷で多く入っている分 ／ 同じ請求先の分 ／ 別請求先＝グループ会社の分）
+  const myBal=creditBalanceOf(s), billBal=creditBalanceForBillTo(s), crossBal=crossCreditBalanceFor(s);
   const cbox=document.getElementById("payCredit");
   const cbtn=document.getElementById("applyCreditBtn");
   if(myBal>0){
@@ -764,9 +779,12 @@ function recordPayment(s){
     cbox.innerHTML=`<strong>過入金 ${yen(myBal)}</strong> があります（請求額を超えて入金された分・二重に入金された場合も同じ扱いです）。`
       + `<br>選べる対応は2つです。<strong>①次回の請求から差し引く</strong>（次の請求を「請求済」にしたときに確認が出ます）／<strong>②返金する</strong>（下の「返金を記録する」に既定でこの金額が入っています）。`;
     cbtn.style.display="none";
-  }else if(billBal>0 && remain>0){
+  }else if((billBal>0||crossBal>0) && remain>0){
     cbox.style.display="block";
-    cbox.innerHTML=`${esc(billToOf(s))} には未充当の<strong>過入金 ${yen(billBal)}</strong>があります。この請求から <strong>${yen(Math.min(billBal,remain))}</strong> を差し引けます。`;
+    cbox.innerHTML= billBal>0
+      ? `${esc(billToOf(s))} には未充当の<strong>過入金 ${yen(billBal)}</strong>があります。この請求から <strong>${yen(Math.min(billBal,remain))}</strong> を差し引けます。`
+        + (crossBal>0?`<br>別の請求先にも過入金 ${yen(crossBal)} があります（グループ会社間で回す場合は充当画面で選べます）。`:"")
+      : `${esc(billToOf(s))} 自身の過入金はありませんが、<strong>別の請求先に過入金 ${yen(crossBal)}</strong> があります。グループ会社間で回す場合は充当画面で充当元を選んでください。`;
     cbtn.style.display="";
   }else{
     cbox.style.display="none";
@@ -882,29 +900,94 @@ async function deletePayment(idx){
 }
 
 // ===== 過入金を次回の請求に充当する =====
-// 同じ請求先の未充当の過入金を、古い出荷の分から順に使って、この請求の残額から差し引く。
+// 充当元を人が選ぶ方式（2026-08-12 変更）。同じ請求先の過入金は既定でチェック済み・古い分から自動配分し、
+// 別請求先（グループ会社）の過入金は「選べるが既定はオフ」にする＝勝手に他社の入金を回さない。
 // 充当元には overpayUsed を積み、充当先には creditApplied と充当元の内訳（creditFrom）を残す。
-async function applyOverpayCredit(s){
-  const sources=creditSourcesFor(s);
-  const balance=sources.reduce((a,x)=>a+creditBalanceOf(x),0);
+let creditTargetShip=null;
+function openCreditModal(s){
+  creditTargetShip=s;
   const remain=payRemain(s);
-  if(!(balance>0)){ alert(`${billToOf(s)} に充当できる過入金はありません`); return; }
+  const same=creditSourcesFor(s), cross=crossCreditSourcesFor(s);
+  if(!(same.length||cross.length)){ alert("充当できる過入金がありません（どの請求先にも未充当の過入金がない状態です）"); return; }
   if(!(remain>0)){ alert(`${s.soNumber} は残額がないため充当できません`); return; }
-  const use=Math.min(balance, remain);
-  const detail=sources.map(x=>`　・${x.soNumber}（${x.shipDate||""}）の過入金 ${yen(creditBalanceOf(x))}`).join("\n");
-  if(!confirm(`${billToOf(s)} の過入金を ${s.soNumber} の請求に充当します。\n\n充当元:\n${detail}\n\n充当額: ${yen(use)}（請求 ${yen(billableIncl(s))} → 残額 ${yen(remain-use)}）\n\nよろしいですか？`)) return;
+  document.getElementById("creditTargetInfo").innerHTML =
+    `<strong>${esc(s.soNumber)}</strong>（${esc(billToOf(s))}）／請求額（税込）${yen(shipTotalIncl(s))}`
+    + (creditApplied(s)>0?`　既に充当 −${yen(creditApplied(s))}`:"")
+    + `　／　<strong>残額 ${yen(remain)}</strong>`;
+  // 同じ請求先の分は残額を埋めるまで古い順に自動で金額を入れておく（今までの挙動と同じ結果になる）
+  let fill=remain;
+  const row=(x,cross)=>{
+    const bal=creditBalanceOf(x);
+    const pre=cross?0:Math.min(bal,fill);
+    if(!cross) fill-=pre;
+    return `<tr data-id="${x._id}">
+      <td><input type="checkbox" class="cs-use" ${pre>0?"checked":""} aria-label="${esc(x.soNumber)} を充当元にする"></td>
+      <td><strong>${esc(x.soNumber)}</strong><div style="font-size:12px;color:var(--color-ink-muted)">${esc(x.shipDate||"")}</div></td>
+      <td>${esc(billToOf(x))}<div>${cross?`<span class="badge badge-4">別請求先</span>`:`<span class="badge badge-3">同じ請求先</span>`}</div></td>
+      <td class="num">${yen(bal)}</td>
+      <td><input class="form-control cs-amt num" type="number" min="0" step="1" max="${bal}" value="${pre}" style="width:120px" aria-label="${esc(x.soNumber)} から充当する金額"></td>
+    </tr>`;
+  };
+  document.getElementById("creditSourceBody").innerHTML =
+    same.map(x=>row(x,false)).join("") + cross.map(x=>row(x,true)).join("");
+  document.getElementById("creditCrossNote").style.display = cross.length?"block":"none";
+  document.getElementById("creditError").style.display="none";
+  recalcCredit();
+  document.getElementById("creditModal").classList.add("open");
+}
+// 充当額の合計と充当後の残額を出す（イベントは初期化時に1度だけ張る）
+function recalcCredit(){
+  const s=creditTargetShip; if(!s) return;
+  const remain=payRemain(s);
+  let sum=0;
+  document.querySelectorAll("#creditSourceBody tr").forEach(tr=>{
+    const on=tr.querySelector(".cs-use").checked;
+    const amt=Number(tr.querySelector(".cs-amt").value)||0;
+    if(on) sum+=amt;
+    tr.querySelector(".cs-amt").disabled=!on;
+  });
+  const over=sum>remain;
+  document.getElementById("creditSumInfo").innerHTML =
+    `充当額の合計 <strong style="color:${over?"var(--color-danger)":"inherit"}">${yen(sum)}</strong>`
+    + `　／　充当後の残額 <strong>${yen(Math.max(0,remain-sum))}</strong>`
+    + (over?`　<strong style="color:var(--color-danger)">残額を超えています</strong>`:"");
+  document.getElementById("doApplyCreditBtn").disabled = !(sum>0) || over;
+}
+async function doApplyCredit(){
+  const s=creditTargetShip; if(!s) return;
+  const err=document.getElementById("creditError"); err.style.display="none";
+  const picks=[];
+  document.querySelectorAll("#creditSourceBody tr").forEach(tr=>{
+    if(!tr.querySelector(".cs-use").checked) return;
+    const amt=Number(tr.querySelector(".cs-amt").value)||0;
+    if(amt>0) picks.push({ id:tr.dataset.id, amount:amt });
+  });
+  if(!picks.length){ err.textContent="充当元を選び、金額を入れてください"; err.style.display="block"; return; }
+  const remain=payRemain(s);
+  const use=picks.reduce((a,p)=>a+p.amount,0);
+  if(use>remain){ err.textContent=`充当額の合計（${yen(use)}）が残額（${yen(remain)}）を超えています`; err.style.display="block"; return; }
+  // 充当元の残高チェック＋別請求先が混ざる場合は必ず確認する（グループ間で回す判断は人が明示する）
+  const srcs=picks.map(p=>({ ...p, ship:shipments.find(x=>x._id===p.id) })).filter(x=>x.ship);
+  for(const x of srcs){
+    if(x.amount>creditBalanceOf(x.ship)){
+      err.textContent=`${x.ship.soNumber} の未充当の過入金（${yen(creditBalanceOf(x.ship))}）を超えています`; err.style.display="block"; return;
+    }
+  }
+  const crossList=srcs.filter(x=>billToKey(x.ship)!==billToKey(s));
+  if(crossList.length){
+    const d=crossList.map(x=>`　・${x.ship.soNumber}（${billToOf(x.ship)}）から ${yen(x.amount)}`).join("\n");
+    if(!confirm(`別の請求先の過入金を ${billToOf(s)} の請求に充当します（グループ会社間の充当）。\n\n${d}\n\n請求書には充当元の請求先名が印字されます。相手先の合意が取れている場合のみ進めてください。\n\n続けますか？`)) return;
+  }
+  const btn=document.getElementById("doApplyCreditBtn"); btn.disabled=true;
   try{
-    let rest=use;
     const from=[];
-    for(const src of sources){
-      if(rest<=0) break;
-      const take=Math.min(creditBalanceOf(src), rest);
-      await updateDoc(doc(db,"shipments",src._id),{
-        overpayUsed:(Number(src.overpayUsed)||0)+take,
+    for(const x of srcs){
+      await updateDoc(doc(db,"shipments",x.id),{
+        overpayUsed:(Number(x.ship.overpayUsed)||0)+x.amount,
         updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
-      from.push({ shipmentId:src._id, soNumber:src.soNumber||"", amount:take, date:today(),
+      from.push({ shipmentId:x.id, soNumber:x.ship.soNumber||"", amount:x.amount, date:today(),
+        fromBillTo:billToOf(x.ship), crossBillTo:billToKey(x.ship)!==billToKey(s),
         appliedBy:currentUser.displayName||currentUser.email });
-      rest-=take;
     }
     const applied=creditApplied(s)+use;
     const newRemain=Math.max(0, shipTotalIncl(s)-applied-netPaid(s));
@@ -915,10 +998,12 @@ async function applyOverpayCredit(s){
       status: newRemain<=0 ? "paid" : "invoiced",
       paidAt: newRemain<=0 ? (lastPay?.date || today()) : "",
       updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+    document.getElementById("creditModal").classList.remove("open");
     document.getElementById("payModal").classList.remove("open");
-    payingShip=null;
+    creditTargetShip=null; payingShip=null;
     toast(`過入金 ${yen(use)} を ${s.soNumber} に充当しました${newRemain<=0?"（入金済になりました）":""}`);
-  }catch(e){ alert(`充当に失敗: ${e.message}`); }
+  }catch(e){ err.textContent=`充当に失敗: ${e.message}`; err.style.display="block"; }
+  finally{ btn.disabled=false; }
 }
 
 // ===== 未集金の催促メール（期限超過の請求先へ・発注書メールと同じGmail基盤）=====
@@ -1118,7 +1203,7 @@ async function doInvoiceReport(){
     if(warn.length) console.warn("経理報告の警告:", warn);
 
     // 3) 同じ請求先に未充当の過入金があれば、その場で「次回の請求から引く」を提案する（従来の挙動を維持）
-    if(!wasReportOnly && creditBalanceForBillTo(cur)>0) applyOverpayCredit(cur);
+    if(!wasReportOnly && creditBalanceForBillTo(cur)>0) openCreditModal(cur);
   }catch(e){
     err.textContent = `失敗: ${e.message||e}`; err.style.display="block";
   }finally{ btn.disabled=false; btn.innerHTML=orig; }
@@ -1507,8 +1592,15 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closePayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
   document.getElementById("cancelPayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
   document.getElementById("savePayBtn").addEventListener("click",addPayment);
-  document.getElementById("applyCreditBtn").addEventListener("click",()=>{ if(payingShip) applyOverpayCredit(payingShip); });
+  document.getElementById("applyCreditBtn").addEventListener("click",()=>{ if(payingShip) openCreditModal(payingShip); });
   document.getElementById("saveRefundBtn").addEventListener("click",addRefund);
+  // 過入金の充当モーダル（イベントは1度だけ張る。行の中身は開くたびに差し替える）
+  const closeCredit=()=>{ document.getElementById("creditModal").classList.remove("open"); creditTargetShip=null; };
+  document.getElementById("closeCreditBtn").addEventListener("click",closeCredit);
+  document.getElementById("cancelCreditBtn").addEventListener("click",closeCredit);
+  document.getElementById("creditSourceBody").addEventListener("input",recalcCredit);
+  document.getElementById("creditSourceBody").addEventListener("change",recalcCredit);
+  document.getElementById("doApplyCreditBtn").addEventListener("click",doApplyCredit);
   // 請求済にする＋経理へ報告モーダル
   document.getElementById("closeInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
   document.getElementById("cancelInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));

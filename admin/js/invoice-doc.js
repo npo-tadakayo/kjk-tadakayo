@@ -34,7 +34,12 @@ export function renderInvoiceHtml(s, st, opts){
   const items = s.items||[];
   const { shipExcl, sub, tax, total, credit, payable } = invoiceTotals(s);
   const shipFeeIncl = shipExcl; // 明細行を出すかの判定に使う
-  const creditFrom = (Array.isArray(s.creditFrom)?s.creditFrom:[]).map(c=>c.soNumber).filter(Boolean).join("・");
+  // 充当元の内訳。別請求先（グループ会社）からの充当は請求先名も出す＝どこの入金を回したかが書面で追える
+  const creditFromList = (Array.isArray(s.creditFrom)?s.creditFrom:[]).filter(c=>c.soNumber);
+  const creditFrom = creditFromList
+    .map(c=>c.crossBillTo&&c.fromBillTo ? `${c.soNumber}／${c.fromBillTo}様` : c.soNumber)
+    .join("・");
+  const hasCrossCredit = creditFromList.some(c=>c.crossBillTo);
   const invNo = invoiceNoOf(s);
   const billName = billToNameOf(s);
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
@@ -70,7 +75,7 @@ export function renderInvoiceHtml(s, st, opts){
         <tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
         <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>
         <tr${credit>0?"":' class="grand"'}><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
-        ${credit>0?`<tr><td class="lbl">前回お預かり分の充当${creditFrom?`（${esc(creditFrom)} の過入金）`:""}</td><td class="num">−${yen(credit)}</td></tr>
+        ${credit>0?`<tr><td class="lbl">${hasCrossCredit?"お預かり分の充当":"前回お預かり分の充当"}${creditFrom?`（${esc(creditFrom)} の過入金）`:""}</td><td class="num">−${yen(credit)}</td></tr>
         <tr class="grand"><td class="lbl">今回お支払額（税込）</td><td class="num"><strong>${yen(payable)}</strong></td></tr>`:""}
       </tbody></table>
       <div class="pay">

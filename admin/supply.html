@@ -280,6 +280,33 @@
 
   <!-- 在庫調整モーダル（B2: prompt廃止） -->
   <!-- 入金の記録（部分入金・履歴・取消） -->
+  <!-- 過入金の充当（充当元を選ぶ。別請求先＝グループ会社の過入金も選択できる・既定はオフ） -->
+  <div class="modal-overlay" id="creditModal" role="dialog" aria-modal="true" aria-label="過入金の充当">
+    <div class="modal" style="max-width:720px">
+      <div class="modal-header"><h2>過入金を充当する</h2>
+        <button class="btn btn-secondary" id="closeCreditBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="creditTargetInfo" style="font-size:13px;margin:0 0 10px"></p>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px">充当元にする過入金を選んでください。<strong>同じ請求先の分は古い順に既定でチェック</strong>されています。金額は変更できます。</p>
+        <div class="table-wrap">
+          <table style="width:100%;font-size:13px">
+            <thead><tr><th style="width:36px">充当</th><th style="text-align:left">出荷</th><th style="text-align:left">請求先</th><th class="num">未充当の過入金</th><th style="text-align:left">充当する金額</th></tr></thead>
+            <tbody id="creditSourceBody"></tbody>
+          </table>
+        </div>
+        <div id="creditCrossNote" class="callout" style="display:none;font-size:12px;margin:12px 0 0;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)">
+          <strong>別請求先</strong>の過入金を選ぶと、グループ会社間で入金を回すことになります。請求書には充当元の請求先名が印字されるため、<strong>相手先の合意が取れている場合のみ</strong>選んでください。既定ではオフです。
+        </div>
+        <p id="creditSumInfo" style="font-size:13px;margin:12px 0 0"></p>
+        <div class="field-error" id="creditError" role="alert" style="display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelCreditBtn" type="button">閉じる</button>
+        <button class="btn btn-primary" id="doApplyCreditBtn" type="button"><i class="ti ti-arrow-down-circle" aria-hidden="true"></i>この内容で充当する</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="payModal" role="dialog" aria-modal="true" aria-label="入金の記録">
     <div class="modal" style="max-width:560px">
       <div class="modal-header"><h2 id="payModalTitle">入金の記録</h2>
