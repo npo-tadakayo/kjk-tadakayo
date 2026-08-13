@@ -116,11 +116,13 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 ## 次回やること（優先順）
 
 00. **経理への請求書発行報告の実機検証（⑲の続き・所要5分）**: 発送済の出荷1件で「請求済にする」→ ダイアログで「経理へ報告する」ON → 送信。①経理スペースのChatカードが出るか ②「請求書PDFを開く」で実際にPDFが開けるか（Storage の download token URL）③田中さんのメールにPDFが添付されて届くか ④一覧が「経理へ報告済み MM/DD」になるか を確認。**練習だけなら「経理へ報告する」を外せば送信なしで請求済にできる**。呼び名 `田中（ヒデスさん）` の二重敬称が気になるなら設定画面で短くする。
-0. 🔴 **公開されていた個人情報の事後調査（次田さんと合意して次セッションへ持ち越し・2026-08-10）**
-   - **検索エンジン・キャッシュへの残存確認**: `site:kjk.tadakayo.jp` で `admin-*.png` 等がインデックスされていないか。残っていれば Search Console から削除リクエスト（GA4/Clarity ではなく Search Console 側）
-   - **実際に取得されたかの確認**: Hosting のアクセスログで `admin-*.png` / `*.docx` / `*.csv` へのリクエスト有無を見る（Cloud Logging の `requests` か、Hosting の使用状況）。7/2〜8/10 が対象期間
-   - **Pマーク上の扱いの判断**: 個人情報を含むファイルが外部から取得可能だったため、インシデントとして記録が必要か。台帳は `タダカヨ_project/_Pマーク/個人情報ファイル管理台帳.md`。写っていたのは案件#3（合同会社ルトレム・井上彩加さん・携帯・メール）ほか
-   - 対象ファイルの実体は今もリポジトリ直下にある（公開だけ止めた状態）。ローカルからも消すか、`_内部資料/` 等へ移すかを決める
+0. 🔴 **公開されていた内部ファイルの事後調査 → 2026-08-12 に実施済み。残るのは次田さんの判断4件**
+   - 調査結果の正本は **`タダカヨ_project/_Pマーク/個人情報ファイル管理台帳.md` の「2026-08-12 の事後調査」節**（Git管理外・Drive同期）
+   - **⚠️ 8/10 の報告に誤りがあった**: 「議事録など/ と .playwright-mcp/ は未公開」は**偽陰性**。version マニフェスト（`versions/72a1074f394988b5/files`・252件）で照合したところ**両方とも公開されていた**。curl でファイル名のコロンを未エンコードで叩いて404が返っただけだった
+   - **最も重い発見**: `議事録など/2026:05:19_まとめ_介護情報基盤チャットスペース議論.pdf`（4ページ）も5週間公開されていた。**役員・スタッフ・協業先担当者の実名**と、**助成金上限に合わせた価格設計の経緯**（伴走支援費の設定・出精値引きの扱い・協業先の意向）が書かれており、管理画面スクショより影響が大きい可能性がある
+   - 拡散の痕跡は**現時点で確認されず**: DuckDuckGo（Bing系）の `site:` はLP本体と公開チラシPDFの2件のみ／Internet Archive は 2026-05-28 のLP本体・画像10件のみで流出ファイルは未取得（取得日は公開開始より前）／どこからもリンクされておらず sitemap も `/` のみ＝発見にはファイル名の推測が必要
+   - **取得されたかは判定不能**: Firebase Hosting は静的配信のリクエストログを Cloud Logging に出さない（`firebase_domain` のログ0件）。転送量メトリクスにURL別ラベルは無く、単発取得は誤差に埋もれる
+   - **判断が必要（次田さん）**: ①Google Search Console で確認（CAPTCHAでClaudeは不可・まず議事録PDFのURLをURL検査。載っていれば「削除」→「一時的に削除」）②議事録PDFの扱い ③Pマーク上の事故該当性（規程の現物と照合） ④ローカル実体（`admin-*.png` 10件・議事録PDF）を削除するか非公開フォルダへ移すか
 1. **PO-2026-0049（50台・8/5発注）の入荷登録**: 届いたら発注タブの「入荷登録」→ 在庫 220→270台
 2. **入金まわり3機能の実機確認**（⑳の続き・要ログイン）: ①返金がある出荷（SH-2026-0001）の行に「返金明細書」が出るので開いて内容を確認 ②入金済の出荷で「領収書」を開き、領収金額に実入金が入っているか・「実入金に戻す／明細合計に合わせる」が効くかを確認 ③充当画面は**同一請求先に過入金がある状態でないと開けない**ため、次に過入金が出たときに確認する
 3. 実機での取込確認（要ログイン）: 受注タブ →「発注ファイルを取り込む」→ `発注テンプレート.csv` → SO番号採番まで
@@ -150,10 +152,12 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 
 - **Functions デプロイは Drive 上から不可**: `functions/node_modules` の読込に **12分23秒**（ローカルなら0.1秒）かかり、Firebase CLI の10秒制限に間に合わない（`Cannot determine backend specification. Timeout after 10000`）。手順は ①`rsync -a --exclude node_modules functions/ <ローカル>/functions/` ②`.firebaserc` コピー＋`firebase.json` は `{"functions":{"source":"functions"}}` ③`npm ci --omit=dev` ④`deploy --only "functions:名前" --account yoshinao-tsukuda@tadakayo.jp`。**`--account` 必須**（一時ディレクトリは `login:use` 未設定＝279アカウントで `iam.serviceAccounts.ActAs` 403）
 - **push手順**: origin は `npo-tadakayo/kjk-tadakayo`。gh のアクティブが `ytsukuda4470` だと403 → `gh auth switch -u tsuku-29` → push
+- ⚠️ **タダカヨ側の認証情報がセッション中に消えることがある**（2026-08-12 に firebase CLI と gh の両方で発生）。gh は `tsuku-29` が候補から消えて `gh auth switch -u tsuku-29` が「no accounts matched」になり、push が ytsukuda4470 名義で403になった。**復旧は `gh auth login`（ブラウザ＝次田さん操作）**。firebase CLI も同様に279へ入れ替わる（→ Issue #3）。同じ根っこ（279作業と共有の認証ストアが上書きされる）と見られる
 - **firebase MCP は使わない**（279 の tougou-db に接続）。kjk-tadakayo の Firestore は**タダカヨのADCトークンで REST 直叩き**（`CLOUDSDK_ACTIVE_CONFIG_NAME=tadakayo` → `gcloud auth print-access-token` → `firestore.googleapis.com/v1/projects/kjk-tadakayo/...`）
 - **デプロイは rule05 二段階**: `hosting:channel:deploy {ch} --only admin` → curl検証 → `hosting:clone …:live`（live 昇格は自動承認でブロックされるため次田さんが実行）
 - 帳票ページ（supply-print / report）は crm.css を読まない独立CSS。ブランド色を変える時は両方直す
 - `/supply.html` は 301 で `/supply` にリダイレクト（curl 検証時は `-L` を付ける）
+- **「公開されているか」の確認は curl の目視ではなく version マニフェストで行う**（2026-08-12 に偽陰性を出した）。`GET https://firebasehosting.googleapis.com/v1beta1/sites/{site}/versions/{versionId}/files?pageSize=300` が**そのリリースで実際に配信されていた全ファイル**を返す。curl はファイル名にコロン・日本語・特殊文字が入ると照会が壊れて404になり「公開されていない」と誤読する
 - **hosting lp の public は `.`（リポジトリ直下）**。git 管理外のファイルもデプロイされるので、**ルート直下に内部資料を置いたら firebase.json の ignore に必ず追記する**。確認は `node -e "const{listFiles}=require('/opt/homebrew/lib/node_modules/firebase-tools/lib/listFiles.js');console.log(listFiles('.',JSON.parse(require('fs').readFileSync('firebase.json','utf8')).hosting[0].ignore).sort().join('\n'))"`（hosting エミュレータは ignore を無視するので検証に使えない）
 - **ignore に日本語パスを書くときは濁点に注意**: Drive上のフォルダ名は NFD（濁点分解）なので、JSON に NFC で書いた `議事録など/**` はマッチしない。濁点を含まない前方一致（`議事*/**`）にする
 - **firebase CLI の認証情報が279のものと入れ替わることがある**（2026-08-10 発生・同日復旧済み）: 症状は「`login:list` は `yoshinao-tsukuda@tadakayo.jp` を active と表示するのに、`projects:list` に出るのは tougou-db / voice-memo など**279のプロジェクト**で kjk-tadakayo が無い」→ `hosting:channel:deploy` が「Failed to get Firebase project」で落ちる。**復旧は `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（ブラウザ＝次田さん操作）**。復旧確認は `projects:list` に `kjk-tadakayo (current)` が出ること＋`hosting:channel:list --site kjk-tadakayo` が通ること
