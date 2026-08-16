@@ -17,7 +17,19 @@
 - Cloud Function `sendPartnerMail`（催促メール）は**本番作成済み**（gcfv2 / asia-northeast1）。
 - **経理への請求書発行報告（⑲・2026-08-11）は Functions・ルール・UI・設定すべて本番反映済み＝使える状態**。ただし**実際の送信検証は未実施**（本番送信が田中さんに届くため）。次回まず1件流して確認する。
 
-## 今セッション（⑳・2026-08-12）でやったこと
+## 今セッション（㉑・2026-08-13）でやったこと
+
+- **[Issue #3](https://github.com/npo-tadakayo/kjk-tadakayo/issues/3) を対応・クローズ**（`fca912d`）: firebase CLI の認証入れ替わりへの恒久対応として、**Hosting REST API 直叩きのデプロイスクリプトをリポジトリに常設**（案A）。一時領域運用で2回スクリプトを失っていたのが決め手
+  - `scripts/deploy-hosting.mjs`（555行）。`--dry-run`（API未呼び出し）／`--channel`（プレビュー）／`--live`（本番・実行前に対象と件数を出して5秒待つ）
+  - **`firebase.json` の lp の ignore に `scripts/**` を追加**（`public` が `.` なので、入れないとスクリプトが本番LPで配信される）
+  - ファイル一覧は firebase-tools の `listFiles` を使用。**使えない場合は自前走査せず停止**（ignore 解釈がCLIとずれると 2026-08-10 と同じ公開事故になるため）
+  - 検証: lp 配信34件（`scripts/` 0件・`.md` 0件）／admin 51件／ガード（引数なし・`--dry-run --live` 同時）は終了コード1
+  - ⚠️ **REST の疎通そのものは未検証**（実デプロイをしていない）。**初回は必ず `--channel` でプレビューに出して確認する**
+  - CLI が正常なときは rule05 の二段階デプロイが引き続き正。本スクリプトは代替手段
+- `images/tadakayo_kjk_flyer.pdf` が配信対象に入っているのを確認したが、`index.html` から3か所リンクされている**意図的な公開物**（事故ではない）
+- **ガイドブック解説動画は別プロジェクト**で進行（`06_介護情報基盤事業/ガイドブック動画_パイプライン/HANDOFF.md`）。PART 0 の動画完成＋PART 1〜3 のパイプライン整備まで完了
+
+## 前セッション（⑳・2026-08-12）でやったこと
 
 - **未決だった入金まわり3件を実装・本番反映**（`e320496` / admin live version `86ba31770138fad3`・release `1786530245266000`）
   1. **過入金の充当で充当元を選べるように**（グループ会社間の充当に対応）: `openCreditModal()`＋`doApplyCredit()`。同一請求先は既定チェック＋FIFO自動配分で従来と同結果、`crossCreditSourcesFor()` の別請求先は「別請求先」バッジ・**既定オフ**・`confirm()` 必須。`creditFrom[]` に `fromBillTo`/`crossBillTo` を記録し請求書の充当行に充当元の請求先名を印字。自動サジェストは同一請求先のみ
@@ -156,7 +168,8 @@ PO-0047/0048 に**直送フラグ・請求先・出荷下書きID**を紐付け�
 - **hosting lp の public は `.`（リポジトリ直下）**。git 管理外のファイルもデプロイされるので、**ルート直下に内部資料を置いたら firebase.json の ignore に必ず追記する**。確認は `node -e "const{listFiles}=require('/opt/homebrew/lib/node_modules/firebase-tools/lib/listFiles.js');console.log(listFiles('.',JSON.parse(require('fs').readFileSync('firebase.json','utf8')).hosting[0].ignore).sort().join('\n'))"`（hosting エミュレータは ignore を無視するので検証に使えない）
 - **ignore に日本語パスを書くときは濁点に注意**: Drive上のフォルダ名は NFD（濁点分解）なので、JSON に NFC で書いた `議事録など/**` はマッチしない。濁点を含まない前方一致（`議事*/**`）にする
 - **firebase CLI の認証情報が279のものと入れ替わることがある**（2026-08-10 発生・同日復旧済み）: 症状は「`login:list` は `yoshinao-tsukuda@tadakayo.jp` を active と表示するのに、`projects:list` に出るのは tougou-db / voice-memo など**279のプロジェクト**で kjk-tadakayo が無い」→ `hosting:channel:deploy` が「Failed to get Firebase project」で落ちる。**復旧は `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（ブラウザ＝次田さん操作）**。復旧確認は `projects:list` に `kjk-tadakayo (current)` が出ること＋`hosting:channel:list --site kjk-tadakayo` が通ること
-  - **回避策（CLIが直せないとき）**: gcloud のタダカヨ認証が生きていれば、**Hosting REST API で直接デプロイできる**。`gcloud auth print-access-token --account yoshinao-tsukuda@tadakayo.jp` ＋ ヘッダー `x-goog-user-project: kjk-tadakayo`（これが無いと quota project 未設定で403）。versions作成 → populateFiles → gzipしたファイルをhash単位でアップロード → FINALIZE → releases。⚠️ **firebase.json の headers/redirects は REST では形が違う**（`source`→`glob`、`[{key,value}]`→`{k:v}`、`type`→`statusCode`）。スクリプトは `/private/tmp/.../scratchpad/deploy-hosting.mjs`（セッション破棄で消えるので必要なら repo に移す）
+  - **回避策は 2026-08-13 にスクリプト化してリポジトリに常設した**（`scripts/deploy-hosting.mjs`・Issue #3 クローズ）。まず `node scripts/deploy-hosting.mjs --target lp --dry-run` で配信対象を確認し、`--channel {名前}` でプレビュー → 確認後に `--live`。以下は同スクリプトが内部でやっていることの説明:
+  - gcloud のタダカヨ認証が生きていれば、**Hosting REST API で直接デプロイできる**。`gcloud auth print-access-token --account yoshinao-tsukuda@tadakayo.jp` ＋ ヘッダー `x-goog-user-project: kjk-tadakayo`（これが無いと quota project 未設定で403）。versions作成 → populateFiles → gzipしたファイルをhash単位でアップロード → FINALIZE → releases。⚠️ **firebase.json の headers/redirects は REST では形が違う**（`source`→`glob`、`[{key,value}]`→`{k:v}`、`type`→`statusCode`）。スクリプトは `/private/tmp/.../scratchpad/deploy-hosting.mjs`（セッション破棄で消えるので必要なら repo に移す）
 - **タダカヨの gcloud ユーザー認証が期限切れ**（2026-08-08 時点）。Firestore REST 直叩きの前に `gcloud auth login`（tadakayo 設定）を通す。ADC は 279 アカウント（y.tsukuda@279279.net）のままなので kjk-tadakayo には使えない
 
 ## 再開コマンド
