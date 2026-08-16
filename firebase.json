@@ -11,6 +11,7 @@
         ".claude/**",
         "CNAME",
         "deploy.sh",
+        "scripts/**",
         "*.md",
         "*.py",
         "PRICING.md",
