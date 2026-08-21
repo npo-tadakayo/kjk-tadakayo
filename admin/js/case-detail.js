@@ -9,7 +9,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey } from "/js/constants.js";
+import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
+  referralOptions, referralLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 
@@ -29,6 +30,10 @@ let latestActivities = [];
 let latestSessions = [];
 let isAdmin = false;
 let currentUser = null;
+// appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
+let appSettings = {};
+// users コレクション（担当営業の候補。doc id = メールアドレス / name・role・active を持つ）
+let usersList = [];
 
 function renderCaseHeader(c) {
   document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
@@ -46,6 +51,74 @@ function renderCaseHeader(c) {
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
+}
+
+// ===== 担当営業（assignedUserId / assignedUserName） =====
+// users コレクション（doc id = メールアドレス）から候補を作る。role では絞らない（全員が候補）。
+// 一覧・カンバンは assignedUserName を表示するため、保存時は必ず ID と 氏名 の両方を書く。
+function userDisplayName(u) { return (u && (u.name || u._id)) || ""; }
+
+function renderAssigneeSelect() {
+  const sel = document.getElementById("assigneeSelect");
+  if (!sel) return;
+  const cur = currentCase?.assignedUserId || "";
+  const actives = usersList.filter((u) => u.active !== false)
+    .slice().sort((a, b) => userDisplayName(a).localeCompare(userDisplayName(b), "ja"));
+  let html = `<option value="">未割当</option>`
+    + actives.map((u) => `<option value="${escHtml(u._id)}">${escHtml(userDisplayName(u))}</option>`).join("");
+  // 無効化された／削除されたユーザーが割り当て済みの場合も、その人を選択肢に残す
+  // （勝手に別の人へ化けたり「未割当」に戻ったりしないように。紹介元と同じ考え方）
+  if (cur && !actives.some((u) => u._id === cur)) {
+    const known = usersList.find((u) => u._id === cur);
+    const name = userDisplayName(known) || currentCase?.assignedUserName || cur;
+    html += `<option value="${escHtml(cur)}">${escHtml(name)}（無効）</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = cur;
+}
+
+async function saveAssignee(value) {
+  const prevName = currentCase.assignedUserName || "未割当";
+  const id = value || null;
+  let name = null;
+  if (id) {
+    const u = usersList.find((x) => x._id === id);
+    // users から引けないとき（削除済みなど）は、いま案件に入っている氏名を保つ
+    name = userDisplayName(u) || currentCase.assignedUserName || id;
+  }
+  await updateDoc(doc(db, "cases", caseId), {
+    assignedUserId: id, assignedUserName: name, updatedAt: serverTimestamp(),
+  });
+  currentCase.assignedUserId = id;
+  currentCase.assignedUserName = name;
+  // 誰がいつ担当を変えたか追えるようにタイムラインへ記録
+  await logActivity(`担当営業変更 → ${name || "未割当"}`, `変更前: ${prevName}`);
+  showToast(name ? `担当営業を「${name}」にしました` : "担当営業を未割当にしました");
+}
+
+// ===== 紹介元（referralSource） =====
+// ⚠️ source（LP問い合わせ/見積もり成約/手動登録＝流入経路）とは別物。こちらは「誰の紹介で来たか」。
+// 選択肢は appConfig/settings.referralSources（未設定なら REFERRAL_DEFAULTS）。保存する値は id。
+function renderReferralSelect() {
+  const sel = document.getElementById("referralSelect");
+  if (!sel) return;
+  const cur = currentCase?.referralSource || "";
+  const opts = referralOptions(appSettings);
+  let html = `<option value="">—</option>`
+    + opts.map((o) => `<option value="${escHtml(o.id)}">${escHtml(o.name)}</option>`).join("");
+  // 設定から消された／無効化された紹介元でも、いま入っている値は選択肢に残す（勝手に別の値へ化けないように）
+  if (cur && !opts.some((o) => o.id === cur)) {
+    html += `<option value="${escHtml(cur)}">${escHtml(referralLabel(cur, appSettings))}（無効）</option>`;
+  }
+  sel.innerHTML = html;
+  sel.value = cur;
+}
+
+async function saveReferral(value) {
+  const v = value || null;
+  await updateDoc(doc(db, "cases", caseId), { referralSource: v, updatedAt: serverTimestamp() });
+  currentCase.referralSource = v;
+  showToast(v ? `紹介元を「${referralLabel(v, appSettings)}」にしました` : "紹介元を未設定にしました");
 }
 
 // 対象外バナー・操作ボタンの表示状態
@@ -333,9 +406,185 @@ async function loadDuplicateCandidates() {
       && !dismissed.has(pairKey(caseId, c._id)));
 }
 
+// ===== 統合（重複案件のマージ） =====
+// 統合時に「どちらの値を残すか」を判断する項目の定義。ここに1件足せば、
+// 差分検出・選択モーダル・タイムライン記録のすべてが自動で追従する（担当営業だけを特別扱いしない）。
+//   id():   食い違い判定に使う識別子（これが違えば「食い違い」）
+//   text(): 画面・記録に出す表示名
+//   pick(): 採用したときに cases へ書き込むフィールド一式
+const MERGE_FIELDS = [
+  {
+    key: "assigned", label: "担当営業",
+    id: (c) => String(c.assignedUserId || c.assignedUserName || "").trim(),
+    text: (c) => String(c.assignedUserName || c.assignedUserId || "").trim(),
+    pick: (c) => ({ assignedUserId: c.assignedUserId || null, assignedUserName: c.assignedUserName || null }),
+  },
+  {
+    key: "referralSource", label: "紹介元",
+    id: (c) => String(c.referralSource || "").trim(),
+    text: (c) => referralLabel(c.referralSource, appSettings),
+    pick: (c) => ({ referralSource: c.referralSource || null }),
+  },
+  ...[["contactName", "担当者名"], ["contactEmail", "メール"], ["contactPhone", "電話"], ["corpName", "法人名"]]
+    .map(([f, label]) => ({
+      key: f, label,
+      id: (c) => String(c[f] || "").trim(),
+      text: (c) => String(c[f] || "").trim(),
+      pick: (c) => ({ [f]: c[f] }),
+    })),
+];
+
+// 残す側(keep)と消える側(other)の差分を出す。
+//   片方だけに値がある → autoFill（選ばせず自動で埋める。従来どおりの挙動）
+//   両方に値があって違う → conflicts（どちらを採用するか選ばせる）
+function computeMergeDiffs(keep, other) {
+  const autoFill = {};
+  const autoNotes = [];
+  const conflicts = [];
+  for (const f of MERGE_FIELDS) {
+    const oid = f.id(other);
+    if (!oid) continue;                       // 消える側に値なし → 何もしない（残す側を守る）
+    const kid = f.id(keep);
+    if (!kid) {                               // 片方（消える側）だけ値がある → 自動で補完
+      Object.assign(autoFill, f.pick(other));
+      autoNotes.push(`${f.label}: ${f.text(other) || "—"}（統合元から補完）`);
+      continue;
+    }
+    if (kid !== oid) {                        // 両方に値があって食い違う → 選択対象
+      conflicts.push({ field: f, keepText: f.text(keep) || "—", otherText: f.text(other) || "—" });
+    }
+  }
+  return { autoFill, autoNotes, conflicts };
+}
+
+// 食い違いの選択モーダル。resolve(選択マップ) / キャンセルは resolve(null)。
+// 取り違え防止のため、どちらが残りどちらが消えるかを案件番号＋事業所名つきで明示する。
+function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay open";
+    overlay.id = "mergeChoiceModal";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-modal", "true");
+    overlay.setAttribute("aria-label", "統合内容の確認");
+
+    const sub = (c) => [c.corpName, c.contactName, c.contactEmail].filter(Boolean).join(" ／ ");
+    const rows = conflicts.map((cf) => `
+      <fieldset style="border:1px solid var(--color-line);border-radius:var(--radius-md);padding:10px 12px;margin:0 0 10px">
+        <legend style="font-size:13px;font-weight:700;padding:0 4px">${escHtml(cf.field.label)}</legend>
+        <label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer">
+          <input type="radio" name="mrg-${escHtml(cf.field.key)}" value="keep" checked
+                 style="width:20px;height:20px;flex:none">
+          <span style="font-size:13px">
+            <span style="color:var(--color-success);font-weight:700">残る #${escHtml(keep.caseNumber || "—")}</span>
+            <span style="color:var(--color-ink-muted)">（${escHtml(keep.officeName || "事業所名なし")}）</span>
+            ： <strong>${escHtml(cf.keepText)}</strong>
+          </span>
+        </label>
+        <label style="display:flex;gap:10px;align-items:center;min-height:44px;cursor:pointer">
+          <input type="radio" name="mrg-${escHtml(cf.field.key)}" value="other"
+                 style="width:20px;height:20px;flex:none">
+          <span style="font-size:13px">
+            <span style="color:var(--color-danger);font-weight:700">消える #${escHtml(other.caseNumber || "—")}</span>
+            <span style="color:var(--color-ink-muted)">（${escHtml(other.officeName || "事業所名なし")}）</span>
+            ： <strong>${escHtml(cf.otherText)}</strong>
+          </span>
+        </label>
+      </fieldset>`).join("");
+
+    overlay.innerHTML = `
+      <div class="modal">
+        <div class="modal-header">
+          <h2><i class="ti ti-arrow-merge" aria-hidden="true"></i> 統合する内容を選んでください</h2>
+          <button class="btn btn-secondary" data-merge-cancel type="button" aria-label="閉じる">
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div style="display:grid;gap:8px;margin-bottom:14px">
+            <div style="border-left:4px solid var(--color-success);background:var(--color-success-soft);padding:8px 12px;border-radius:6px">
+              <div style="font-size:12px;font-weight:700;color:var(--color-success)">
+                <i class="ti ti-check" aria-hidden="true"></i> 残る案件（いま開いている案件）
+              </div>
+              <div style="font-size:14px;font-weight:700">#${escHtml(keep.caseNumber || "—")}　${escHtml(keep.officeName || "（事業所名未登録）")}</div>
+              <div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(sub(keep))}</div>
+            </div>
+            <div style="border-left:4px solid var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px">
+              <div style="font-size:12px;font-weight:700;color:var(--color-danger)">
+                <i class="ti ti-archive" aria-hidden="true"></i> 消える案件（対象外「重複」になります）
+              </div>
+              <div style="font-size:14px;font-weight:700">#${escHtml(other.caseNumber || "—")}　${escHtml(other.officeName || "（事業所名未登録）")}</div>
+              <div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(sub(other))}</div>
+            </div>
+          </div>
+          <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
+            値が食い違う項目が ${conflicts.length} 件あります。残す方を選んでください（初期値は「残る案件」の値）。
+          </p>
+          ${rows}
+          ${autoNotes.length ? `
+            <div style="font-size:12px;color:var(--color-ink-muted);border-top:1px solid var(--color-line);padding-top:8px">
+              <i class="ti ti-info-circle" aria-hidden="true"></i> 空欄のため自動で補完する項目：
+              ${escHtml(autoNotes.join(" / "))}
+            </div>` : ""}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-merge-cancel type="button">キャンセル</button>
+          <button class="btn btn-primary" data-merge-ok type="button">
+            <i class="ti ti-arrow-merge" aria-hidden="true"></i>この内容で統合する
+          </button>
+        </div>
+      </div>`;
+
+    const close = (result) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKey = (e) => { if (e.key === "Escape") close(null); };
+
+    overlay.querySelectorAll("[data-merge-cancel]").forEach((b) =>
+      b.addEventListener("click", () => close(null)));
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) close(null); });
+    overlay.querySelector("[data-merge-ok]").addEventListener("click", () => {
+      const choices = {};
+      conflicts.forEach((cf) => {
+        const el = overlay.querySelector(`input[name="mrg-${cf.field.key}"]:checked`);
+        choices[cf.field.key] = el ? el.value : "keep";
+      });
+      close(choices);
+    });
+
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    overlay.querySelector("input[type=radio]")?.focus();
+  });
+}
+
 // other を当案件（primary）に統合する
 async function mergeInto(other) {
-  if (!confirm(`案件 #${other.caseNumber || ""}「${other.officeName || ""}」を、この案件 #${currentCase.caseNumber || ""} に統合します。\n統合元は「対象外（重複）」になります。よろしいですか？`)) return;
+  const keep = currentCase;
+  const { autoFill, autoNotes, conflicts } = computeMergeDiffs(keep, other);
+
+  // 食い違いがあれば選択モーダル、無ければ従来どおり確認ダイアログのみ
+  let choices = null;
+  if (conflicts.length) {
+    choices = await openMergeChoiceModal(keep, other, conflicts, autoNotes);
+    if (!choices) return;   // キャンセル
+  } else if (!confirm(`案件 #${other.caseNumber || ""}「${other.officeName || ""}」を、この案件 #${keep.caseNumber || ""} に統合します。\n統合元は「対象外（重複）」になります。よろしいですか？`)) {
+    return;
+  }
+
+  // 採用結果を反映（自動補完 → 選択結果 の順に上書き）
+  const fill = { ...autoFill };
+  const chosenNotes = [];
+  conflicts.forEach((cf) => {
+    const useOther = choices[cf.field.key] === "other";
+    if (useOther) Object.assign(fill, cf.field.pick(other));
+    const from = useOther ? other : keep;
+    chosenNotes.push(`${cf.field.label}: ${cf.field.text(from) || "—"} を採用`
+      + `（${useOther ? `統合元 #${other.caseNumber || "—"}` : `この案件 #${keep.caseNumber || "—"}`}）`);
+  });
+
   try {
     const batch = writeBatch(db);
     // 統合元の記録・セッションを当案件へ付け替え
@@ -343,11 +592,6 @@ async function mergeInto(other) {
       const snap = await getDocs(query(collection(db, col), where("caseId", "==", other._id)));
       snap.forEach((d) => batch.update(d.ref, { caseId }));
     }
-    // 当案件に欠けている連絡先を統合元から補完
-    const fill = {};
-    ["contactName", "contactEmail", "contactPhone", "corpName"].forEach((f) => {
-      if (!currentCase[f] && other[f]) fill[f] = other[f];
-    });
     fill.updatedAt = serverTimestamp();
     batch.update(doc(db, "cases", caseId), fill);
     // 統合元を対象外（重複）に
@@ -358,10 +602,12 @@ async function mergeInto(other) {
       updatedAt: serverTimestamp(),
     });
     await batch.commit();
-    // 内容差分を失わないよう、統合元の要点を当案件のタイムラインに残す
+    // 内容差分を失わないよう、統合元の要点と採用結果を当案件のタイムラインに残す
     const detail = [
       `流入元: ${SOURCE_LABELS[other.source] || other.source || "—"}`,
       `ステータス: ${STATUS_LABELS[other.status] || "—"}`,
+      `紹介元: ${referralLabel(other.referralSource, appSettings) || "—"}`,
+      other.assignedUserName ? `担当営業（統合元）: ${other.assignedUserName}` : "",
       other.contactName ? `担当者: ${other.contactName}` : "",
       other.contactEmail ? `メール: ${other.contactEmail}` : "",
       other.contactPhone ? `電話: ${other.contactPhone}` : "",
@@ -369,6 +615,8 @@ async function mergeInto(other) {
       other.expectedSubsidyAmount ? `想定補助額: ${other.expectedSubsidyAmount}` : "",
       Array.isArray(other.cardReaders) && other.cardReaders.length
         ? `カードリーダー: ${JSON.stringify(other.cardReaders)}` : "",
+      chosenNotes.length ? `\n【食い違いの採用結果】\n${chosenNotes.join("\n")}` : "",
+      autoNotes.length ? `\n【自動で補完した項目】\n${autoNotes.join("\n")}` : "",
     ].filter(Boolean).join("\n");
     await logActivity(`重複案件 #${other.caseNumber || ""} を統合`, detail);
     showToast("統合しました");
@@ -667,11 +915,57 @@ onAuthStateChanged(auth, async (user) => {
   }
 
   currentCase = { _id: caseSnap.id, ...caseSnap.data() };
+
+  // 紹介元の選択肢（appConfig/settings.referralSources）。取得に失敗しても既定値で動く。
+  try {
+    const ss = await getDoc(doc(db, "appConfig", "settings"));
+    if (ss.exists()) appSettings = ss.data();
+  } catch (_) {}
+
+  // 担当営業の候補（users）。取得に失敗しても「未割当＋現在の担当」だけで動く。
+  try {
+    const us = await getDocs(collection(db, "users"));
+    usersList = us.docs.map((d) => ({ _id: d.id, ...d.data() }));
+  } catch (_) { usersList = []; }
+
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  renderAssigneeSelect();
+  renderReferralSelect();
   renderCaseActions();
   renderDuplicateCandidates();
+
+  // 担当営業の変更（ID と 氏名 の両方を保存＋タイムラインに記録）
+  document.getElementById("assigneeSelect")?.addEventListener("change", async (e) => {
+    const sel = e.target;
+    const prev = currentCase.assignedUserId || "";
+    sel.disabled = true;
+    try {
+      await saveAssignee(sel.value);
+      renderAssigneeSelect();   // 無効ユーザーから外れた場合に選択肢を作り直す
+    } catch (err) {
+      sel.value = prev;
+      alert(`担当営業の保存に失敗しました: ${err.message || err}`);
+    } finally {
+      sel.disabled = false;
+    }
+  });
+
+  // 紹介元の変更（値は id を保存。表示名は保存しない）
+  document.getElementById("referralSelect")?.addEventListener("change", async (e) => {
+    const sel = e.target;
+    const prev = currentCase.referralSource || "";
+    sel.disabled = true;
+    try {
+      await saveReferral(sel.value);
+    } catch (err) {
+      sel.value = prev;
+      alert(`紹介元の保存に失敗しました: ${err.message || err}`);
+    } finally {
+      sel.disabled = false;
+    }
+  });
 
   // ステータス変更
   document.getElementById("statusSelect").addEventListener("change", async (e) => {

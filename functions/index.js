@@ -182,6 +182,8 @@ exports.webhookLpInquiry = onRequest(
         contactEmail: body.email || "",
         contactPhone: body.phone || "",
         source: "lp_inquiry",
+        // 紹介元（営業上の紹介元）は未設定で作る。フォームからは判別できないため決め打ちしない。
+        referralSource: null,
         status: STATUS.NEW,
         assignedUserId: null,
         receivedAt: now,
@@ -288,6 +290,8 @@ exports.webhookMitsumori = onRequest(
         contactEmail: body.email || "",
         contactPhone: body.phone || "",
         source: "mitsumori_quote",
+        // 紹介元（営業上の紹介元）は未設定で作る。フォームからは判別できないため決め打ちしない。
+        referralSource: null,
         status: STATUS.NEW,
         assignedUserId: null,
         receivedAt: now,

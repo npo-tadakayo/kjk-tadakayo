@@ -75,6 +75,18 @@
                 </optgroup>
               </select>
             </div>
+            <div style="display:flex;align-items:center;gap:var(--space-2)">
+              <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="assigneeSelect">担当営業</label>
+              <select class="form-control" id="assigneeSelect" style="width:auto;min-width:180px">
+                <option value="">未割当</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:var(--space-2)">
+              <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="referralSelect">紹介元</label>
+              <select class="form-control" id="referralSelect" style="width:auto;min-width:180px">
+                <option value="">—</option>
+              </select>
+            </div>
             <a class="btn btn-ghost" id="reportBtn" href="#" target="_blank" rel="noopener">
               <i class="ti ti-file-text" aria-hidden="true"></i> 報告書PDF
             </a>

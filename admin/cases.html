@@ -67,6 +67,9 @@
           <option value="mitsumori_quote">見積もり成約</option>
           <option value="manual">手動登録</option>
         </select>
+        <select id="referralFilter" aria-label="紹介元で絞り込み">
+          <option value="">すべての紹介元</option>
+        </select>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-ink-muted);white-space:nowrap;min-height:44px">
           <input type="checkbox" id="showArchived">対象外も表示
         </label>
@@ -77,11 +80,11 @@
         <div class="table-wrap">
           <div id="loadingEl" aria-live="polite" aria-busy="true">
             <span class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">読み込み中</span>
-            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
-            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
-            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
-            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
-            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
+            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
+            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
+            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
+            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
+            <div class="skel-row"><div class="skel" style="max-width:60px"></div><div class="skel"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:80px"></div><div class="skel" style="max-width:90px"></div><div class="skel" style="max-width:90px"></div></div>
           </div>
           <table id="casesTable" style="display:none">
             <thead>
@@ -89,6 +92,7 @@
                 <th class="sortable" data-sort="caseNumber">案件番号 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="officeName">事業所名 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="source">流入元 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="referralSource">紹介元 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="status">ステータス <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="assignedUserName">担当者 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="receivedAt">受信日 <span class="sort-ind"></span></th>

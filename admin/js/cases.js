@@ -9,6 +9,7 @@ import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
   ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
+  referralOptions, referralLabel,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -40,6 +41,22 @@ function populateStatusFilter() {
     `<optgroup label="その他"><option value="${LOST}">${STATUS_LABELS[LOST]}</option></optgroup>`;
 }
 
+// appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
+let appSettings = {};
+const REFERRAL_NONE = "__none__"; // 絞り込みの「未設定」
+
+// 紹介元の絞り込みを設定内容から生成（未設定も選べる）
+function populateReferralFilter() {
+  const sel = document.getElementById("referralFilter");
+  if (!sel) return;
+  const cur = sel.value;
+  const opts = referralOptions(appSettings)
+    .map((r) => `<option value="${escHtml(r.id)}">${escHtml(r.name)}</option>`).join("");
+  sel.innerHTML = `<option value="">すべての紹介元</option>${opts}` +
+    `<option value="${REFERRAL_NONE}">未設定</option>`;
+  sel.value = cur;
+}
+
 let deadline = DEADLINE;
 function updateDeadlineBanner() {
   const days = daysUntilDeadline(deadline);
@@ -65,6 +82,7 @@ function sortValue(c, f) {
   if (DATE_FIELDS.includes(f)) { const v = c[f]; return v?.toMillis ? v.toMillis() : (v ? new Date(v).getTime() : 0); }
   if (NUMERIC_FIELDS.includes(f)) return Number(c[f]) || 0;
   if (f === "source") return SOURCE_LABELS[c.source] || c.source || "";
+  if (f === "referralSource") return referralLabel(c.referralSource, appSettings) || "";
   if (f === "assignedUserName") return c.assignedUserName || "";
   return (c[f] || "").toString();
 }
@@ -90,10 +108,11 @@ function currentFilters() {
     search: document.getElementById("searchInput").value.toLowerCase(),
     statusFilter: document.getElementById("statusFilter").value,
     sourceFilter: document.getElementById("sourceFilter").value,
+    referralFilter: document.getElementById("referralFilter")?.value || "",
     showArchived: !!document.getElementById("showArchived")?.checked,
   };
 }
-function matchFilters(c, { search, statusFilter, sourceFilter, showArchived }) {
+function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, showArchived }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
   const matchSearch = !search ||
@@ -102,7 +121,10 @@ function matchFilters(c, { search, statusFilter, sourceFilter, showArchived }) {
     (c.contactName || "").toLowerCase().includes(search);
   const matchStatus = !statusFilter || String(c.status) === statusFilter;
   const matchSource = !sourceFilter || c.source === sourceFilter;
-  return matchSearch && matchStatus && matchSource;
+  // 紹介元（referralSource）。SOURCE_LABELS の流入元とは別物。
+  const matchReferral = !referralFilter ||
+    (referralFilter === REFERRAL_NONE ? !c.referralSource : c.referralSource === referralFilter);
+  return matchSearch && matchStatus && matchSource && matchReferral;
 }
 
 function renderCases() {
@@ -118,7 +140,7 @@ function renderCases() {
     table.style.display = "none";
     empty.style.display = "block";
     // B1: 「条件に合致しない」と「そもそも0件」を区別
-    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter);
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.referralFilter);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
       ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
@@ -137,6 +159,7 @@ function renderCases() {
         ${c.corpName ? `<div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(c.corpName)}</div>` : ""}
       </td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}</td>
+      <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
       <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span></td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
       <td>${formatDate(c.receivedAt)}</td>
@@ -248,13 +271,14 @@ function fmtFull(ts) {
 function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
-  const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元",
+  const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元","紹介元",
     "ステータス","担当スタッフ","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([
       c.caseNumber || "", c.officeName || "", c.corpName || "", c.contactName || "",
       c.contactPhone || "", c.contactEmail || "", SOURCE_LABELS[c.source] || c.source || "",
+      referralLabel(c.referralSource, appSettings),
       STATUS_LABELS[c.status] || "", c.assignedUserName || "未割当",
       c.subsidyCategory || "", c.expectedSubsidyAmount || "",
       fmtFull(c.receivedAt), fmtFull(c.updatedAt),
@@ -314,6 +338,7 @@ async function createCase(user) {
       contactEmail: document.getElementById("contactEmail").value.trim(),
       contactPhone: document.getElementById("contactPhone").value.trim(),
       source: "manual", status: 1, assignedUserId: null, assignedUserName: null,
+      referralSource: null, // 紹介元は未設定で作る（案件詳細で選ぶ。決め打ちしない）
       receivedAt: now, updatedAt: now, cardReaders: [],
       subsidyCategory: null, expectedSubsidyAmount: null, lostReason: null,
       orderedAt: null, completedAt: null,
@@ -364,6 +389,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("searchInput").addEventListener("input", renderCases);
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
+  document.getElementById("referralFilter")?.addEventListener("change", renderCases);
   document.getElementById("showArchived")?.addEventListener("change", renderCases);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
   document.getElementById("dupCheckBtn")?.addEventListener("click", openDupModal);
@@ -378,7 +404,16 @@ onAuthStateChanged(auth, async (user) => {
   }));
   updateSortIndicators();
   updateDeadlineBanner();
-  try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
+  populateReferralFilter();
+  try {
+    const ss = await getDoc(doc(db, "appConfig", "settings"));
+    if (ss.exists()) {
+      appSettings = ss.data();
+      deadline = resolveDeadline(appSettings); updateDeadlineBanner();
+      populateReferralFilter();
+      if (allCases.length) renderCases(); // 一覧描画後に届いた場合だけ再描画
+    }
+  } catch (_) {}
 
   // 「重複ではない」確定ペアを購読（重複候補から除外する）
   onSnapshot(collection(db, "notDuplicates"), (snap) => {

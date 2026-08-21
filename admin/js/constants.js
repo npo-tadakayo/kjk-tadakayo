@@ -45,6 +45,32 @@ export const SOURCE_LABELS = {
   lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり成約", manual: "手動登録",
 };
 
+// 紹介元（どこ経由で来た案件か。2026-08-21 次田さん要望）。
+// ⚠️ SOURCE_LABELS（流入経路＝LP問い合わせ/見積もり成約/手動登録）とは別物。
+//    こちらは「営業上、誰の紹介で来たか」を表す。未設定は null（決め打ちしない）。
+// 既定はこの2件。設定画面（appConfig/settings.referralSources）で増やせる。
+export const REFERRAL_DEFAULTS = [
+  { id: "tadakayo", name: "タダカヨ", order: 10, active: true },
+  { id: "direct", name: "直接（飛び込み）", order: 20, active: true },
+];
+
+/** 設定（appConfig/settings.referralSources）があればそれ、無ければ既定を返す */
+export function referralOptions(settings) {
+  const rows = Array.isArray(settings?.referralSources) && settings.referralSources.length
+    ? settings.referralSources : REFERRAL_DEFAULTS;
+  return rows.filter((r) => r && r.active !== false)
+    .slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+/** 紹介元ID → 表示名（無効化済み・未知のIDもそのまま出せるように全件から引く） */
+export function referralLabel(id, settings) {
+  if (!id) return "";
+  const rows = Array.isArray(settings?.referralSources) && settings.referralSources.length
+    ? settings.referralSources : REFERRAL_DEFAULTS;
+  const hit = rows.find((r) => r && r.id === id);
+  return hit ? hit.name : id;
+}
+
 // 対象外（アーカイブ）理由。テスト送信・重複・スパム・採用しない 等を非表示にする。
 export const ARCHIVE_REASONS = {
   test: "テスト送信", duplicate: "重複", spam: "スパム",

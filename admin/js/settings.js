@@ -4,6 +4,7 @@ import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/fi
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
+import { REFERRAL_DEFAULTS } from "/js/constants.js";
 
 // 経理報告の既定値（未設定のときの初期表示）
 const DEFAULT_ACCOUNTING_EMAIL = "hidetoshi-tanaka@tadakayo.jp";
@@ -95,6 +96,82 @@ const DEFAULT_PO_MAIL_BODY = `{{仕入先名}}
 
 NPO法人タダカヨ 介護情報基盤伴走支援事業`;
 
+
+// ===== 紹介元の種類（appConfig/settings.referralSources） =====
+// 削除はさせない（既存案件の表示が壊れるため active:false で選択肢から外す）。
+// id は不変。改名は name のみ変更する。並び順は行の並び（保存時に order を振り直す）。
+function moveReferralRow(row, dir){
+  const sib = dir < 0 ? row.previousElementSibling : row.nextElementSibling;
+  if (!sib) return;
+  if (dir < 0) row.parentNode.insertBefore(row, sib);
+  else row.parentNode.insertBefore(sib, row);
+  updateReferralMoveButtons();
+}
+function updateReferralMoveButtons(){
+  const rows = Array.from(document.querySelectorAll("#referralList .referral-row"));
+  rows.forEach((r,i)=>{
+    r.querySelector(".r-up").disabled = (i === 0);
+    r.querySelector(".r-down").disabled = (i === rows.length - 1);
+  });
+}
+function addReferralRow(d){
+  const row = document.createElement("div");
+  row.className = "referral-row";
+  row.dataset.id = d && d.id ? String(d.id) : ""; // 既存行は id を固定（変更不可）
+  row.style.cssText = "border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:8px";
+  const isNew = !row.dataset.id;
+  row.innerHTML = `
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+      <div class="form-group" style="flex:2 1 200px;margin:0">
+        <label class="form-label">表示名</label>
+        <input class="form-control r-name" type="text" value="${escAttr(d && d.name)}" placeholder="例: タダカヨ">
+      </div>
+      <div class="form-group" style="flex:1 1 160px;margin:0">
+        <label class="form-label">ID（変更不可）</label>
+        <input class="form-control r-id" type="text" value="${escAttr(d && d.id)}"
+               ${isNew ? 'placeholder="例: tadakayo（半角英数）※空欄なら自動"' : "readonly"}>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;min-height:44px;white-space:nowrap">
+        <input type="checkbox" class="r-active" ${d && d.active === false ? "" : "checked"}>有効
+      </label>
+      <button class="btn btn-secondary r-up" type="button" aria-label="上へ移動" title="上へ移動"
+              style="min-width:44px;min-height:44px;padding:6px 10px"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
+      <button class="btn btn-secondary r-down" type="button" aria-label="下へ移動" title="下へ移動"
+              style="min-width:44px;min-height:44px;padding:6px 10px"><i class="ti ti-arrow-down" aria-hidden="true"></i></button>
+    </div>`;
+  row.querySelector(".r-up").addEventListener("click", ()=>moveReferralRow(row, -1));
+  row.querySelector(".r-down").addEventListener("click", ()=>moveReferralRow(row, 1));
+  $("referralList").appendChild(row);
+  updateReferralMoveButtons();
+}
+function renderReferrals(list){
+  $("referralList").innerHTML = "";
+  (Array.isArray(list) && list.length ? list : REFERRAL_DEFAULTS)
+    .slice().sort((a,b)=>(a.order ?? 0)-(b.order ?? 0)).forEach(addReferralRow);
+  updateReferralMoveButtons();
+}
+// 画面の並び順どおりに order を振り直して収集（10刻み。後から間に足しやすい）
+function collectReferralSources(){
+  return Array.from(document.querySelectorAll("#referralList .referral-row")).map((r,i)=>({
+    id: (r.dataset.id || r.querySelector(".r-id").value.trim()),
+    name: r.querySelector(".r-name").value.trim(),
+    order: (i + 1) * 10,
+    active: r.querySelector(".r-active").checked,
+  }));
+}
+// 保存前の検証。問題なければ空文字、あればメッセージを返す（id は必要なら自動採番）
+function validateReferralSources(rows){
+  const seen = new Set();
+  for (const r of rows){
+    if (!r.name) return "紹介元の表示名を入力してください";
+    if (!r.id) r.id = "ref_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (!/^[A-Za-z0-9_-]+$/.test(r.id)) return `紹介元のIDは半角英数・ハイフン・アンダースコアのみです（${r.id}）`;
+    if (seen.has(r.id)) return `紹介元のIDが重複しています（${r.id}）`;
+    seen.add(r.id);
+  }
+  return "";
+}
+
 const testFn = httpsCallable(functions, "testChatNotify");
 
 onAuthStateChanged(auth, async (user)=>{
@@ -138,6 +215,8 @@ onAuthStateChanged(auth, async (user)=>{
   $("poMailSubject").value = s.poMailSubject || "【発注書送付】NPO法人タダカヨ（{{発注番号}}）";
   $("poMailBody").value = s.poMailBody || DEFAULT_PO_MAIL_BODY;
   $("subsidyDeadline").value = s.subsidyDeadline || "";
+  renderReferrals(s.referralSources);
+  $("addReferralBtn").addEventListener("click", ()=>{ addReferralRow({ active:true }); });
   $("invoiceIssuerName").value = s.invoiceIssuerName || "";
   $("invoiceRegNo").value = s.invoiceRegNo || "";
   $("billingBankName").value = s.billingBankName || "";
@@ -157,6 +236,9 @@ onAuthStateChanged(auth, async (user)=>{
 
   $("saveBtn").addEventListener("click", async ()=>{
     const st=$("saveStatus");
+    const referralSources = collectReferralSources();
+    const rErr = validateReferralSources(referralSources);
+    if (rErr){ st.style.color="var(--color-danger)"; st.textContent=`保存できません: ${rErr}`; toast(rErr); return; }
     try{
       await setDoc(doc(db,"appConfig","settings"),{
         chatWebhookUrl: $("chatWebhookUrl").value.trim(),
@@ -178,6 +260,7 @@ onAuthStateChanged(auth, async (user)=>{
         poMailSubject: $("poMailSubject").value.trim(),
         poMailBody: $("poMailBody").value,
         subsidyDeadline: $("subsidyDeadline").value || "",
+        referralSources,
         invoiceIssuerName: $("invoiceIssuerName").value.trim(),
         invoiceRegNo: $("invoiceRegNo").value.trim(),
         billingBankName: $("billingBankName").value.trim(),
@@ -193,6 +276,7 @@ onAuthStateChanged(auth, async (user)=>{
         invoiceMailBody: $("invoiceMailBody").value,
         updatedAt: serverTimestamp(), updatedBy: user.email,
       },{merge:true});
+      renderReferrals(referralSources); // 追加した行のIDを確定して以後は変更不可にする
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";
       toast("設定を保存しました");
     }catch(e){ st.style.color="var(--color-danger)"; st.textContent=`保存に失敗: ${e.message}`; }

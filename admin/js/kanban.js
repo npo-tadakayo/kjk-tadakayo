@@ -9,6 +9,7 @@ import {
   STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS_SHORT, PHASES, LOST,
   phaseOf, phaseEntryStatus, STALE_DAYS, TERMINAL, ACTIVE_PRE_APPLY,
   DEADLINE, daysUntilDeadline, daysSince, resolveDeadline, deadlineLabel,
+  referralLabel,
 } from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
@@ -37,6 +38,8 @@ function toast(msg) {
   t._timer = setTimeout(() => { t.style.display = "none"; }, 2500);
 }
 
+// appConfig/settings（紹介元の一覧などを持つ）
+let appSettings = {};
 let deadline = DEADLINE;
 function updateDeadlineBanner() {
   const days = daysUntilDeadline(deadline);
@@ -102,6 +105,7 @@ function cardHtml(c, col) {
   const since = daysSince(c.updatedAt);
   const stale = isStale(c);
   const src = SOURCE_LABELS_SHORT[c.source];
+  const referral = referralLabel(c.referralSource, appSettings); // 紹介元（流入元とは別）
   return `
     <div class="kanban-card ${stale ? "stale" : ""}" draggable="true" data-id="${c._id}" data-status="${c.status}">
       <div class="kanban-card-num">#${c.caseNumber || "—"}${src ? " · " + src : ""}</div>
@@ -109,6 +113,7 @@ function cardHtml(c, col) {
       <div class="kanban-card-sub">${substatusControl(c, col)}</div>
       <div class="kanban-card-meta">
         <span><i class="ti ti-user" aria-hidden="true"></i> ${escHtml(c.assignedUserName || "未割当")}</span>
+        ${referral ? `<span><i class="ti ti-share" aria-hidden="true"></i> ${escHtml(referral)}</span>` : ""}
         ${since !== null ? `<span class="${stale ? "stale-flag" : ""}">${stale ? "停滞 " : ""}${since}日前</span>` : ""}
       </div>
     </div>`;
@@ -201,7 +206,10 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("searchInput").addEventListener("input", renderBoard);
   document.getElementById("sourceFilter").addEventListener("change", renderBoard);
   updateDeadlineBanner();
-  try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
+  try {
+    const ss = await getDoc(doc(db, "appConfig", "settings"));
+    if (ss.exists()) { appSettings = ss.data(); deadline = resolveDeadline(appSettings); updateDeadlineBanner(); }
+  } catch (_) {}
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
