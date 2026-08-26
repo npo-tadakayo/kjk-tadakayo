@@ -272,7 +272,7 @@ function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
   const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元","紹介元",
-    "ステータス","担当スタッフ","補助金区分","想定補助額","受信日時","最終更新"];
+    "ステータス","担当営業","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([

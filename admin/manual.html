@@ -42,22 +42,66 @@
         <h2>§2 画面の見かた</h2>
         <ul>
           <li><strong>ダッシュボード</strong>: 件数・補助金額・進捗の全体像と<strong>月次の新規案件グラフ</strong>（直近6か月）</li>
-          <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み・CSV出力</li>
+          <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み（ステータス・流入元・<strong>紹介元</strong>）・CSV出力</li>
           <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）</li>
           <li><strong>供給管理</strong>: 在庫・発注・出荷・認定事業所の受注</li>
           <li><strong>売上シミュレーター</strong>: 件数を入れて年間の売上・利益を試算</li>
           <li><strong>認定事業所</strong>: 認定事業所の一覧・登録、協定書/説明資料の作成</li>
           <li><strong>料金・送料</strong>: 認定事業所への卸価格・レターパック/ゆうパック送料の設定</li>
-          <li><strong>設定</strong>: 通知先(Chat)・メール送信元・<strong>助成金の申請期限</strong>・振込先などの変更</li>
+          <li><strong>設定</strong>: 通知先(Chat)・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>などの変更</li>
         </ul>
 
         <h2>§3 使い方（基本操作）</h2>
         <h3>案件を進める</h3>
         <div class="step"><span class="n">1</span>案件一覧またはカンバンから案件を開く</div>
         <div class="step"><span class="n">2</span>「ステータス」を現在の状況に変更（履歴に自動記録）</div>
-        <div class="step"><span class="n">3</span>「対応記録」タブに電話・メール・訪問などを記録</div>
-        <div class="step"><span class="n">4</span>「伴走支援」タブで訪問日・メモ・写真を残す</div>
-        <div class="step"><span class="n">5</span>「申請情報」タブで助成金の申請状況を管理</div>
+        <div class="step"><span class="n">3</span>「<strong>担当営業</strong>」でその案件を進める人を選ぶ</div>
+        <div class="step"><span class="n">4</span>「<strong>紹介元</strong>」でどこからの紹介で来た案件かを選ぶ</div>
+        <div class="step"><span class="n">5</span>「対応記録」タブに電話・メール・訪問などを記録</div>
+        <div class="step"><span class="n">6</span>「伴走支援」タブで訪問日・メモ・写真を残す</div>
+        <div class="step"><span class="n">7</span>「申請情報」タブで助成金の申請状況を管理</div>
+
+        <h3>担当営業を割り当てる</h3>
+        <p>その案件を進める営業担当が決まったら、案件詳細の上部、ステータスの右にある「<strong>担当営業</strong>」から選びます。<strong>選んだ時点ですぐ保存されます</strong>（保存ボタンはありません）。</p>
+        <ul>
+          <li>候補に出るのは「ユーザー管理」に登録されている人です</li>
+          <li>担当を外したいときは「<strong>未割当</strong>」を選びます</li>
+          <li>割り当てた名前は、案件一覧の「担当営業」列とカンバンのカードにも出ます。CSV出力の「担当営業」列にも入ります</li>
+          <li><strong>誰がいつ担当を変えたかは「対応記録」に残ります</strong>（変更前の担当者名も一緒に記録されます）</li>
+          <li>停止したスタッフが担当のまま残っている案件では、その人が「（無効）」付きで選択肢に出ます。勝手に別の人や「未割当」に変わることはないので、引き継ぐときは新しい担当者を選び直してください</li>
+        </ul>
+        <div class="callout tip">これまでは担当営業を選ぶ場所そのものがなく、すべての案件が「未割当」のままでした（2026-08-26 に追加した機能です）。カンバン上部の「未割当の新規案件」の件数も、割り当てれば減っていきます。</div>
+
+        <h3>紹介元を記録する</h3>
+        <p>案件詳細の上部、担当営業の右にある「<strong>紹介元</strong>」から選びます。こちらも選んだ時点で保存されます。</p>
+        <ul>
+          <li>はじめは「<strong>タダカヨ</strong>」「<strong>直接（飛び込み）</strong>」の2つです。種類は設定画面で増やせます（次項）</li>
+          <li>未設定に戻すときは「<strong>—</strong>」を選びます</li>
+          <li>案件一覧に「紹介元」の列が増えます。上の絞り込みで紹介元ごとに、また「<strong>未設定</strong>」でも絞り込めます。CSV出力にも「紹介元」列が入ります</li>
+          <li>紹介元の変更は対応記録には残りません（担当営業の変更とは違う点です）</li>
+        </ul>
+        <div class="callout warn"><strong>「紹介元」と「流入元」は別物です。</strong> 流入元（LP問い合わせ／見積もり成約／手動登録）は<strong>どの入口から入ってきたか</strong>をシステムが自動で付けるもので、ダッシュボードやレポートの集計に使っています。紹介元は<strong>誰の紹介で来たか</strong>を人が選んで記録するものです。案件一覧では隣り合って並ぶので、見間違えないようご注意ください。</div>
+
+        <h3>紹介元の種類を増やす・変える（管理者のみ）</h3>
+        <p>設定画面の「<strong>紹介元の種類</strong>」で、追加・表示名の変更・並び替え・有効／無効の切り替えができます。</p>
+        <div class="step"><span class="n">1</span>「紹介元を追加」で行を足し、表示名を入れる（IDは空欄なら自動で付きます）</div>
+        <div class="step"><span class="n">2</span>上下の矢印で並び順を変える（上にあるものほど選択肢の先頭に出ます）</div>
+        <div class="step"><span class="n">3</span>「保存」を押す</div>
+        <div class="callout warn"><strong>IDは一度決めたら変えられません。</strong> 登録済みの案件はIDで紐づいているため、呼び名を変えたいときは「表示名」だけを直してください（過去の案件の表示も新しい名前になります）。<br><strong>使わなくなった紹介元は削除できません。</strong> 「有効」のチェックを外すと、新しく選ぶときの選択肢から外れます。過去の案件の表示はそのまま残ります（その紹介元が入っている案件では「（無効）」付きで出ます）。</div>
+
+        <h3>重複した案件をまとめる（統合）</h3>
+        <p>同じ事業所から二重に問い合わせが入ったときなど、<strong>メール・電話・事業所名のいずれかが一致する案件</strong>があると、案件詳細に「重複の可能性がある案件」のカードが出ます。</p>
+        <div class="step"><span class="n">1</span><strong>残したい案件のほうを開く</strong>（開いている案件が残る側になります）</div>
+        <div class="step"><span class="n">2</span>カードの中から相手の案件を選び、「この案件に統合」を押す</div>
+        <div class="step"><span class="n">3</span>内容が食い違う項目があれば、どちらを残すかを選ぶ画面が開く</div>
+        <div class="step"><span class="n">4</span>「この内容で統合する」を押す</div>
+        <ul>
+          <li>選ぶのは、<strong>両方に値が入っていて内容が違う項目だけ</strong>です。対象は<strong>担当営業・紹介元・担当者名・メール・電話・法人名</strong>の6項目で、はじめは残る案件の値が選ばれています</li>
+          <li><strong>片方にしか値がない項目は、これまでどおり自動で引き継がれます</strong>（選ぶ必要はありません。画面の下に「空欄のため自動で補完する項目」として一覧が出ます）</li>
+          <li>選ぶ画面では、<strong>残る案件が緑・消える案件が赤</strong>で、それぞれ案件番号と事業所名が出ます</li>
+          <li>統合すると、消える側の対応記録・伴走支援の記録は残る案件に移り、消える側は「対象外（重複）」になります。どちらを採用したか・何を自動で補完したかは、残る案件の対応記録に残ります</li>
+        </ul>
+        <div class="callout warn"><strong>残るのは必ず「いま開いている案件」です。</strong> 画面上で残る側と消える側を入れ替えることはできません。<strong>残したい案件を開いてから</strong>相手を統合してください。<strong>統合したあとに元へ戻すことはできません。</strong></div>
 
         <h3>AIアシスタントを使う（案件詳細→AIアシスタント）</h3>
         <ul>
@@ -129,6 +173,8 @@
         <h2>§4 よくある質問</h2>
         <div class="faq"><div class="q">Q. 問い合わせはどうやって入ってきますか？</div><p>LP・見積もりツールから送信されると、自動で案件として登録され、Google Chatにも通知されます。</p></div>
         <div class="faq"><div class="q">Q. メールはどのアドレスから送られますか？</div><p>「タダカヨ事務局 &lt;kjk-staff@tadakayo.jp&gt;」から送信されます。設定画面で変更できます。</p></div>
+        <div class="faq"><div class="q">Q. 「紹介元」と「流入元」は何が違うの？</div><p><strong>流入元</strong>は、その案件が<strong>どの入口から入ってきたか</strong>（LP問い合わせ／見積もり成約／手動登録）です。システムが自動で付け、ダッシュボードやレポートの集計に使っています。<strong>紹介元</strong>は、その案件が<strong>誰の紹介で来たか</strong>（タダカヨ／直接（飛び込み）など）で、案件詳細で人が選んで記録します。案件一覧では隣り合って並ぶのでご注意ください。</p></div>
+        <div class="faq"><div class="q">Q. どの案件も担当営業が「未割当」のままなのはなぜ？</div><p>2026-08-26 まで、担当営業を割り当てる操作そのものがありませんでした。今は案件詳細の上部（ステータスの隣）で選べます。これまでの案件は、開いて担当営業を選び直してください。</p></div>
         <div class="faq"><div class="q">Q. 通知先のChatを変えたい</div><p>設定画面の「Google Chat Webhook URL」を変更して保存してください（最大60秒で反映）。</p></div>
         <div class="faq"><div class="q">Q. AIの文章はそのまま送って大丈夫？</div><p>必ず内容を確認・修正してから送ってください。AIは下書きの補助です。</p></div>
 
@@ -136,7 +182,7 @@
         <div class="callout warn"><strong>ログインできない</strong>：@tadakayo.jp のアカウントでログインしているか確認してください。認定事業所の方は許可リスト登録が必要です。</div>
         <div class="callout tip"><strong>メールが送れない</strong>：設定画面の「メール送信元」が正しいアカウントか確認してください。解決しない場合は事務局へご連絡ください。</div>
 
-        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-07-02 ／ 詳細は <code>MANUAL.md</code></p>
+        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-08-26 ／ 詳細は <code>MANUAL.md</code></p>
       </div>
     </main>
   </div>
