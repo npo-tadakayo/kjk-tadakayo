@@ -349,6 +349,35 @@
       flex-shrink: 0;
     }
 
+    /* ======== NEWS（お知らせ・時限掲載） ======== */
+    /* 2026-08-26 追加: 国の説明会（YouTubeライブ）の告知。
+       開催中／アーカイブで文言が変わるので data-news-state を見て差し替える。
+       掲載が終わったら <section id="news"> ごと削除してよい。 */
+    .news-section { background: #FFF8E7; border-top: 3px solid var(--color-primary); }
+    .news-card { background:#fff; border:1px solid #E8DFC8; border-radius:12px; padding:24px; }
+    .news-status {
+      display:inline-flex; align-items:center; gap:6px;
+      background: var(--color-primary); color:#fff;
+      font-size:13px; font-weight:700; padding:4px 12px; border-radius:100px; margin-bottom:12px;
+    }
+    .news-title { font-size:22px; font-weight:700; line-height:1.5; margin:0 0 6px; }
+    .news-lead { font-size:15px; line-height:1.9; margin:0 0 18px; }
+    .news-table { width:100%; border-collapse:collapse; font-size:15px; margin-bottom:18px; }
+    .news-table th, .news-table td { border-bottom:1px solid #EFE7D4; padding:10px 8px; text-align:left; vertical-align:top; }
+    .news-table th { width:9em; white-space:nowrap; color:#6a5e48; font-weight:700; }
+    .news-actions { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:20px; }
+    .news-points { background:#FAFAF8; border-radius:8px; padding:16px 20px; margin-bottom:16px; }
+    .news-points h3 { font-size:16px; margin:0 0 10px; }
+    .news-points ul { margin:0; padding-left:1.2em; }
+    .news-points li { font-size:14px; line-height:1.9; margin-bottom:4px; }
+    .news-refs { font-size:13px; line-height:1.9; color:#6a5e48; }
+    .news-refs a { color:#3a6e9e; }
+    @media (max-width: 640px) {
+      .news-table th, .news-table td { display:block; width:auto; border-bottom:none; padding:2px 0; }
+      .news-table td { padding-bottom:10px; border-bottom:1px solid #EFE7D4; }
+      .news-title { font-size:19px; }
+    }
+
     /* ======== HERO ======== */
     .hero {
       background: linear-gradient(135deg, #fff 0%, var(--color-primary-light) 100%);
@@ -1063,6 +1092,63 @@
   </section>
 
   <!-- ======== WHY ======== -->
+  <!-- ======== NEWS（お知らせ・時限掲載 / 2026-08-26 掲載） ========
+       国（厚生労働省）の説明会の告知。開催後はアーカイブ案内に文言を差し替える。
+       掲載終了時はこの <section id="news"> ごと削除してよい。 -->
+  <section id="news" class="news-section section" aria-labelledby="news-heading">
+    <div class="container">
+      <div class="news-card">
+        <span class="news-status" data-news-state="archive">
+          <i class="ti ti-player-play" aria-hidden="true"></i>アーカイブ公開中
+        </span>
+        <h2 id="news-heading" class="news-title">
+          厚生労働省の説明会「ケアプランデータ連携システムの介護WEBサービスへの移行について」
+        </h2>
+        <p class="news-lead">
+          令和9年1月を目途に、ケアプランデータ連携システム（ケアプー）が「介護保険資格確認等WEBサービス（介護WEBサービス）」へ統合されます。
+          その内容について、国が説明会を行いました。<strong>説明会は終了しましたが、アーカイブ動画でいつでもご覧いただけます</strong>（事前申込は不要です）。
+        </p>
+
+        <table class="news-table">
+          <tr><th>開催日</th><td><strong>2026/08/26（水）</strong>　令和8年8月26日　13:30〜14:30<br><span style="font-size:13px;color:#6a5e48;">※ライブ配信は終了しました。以下のリンクからアーカイブをご覧いただけます</span></td></tr>
+          <tr><th>視聴方法</th><td>YouTube（<strong>事前申込不要・無料</strong>）</td></tr>
+          <tr><th>対象</th><td>居宅介護支援事業所、居宅サービス事業所、地域包括支援センターの職員</td></tr>
+          <tr><th>主催</th><td>厚生労働省 老健局</td></tr>
+          <tr><th>アーカイブ</th><td><strong>公開中</strong>。ご都合がつかなかった方も、あとからご覧いただけます</td></tr>
+          <tr><th>引っ越し準備期間</th><td><strong>2026年（令和8年）7月〜12月</strong>　※統合は2027年（令和9年）1月（予定）</td></tr>
+        </table>
+
+        <div class="news-actions">
+          <a href="https://www.youtube.com/live/VRawbfXwL9o" class="btn btn-primary btn-lg" target="_blank" rel="noopener noreferrer">
+            <i class="ti ti-brand-youtube" aria-hidden="true"></i>アーカイブを見る
+          </a>
+          <a href="https://www.mhlw.go.jp/content/12306000/001742527.pdf" class="btn btn-outline btn-lg" target="_blank" rel="noopener noreferrer">
+            <i class="ti ti-file-text" aria-hidden="true"></i>説明会資料（42ページ・PDF）
+          </a>
+        </div>
+
+        <div class="news-points">
+          <h3>説明会で扱われる主な内容</h3>
+          <ul>
+            <li><strong>移行後はブラウザで使えます。</strong>専用ソフトのインストールは不要になります</li>
+            <li><strong>介護WEBサービスへの利用登録が必要です。</strong>登録は6つのステップで、数分で終わります。<br>
+                <span style="font-size:13px;color:#6a5e48;">お手元に、電子請求受付システムの <strong>ID（KJから始まる12桁）・パスワード・登録済みのメールアドレス</strong> をご用意ください</span></li>
+            <li><strong>市町村の対応状況を待つ必要はありません。</strong>お住まいの自治体の準備状況にかかわらず、事業所側の対応が必要です</li>
+            <li><strong>移行後は利用料の負担がなくなります</strong>（現行のケアプーは年額21,000円。令和8年度中はフリーパスキャンペーンで無料）</li>
+            <li>加算の取扱いについては、追って国から案内される予定です</li>
+          </ul>
+        </div>
+
+        <p class="news-refs">
+          説明会資料：厚生労働省 老健局「ケアプランデータ連携システムの統合と介護情報基盤（介護保険資格確認等WEBサービス）について」（令和8年8月・42ページ）<br>
+          根拠となる通知：介護保険最新情報 <a href="https://www.mhlw.go.jp/content/001730882.pdf" target="_blank" rel="noopener noreferrer">Vol.1529</a>（令和8年7月29日 事務連絡）「ケアプランデータ連携システムの介護保険資格確認等WEBサービスへの移行について」<br>
+          国へのお問い合わせ：<a href="https://www.kaigo-kiban-portal.jp/inquiry/input" target="_blank" rel="noopener noreferrer">介護情報基盤ポータルのお問い合わせフォーム</a>（24時間受付）<br>
+          登録の手順や準備するものは、タダカヨの伴走支援でも一緒に確認できます。ご不明な点はお気軽にご相談ください。
+        </p>
+      </div>
+    </div>
+  </section>
+
   <section class="why-section section" aria-labelledby="why-heading">
     <div class="container">
       <div class="text-center">
