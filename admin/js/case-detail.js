@@ -29,6 +29,9 @@ let currentCase = null;
 let latestActivities = [];
 let latestSessions = [];
 let isAdmin = false;
+// 統合（mergeInto）は取り消せないので「閲覧のみ（viewer）」には出さない。
+// 完全削除＝管理者のみ／統合＝管理者＋スタッフ（データは消えず対象外になるだけなので削除より1段ゆるい）。
+let canMerge = false;
 let currentUser = null;
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
 let appSettings = {};
@@ -154,6 +157,9 @@ async function renderDuplicateCandidates() {
   try { cands = await loadDuplicateCandidates(); } catch (_) { cands = []; }
   if (!cands.length) { card.style.display = "none"; return; }
   card.style.display = "block";
+  // 閲覧のみの人には統合ボタンを出さない（押してから断るのではなく、そもそも出さない）
+  const hint = document.getElementById("dupCandidatesHint");
+  if (hint && !canMerge) hint.textContent = "メール・電話・事業所名が一致します。";
   body.innerHTML = cands.map((c) => `
     <div style="display:flex;gap:10px;align-items:center;padding:8px 4px;border-top:1px solid var(--color-line)">
       <a href="/case-detail.html?id=${c._id}" style="flex:1;text-decoration:none;color:inherit">
@@ -161,9 +167,9 @@ async function renderDuplicateCandidates() {
         ${escHtml(c.officeName || "—")}
         <span style="font-size:12px;color:var(--color-ink-muted)">${SOURCE_LABELS[c.source] || c.source || ""} ／ ${STATUS_LABELS[c.status] || ""}</span>
       </a>
-      <button class="btn btn-ghost" type="button" data-merge="${c._id}" style="white-space:nowrap">
+      ${canMerge ? `<button class="btn btn-ghost" type="button" data-merge="${c._id}" style="white-space:nowrap">
         <i class="ti ti-arrow-merge" aria-hidden="true"></i>この案件に統合
-      </button>
+      </button>` : ""}
     </div>`).join("");
   // 統合ボタン（このカード内に限定）
   body.querySelectorAll("[data-merge]").forEach((btn) => {
@@ -457,6 +463,34 @@ function computeMergeDiffs(keep, other) {
   return { autoFill, autoNotes, conflicts };
 }
 
+// 統合時に一緒に引き継ぐ「1案件1ドキュメント」のコレクション。
+// いずれも doc ID が caseId そのもの（サブコレクションではない）ため、案件を統合しても
+// 付いてこず、統合元（対象外になる側）に取り残される＝現場からは「入力したチェックが消えた」ように見える。
+// hardDeleteCase() が消しているのと同じ3つ。ここに1行足せば引き継ぎ対象が増える。
+const MERGE_DOC_COLLECTIONS = [
+  { col: "documentChecklists", label: "書類チェック" },
+  { col: "subsidyApplications", label: "申請情報" },
+  { col: "supportChecklists", label: "伴走支援チェックリスト（事前・当日・アフター）" },
+];
+
+// チェックリスト類をどう引き継ぐかを決める（副作用なし・Firestore を触らない）。
+// 方針: 残る側にドキュメントが「無い」ときだけ丸ごと移す。
+//   チェックは項目ごとに「誰がいつ確認したか」の意味を持つので、項目単位で機械的に混ぜない。
+//   両方にあるときは残る側を必ず優先し（＝上書きしない）、統合元にも記録があった事実を
+//   タイムラインに残して人が確認しに行けるようにする。
+//   state: { [col]: { keepExists, otherExists } }
+function planChecklistCarryOver(state) {
+  const moved = [];    // 引き継ぐもの（残る側が空だった）
+  const kept = [];     // 引き継がないもの（両方にあるので残る側を優先。人の確認が要る）
+  for (const { col, label } of MERGE_DOC_COLLECTIONS) {
+    const st = state[col] || {};
+    if (!st.otherExists) continue;              // 統合元に無い → 何もしない
+    if (st.keepExists) { kept.push(label); continue; }  // 残る側にある → 触らない
+    moved.push(label);
+  }
+  return { moved, kept };
+}
+
 // 食い違いの選択モーダル。resolve(選択マップ) / キャンセルは resolve(null)。
 // 取り違え防止のため、どちらが残りどちらが消えるかを案件番号＋事業所名つきで明示する。
 function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
@@ -517,6 +551,9 @@ function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
               <div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(sub(other))}</div>
             </div>
           </div>
+          <p style="font-size:13px;font-weight:700;color:var(--color-danger);margin-bottom:10px">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i> この操作は元に戻せません。
+          </p>
           <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
             値が食い違う項目が ${conflicts.length} 件あります。残す方を選んでください（初期値は「残る案件」の値）。
           </p>
@@ -560,8 +597,9 @@ function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
   });
 }
 
-// other を当案件（primary）に統合する
+// other を当案件（primary）に統合する（管理者・スタッフのみ）
 async function mergeInto(other) {
+  if (!canMerge) { alert("案件の統合は管理者・スタッフのみ可能です"); return; }
   const keep = currentCase;
   const { autoFill, autoNotes, conflicts } = computeMergeDiffs(keep, other);
 
@@ -570,7 +608,7 @@ async function mergeInto(other) {
   if (conflicts.length) {
     choices = await openMergeChoiceModal(keep, other, conflicts, autoNotes);
     if (!choices) return;   // キャンセル
-  } else if (!confirm(`案件 #${other.caseNumber || ""}「${other.officeName || ""}」を、この案件 #${keep.caseNumber || ""} に統合します。\n統合元は「対象外（重複）」になります。よろしいですか？`)) {
+  } else if (!confirm(`案件 #${other.caseNumber || ""}「${other.officeName || ""}」を、この案件 #${keep.caseNumber || ""} に統合します。\n統合元は「対象外（重複）」になります。\nこの操作は元に戻せません。よろしいですか？`)) {
     return;
   }
 
@@ -592,6 +630,30 @@ async function mergeInto(other) {
       const snap = await getDocs(query(collection(db, col), where("caseId", "==", other._id)));
       snap.forEach((d) => batch.update(d.ref, { caseId }));
     }
+
+    // チェックリスト類（doc ID = caseId）を引き継ぐ。残る側に無いものだけ移し、絶対に上書きしない。
+    const clState = {};
+    const clData = {};
+    for (const { col } of MERGE_DOC_COLLECTIONS) {
+      const [keepSnap, otherSnap] = await Promise.all([
+        getDoc(doc(db, col, caseId)),
+        getDoc(doc(db, col, other._id)),
+      ]);
+      clState[col] = { keepExists: keepSnap.exists(), otherExists: otherSnap.exists() };
+      if (otherSnap.exists()) clData[col] = otherSnap.data();
+    }
+    const carry = planChecklistCarryOver(clState);
+    for (const { col } of MERGE_DOC_COLLECTIONS) {
+      const st = clState[col];
+      if (!st.otherExists || st.keepExists) continue;   // 統合元に無い／残る側にある → 触らない
+      const data = { ...clData[col] };
+      if ("caseId" in data) data.caseId = caseId;       // subsidyApplications は自分の caseId を持つ
+      data.mergedFromCaseId = other._id;                // どこから来たかを残す
+      data.updatedAt = serverTimestamp();
+      batch.set(doc(db, col, caseId), data, { merge: true });
+    }
+    // 統合元側のドキュメントは消さない（対象外になるだけで参照はされないため、記録として残す）
+
     fill.updatedAt = serverTimestamp();
     batch.update(doc(db, "cases", caseId), fill);
     // 統合元を対象外（重複）に
@@ -617,6 +679,13 @@ async function mergeInto(other) {
         ? `カードリーダー: ${JSON.stringify(other.cardReaders)}` : "",
       chosenNotes.length ? `\n【食い違いの採用結果】\n${chosenNotes.join("\n")}` : "",
       autoNotes.length ? `\n【自動で補完した項目】\n${autoNotes.join("\n")}` : "",
+      carry.moved.length
+        ? `\n【統合元から引き継いだチェックリスト】\n${carry.moved.map((l) => `${l}（この案件は未入力だったため、統合元 #${other.caseNumber || "—"} の内容をそのまま引き継ぎました）`).join("\n")}`
+        : "",
+      carry.kept.length
+        ? `\n【引き継がなかったチェックリスト（この案件の入力を優先）】\n`
+          + carry.kept.map((l) => `${l}: 統合元 #${other.caseNumber || "—"} にも入力がありました。上書きを避けるため引き継いでいません。内容を確認して必要なら手で入れ直してください。`).join("\n")
+        : "",
     ].filter(Boolean).join("\n");
     await logActivity(`重複案件 #${other.caseNumber || ""} を統合`, detail);
     showToast("統合しました");
@@ -896,6 +965,7 @@ onAuthStateChanged(auth, async (user) => {
   const myRole = await gateRole(db, user);
   if (!myRole) return;
   isAdmin = myRole.role === "admin";
+  canMerge = myRole.role === "admin" || myRole.role === "staff";
   currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;

@@ -22,6 +22,17 @@ const ACTIVITY_LABELS = {
   phone_in: "電話（着信）", phone_out: "電話（発信）", email_in: "メール（受信）",
   email_out: "メール（送信）", visit: "訪問・対面", memo: "メモ", gmail_sent: "メール送信",
 };
+// 補助金の申請ステータス。値の定義は admin/case-detail.html の <select id="subsidyStatus"> が正本。
+// ⚠️ そちらの option を増減したらここも必ず揃えること（constants.js に定義が無いため import できない）。
+const SUBSIDY_STATUS_LABELS = {
+  preparing: "準備中", docs_ready: "書類完了", applied: "申請済", adopted: "採択",
+  rejected: "不採択", waiting_deposit: "入金待ち", deposited: "入金済",
+};
+// 交付額の保存先。case-detail.js は applicationContent.grantAmount に書く（2026-08-30 判明）。
+// 過去データがトップレベル subsidy.grantAmount に入っている可能性があるので両方を見る。
+function grantAmountOf(sa) {
+  return sa?.applicationContent?.grantAmount ?? sa?.grantAmount ?? null;
+}
 
 function esc(s) {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -97,9 +108,10 @@ function renderReport(c, subsidy, sessions, activities) {
 
     <h2 class="sec">補助金申請状況</h2>
     ${subsidy ? kvRows([
-      ["申請ステータス", esc(subsidy.status || "—")],
+      // 未知の値はそのまま出す（黙って空欄にしない）
+      ["申請ステータス", esc(SUBSIDY_STATUS_LABELS[subsidy.status] || subsidy.status || "—")],
       subsidy.applicationDate ? ["申請日", esc(subsidy.applicationDate)] : null,
-      subsidy.grantAmount ? ["交付額", yen(subsidy.grantAmount)] : null,
+      grantAmountOf(subsidy) ? ["交付額", yen(grantAmountOf(subsidy))] : null,
       subsidy.actualDepositDate ? ["振込確認日", esc(subsidy.actualDepositDate)] : null,
     ]) : `<div class="muted">申請情報は登録されていません。</div>`}
 

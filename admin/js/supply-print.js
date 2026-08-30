@@ -93,6 +93,30 @@ function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: toda
 //   内訳＝見積のような編集可能な明細表（伴走支援サポート費など行を追加できる）。）
 // 用途区分（助成金: A=カードリーダー / B=接続サポート等経費 / X=対象外）
 const RCPT_KINDS=[["A","カードリーダー"],["B","接続サポート等経費"],["X","対象外(送料等)"]];
+// 送料らしい品名の手がかり（用途区分の付け間違いを見つけるためだけに使う）
+const RCPT_SHIP_WORDS=["送料","配送","レターパック","ゆうパック"];
+// 助成金の取りこぼし・過大申請の注意を作る（画面のみ・保存も印刷も止めない）。
+// rows = [{kind,name,qty,price}] の素の配列。DOMに触らないので単体で検証できる
+function receiptWarnings(rows){
+  const list=[];
+  const rs=Array.isArray(rows)?rows:[];
+  // ① B区分（接続サポート等経費）の入れ忘れ＝事業所の申請額がそのぶん丸ごと減る
+  if(!rs.some(r=>(r&&r.kind)==="B")){
+    list.push({
+      head:"接続サポート等経費（B）の行がありません。",
+      body:"伴走支援のサポート費などがある場合は「行を追加」で入れてください。入れ忘れると事業所の助成金申請額が減ります。",
+    });
+  }
+  // ② 送料らしい行が対象外(X)以外＝申請額が過大になる
+  const bad=rs.filter(r=>r && r.kind!=="X" && RCPT_SHIP_WORDS.some(w=>String(r.name||"").includes(w)));
+  if(bad.length){
+    list.push({
+      head:"送料は助成金の対象外です。",
+      body:`用途区分が「対象外」になっているか確認してください（該当: ${bad.map(r=>String(r.name||"")).join("・")}）。`,
+    });
+  }
+  return list;
+}
 function rcptRow(r){
   r=r||{};
   const opts=RCPT_KINDS.map(([v,l])=>`<option value="${v}"${(r.kind||"A")===v?" selected":""}>${l}</option>`).join("");
@@ -185,11 +209,15 @@ function renderReceipt(s, st, saved){
       </tr></thead>
         <tbody id="rcptItems">${rowsInit.map(rcptRow).join("")}</tbody></table>
       <div class="rcpt-noprint" style="margin:6px 0 2px"><button type="button" id="rcptAddRow" class="btn btn-secondary" style="font-size:12px;padding:5px 10px"><i class="ti ti-plus"></i> 行を追加</button></div>
+      <!-- 助成金の取りこぼし・過大申請の注意。画面だけの案内で印刷には出さない（保存・印刷は止めない） -->
+      <div class="rcpt-noprint" id="rcptGuard" style="font-size:12px;line-height:1.8;margin:6px 0 0"></div>
       <div style="display:flex;gap:20px;align-items:flex-start">
         <table class="po-sum rcpt-sum" style="flex:1"><thead><tr><th>区分</th><th class="num">税抜</th><th class="num">消費税(10%)</th><th class="num">税込</th></tr></thead>
         <tbody>
           <tr><td class="lbl">カードリーダー費（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
           <tr><td class="lbl">接続サポート等経費（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
+          <!-- 助成金の申請対象額。印刷物（領収書そのもの）の見た目は変えないので画面だけに出す -->
+          <tr class="rcpt-noprint"><td class="lbl">助成金の申請対象額（A＋B・税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="abIncl">¥0</strong></td></tr>
           <tr id="xRow" style="display:none"><td class="lbl">対象外（送料等）</td><td class="num" id="xExcl">¥0</td><td class="num" id="xTax">¥0</td><td class="num" id="xIncl">¥0</td></tr>
           <tr class="grand"><td class="lbl">明細合計（税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="rcptGrand">¥0</strong></td></tr>
         </tbody></table>
@@ -317,17 +345,30 @@ function wireReceiptEditor(){
     }
     const stamp=document.getElementById("rcptStamp"); if(stamp) stamp.style.display = v>=50000 ? "flex" : "none";
   }
+  // 注意書きの描画。気づける形にするだけで、保存も印刷も止めない
+  function renderGuard(rows){
+    const box=document.getElementById("rcptGuard"); if(!box) return;
+    const list=receiptWarnings(rows);
+    box.innerHTML = list.map(w=>
+      `<div style="color:#c87a1f"><i class="ti ti-alert-triangle"></i> <strong>${esc(w.head)}</strong>${esc(w.body)}</div>`
+    ).join("");
+  }
   function recompute(){
     const sub={A:0,B:0,X:0};
+    const rows=[];
     tbody.querySelectorAll("tr").forEach(tr=>{
       const k=tr.querySelector(".ri-kind")?.value||"A";
       const q=Number(tr.querySelector(".ri-qty")?.value)||0;
       const p=Number(tr.querySelector(".ri-price")?.value)||0;
+      rows.push({kind:k, name:tr.querySelector(".ri-name")?.value||"", qty:q, price:p});
       const amt=q*p; sub[k]=(sub[k]||0)+amt;
       const cell=tr.querySelector(".ri-amt"); if(cell) cell.textContent=yen(amt);
     });
     set("aExcl",sub.A); set("aTax",taxOf(sub.A)); set("aIncl",incl(sub.A));
     set("bExcl",sub.B); set("bTax",taxOf(sub.B)); set("bIncl",incl(sub.B));
+    // 助成金の申請対象額＝A(税込)＋B(税込)。表示中の aIncl・bIncl と同じ丸め方で足す
+    set("abIncl", incl(sub.A)+incl(sub.B));
+    renderGuard(rows);
     const xRow=document.getElementById("xRow"); if(xRow) xRow.style.display = sub.X>0 ? "" : "none";
     set("xExcl",sub.X); set("xTax",taxOf(sub.X)); set("xIncl",incl(sub.X));
     itemsTotal=incl(sub.A)+incl(sub.B)+incl(sub.X);
@@ -387,7 +428,7 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
   btn.disabled=true;
   try{
     await setDoc(doc(db,"receipts",shipmentId),{
-      receiptNo, shipmentId, soNumber:s.soNumber||"",
+      receiptNo: rcptNo, shipmentId, soNumber:s.soNumber||"",
       billToName: s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||""),
       billToEmail: s.partnerEmail||"",
       // 実入金との関係も残す（あとで「なぜこの金額で出したか」を追えるようにする）
@@ -396,7 +437,7 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
       ...snap, issuedAt, issuedBy:userEmail, updatedAt:serverTimestamp(),
     },{merge:true});
     await updateDoc(doc(db,"shipments",shipmentId),{
-      receiptNo, receiptIssuedAt:issuedAt, receiptIssuedBy:userEmail,
+      receiptNo: rcptNo, receiptIssuedAt:issuedAt, receiptIssuedBy:userEmail,
       receiptAmountIncl:snap.amountIncl, updatedAt:serverTimestamp(),
     });
     info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`;

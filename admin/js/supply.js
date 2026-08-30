@@ -139,16 +139,49 @@ function itemRows(containerId){
       <td><input class="form-control qty-input" type="number" min="0" value="0" data-sku="${p.id}" style="padding:4px 8px"></td>
     </tr>`).join("")}</tbody></table>`;
 }
-function applyShipRegion(){
+// 発注の送料欄が applyShipRegion による自動計算値か（人が手で直したら false にして勝手に上書きしない）
+let orderShipFeeAuto = false;
+function clearOrderShipWarn(){
+  const w=document.getElementById("orderShipWarn");
+  if(w){ w.style.display="none"; w.innerHTML=""; }
+}
+// 発注の送料を地域＋台数から求める。100台以上は AB Circle の送料無料
+function orderShipCalc(){
   const sel=document.getElementById("orderShipRegion");
   const r=SHIPPING_FEES.find(x=>x.region===sel.value);
-  if(!r) return; // 「選択しない」は手入力を保持
-  // AB Circle は1便100台以上で送料無料。100台以上のときは地域を選んでも0円にする
+  if(!r) return null; // 「選択しない」は手入力を保持
   const qty=collectItems("orderItems").reduce((s,i)=>s+i.qty,0);
   const free=qty>=100;
-  document.getElementById("orderShipFee").value=free?0:r.fee;
-  document.getElementById("orderShipLabel").value=free?`送料（${r.region}・100台以上で無料）`:`送料（${r.region}）`;
+  return { qty, fee:free?0:r.fee,
+    label:free?`送料（${r.region}・100台以上で無料）`:`送料（${r.region}）` };
 }
+/**
+ * 発注の送料を再計算する。
+ * fromQty=false（地域セレクトの change）… 従来どおり必ず上書きする
+ * fromQty=true （台数の変更）      … 自動計算値のときだけ上書き。手入力済みなら消さずに注意だけ出す
+ */
+function refreshOrderShipFee(fromQty){
+  const c=orderShipCalc();
+  if(!c){ clearOrderShipWarn(); return; }
+  const feeEl=document.getElementById("orderShipFee"), labelEl=document.getElementById("orderShipLabel");
+  if(!fromQty || orderShipFeeAuto){
+    feeEl.value=c.fee; labelEl.value=c.label; orderShipFeeAuto=true;
+    clearOrderShipWarn(); return;
+  }
+  // 手で送料を入れている → 勝手に消さない。計算値とズレているときだけ注意を出す
+  const warn=document.getElementById("orderShipWarn");
+  if(!warn) return;
+  if((Number(feeEl.value)||0)===c.fee){ clearOrderShipWarn(); return; }
+  warn.innerHTML = `台数 ${c.qty}台 だと送料は <strong>${yen(c.fee)}</strong>（${esc(c.label)}）になります。`
+    + `送料が手入力されているため自動では変更していません。`
+    + ` <button type="button" class="btn btn-secondary" id="orderShipAutoBtn" style="font-size:12px;padding:4px 8px">自動計算に戻す</button>`;
+  warn.style.display="block";
+  document.getElementById("orderShipAutoBtn").onclick=()=>{
+    feeEl.value=c.fee; labelEl.value=c.label; orderShipFeeAuto=true; clearOrderShipWarn();
+  };
+}
+function applyShipRegion(){ refreshOrderShipFee(false); }
+function onOrderQtyInput(){ updateOrderTotal(); refreshOrderShipFee(true); }
 // 認定事業所への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
 // 未設定時は商品マスタの数量帯別卸（unitPriceFor）にフォールバック＝従来挙動を維持。
 function partnerPriceFor(p, qty){
@@ -194,6 +227,9 @@ function openOrder(o){
   document.getElementById("orderNote").value = (o&&o.note) || "";
   document.getElementById("orderShipLabel").value = (o&&o.shippingLabel) || "";
   document.getElementById("orderShipFee").value = (o&&o.shippingFee) || "";
+  // 既存の下書きの送料は自動計算値か手入力か判別できない → 手入力扱い（勝手に上書きしない）
+  orderShipFeeAuto = false;
+  clearOrderShipWarn();
   document.getElementById("orderShipTo").value = (o&&o.shipTo) || "";
   document.getElementById("orderTotal").textContent="";
   // 直送チェック（確定時に出荷下書きを自動作成）
@@ -219,7 +255,8 @@ function openOrder(o){
   osel.value=(o&&o.ordererName) || olist[0] || "";
   // 編集時は既存の数量を反映
   if(o && Array.isArray(o.items)){ o.items.forEach(it=>{ const inp=document.querySelector(`#orderItems .qty-input[data-sku="${it.sku}"]`); if(inp) inp.value=it.qty; }); }
-  document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",updateOrderTotal));
+  // 台数が変わったら送料も見直す（100台以上の送料無料が反映されないままにならないように）
+  document.querySelectorAll("#orderItems .qty-input").forEach(i=>i.addEventListener("input",onOrderQtyInput));
   updateOrderTotal();
   document.getElementById("orderModal").classList.add("open"); }
 function updateOrderTotal(){ const items=collectItems("orderItems");
@@ -427,7 +464,46 @@ function recalcShipFee(){
     const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
     const arr=d.rows[size]||YUPACK_ROWS_DEF[size]||[];
     feeEl.value=taxExcl(Number(arr[ri])||0); labelEl.value=`送料（ゆうパック ${size}サイズ・${d.regions[ri]||""}）`;
-  }
+  } else return; // 「指定しない」＝手入力のまま。注意の表示もそのまま残す
+  // 自動入力した値は必ず税抜なので、税込の入力に対する注意は消す
+  const w=document.getElementById('shipFeeWarn'); if(w){ w.style.display="none"; w.innerHTML=""; }
+}
+// 料金表（レターパック・ゆうパック）に載っている「税込の実費」の候補を作る。
+// 送料欄は税抜で入れる決まりなので、この値がそのまま入っていたら税込を打ち間違えた疑いが強い。
+// 料金表は appConfig（未設定時は supply-pricing.js のデフォルト）が正＝ここに金額を直書きしない。
+function taxInclusiveShipFees(){
+  const set=new Set();
+  const lp=letterpackFee();
+  if(lp>0) for(let n=1;n<=30;n++) set.add(lp*n);       // レターパックは3台ごとに1通＝通数分の倍数になる
+  const d=yupackData();
+  Object.values(d.rows||{}).forEach(arr=>{
+    (Array.isArray(arr)?arr:[]).forEach(v=>{ const n=Number(v)||0; if(n>0) set.add(n); });
+  });
+  return set;
+}
+/**
+ * 送料欄に税込の実費がそのまま入っていないか確認する（注意を出すだけで、保存は止めない）。
+ * 税込候補と「別の税込候補を税抜換算した値」が一致する金額（現行表では 2,500 / 6,000 / 12,000 の3つ）は
+ * どちらとも取れるので、断定せず「確認してください」に落とす。
+ */
+function checkShipFeeTaxIncl(){
+  const warn=document.getElementById("shipFeeWarn");
+  if(!warn) return;
+  const clear=()=>{ warn.style.display="none"; warn.innerHTML=""; };
+  const v=Number(document.getElementById("shipFee").value)||0;
+  const incl=taxInclusiveShipFees();
+  if(!(v>0) || !incl.has(v) || taxExcl(v)===v){ clear(); return; }
+  const ambiguous=[...incl].some(x=>taxExcl(x)===v); // 税抜として自動入力されうる値でもある
+  const excl=taxExcl(v);
+  warn.innerHTML = ambiguous
+    ? `${yen(v)} は料金表の<strong>税込</strong>の金額とも、別の便の<strong>税抜</strong>の金額とも一致します。`
+      + `送料欄は<strong>税抜</strong>です。税込の実費を打っていないかご確認ください（税込なら税抜は ${yen(excl)}）。`
+    : `<strong>税込の金額が入っていませんか？</strong> ${yen(v)} は料金表の<strong>税込</strong>の実費と一致します。`
+      + `送料欄は税抜で入力してください（税抜は <strong>${yen(excl)}</strong> です）。`
+      + ` <button type="button" class="btn btn-secondary" id="shipFeeToExclBtn" style="font-size:12px;padding:4px 8px">税抜（${yen(excl)}）に直す</button>`;
+  warn.style.display="block";
+  const btn=document.getElementById("shipFeeToExclBtn");
+  if(btn) btn.onclick=()=>{ document.getElementById("shipFee").value=excl; clear(); };
 }
 // 出荷モーダルを開くたびに配送方法をリセット＋ゆうパックのサイズ/地域セレクトを最新設定で再構築
 function initShipFeeControls(){
@@ -438,6 +514,7 @@ function initShipFeeControls(){
   document.getElementById('shipFee').value="";
   document.getElementById('shipFeeLabel').value="";
   document.getElementById('yupackWrap').style.display="none";
+  const w=document.getElementById('shipFeeWarn'); if(w){ w.style.display="none"; w.innerHTML=""; }
   document.querySelectorAll('#shipItems .qty-input').forEach(i=>i.addEventListener('input',recalcShipFee));
 }
 
@@ -684,12 +761,16 @@ function renderShipments(ships){
         ${refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : ""}
         <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
+        <button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>種別変更</button>
         <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-trash"></i></button>
       </td>
     </tr>`;
   }).join("");
   document.querySelectorAll(".del-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) deleteShipment(s);
+  }));
+  document.querySelectorAll(".type-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openShipTypeModal(s);
   }));
   document.querySelectorAll(".confirm-draft-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) confirmDraftShipment(s);
@@ -711,6 +792,103 @@ function renderShipments(ships){
   document.querySelectorAll(".apply-credit").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) openCreditModal(s);
   }));
+}
+
+// ===== 出荷種別（請求先）の変更 =====
+// 種別を間違えたときに出荷を作り直さずに直せるようにする。
+// 【在庫について】在庫の増減は shipType ではなく「どの経路で出荷を作ったか」で決まっている。
+//   ・出荷モーダルから登録（saveShip）＝ 種別に関わらず自社在庫から引き落とし済み
+//   ・直送発注から自動生成（createShipmentDraftFromPO / fulfillment:"direct"）＝ 在庫を経由しない
+//   したがって種別を切り替えても在庫の実態は変わらない＝在庫は動かさない（画面にもその旨を明示する）。
+// 変わるのは「請求先」と「単価の基準」だけなので、そこだけをプレビュー付きで変更する。
+const SHIP_TYPE_LABEL = { direct:"タダカヨから直接（自社実施）", dropship:"認定事業所からの依頼（直送）" };
+let typeChangingShip = null;
+// 変更後の種別に合わせて単価を入れ直した明細を返す（reprice=false なら今の単価のまま）
+function repricedShipItems(s, newType, reprice){
+  return (s.items||[]).map(it=>{
+    if(!reprice) return {...it};
+    const p=products.find(x=>x.id===it.sku);
+    if(!p) return {...it}; // 商品マスタから消えている場合は今の単価を保つ
+    const qty=Number(it.qty)||0;
+    const unitPrice = newType==="dropship" ? partnerPriceFor(p, qty) : (Number(p.listPrice)||0);
+    return {...it, unitPrice};
+  });
+}
+function stcSelectedType(){ return document.getElementById("stcType").value; }
+function renderShipTypePreview(){
+  const s=typeChangingShip; if(!s) return;
+  const newType=stcSelectedType();
+  document.getElementById("stcPartnerWrap").style.display = newType==="dropship" ? "" : "none";
+  const reprice=document.getElementById("stcReprice").checked;
+  const next=repricedShipItems(s,newType,reprice);
+  document.getElementById("stcPreviewBody").innerHTML = next.map((it,i)=>{
+    const cur=Number((s.items||[])[i]?.unitPrice)||0;
+    const nv=Number(it.unitPrice)||0;
+    return `<tr><td>${esc(it.sku)}</td><td class="num">${Number(it.qty)||0}</td>
+      <td class="num">${yen(cur)}</td>
+      <td class="num"${nv!==cur?' style="font-weight:700;color:var(--color-warn,#c87a1f)"':''}>${yen(nv)}</td></tr>`;
+  }).join("") || `<tr><td colspan="4" style="color:var(--color-ink-muted)">明細がありません</td></tr>`;
+  const before=shipTotalIncl(s);
+  const after=shipTotalIncl({...s, items:next});
+  document.getElementById("stcTotal").innerHTML =
+    `請求額（税込・送料込み）: ${yen(before)} → <span style="color:${after!==before?"var(--color-warn,#c87a1f)":"inherit"}">${yen(after)}</span>`;
+}
+function openShipTypeModal(s){
+  typeChangingShip=s;
+  const cur=s.shipType==="dropship"?"dropship":"direct";
+  document.getElementById("stcTitle").textContent=`出荷種別（請求先）の変更（${s.soNumber||""}）`;
+  document.getElementById("stcCurrent").innerHTML =
+    `現在: <strong>${esc(SHIP_TYPE_LABEL[cur])}</strong>／請求先 <strong>${esc(billToOf(s)||"（未設定）")}</strong>`;
+  const err=document.getElementById("stcError"); err.style.display="none"; err.textContent="";
+  // 請求済・入金済は請求書を出した後なので金額・請求先を動かさない（作り直しの案内に留める）
+  const locked = s.status==="invoiced" || s.status==="paid" || s.status==="canceled";
+  const lockBox=document.getElementById("stcLocked");
+  lockBox.style.display = locked?"block":"none";
+  lockBox.innerHTML = locked
+    ? `この出荷は<strong>${esc(SHIP_STATUS[s.status]||s.status)}</strong>のため、種別・請求先は変更できません。`
+      + `請求先を間違えていた場合は、入金の記録を取り消して請求をやり直すか、出荷を削除して作り直してください。`
+    : "";
+  document.getElementById("stcForm").style.display = locked?"none":"";
+  document.getElementById("doStcBtn").disabled = locked;
+  if(locked){ document.getElementById("shipTypeModal").classList.add("open"); return; }
+  document.getElementById("stcType").value=cur;
+  document.getElementById("stcReprice").checked=true;
+  document.getElementById("stcPartner").innerHTML = '<option value="">選択してください</option>'+
+    activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
+  document.getElementById("stcPartner").value = (cur==="dropship" && s.partnerEmail) ? s.partnerEmail : "";
+  renderShipTypePreview();
+  document.getElementById("shipTypeModal").classList.add("open");
+}
+async function doChangeShipType(){
+  const s=typeChangingShip; if(!s) return;
+  const err=document.getElementById("stcError"); err.style.display="none"; err.textContent="";
+  const newType=stcSelectedType();
+  const partnerId = newType==="dropship" ? document.getElementById("stcPartner").value : "";
+  if(newType==="dropship" && !partnerId){
+    err.textContent="直送の場合は請求先（認定事業所）を選択してください"; err.style.display="block"; return; }
+  const partner=activePartners.find(p=>p._id===partnerId)||{};
+  const items=repricedShipItems(s,newType,document.getElementById("stcReprice").checked);
+  const before=shipTotalIncl(s), after=shipTotalIncl({...s, items});
+  const msg=`出荷 ${s.soNumber} の種別を\n  ${SHIP_TYPE_LABEL[s.shipType==="dropship"?"dropship":"direct"]}\n→ ${SHIP_TYPE_LABEL[newType]}\n`
+    + `に変更します。請求先は「${newType==="dropship"?(partner.partnerName||partnerId):(s.company||s.officeName||"")}」になります。\n`
+    + `請求額（税込）: ${yen(before)} → ${yen(after)}\n在庫は変動しません。よろしいですか？`;
+  if(!confirm(msg)) return;
+  const btn=document.getElementById("doStcBtn"); btn.disabled=true;
+  try{
+    await updateDoc(doc(db,"shipments",s._id),{
+      shipType:newType,
+      partnerEmail: newType==="dropship" ? partnerId : "",
+      partnerName: newType==="dropship" ? (partner.partnerName||"") : "",
+      items,
+      shipTypeChangedFrom: s.shipType||"",
+      shipTypeChangedAt: serverTimestamp(),
+      shipTypeChangedBy: currentUser.displayName||currentUser.email,
+      updatedAt: serverTimestamp(), updatedBy: currentUser.displayName||currentUser.email });
+    document.getElementById("shipTypeModal").classList.remove("open");
+    typeChangingShip=null;
+    toast(`${s.soNumber} の出荷種別を変更しました（在庫は変動なし）`);
+  }catch(e){ err.textContent=`変更に失敗しました: ${e.message}`; err.style.display="block"; }
+  finally{ btn.disabled=false; }
 }
 
 // ===== 未集金一覧（認定事業所・事業所ごとの残額と最長超過日数）=====
@@ -1564,6 +1742,18 @@ onAuthStateChanged(auth, async (user)=>{
     document.getElementById("shipPartnerWrap").style.display = e.target.value==="dropship"?"":"none";
   });
   ["shipMethod","shipYuSize","shipYuRegion"].forEach(id=>document.getElementById(id).addEventListener("change",recalcShipFee));
+  // 送料欄（税抜）に税込の実費が打たれていないか、手入力のときだけ確認する
+  document.getElementById("shipFee").addEventListener("input",checkShipFeeTaxIncl);
+  // 発注の送料を手で直したら、以後は台数変更で勝手に上書きしない
+  ["orderShipFee","orderShipLabel"].forEach(id=>document.getElementById(id)
+    .addEventListener("input",()=>{ orderShipFeeAuto=false; }));
+  // 出荷種別（請求先）の変更モーダル
+  const closeStc=()=>{ document.getElementById("shipTypeModal").classList.remove("open"); typeChangingShip=null; };
+  document.getElementById("closeStcBtn").addEventListener("click",closeStc);
+  document.getElementById("cancelStcBtn").addEventListener("click",closeStc);
+  document.getElementById("stcType").addEventListener("change",renderShipTypePreview);
+  document.getElementById("stcReprice").addEventListener("change",renderShipTypePreview);
+  document.getElementById("doStcBtn").addEventListener("click",doChangeShipType);
 
   // products（リアルタイム・在庫反映）
   let prefilled=false;
