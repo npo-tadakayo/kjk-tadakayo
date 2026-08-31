@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { gateRole } from "/js/role.js";
+import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, collection, query, where, orderBy, getDocs }
@@ -134,7 +134,9 @@ onAuthStateChanged(auth, async (user) => {
     location.href = "/index.html";
     return;
   }
-  if (!(await gateRole(db, user))) return;
+  const myRole = await gateRole(db, user);
+  if (!myRole) return;
+  applyViewerMode(myRole);
   if (!caseId) { document.getElementById("loadingEl").textContent = "案件IDが指定されていません"; return; }
   document.getElementById("backBtn").setAttribute("href", `/case-detail.html?id=${caseId}`);
   document.getElementById("printBtn").addEventListener("click", () => window.print());

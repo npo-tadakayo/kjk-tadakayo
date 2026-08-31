@@ -35,3 +35,45 @@ export async function gateRole(db, user, opts){
   if(opts.adminOnly && r.role !== "admin"){ showAccessDenied(user.email, "この画面は管理者のみ利用できます"); return null; }
   return r;
 }
+
+// ===== 閲覧のみ（viewer）の画面制御 =====
+// Firestore ルール側で書き込みは止めてある（isEditor）。ここは「押しても保存できない
+// ボタンを押させない」ための画面側の手当て。押してからエラーで気づく体験を避ける。
+//
+// 書き込み系のボタンは、文言で見分ける。data 属性を全ページに付けて回るより取りこぼしが
+// 少なく、誤って無効化しても「閲覧のみの人が押せない」だけで実害がないため。
+// 逆に、検索・絞り込み・印刷・閉じるなど読むための操作は無効化しない。
+const WRITE_WORDS = /保存|登録|追加|削除|変更|記録|送信|確定|取り込|統合|調整|入荷|発行|報告|充当|返金|案内|作成|更新|戻す|停止|再開|対象外/;
+const KEEP_WORDS = /検索|絞|閉じる|キャンセル|印刷|PDF|開く|戻る|ログアウト|コピー|表示/;
+
+export function isViewer(role){ return !!role && role.role === "viewer"; }
+
+/** 閲覧のみなら、書き込み系のボタンを無効化して画面上部に帯を出す。 */
+export function applyViewerMode(role){
+  if(!isViewer(role)) return false;
+
+  const disable = (root) => {
+    root.querySelectorAll("button, a.btn, input[type=submit]").forEach((b) => {
+      const t = (b.textContent || b.value || "").trim();
+      if(!t || KEEP_WORDS.test(t) || !WRITE_WORDS.test(t)) return;
+      b.disabled = true;
+      b.setAttribute("aria-disabled", "true");
+      b.title = "閲覧のみの権限では操作できません";
+      b.style.opacity = "0.45";
+      b.style.pointerEvents = "none";
+    });
+  };
+  disable(document);
+  // あとから描かれる一覧・モーダルにも効かせる
+  new MutationObserver(() => disable(document))
+    .observe(document.body, { childList: true, subtree: true });
+
+  const bar = document.createElement("div");
+  bar.setAttribute("role", "status");
+  bar.style.cssText = "position:sticky;top:0;z-index:9999;background:#FCF0F0;border-bottom:2px solid #E33535;"
+    + "color:#2C2416;font-size:14px;font-weight:700;padding:10px 16px;text-align:center;"
+    + "font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif";
+  bar.textContent = "閲覧のみの権限でログインしています。保存・登録・削除はできません。";
+  document.body.insertBefore(bar, document.body.firstChild);
+  return true;
+}

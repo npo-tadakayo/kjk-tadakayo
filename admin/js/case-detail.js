@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { gateRole } from "/js/role.js";
+import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
@@ -1015,6 +1015,7 @@ onAuthStateChanged(auth, async (user) => {
     return;
   }
   const myRole = await gateRole(db, user);
+  applyViewerMode(myRole);
   if (!myRole) return;
   isAdmin = myRole.role === "admin";
   canMerge = myRole.role === "admin" || myRole.role === "staff";

@@ -4,7 +4,7 @@ import { getAuth, onAuthStateChanged, signOut }
 import { getFirestore, collection, query, orderBy, onSnapshot,
   addDoc, setDoc, serverTimestamp, doc, getDoc, runTransaction }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { gateRole } from "/js/role.js";
+import { gateRole, applyViewerMode } from "/js/role.js";
 import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
@@ -373,7 +373,9 @@ function closeModal() {
 // 初期化
 onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) { location.href = "/index.html"; return; }
-  if (!(await gateRole(db, user))) return;
+  const myRole = await gateRole(db, user);
+  if (!myRole) return;
+  applyViewerMode(myRole);
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   populateStatusFilter();

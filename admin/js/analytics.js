@@ -5,7 +5,7 @@ import { getFirestore, doc, onSnapshot }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import { gateRole } from "/js/role.js";
+import { gateRole, applyViewerMode } from "/js/role.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -154,7 +154,9 @@ async function refresh(btn) {
 
 onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) { location.href = "/index.html"; return; }
-  if (!(await gateRole(db, user))) return;
+  const myRole = await gateRole(db, user);
+  if (!myRole) return;
+  applyViewerMode(myRole);
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));

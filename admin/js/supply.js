@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { gateRole } from "/js/role.js";
+import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
@@ -597,13 +597,28 @@ async function prefillShipFromCase(caseId){
   }catch(e){ alert(`取り込み失敗: ${e.message}`); }
 }
 
+// 直送（ABサークル → 認定事業所）の出荷は、そもそも自社在庫を引いていない。
+// 削除のときに在庫を戻すと、実在しない在庫が増えてしまう（直送1件で最大200台の水増しになる）。
+// 在庫を引いたかどうかは shipType ではなく fulfillment で決まる（同ファイル「出荷種別の変更」の注記を参照）。
+//   fulfillment:"direct"    … 直送発注から自動生成。在庫を通らない → 戻さない
+//   fulfillment:"warehouse" … 出荷モーダルから登録。自社在庫から引いた → 戻す
+//   未設定（古いデータ）    … 出荷モーダル経由しかなかった頃のもの → 戻す（従来どおり）
+function shipUsedStock(s){ return (s.fulfillment || "warehouse") !== "direct"; }
+
 async function deleteShipment(s){
-  if(!confirm(`出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`)) return;
+  const restores = shipUsedStock(s);
+  const msg = restores
+    ? `出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`
+    : `出荷 ${s.soNumber}（${s.officeName}）を削除します。\nこれは直送（ABサークルから認定事業所へ直接）の出荷なので、`
+      + `自社在庫は動きません。よろしいですか？`;
+  if(!confirm(msg)) return;
   try{
-    for(const it of (s.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
-      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"shipment_canceled",refNo:s.soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    if(restores){
+      for(const it of (s.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
+        await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"shipment_canceled",refNo:s.soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    }
     await deleteDoc(doc(db,"shipments",s._id));
-    toast(`出荷 ${s.soNumber} を削除し、在庫を戻しました`);
+    toast(restores ? `出荷 ${s.soNumber} を削除し、在庫を戻しました` : `出荷 ${s.soNumber} を削除しました（直送のため在庫は動かしていません）`);
   }catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
@@ -1720,7 +1735,9 @@ async function sendGuideMail(){
 // ===== 初期化 =====
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
-  if(!(await gateRole(db,user))) return;
+  const myRole = await gateRole(db,user);
+  if(!myRole) return;
+  applyViewerMode(myRole);
   currentUser=user;
   document.getElementById("userEmail").textContent=user.displayName||user.email;
   document.getElementById("logoutBtn").addEventListener("click",()=>signOut(auth).then(()=>location.href="/index.html"));

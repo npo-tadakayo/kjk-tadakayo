@@ -19,6 +19,14 @@ service cloud.firestore {
     function isAdmin() {
       return isRegistered() && userData().role == 'admin';
     }
+    // 書き込める人＝登録済みで、ロールが「閲覧のみ（viewer）」でない人。
+    // 2026-08-31 追加。それまでルールは isRegistered() だけを見ており、
+    // 「閲覧のみ」で登録された人も案件・出荷・設定を書き換えられた
+    // （画面では統合ボタンを隠していただけで、実際には保存が通った）。
+    // 表示と実態が食い違ったままだったので、サーバー側で止める。
+    function isEditor() {
+      return isRegistered() && userData().role != 'viewer';
+    }
     // 認定事業所パートナー
     function isPartner() {
       return isAuthenticated()
@@ -35,13 +43,13 @@ service cloud.firestore {
     // 商品マスタ: 認証済みは閲覧可（パートナーのカタログ参照）／編集は登録スタッフ
     match /products/{sku} {
       allow read: if isAuthenticated();
-      allow write: if isRegistered();
+      allow write: if isEditor();
     }
 
     // 認定事業所名簿: 本人は自分の登録を読める／管理は登録スタッフ
     match /partners/{email} {
       allow read: if isRegistered() || (isAuthenticated() && request.auth.token.email == email);
-      allow write: if isRegistered();
+      allow write: if isEditor();
     }
 
     // 認定事業所からの発注（受注）
@@ -49,12 +57,13 @@ service cloud.firestore {
       allow create: if isPartner() && request.resource.data.partnerEmail == request.auth.token.email;
       allow read: if isRegistered()
         || (isPartner() && resource.data.partnerEmail == request.auth.token.email);
-      allow update, delete: if isRegistered();
+      allow update, delete: if isEditor();
     }
 
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     match /{document=**} {
-      allow read, write: if isRegistered();
+      allow read: if isRegistered();
+      allow write: if isEditor();
     }
   }
 }
