@@ -15,7 +15,9 @@ const id = params.get("id");
 
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function yen(n){return "¥"+Number(n||0).toLocaleString("ja-JP");}
-const today = new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
+// 発行日は必ず日本時間で数える（toISOString はUTCなので、午前9時前に発行すると前日日付になる）
+function todayJst(){ return new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}); }
+const today = new Date().toLocaleDateString("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"long",day:"numeric"});
 
 // 発注元（NPO法人タダカヨ）情報の既定値。設定(appConfig/settings.po*)で上書き可
 const PO_DEFAULT = {
@@ -283,7 +285,7 @@ async function saveRefundStatementIssue(s, shipmentId, userEmail){
   const amount = refunds.reduce((a,r)=>a+(Number(r.amount)||0),0);
   if(!(amount>0)){ if(info) info.textContent="返金の記録がありません"; return; }
   const no=(s.soNumber||"").replace(/^SH/,"RFND");
-  const issuedAt=new Date().toISOString().slice(0,10);
+  const issuedAt=todayJst();
   btn.disabled=true;
   try{
     await updateDoc(doc(db,"shipments",shipmentId),{
@@ -424,7 +426,7 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
   const snap=collectReceiptSnapshot();
   if(!(snap.amountIncl>0)){ info.textContent="金額が0円です（明細を入力してください）"; return; }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
-  const issuedAt=new Date().toISOString().slice(0,10);
+  const issuedAt=todayJst();
   btn.disabled=true;
   try{
     await setDoc(doc(db,"receipts",shipmentId),{

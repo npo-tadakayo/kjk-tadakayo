@@ -11,7 +11,7 @@ import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel } from "/js/constants.js";
-import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, calcExpectedDeposit } from "/js/case-detail-util.js";
+import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 
 const app = initializeApp(firebaseConfig);
@@ -237,6 +237,58 @@ function renderDocumentChecklist(cl) {
     document.getElementById("accountNumber").value = b.accountNumber || "";
     document.getElementById("accountHolder").value = b.accountHolder || "";
   }
+  applyBankType();
+}
+
+// ゆうちょ銀行は口座の体系が他行と違う（銀行コード＋支店名＋口座番号7桁 ではなく、
+// 通帳の「記号5桁」＋「番号8桁」）。同じ欄のまま入力させると、振り込めない口座情報が
+// 保存されて助成金が事業所に届かない。銀行種別に合わせて欄の意味を切り替える。
+// （HTML に #bankCodeRow の id だけあって切り替えるコードが無かった。2026-08-31 追加）
+function applyBankType() {
+  const type = document.getElementById("bankType").value;
+  const yucho = type === "yucho";
+
+  const bankName = document.getElementById("bankName");
+  const bankCode = document.getElementById("bankCode");
+  const branchName = document.getElementById("branchName");
+  const accountNumber = document.getElementById("accountNumber");
+  if (!bankName || !bankCode || !branchName || !accountNumber) return;
+  const label = (forId, text) => {
+    const el = document.querySelector(`label[for="${forId}"]`);
+    if (el) el.textContent = text;
+  };
+
+  if (yucho) {
+    if (bankName.value !== "ゆうちょ銀行") bankName.value = "ゆうちょ銀行";
+    bankName.readOnly = true;
+    label("bankCode", "記号（5桁）");
+    bankCode.maxLength = 5;
+    bankCode.placeholder = "12345";
+    const g = branchName.closest(".form-group");
+    if (g) g.style.display = "none";
+    label("accountNumber", "番号（8桁）");
+    accountNumber.maxLength = 8;
+    accountNumber.placeholder = "12345678";
+  } else {
+    bankName.readOnly = false;
+    if (bankName.value === "ゆうちょ銀行") bankName.value = "";
+    label("bankCode", "銀行コード");
+    bankCode.maxLength = 4;
+    bankCode.placeholder = "0000";
+    const g = branchName.closest(".form-group");
+    if (g) g.style.display = "";
+    label("accountNumber", "口座番号（7桁）");
+    accountNumber.maxLength = 7;
+    accountNumber.placeholder = "1234567";
+  }
+
+  const note = document.getElementById("bankTypeNote");
+  if (note) {
+    note.textContent = yucho
+      ? "通帳に書かれている「記号」と「番号」をそのまま入れてください（他行から振り込むときの店番・口座番号ではありません）。"
+      : "";
+    note.style.display = yucho ? "block" : "none";
+  }
 }
 
 function renderSubsidy(sa) {
@@ -306,7 +358,7 @@ async function saveSubsidyInfo() {
     applicationDate: appDate || null,
     decisionReceivedAt: document.getElementById("decisionReceivedAt").value || null,
     actualDepositDate: document.getElementById("actualDepositDate").value || null,
-    expectedDepositDate: expected ? expected.toISOString().slice(0, 10) : null,
+    expectedDepositDate: expected ? toYmdJst(expected) : null,
     applicationContent: {
       cardReaderCost: Number(document.getElementById("cardReaderCost").value) || null,
       supportCost: Number(document.getElementById("supportCost").value) || null,
@@ -1099,6 +1151,7 @@ onAuthStateChanged(auth, async (user) => {
   });
 
   document.getElementById("saveBankBtn").addEventListener("click", saveBankInfo);
+  document.getElementById("bankType").addEventListener("change", applyBankType);
 
   // 申請情報
   document.getElementById("applicationDate").addEventListener("change", updateExpectedDeposit);

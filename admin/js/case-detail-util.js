@@ -39,10 +39,16 @@ export function formatDateTime(ts) {
   return d.toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+// 日付は必ず日本時間で YYYY-MM-DD にする。
+// toISOString() はUTCなので、日本の午前9時前の時刻や「その日の0時」は前日にずれる。
+export function toYmdJst(d) {
+  return new Date(d).toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
 export function toDateInput(ts) {
   if (!ts) return "";
   const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toISOString().slice(0, 10);
+  return toYmdJst(d);
 }
 
 // 振込予定日: 申請月の翌々月末

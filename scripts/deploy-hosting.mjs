@@ -314,6 +314,28 @@ function getAccessToken(account) {
   die(`gcloud が見つかりません（試したパス: ${GCLOUD_CANDIDATES.join(", ")}）`);
 }
 
+// gcloud のユーザー認証は数時間で切れる（再認証はブラウザ操作が要るので自動化を止めてしまう）。
+// ADC（gcloud auth application-default login で作った資格情報）が生きていればそちらで通す。
+// 動画パイプラインの tts.py に入れたのと同じ逃げ道。
+async function getAccessTokenViaAdc() {
+  const adcPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+    || path.join(process.env.HOME ?? "", ".config/gcloud-tadakayo/application_default_credentials.json");
+  if (!fs.existsSync(adcPath)) return null;
+  const c = JSON.parse(fs.readFileSync(adcPath, "utf8"));
+  if (!c.refresh_token || !c.client_id || !c.client_secret) return null;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: c.client_id, client_secret: c.client_secret,
+      refresh_token: c.refresh_token, grant_type: "refresh_token",
+    }),
+  });
+  if (!res.ok) return null;
+  const j = await res.json();
+  return j.access_token || null;
+}
+
 // ---------------------------------------------------------------------------
 // REST 呼び出し
 // ---------------------------------------------------------------------------
@@ -449,7 +471,13 @@ async function main() {
   }
 
   const started = Date.now();
-  ACCESS_TOKEN = getAccessToken(opts.account);
+  ACCESS_TOKEN = await getAccessTokenViaAdc();
+  if (ACCESS_TOKEN) {
+    console.log("  認証         : ADC（gcloud のユーザー認証が切れていても通る経路）");
+  } else {
+    ACCESS_TOKEN = getAccessToken(opts.account);
+    console.log("  認証         : gcloud ユーザー認証");
+  }
   log(`アクセストークンを取得しました（account=${opts.account}）。`);
 
   // --- 1. version 作成 ----------------------------------------------------
