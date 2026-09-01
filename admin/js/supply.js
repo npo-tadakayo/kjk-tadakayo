@@ -539,8 +539,13 @@ function shipIsLocked(s){ return s && (s.status==="invoiced" || s.status==="paid
 
 // 数量欄・送料から、実際に保存される明細（単価つき）を組み立てる。合計表示と保存で同じものを使う
 function resolveShipItems(){
-  const shipType = editingShip ? (editingShip.shipType==="dropship"?"dropship":"direct")
-                               : document.getElementById("shipType").value;
+  // 修正時に「新しく足した品番」へ入れる単価の基準。
+  // 古い出荷には shipType:"stock" という今の選択肢に無い値が入っている（SH-2026-0001）。
+  // それらも請求先は認定事業所なので、shipType の文字だけで見ずに
+  // 「認定事業所に請求する出荷か（partnerEmail があるか）」で卸価格を選ぶ。
+  const shipType = editingShip
+    ? ((editingShip.shipType==="dropship" || editingShip.partnerEmail) ? "dropship" : "direct")
+    : document.getElementById("shipType").value;
   const orig = {};
   (editingShip?.items||[]).forEach(i=>{ orig[i.sku] = i; });
   return collectItems("shipItems").map(it=>{
