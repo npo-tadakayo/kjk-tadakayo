@@ -2,13 +2,16 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app, "asia-northeast1");
+const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
 
 // 接続方式（USB Type-A / Type-C / Bluetooth）は新しい明細には焼き込まれているが、
 // それ以前の出荷には入っていないので、商品マスタから引けるように読んでおく。
@@ -459,6 +462,102 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
 }
 
 const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収書 ",refund:"返金明細書 "};
+
+// ===== 帳票のメール送付（請求書・領収書）=====
+// いま画面に出ている帳票をそのままPDF化して、請求先へ添付メールで送る（2026-09-01 新設）。
+// 今までメールで送れるのは経理への報告だけで、請求先には印刷して渡すしかなかった。
+// ・PDFは経理報告と同じ html2pdf（画面の見た目のまま添付される）
+// ・送信は sendPartnerMail（添付対応版）。出荷に invoiceMailedAt / receiptMailedAt が残る
+// ・宛先の初期値: 認定事業所への請求なら partnerEmail（ドキュメントIDがメールアドレス）
+const MAIL_DOC_LABEL = { invoice: "請求書", receipt: "領収書" };
+
+function mailDocTemplate(kind, s, st){
+  const label = MAIL_DOC_LABEL[kind];
+  const toName = s.shipType === "dropship" || s.partnerEmail
+    ? (s.partnerName || s.company || s.officeName || "")
+    : (s.company || s.officeName || "");
+  const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
+  const lines = kind === "invoice"
+    ? `平素より大変お世話になっております。\n` +
+      `出荷（${s.soNumber || ""}）の請求書をPDFにてお送りいたします。\n` +
+      `お支払期限・お振込先はPDFに記載しております。ご確認のほどよろしくお願い申し上げます。`
+    : `平素より大変お世話になっております。\n` +
+      `ご入金を確認いたしましたので、領収書（出荷 ${s.soNumber || ""}）をPDFにてお送りいたします。\n` +
+      `助成金の申請書類としてもご利用いただけます。`;
+  return {
+    subject: `【${issuerName}】${label}のご送付（${s.soNumber || ""}）`,
+    body: `${toName} 御中\n\n${lines}\n\n` +
+      `ご不明な点は、このメールへの返信でお気軽にお尋ねください。\n\n` +
+      `${issuerName} 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+  };
+}
+
+function setupMailDoc(kind, d, st){
+  const btn = document.getElementById("mailDocBtn");
+  if(!btn) return;
+  btn.style.display = "inline-flex";
+  btn.innerHTML = `<i class="ti ti-mail-forward"></i> ${MAIL_DOC_LABEL[kind]}をメールで送付`;
+  const modal = document.getElementById("mailDocModal");
+  const close = ()=>{ modal.style.display = "none"; };
+  document.getElementById("mailDocClose").onclick = close;
+  document.getElementById("mailDocCancel").onclick = close;
+  modal.onclick = (e)=>{ if(e.target === modal) close(); };
+
+  btn.onclick = ()=>{
+    const t = mailDocTemplate(kind, d, st);
+    document.getElementById("mailDocTitle").textContent = `${MAIL_DOC_LABEL[kind]}をメールで送付（${d.soNumber || ""}）`;
+    const sentAt = kind === "invoice" ? d.invoiceMailedAt : d.receiptMailedAt;
+    const sentTo = kind === "invoice" ? d.invoiceMailedTo : d.receiptMailedTo;
+    document.getElementById("mailDocSummary").innerHTML =
+      `請求先: <strong>${esc(d.shipType === "dropship" || d.partnerEmail ? (d.partnerName || d.partnerEmail || "") : (d.company || d.officeName || ""))}</strong>`
+      + (sentAt ? `<br><span style="color:#c87a1f">この${MAIL_DOC_LABEL[kind]}は ${esc(sentAt)} に ${esc(sentTo || "")} へ送付済みです（再送になります）</span>` : "");
+    document.getElementById("mailDocTo").value = d.partnerEmail || "";
+    document.getElementById("mailDocCc").value = "";
+    document.getElementById("mailDocSubject").value = t.subject;
+    document.getElementById("mailDocBody").value = t.body;
+    document.getElementById("mailDocError").style.display = "none";
+    modal.style.display = "flex";
+  };
+
+  document.getElementById("mailDocSend").onclick = async (e)=>{
+    const to = document.getElementById("mailDocTo").value.trim();
+    const cc = document.getElementById("mailDocCc").value.trim();
+    const subject = document.getElementById("mailDocSubject").value.trim();
+    const body = document.getElementById("mailDocBody").value;
+    const err = document.getElementById("mailDocError");
+    err.style.display = "none";
+    if(!to || !subject || !body.trim()){ err.textContent = "宛先・件名・本文は必須です"; err.style.display = "block"; return; }
+    const sendBtn = e.currentTarget; const orig = sendBtn.innerHTML;
+    sendBtn.disabled = true;
+    try{
+      sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> PDFを作成中...';
+      // 領収書の編集用input・印刷対象外の列を落とすため、印刷時と同じ見た目でPDF化する
+      const el = document.getElementById("body");
+      const opt = { margin:[10,8,10,8], image:{type:"jpeg",quality:0.95},
+        html2canvas:{scale:2, useCORS:true}, jsPDF:{unit:"mm", format:"a4", orientation:"portrait"},
+        pagebreak:{mode:["avoid-all","css"]} };
+      const dataUri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
+      const pdfBase64 = String(dataUri).split(",")[1] || "";
+      if(!pdfBase64) throw new Error("PDFの生成に失敗しました");
+      const filename = kind === "invoice"
+        ? `${invoiceNoOf(d)}.pdf`
+        : `${d.receiptNo || ("RCPT-" + (d.soNumber || id))}.pdf`;
+      sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
+      await sendPartnerMailFn({ to, cc: cc || undefined, subject, body, shipmentId: id, kind, pdfBase64, filename });
+      // 画面内の状態も更新（再送の注意書きに効く）
+      if(kind === "invoice"){ d.invoiceMailedAt = todayJst(); d.invoiceMailedTo = to; }
+      else { d.receiptMailedAt = todayJst(); d.receiptMailedTo = to; }
+      document.getElementById("mailDocModal").style.display = "none";
+      alert(`${MAIL_DOC_LABEL[kind]}を ${to} へ送付しました`);
+    }catch(ex){
+      err.textContent = `送信に失敗しました: ${ex.message || ex}`;
+      err.style.display = "block";
+    }finally{
+      sendBtn.disabled = false; sendBtn.innerHTML = orig;
+    }
+  };
+}
+
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user))) return;
@@ -517,6 +616,8 @@ onAuthStateChanged(auth, async (user)=>{
         : type==="invoice" ? renderInvoice(d, settings)
         : type==="refund" ? renderRefundStatement(d, settings)
         : renderReceipt(d, settings, savedReceipt);
+      // 請求書・領収書はメールでも送れる（送付状・宛名・発注書は対象外）
+      if(type==="invoice" || type==="receipt") setupMailDoc(type, d, settings);
       // 返金明細書: 発行記録のボタンを出す（返金がある出荷のみ意味を持つ）
       if(type==="refund"){
         const ctrl=document.getElementById("rfControls");

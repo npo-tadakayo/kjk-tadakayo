@@ -969,6 +969,9 @@ function renderShipments(ships){
         ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(remain)}${netPaid(s)>0?`（入金済 ${yen(netPaid(s))}）`:""}</div>${dueTxt?`<div style="font-size:12px;color:var(--color-ink-muted)">${dueTxt}</div>`:""}`
         : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(netPaid(s))}${s.paidAt?`（${esc(s.paidAt)}）`:""}</div>`)
         + payCount + refTxt + creditTxt + balTxt + usedTxt
+        // 請求先への帳票メール送付の記録（supply-print のメール送付が書く）
+        + (s.invoiceMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">請求書をメール送付済み ${esc(String(s.invoiceMailedAt).slice(5))}</div>` : "")
+        + (s.receiptMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">領収書をメール送付済み ${esc(String(s.receiptMailedAt).slice(5))}</div>` : "")
         // 経理への請求書発行報告（未報告なら気づけるように出す）
         + (s.accountingReportedAt
             ? `<div style="font-size:12px;color:var(--color-ink-muted)">経理へ報告済み ${esc(String(s.accountingReportedAt).slice(5))}</div>`

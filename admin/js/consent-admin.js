@@ -170,7 +170,7 @@ async function issue() {
     officeName: c.officeName || "",
     company: c.corpName || c.company || "",
     contactName: c.contactName || "",
-    email: c.email || "",
+    email: c.contactEmail || c.email || "",
     status: "pending",
     document: CONSENT_DOCUMENT,          // ★この時点の条文全文を焼き込む
     createdAt: serverTimestamp(),
@@ -194,7 +194,7 @@ async function recordPaper() {
     officeName: c.officeName || "",
     company: c.corpName || c.company || "",
     contactName: c.contactName || "",
-    email: c.email || "",
+    email: c.contactEmail || c.email || "",
     status: "signed",
     document: CONSENT_DOCUMENT,
     signed: { name: name.trim().slice(0, 100), signedDate: dateStr, method: "paper", recordedBy: ctx.userName, signedAt: serverTimestamp() },
@@ -236,7 +236,7 @@ function openMailModal(r, url) {
         <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px">
           <div>
             <label class="form-label" for="cmTo">宛先 *</label>
-            <input class="form-control" id="cmTo" type="email" value="${esc(c.email || "")}">
+            <input class="form-control" id="cmTo" type="email" value="${esc(c.contactEmail || c.email || "")}">
           </div>
           <div>
             <label class="form-label" for="cmSubject">件名 *</label>

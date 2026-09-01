@@ -660,17 +660,27 @@ exports.sendPartnerMail = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    const { to, cc, subject, body, shipmentId, kind } = request.data || {};
+    const { to, cc, subject, body, shipmentId, kind, pdfBase64, filename } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
     }
+    // 請求書・領収書はPDF添付が本体。添付なしで送ると請求書が届かないので必須にする
+    if ((kind === "invoice" || kind === "receipt") && !pdfBase64) {
+      throw new HttpsError("invalid-argument", "帳票PDFの生成に失敗しています（添付なしでは送信しません）");
+    }
+    if (pdfBase64 && pdfBase64.length > 15_000_000) {
+      throw new HttpsError("invalid-argument", "PDFが大きすぎます（10MB以下にしてください）");
+    }
     try {
       const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
       const token = await gmailAccessToken(sender);
-      const raw = buildRawMessage({ to, cc, subject, body, sender });
+      const attachments = pdfBase64
+        ? [{ filename: filename || "document.pdf", mimeType: "application/pdf", contentBase64: pdfBase64 }]
+        : undefined;
+      const raw = buildRawMessage({ to, cc, subject, body, sender, attachments });
       const res = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
         { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -694,6 +704,9 @@ exports.sendPartnerMail = onCall(
           update.dunningSentAt = day;
           update.dunningCount = admin.firestore.FieldValue.increment(1);
         }
+        // 請求先へ帳票を送った日を出荷に残す（一覧で「送付済み」と分かるようにする）
+        if ((kind || "") === "invoice") { update.invoiceMailedAt = day; update.invoiceMailedTo = to; }
+        if ((kind || "") === "receipt") { update.receiptMailedAt = day; update.receiptMailedTo = to; }
         await db.collection("shipments").doc(shipmentId).update(update);
       }
       return { ok: true, id: sent.id };

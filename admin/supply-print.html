@@ -144,10 +144,46 @@
       <button class="btn btn-secondary" id="rfSaveBtn" type="button" style="white-space:nowrap"><i class="ti ti-device-floppy"></i> 発行を記録</button>
       <span id="rfSaveInfo" style="font-size:12px;color:var(--muted);white-space:nowrap"></span>
     </div>
+    <button class="btn btn-secondary" id="mailDocBtn" type="button" style="display:none;white-space:nowrap"><i class="ti ti-mail-forward"></i> メールで送付</button>
     <button class="btn btn-print" id="printBtn" type="button"><i class="ti ti-printer"></i> 印刷 / PDF保存</button>
   </div>
   <div class="sheet"><div class="loading" id="loadingEl"><i class="ti ti-loader-2 ti-spin"></i> 読み込み中...</div>
     <div id="body" style="display:none"></div></div>
+  <!-- 帳票のメール送付（請求書・領収書。PDFを添付して請求先へ送る） -->
+  <div class="modal-overlay" id="mailDocModal" style="display:none;position:fixed;inset:0;background:rgba(30,25,18,.5);z-index:100;align-items:center;justify-content:center;padding:20px">
+    <div style="background:var(--bg);border-radius:16px;max-width:640px;width:100%;max-height:90vh;overflow:auto">
+      <div style="display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid var(--line)">
+        <strong id="mailDocTitle" style="font-size:15px">帳票をメールで送付</strong>
+        <button class="btn btn-secondary" id="mailDocClose" type="button" style="margin-left:auto" aria-label="閉じる">×</button>
+      </div>
+      <div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">
+        <div id="mailDocSummary" style="font-size:13px;color:var(--muted)"></div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px" for="mailDocTo">宛先 *</label>
+          <input id="mailDocTo" type="email" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:14px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px" for="mailDocCc">Cc（任意）</label>
+          <input id="mailDocCc" type="email" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:14px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px" for="mailDocSubject">件名 *</label>
+          <input id="mailDocSubject" type="text" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:14px;font-family:inherit">
+        </div>
+        <div>
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px" for="mailDocBody">本文 *</label>
+          <textarea id="mailDocBody" rows="10" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:13px;font-family:inherit;line-height:1.7"></textarea>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">いま表示している帳票をそのままPDFにして添付します。送付の記録は出荷に残ります。</div>
+        <div id="mailDocError" style="display:none;font-size:13px;color:#b84a4a;font-weight:600"></div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--line)">
+        <button class="btn btn-secondary" id="mailDocCancel" type="button">キャンセル</button>
+        <button class="btn btn-print" id="mailDocSend" type="button"><i class="ti ti-send"></i> PDFを添付して送信</button>
+      </div>
+    </div>
+  </div>
+  <script src="/js/vendor/html2pdf.bundle.min.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/supply-print.js" type="module"></script>
 </body>

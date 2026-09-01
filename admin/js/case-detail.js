@@ -14,6 +14,7 @@ import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
+import { initPreGuideCard } from "/js/pre-guide.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -1063,6 +1064,13 @@ onAuthStateChanged(auth, async (user) => {
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
   }).catch((e) => console.warn("consent card init:", e.message));
+  // 資料の事前送付カード（承諾書カードの上に出る。挿入順で先頭になるよう後から init）
+  initPreGuideCard({
+    db, caseId,
+    getCase: () => currentCase,
+    sendMail: (payload) => sendCaseEmailFn(payload),
+    toast: showToast,
+  });
   renderAssigneeSelect();
   renderReferralSelect();
   renderCaseActions();
