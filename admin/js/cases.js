@@ -11,6 +11,7 @@ import {
   ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
   referralOptions, referralLabel,
 } from "/js/constants.js";
+import { areaOf, REGIONS } from "/js/area.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -76,7 +77,16 @@ function updateDeadlineBanner() {
 let allCases = [];
 let sortState = { field: "receivedAt", dir: "desc" };
 
+// 事業所（offices）の辞書。案件には住所が無く officeId しか持たないため、
+// 都道府県・地域・市町村はここから引く（住所の分解は area.js）。
+// cases と offices はどちらが先に届くか決まらないので、両方が届くたびに付け直す。
+let officesById = {};
+function applyAreas() {
+  allCases.forEach((c) => { c._area = areaOf(c, officesById); });
+}
+
 const NUMERIC_FIELDS = ["caseNumber", "status"];
+const AREA_FIELDS = ["prefecture", "region", "city"];
 const DATE_FIELDS = ["receivedAt", "updatedAt"];
 function sortValue(c, f) {
   if (DATE_FIELDS.includes(f)) { const v = c[f]; return v?.toMillis ? v.toMillis() : (v ? new Date(v).getTime() : 0); }
@@ -84,6 +94,9 @@ function sortValue(c, f) {
   if (f === "source") return SOURCE_LABELS[c.source] || c.source || "";
   if (f === "referralSource") return referralLabel(c.referralSource, appSettings) || "";
   if (f === "assignedUserName") return c.assignedUserName || "";
+  // 住所系は案件の項目ではなく事業所から導出した値（_area）で並べる。
+  // 未登録は空文字なので、昇順なら先頭・降順なら末尾に固まる（意図どおり）。
+  if (AREA_FIELDS.includes(f)) return c._area?.[f] || "";
   return (c[f] || "").toString();
 }
 function sortCases(arr) {
@@ -110,9 +123,20 @@ function currentFilters() {
     sourceFilter: document.getElementById("sourceFilter").value,
     referralFilter: document.getElementById("referralFilter")?.value || "",
     showArchived: !!document.getElementById("showArchived")?.checked,
+    regionFilter: document.getElementById("regionFilter")?.value || "",
+    prefFilter: document.getElementById("prefFilter")?.value || "",
+    cityFilter: document.getElementById("cityFilter")?.value || "",
   };
 }
-function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, showArchived }) {
+
+// 住所が未登録の案件を選べるようにする値（空文字だと「すべて」と区別できないため）
+const AREA_NONE = "__none__";
+function areaMatch(value, selected) {
+  if (!selected) return true;
+  return selected === AREA_NONE ? !value : value === selected;
+}
+function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, showArchived,
+                          regionFilter, prefFilter, cityFilter }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
   const matchSearch = !search ||
@@ -124,7 +148,47 @@ function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, s
   // 紹介元（referralSource）。SOURCE_LABELS の流入元とは別物。
   const matchReferral = !referralFilter ||
     (referralFilter === REFERRAL_NONE ? !c.referralSource : c.referralSource === referralFilter);
-  return matchSearch && matchStatus && matchSource && matchReferral;
+  const a = c._area || {};
+  const matchArea = areaMatch(a.region, regionFilter)
+    && areaMatch(a.prefecture, prefFilter)
+    && areaMatch(a.city, cityFilter);
+  return matchSearch && matchStatus && matchSource && matchReferral && matchArea;
+}
+
+// 地域→都道府県→市町村の順に絞り込む。上位を選ぶと、下位の選択肢は
+// その範囲に実際に案件がある値だけに減る（存在しない組み合わせを選ばせないため）。
+function populateAreaFilters() {
+  const region = document.getElementById("regionFilter");
+  const pref = document.getElementById("prefFilter");
+  const city = document.getElementById("cityFilter");
+  if (!region || !pref || !city) return;
+
+  const rows = allCases.filter((c) => c.archived ? document.getElementById("showArchived")?.checked : true);
+  const hasBlank = rows.some((c) => !c._area?.prefecture);
+
+  const fill = (sel, values, allLabel, noneLabel) => {
+    const keep = sel.value;
+    sel.innerHTML = `<option value="">${allLabel}</option>`
+      + values.map((v) => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join("")
+      + (hasBlank ? `<option value="${AREA_NONE}">${noneLabel}</option>` : "");
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
+  };
+
+  // 地域は8地方区分の固定順（データに無い地域も並べると選べてしまうので、あるものだけ）
+  const regionsPresent = REGIONS.filter((r) => rows.some((c) => c._area?.region === r));
+  fill(region, regionsPresent, "すべての地域", "住所が未登録");
+
+  const inRegion = (c) => !region.value || region.value === AREA_NONE
+    ? true : c._area?.region === region.value;
+  const prefs = [...new Set(rows.filter(inRegion).map((c) => c._area?.prefecture).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ja"));
+  fill(pref, prefs, "すべての都道府県", "住所が未登録");
+
+  const inPref = (c) => !pref.value || pref.value === AREA_NONE
+    ? true : c._area?.prefecture === pref.value;
+  const cities = [...new Set(rows.filter(inRegion).filter(inPref).map((c) => c._area?.city).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ja"));
+  fill(city, cities, "すべての市町村", "住所が未登録");
 }
 
 function renderCases() {
@@ -139,8 +203,10 @@ function renderCases() {
   if (filtered.length === 0) {
     table.style.display = "none";
     empty.style.display = "block";
+    tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
-    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.referralFilter);
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.referralFilter
+      || f.regionFilter || f.prefFilter || f.cityFilter);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
       ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
@@ -158,6 +224,10 @@ function renderCases() {
         <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
         ${c.corpName ? `<div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(c.corpName)}</div>` : ""}
       </td>
+      <td>${escHtml(c.contactName || "") || "—"}</td>
+      <td>${escHtml(c._area?.region || "") || areaBlank()}</td>
+      <td>${escHtml(c._area?.prefecture || "") || areaBlank()}</td>
+      <td>${escHtml(c._area?.city || "") || areaBlank()}</td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}</td>
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
       <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span></td>
@@ -166,6 +236,12 @@ function renderCases() {
       <td>${formatDate(c.updatedAt)}</td>
     </tr>
   `).join("");
+}
+
+// 住所が事業所に登録されていないと空になる。「—」だけだと項目自体が無いように見えるので、
+// 未登録であることが分かる表示にする（申込フォームが住所を聞いていないため実際に多い）。
+function areaBlank() {
+  return '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>';
 }
 
 function archivedBadge(c) {
@@ -271,12 +347,13 @@ function fmtFull(ts) {
 function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
-  const headers = ["案件番号","事業所名","法人名","担当者","電話","メール","流入元","紹介元",
+  const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","紹介元",
     "ステータス","担当営業","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([
       c.caseNumber || "", c.officeName || "", c.corpName || "", c.contactName || "",
+      c._area?.region || "", c._area?.prefecture || "", c._area?.city || "",
       c.contactPhone || "", c.contactEmail || "", SOURCE_LABELS[c.source] || c.source || "",
       referralLabel(c.referralSource, appSettings),
       STATUS_LABELS[c.status] || "", c.assignedUserName || "未割当",
@@ -392,7 +469,11 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
   document.getElementById("referralFilter")?.addEventListener("change", renderCases);
-  document.getElementById("showArchived")?.addEventListener("change", renderCases);
+  document.getElementById("showArchived")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
+  // 上位を変えたら下位の選択肢を作り直す（存在しない組み合わせを残さない）
+  document.getElementById("regionFilter")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
+  document.getElementById("prefFilter")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
+  document.getElementById("cityFilter")?.addEventListener("change", renderCases);
   document.getElementById("exportCsvBtn").addEventListener("click", exportCsv);
   document.getElementById("dupCheckBtn")?.addEventListener("click", openDupModal);
   document.getElementById("dupModalClose")?.addEventListener("click", closeDupModal);
@@ -423,9 +504,17 @@ onAuthStateChanged(auth, async (user) => {
     renderDuplicateBanner();
   });
 
+  // 住所は事業所側にあるので一緒に購読する（案件だけでは都道府県が出せない）
+  onSnapshot(collection(db, "offices"), (snap) => {
+    officesById = Object.fromEntries(snap.docs.map((d) => [d.id, d.data()]));
+    if (allCases.length) { applyAreas(); populateAreaFilters(); renderCases(); }
+  });
+
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
     allCases = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    applyAreas();
+    populateAreaFilters();
     renderCases();
     renderDuplicateBanner();
   });

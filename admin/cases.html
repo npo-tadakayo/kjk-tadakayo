@@ -70,6 +70,15 @@
         <select id="referralFilter" aria-label="紹介元で絞り込み">
           <option value="">すべての紹介元</option>
         </select>
+        <select id="regionFilter" aria-label="地域で絞り込み">
+          <option value="">すべての地域</option>
+        </select>
+        <select id="prefFilter" aria-label="都道府県で絞り込み">
+          <option value="">すべての都道府県</option>
+        </select>
+        <select id="cityFilter" aria-label="市町村で絞り込み">
+          <option value="">すべての市町村</option>
+        </select>
         <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--color-ink-muted);white-space:nowrap;min-height:44px">
           <input type="checkbox" id="showArchived">対象外も表示
         </label>
@@ -91,6 +100,10 @@
               <tr>
                 <th class="sortable" data-sort="caseNumber">案件番号 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="officeName">事業所名 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="contactName">担当者 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="region">地域 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="prefecture">都道府県 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="city">市町村 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="source">流入元 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="referralSource">紹介元 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="status">ステータス <span class="sort-ind"></span></th>

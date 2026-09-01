@@ -160,6 +160,76 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   padding: var(--space-6);
 }
 
+/* ========== サイドバーの折り畳み（箱型・2026-09-01）==========
+   .layout.nav-collapsed を付けると、サイドバーを幅64pxの「箱が縦に並ぶ」形にする。
+   文字を消してアイコンだけの正方形タイルにするので、一覧の列が増えても本文が広く使える。
+   状態は localStorage("crmNavCollapsed") に持ち、全画面で共通（sidebar.js が復元する）。
+   モバイル（1024px以下）はドロワー方式なので、この折り畳みは効かせない。 */
+.nav-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex: none;
+  background: none; border: 1px solid var(--color-line); border-radius: 8px;
+  color: var(--color-ink-muted); cursor: pointer; padding: 0;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.nav-toggle:hover { background: var(--color-bg); color: var(--color-ink); border-color: var(--color-ink-muted); }
+.nav-toggle i { font-size: 17px; }
+
+@media (min-width: 1025px) {
+  .layout.nav-collapsed .sidebar { width: 64px; }
+
+  /* ブランド: ロゴだけの正方形に */
+  .layout.nav-collapsed .sidebar-brand { padding: var(--space-3) 0; text-align: center; }
+  .layout.nav-collapsed .sidebar-brand::before {
+    height: 26px; margin: 0 auto var(--space-1); width: 40px; background-position: center;
+  }
+  .layout.nav-collapsed .sidebar-brand .app-name,
+  .layout.nav-collapsed .sidebar-brand .app-sub,
+  .layout.nav-collapsed .nav-section,
+  .layout.nav-collapsed .user-info,
+  .layout.nav-collapsed .btn-logout span { display: none; }
+
+  /* ナビ: 44x44 の箱を縦に並べる */
+  .layout.nav-collapsed .sidebar-nav { padding: var(--space-2) 0; }
+  .layout.nav-collapsed .nav-item {
+    justify-content: center; gap: 0;
+    width: 44px; height: 44px; min-height: 44px;
+    margin: 4px auto; padding: 0;
+    border-radius: 10px;
+    border: 1px solid transparent;
+  }
+  .layout.nav-collapsed .nav-item span { display: none; }
+  .layout.nav-collapsed .nav-item i { font-size: 19px; }
+  .layout.nav-collapsed .nav-item:hover { border-color: var(--color-line); }
+  .layout.nav-collapsed .nav-item.active { border-color: var(--color-primary); }
+  .layout.nav-collapsed .nav-divider-line { margin: var(--space-2) 12px; }
+
+  .layout.nav-collapsed .sidebar-footer { padding: var(--space-2) 0; text-align: center; }
+  .layout.nav-collapsed .btn-logout {
+    justify-content: center; width: 44px; height: 44px; margin: 0 auto; padding: 0;
+    gap: 0; overflow: hidden; white-space: nowrap;
+    border-radius: 10px; border: 1px solid transparent;
+  }
+  .layout.nav-collapsed .btn-logout:hover { border-color: var(--color-line); }
+  .layout.nav-collapsed .btn-logout i { font-size: 19px; }
+
+  /* 折り畳み中のトグルは中央に置く */
+  .layout.nav-collapsed .nav-toggle-row { justify-content: center; }
+  .layout.nav-collapsed .nav-toggle-row .nav-toggle-label { display: none; }
+}
+
+/* トグルの置き場（ブランドの下） */
+.nav-toggle-row {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-line);
+}
+.nav-toggle-label { font-size: 11px; color: var(--color-ink-muted); }
+
+/* モバイルではドロワーなので折り畳みトグルは出さない */
+@media (max-width: 1024px) { .nav-toggle-row { display: none; } }
+
+
 /* ========== Header ========== */
 .page-header {
   display: flex;
@@ -249,6 +319,15 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 
 /* ========== Table ========== */
 .table-wrap { overflow-x: auto; }
+
+/* 案件一覧は12列あるので、幅の食い合いを止める（2026-09-01 都道府県・地域・市町村・担当者を追加）。
+   事業所名だけ折り返してよい列にして、ほかは折り返さない。
+   これをしないと「地域」「市町村」が1文字ずつ縦に割れて、事業所名も3行になる。 */
+#casesTable th, #casesTable td { white-space: nowrap; }
+#casesTable th:nth-child(2), #casesTable td:nth-child(2) {
+  white-space: normal;
+  min-width: 190px;
+}
 
 table {
   width: 100%;
