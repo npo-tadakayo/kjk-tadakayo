@@ -13,6 +13,7 @@ import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
+import { initConsentCard } from "/js/consent-admin.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -1054,6 +1055,14 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  // 伴走支援承諾書カード（事前確認タブの先頭）。メールは既存の sendCaseEmail を流用
+  initConsentCard({
+    db, caseId,
+    getCase: () => ({ ...currentCase, email: currentCase.contactEmail || currentCase.email || "" }),
+    sendMail: (payload) => sendCaseEmailFn(payload),
+    toast: showToast,
+    userName: currentUser?.displayName || currentUser?.email || "",
+  }).catch((e) => console.warn("consent card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
   renderCaseActions();

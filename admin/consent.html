@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>伴走支援承諾書 — NPO法人タダカヨ</title>
+  <!--
+    公開署名ページ（事業所さまが開く対外ページ）。
+    ・URLのトークンが鍵（推測不能・128bit）。ログイン不要
+    ・対外ページなので外部CDNを一切読まない（Pマーク／タダカヨのフォント規約）。
+      フォントはシステムスタック、アイコンはインラインSVG
+    ・条文は依頼発行時に consentRequests に焼き込まれた全文を表示する
+      （改版があっても、この依頼は発行時の文面のまま＝署名対象が変わらない）
+  -->
+  <style>
+    :root {
+      --red: #E33535;
+      --red-dark: #C42B2B;
+      --red-soft: #FCF0F0;
+      --bg: #FAFAF8;
+      --card: #FFFFFF;
+      --ink: #2C2416;
+      --muted: #6a5e48;
+      --border: #DDD6C8;
+      --serif: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
+      --sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", system-ui, sans-serif;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.9;
+      font-size: 15px;
+      word-break: normal;
+      overflow-wrap: anywhere;
+    }
+    .topbar { height: 6px; background: var(--red); }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 28px 20px 72px; }
+
+    .org {
+      display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .org .name { font-family: var(--serif); font-weight: 700; font-size: 15px; color: var(--red); letter-spacing: .04em; }
+    .org .biz { font-size: 12px; color: var(--muted); }
+
+    h1 {
+      font-family: var(--serif);
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.5;
+      letter-spacing: .02em;
+      margin: 10px 0 6px;
+      word-break: keep-all;
+      text-wrap: balance;
+    }
+    .h1-rule { width: 64px; height: 4px; background: var(--red); border-radius: 2px; margin: 14px 0 22px; }
+
+    .addressee {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 16px 20px; margin-bottom: 22px;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .addressee .to { font-family: var(--serif); font-size: 18px; font-weight: 700; }
+    .addressee .sub { font-size: 12.5px; color: var(--muted); }
+
+    .preamble { font-size: 14.5px; color: var(--ink); margin-bottom: 26px; text-wrap: pretty; }
+
+    .sec {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 18px 20px 16px; margin-bottom: 14px;
+      position: relative;
+    }
+    .sec::before {
+      content: ""; position: absolute; left: 0; top: 18px; bottom: 16px;
+      width: 4px; background: var(--red); border-radius: 0 4px 4px 0;
+    }
+    .sec h2 {
+      font-family: var(--serif); font-size: 16px; font-weight: 700;
+      margin-bottom: 8px; padding-left: 12px; word-break: keep-all;
+    }
+    .sec p { font-size: 14px; color: var(--ink); padding-left: 12px; text-wrap: pretty; }
+
+    .terms { font-size: 13.5px; color: var(--muted); margin: 20px 2px 26px; }
+    .terms a { color: #3a6e9e; word-break: break-all; }
+
+    .consent-box {
+      background: var(--red-soft); border: 2px solid var(--red); border-radius: 16px;
+      padding: 22px 20px; margin: 8px 0 18px;
+    }
+    .consent-box .lead {
+      font-family: var(--serif); font-weight: 700; font-size: 15px; margin-bottom: 10px;
+    }
+    .consent-box .statement { font-size: 14px; margin-bottom: 18px; text-wrap: pretty; }
+
+    label.field { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input[type="text"] {
+      width: 100%; min-height: 48px; padding: 10px 14px;
+      font-size: 16px; font-family: var(--sans);
+      border: 1px solid var(--border); border-radius: 10px; background: #fff;
+      color: var(--ink);
+    }
+    input[type="text"]:focus { outline: 2px solid var(--red); outline-offset: 1px; border-color: var(--red); }
+
+    .agree {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: #fff; border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px 16px; margin: 14px 0 18px; cursor: pointer;
+    }
+    .agree input { width: 22px; height: 22px; margin-top: 4px; accent-color: var(--red); flex: none; cursor: pointer; }
+    .agree span { font-size: 14px; font-weight: 600; }
+
+    button.primary {
+      width: 100%; min-height: 54px;
+      background: var(--red); color: #fff;
+      font-size: 17px; font-weight: 700; font-family: var(--sans); letter-spacing: .06em;
+      border: none; border-radius: 12px; cursor: pointer;
+    }
+    button.primary:hover { background: var(--red-dark); }
+    button.primary:disabled { opacity: .45; cursor: not-allowed; }
+    .err { display: none; color: var(--red-dark); font-size: 13.5px; font-weight: 600; margin-top: 12px; }
+
+    .issuer { text-align: center; font-size: 12.5px; color: var(--muted); margin-top: 34px; }
+
+    /* ---- 署名済み・完了 ---- */
+    .donecard {
+      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 30px 22px; text-align: center; margin: 8px 0 22px;
+    }
+    .donecard .mark {
+      width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 50%;
+      background: var(--red-soft); display: flex; align-items: center; justify-content: center;
+    }
+    .donecard .mark svg { width: 34px; height: 34px; stroke: var(--red); }
+    .donecard .t { font-family: var(--serif); font-size: 19px; font-weight: 700; margin-bottom: 8px; }
+    .donecard .d { font-size: 13.5px; color: var(--muted); }
+    .signrow {
+      display: flex; justify-content: center; gap: 26px; flex-wrap: wrap;
+      margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border);
+      font-size: 14px;
+    }
+    .signrow b { font-family: var(--serif); font-size: 16px; }
+    button.ghost {
+      min-height: 48px; padding: 0 22px;
+      background: #fff; color: var(--ink); font-size: 14.5px; font-weight: 600; font-family: var(--sans);
+      border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+    }
+    button.ghost:hover { border-color: var(--red); color: var(--red-dark); }
+    .done-actions { display: flex; gap: 12px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+    .keepnote { font-size: 12.5px; color: var(--muted); text-align: center; margin-top: 12px; }
+
+    /* ---- 読み込み・エラー ---- */
+    .center { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+    .spinner { width: 34px; height: 34px; border: 3px solid var(--border); border-top-color: var(--red); border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- 印刷（控え）---- */
+    @media print {
+      .topbar { display: none; }
+      body { background: #fff; font-size: 11.5pt; }
+      .wrap { max-width: none; padding: 0; }
+      .no-print { display: none !important; }
+      .sec { break-inside: avoid; border-color: #bbb; }
+      .sec::before { background: #999; }
+      .consent-box { border-color: #999; background: #fff; }
+      .donecard { border-color: #999; }
+      .donecard .mark { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topbar"></div>
+
+  <div id="loading" class="center">
+    <div class="spinner" role="status" aria-label="読み込み中"></div>
+    <div style="font-size:14px;color:var(--muted)">承諾書を読み込んでいます…</div>
+  </div>
+
+  <div id="notfound" class="center" style="display:none">
+    <div style="font-family:var(--serif);font-size:19px;font-weight:700">この承諾書は見つかりませんでした</div>
+    <div style="font-size:13.5px;color:var(--muted);max-width:420px;line-height:1.9">
+      リンクの有効期限が切れているか、アドレスが正しくない可能性があります。<br>
+      お手数ですが、タダカヨの伴走支援担当者へご連絡ください。
+    </div>
+  </div>
+
+  <main id="main" class="wrap" style="display:none"></main>
+
+  <script src="/js/firebase-config.js"></script>
+  <script type="module" src="/js/consent-sign.js"></script>
+</body>
+</html>

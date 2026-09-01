@@ -60,6 +60,31 @@ service cloud.firestore {
       allow update, delete: if isEditor();
     }
 
+    // 伴走支援承諾書の署名依頼。
+    // ドキュメントIDが推測不能なトークン（128bit乱数）＝URLを知っていることが鍵。
+    //   ・get のみ公開（list は不可＝列挙できない）
+    //   ・未署名（pending）のときに限り、未認証でも status と signed の2フィールドだけ
+    //     "signed" への一方向更新ができる。署名済みの書き換え・取り消しは職員でも editor のみ
+    //   ・signedAt はサーバ時刻を強制（端末の時計を信用しない）
+    match /consentRequests/{token} {
+      allow get: if true;
+      allow list: if isRegistered();
+      allow create, delete: if isEditor();
+      allow update: if isEditor()
+        || (
+          resource.data.status == "pending"
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["status", "signed"])
+          && request.resource.data.status == "signed"
+          && request.resource.data.signed is map
+          && request.resource.data.signed.keys().hasOnly(["name", "signedAt", "method", "userAgent"])
+          && request.resource.data.signed.name is string
+          && request.resource.data.signed.name.size() > 0
+          && request.resource.data.signed.name.size() <= 100
+          && request.resource.data.signed.signedAt == request.time
+          && request.resource.data.signed.method == "web"
+        );
+    }
+
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     match /{document=**} {
       allow read: if isRegistered();
