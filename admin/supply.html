@@ -29,7 +29,7 @@
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="inventory" role="tab"><i class="ti ti-building-warehouse" aria-hidden="true"></i> 在庫・商品</button>
         <button class="tab" data-tab="orders" role="tab"><i class="ti ti-shopping-cart" aria-hidden="true"></i> 発注（→AB Circle）</button>
-        <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→事業所）</button>
+        <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→認定事業所・事業所）</button>
         <button class="tab" data-tab="partnerorders" role="tab"><i class="ti ti-inbox" aria-hidden="true"></i> 受注（認定事業所）</button>
         <button class="tab" data-tab="partners" role="tab"><i class="ti ti-users" aria-hidden="true"></i> パートナー管理</button>
       </div>
@@ -58,7 +58,7 @@
       <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金（直接事業所／認定事業所 直送 共通）</span>
+          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金。認定事業所への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
@@ -151,8 +151,8 @@
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="shipType">出荷種別 <span style="color:red">*</span></label>
             <select class="form-control" id="shipType">
-              <option value="direct">タダカヨから直接（自社実施）</option>
-              <option value="dropship">認定事業所からの依頼（直送）</option>
+              <option value="direct">事業所へ（タダカヨの在庫から発送・その事業所に請求）</option>
+              <option value="dropship">認定事業所へ（AB Circleから直送・認定事業所に請求）</option>
             </select></div>
           <div class="form-group" id="shipPartnerWrap" style="display:none"><label class="form-label" for="shipPartner">請求先（認定事業所）<span style="color:red">*</span></label>
             <select class="form-control" id="shipPartner"></select></div>

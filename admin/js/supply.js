@@ -901,6 +901,10 @@ function overdueDays(s){
 }
 // 未集金＝請求済（invoiced）で残額があるもの。発送済で未請求のものは「未請求」として別に数える
 function isUnpaid(s){ return s.status==="invoiced" && payRemain(s)>0; }
+// バッジ表示用。認定事業所に請求する出荷かどうか。
+// 古い出荷には今の選択肢に無い shipType:"stock" が入っていて、それも請求先は認定事業所なので
+// partnerEmail の有無まで見る。※ 請求先名そのもの（billToOf）の解釈は従来のまま変えない。
+function billsPartner(s){ return s.shipType==="dropship" || !!s.partnerEmail; }
 function billToOf(s){ return s.shipType==="dropship" ? (s.partnerName||s.partnerEmail||"") : (s.company||s.officeName||""); }
 function billToEmailOf(s){
   if(s.shipType==="dropship") return s.partnerEmail||"";
@@ -937,8 +941,15 @@ function renderShipments(ships){
       return `<div style="margin-bottom:2px"><strong>${esc(i.sku)}</strong> × ${Number(i.qty)||0}`
         + (conn?`<div class="conn-tag">${esc(conn)}</div>`:"")+`</div>`;
     }).join("");
-    const typeBadge = s.shipType==="dropship"
-      ? `<span class="badge badge-6">直送(認定)</span>` : `<span class="badge badge-2">直接</span>`;
+    // 「誰に請求するか」と「どこから発送したか」は別の軸。1つのバッジに混ぜると実態とずれる。
+    //   請求先: shipType（ただし古い "stock" は partnerEmail の有無で判断する）
+    //   発送元: fulfillment（自社在庫を通ったか＝在庫を戻すかどうかの根拠でもある）
+    const typeBadge = (billsPartner(s)
+        ? `<span class="badge badge-6">認定事業所へ請求</span>`
+        : `<span class="badge badge-2">事業所へ請求</span>`)
+      + (shipUsedStock(s)
+        ? ` <span class="badge badge-2">自社在庫から発送</span>`
+        : ` <span class="badge badge-7">AB Circleから直送</span>`);
     const st=s.status||"shipped";
     const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${SHIP_STATUS[st]||st}</span>`;
     const billName = billToOf(s);
@@ -1041,7 +1052,7 @@ function renderShipments(ships){
 //   ・直送発注から自動生成（createShipmentDraftFromPO / fulfillment:"direct"）＝ 在庫を経由しない
 //   したがって種別を切り替えても在庫の実態は変わらない＝在庫は動かさない（画面にもその旨を明示する）。
 // 変わるのは「請求先」と「単価の基準」だけなので、そこだけをプレビュー付きで変更する。
-const SHIP_TYPE_LABEL = { direct:"タダカヨから直接（自社実施）", dropship:"認定事業所からの依頼（直送）" };
+const SHIP_TYPE_LABEL = { direct:"事業所へ（タダカヨの在庫から発送・その事業所に請求）", dropship:"認定事業所へ（AB Circleから直送・認定事業所に請求）" };
 let typeChangingShip = null;
 // 変更後の種別に合わせて単価を入れ直した明細を返す（reprice=false なら今の単価のまま）
 function repricedShipItems(s, newType, reprice){
