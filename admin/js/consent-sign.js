@@ -56,7 +56,10 @@ function documentHtml(docu, data) {
         <p>${esc(s.body)}</p>
       </section>`).join("")}
 
-    ${docu.terms_url ? `<p class="terms">利用規約: <a href="${esc(docu.terms_url)}" target="_blank" rel="noopener">${esc(docu.terms_url)}</a></p>` : ""}
+    ${docu.terms_url || docu.privacy_url ? `<p class="terms">
+      ${docu.terms_url ? `利用規約: <a href="${esc(docu.terms_url)}" target="_blank" rel="noopener">${esc(docu.terms_url)}</a>` : ""}
+      ${docu.privacy_url ? `<br>プライバシーポリシー: <a href="${esc(docu.privacy_url)}" target="_blank" rel="noopener">${esc(docu.privacy_url)}</a>` : ""}
+    </p>` : ""}
   `;
 }
 
@@ -81,7 +84,7 @@ function renderPending(data, docu) {
       <div class="err" id="signErr" role="alert"></div>
     </div>
 
-    <p class="issuer">${esc(docu.issuer)}</p>
+    <p class="issuer">${esc(docu.issuer)}${docu.issuer_detail ? `<br>${esc(docu.issuer_detail)}` : ""}</p>
   `;
 
   const name = $("signerName"), agree = $("agreeCheck"), btn = $("signBtn"), err = $("signErr");
@@ -152,7 +155,7 @@ function renderSigned(data, docu, justNow) {
       </div>
     </div>
 
-    <p class="issuer">${esc(docu.issuer)}</p>
+    <p class="issuer">${esc(docu.issuer)}${docu.issuer_detail ? `<br>${esc(docu.issuer_detail)}` : ""}</p>
   `;
 }
 
