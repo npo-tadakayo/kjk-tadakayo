@@ -320,6 +320,32 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 /* ========== Table ========== */
 .table-wrap { overflow-x: auto; }
 
+/* カードリーダーの「つなぎ方」（USB Type-A / Type-C / Bluetooth）。
+   品番だけでは事業所のパソコンに挿さるか分からないため、一覧・明細に必ず併記する（2026-09-01）。
+   目立ちすぎないよう、品番の下に小さく置く扱い。 */
+/* 一覧の操作ボタン。数が多い行でも横にはみ出させず、折り返して全部押せるようにする。
+   これが無いと右端の削除ボタンが画面外に出て、消せないように見える（2026-09-01）。 */
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  min-width: 240px;
+}
+
+.conn-tag {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+  background: var(--color-bg-subtle, #faf7f2);
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  padding: 1px 6px;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
 /* 案件一覧は12列あるので、幅の食い合いを止める（2026-09-01 都道府県・地域・市町村・担当者を追加）。
    事業所名だけ折り返してよい列にして、ほかは折り返さない。
    これをしないと「地域」「市町村」が1文字ずつ縦に割れて、事業所名も3行になる。 */

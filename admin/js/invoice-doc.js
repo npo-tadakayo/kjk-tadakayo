@@ -54,7 +54,19 @@ export function renderInvoiceHtml(s, st, opts){
     ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div><div style="font-size:12px;color:#6a5e48;margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
     : `<div style="font-size:12px;color:#6a5e48">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
   // 適格請求書: 各明細に適用税率を表示
-  const rows2 = items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
+  // 品名だけでは USB か Bluetooth か（USBなら端子が A か C か）分からないので、明細に併記する。
+  // 新しい明細は connection を持っている。古い明細は呼び出し側が products を渡してくれれば引ける。
+  const connOf = (i) => {
+    const saved = String(i?.connection || "").trim();
+    if (saved) return saved;
+    const list = Array.isArray(opts?.products) ? opts.products : [];
+    const p = list.find(x => x.id === i?.sku || x.sku === i?.sku);
+    if (!p) return "";
+    const conn = String(p.connection || "").trim(), cn = String(p.connector || "").trim();
+    if (/bluetooth/i.test(conn)) return cn ? `Bluetooth／${cn}` : "Bluetooth";
+    return cn || conn;
+  };
+  const rows2 = items.map(i=>`<tr><td>${esc(i.name)}${connOf(i)?`<div style="font-size:11px;color:#6a5e48">つなぎ方: ${esc(connOf(i))}</div>`:""}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
     + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipExcl)}</td><td class="num">${yen(shipExcl)}</td></tr>` : "");
   return `
     <div class="inv">

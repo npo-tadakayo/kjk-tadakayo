@@ -1,13 +1,22 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
 import { renderInvoiceHtml } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+
+// 接続方式（USB Type-A / Type-C / Bluetooth）は新しい明細には焼き込まれているが、
+// それ以前の出荷には入っていないので、商品マスタから引けるように読んでおく。
+let products = [];
+async function loadProducts(){
+  try{ const s=await getDocs(collection(db,"products")); products=s.docs.map(d=>({id:d.id,...d.data()})); }
+  catch(_){ products=[]; } // 読めなくても帳票は出す（接続方式が出ないだけ）
+}
 
 const params = new URLSearchParams(location.search);
 const type = params.get("type"); // po | ship
@@ -32,7 +41,8 @@ const PO_DEFAULT = {
 function renderPO(o, st){ return renderPOHtml(o, st); }
 
 function renderShip(s){
-  const rows=(s.items||[]).map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td class="num">${i.qty}</td></tr>`).join("");
+  // 品番だけでは事業所側で「自分のパソコンに挿さるのか」が分からないので、つなぎ方を必ず載せる
+  const rows=(s.items||[]).map(i=>`<tr><td>${esc(i.sku)}</td><td>${esc(i.name)}</td><td>${esc(itemConnection(i, products))||"—"}</td><td class="num">${i.qty}</td></tr>`).join("");
   const addr=[s.postal?`〒${esc(s.postal)}`:"",esc(s.address||"")].filter(Boolean).join(" ");
   return `
     <div class="doc-head"><div></div>
@@ -42,7 +52,7 @@ function renderShip(s){
     <div class="meta">${addr}${s.contactName?`　／　ご担当: ${esc(s.contactName)} 様`:""}</div>
     <div class="meta">出荷番号: ${esc(s.soNumber)}　／　出荷日: ${esc(s.shipDate||"")}</div>
     <p style="margin-top:16px">平素より大変お世話になっております。下記のとおり送付いたします。ご査収のほどよろしくお願い申し上げます。</p>
-    <table class="items"><thead><tr><th>品番</th><th>商品名</th><th style="width:80px">数量</th></tr></thead>
+    <table class="items"><thead><tr><th>品番</th><th>商品名</th><th style="width:150px">つなぎ方</th><th style="width:80px">数量</th></tr></thead>
       <tbody>${rows}</tbody></table>
     <p style="font-size:12px;color:var(--muted)">※ 不足・破損等ございましたらタダカヨ事務局までご連絡ください。</p>
     <div class="footer">NPO法人タダカヨ　介護情報基盤伴走支援事業　／　お問い合わせ: kjk-staff@tadakayo.jp</div>`;
@@ -88,7 +98,7 @@ function renderLetterpack(s, sender, variant){
 }
 
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
-function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: today }); }
+function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: today, products }); }
 
 // 領収書（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
@@ -457,6 +467,7 @@ onAuthStateChanged(auth, async (user)=>{
   const backTab = { po:"orders", invoice:"shipments", receipt:"shipments", refund:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
   const backBtn = document.querySelector(".btn-back");
   if (backBtn && backTab) backBtn.href = `/supply.html?tab=${backTab}`;
+  await loadProducts();
   const docId = type==="plabel" ? params.get("pid") : id;
   if(!type||!docId){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }
   try{
