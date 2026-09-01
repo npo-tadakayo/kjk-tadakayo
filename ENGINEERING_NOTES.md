@@ -348,6 +348,7 @@ erDiagram
   products ||--o{ inventoryMovements : "在庫増減"
   partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
   shipments ||--|| receipts : "領収書の発行記録"
+  cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼"
   cases {
     int caseNumber
     string officeName
@@ -436,6 +437,22 @@ sequenceDiagram
 | 認定事業所ポータル | https://kjk-tadakayo-admin.web.app/partner.html |
 | リージョン | asia-northeast1（Vertex AI も H-5 で global → asia-northeast1 に変更済） |
 | デプロイ | Node20 / `firebase deploy`（rule05: preview channel → 検証 → 本番昇格） |
+| Hosting のデプロイ | `node scripts/deploy-hosting.mjs --target admin --channel <名前>` → 検証 → `--live`（REST APIを直接叩く。firebase CLI の認証が279側に入れ替わっても通る） |
 
 > [!INFO]
 > Webhook URL・メール送信元・振込先・印影などは「設定」画面（`appConfig/settings`）から変更でき、コード変更・再デプロイは不要（最大60秒で反映）。
+
+### Cloud Functions のデプロイ（2026-09-01 追記・ハマりどころ）
+
+**`FUNCTIONS_DISCOVERY_TIMEOUT=180` を付けないと必ず失敗する。**
+
+```bash
+FUNCTIONS_DISCOVERY_TIMEOUT=180 firebase deploy --only "functions:sendPartnerMail" --project kjk-tadakayo
+```
+
+このリポジトリは Google Drive（CloudStorage）上にあり、`functions/node_modules` の読み込みが遅い。
+`require("./index.js")` の実測が **58秒**で、firebase CLI の既定タイムアウト10秒を大きく超える。
+付けないと `Error: User code failed to load. Cannot determine backend specification. Timeout after 10000.` で落ちる。
+これはコードの不具合ではないので、この文言が出たらまずタイムアウトを疑うこと。
+
+なお rule05 のとおり **`--only functions` 単独は禁止**。必ず `functions:関数名` で列挙する。
