@@ -592,7 +592,7 @@ function openShip(existing){
   const locked = shipIsLocked(s);
 
   if(!s){
-    title.textContent="新規出荷（→事業所）";
+    title.textContent="新規出荷（→認定事業所・事業所）";
     label.textContent="出荷を登録";
     note.style.display="none";
     document.getElementById("shipDate").value=today();
