@@ -5,7 +5,7 @@ import { getAuth, onAuthStateChanged, signOut }
 import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getStorage, ref as storageRef, uploadBytes, getDownloadURL }
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
@@ -801,28 +801,208 @@ function showToast(msg) {
 }
 
 // ===== 伴走支援セッション =====
+// 記録した伴走支援セッションは、あとから直せる（2026-09-02 追加）。
+// 現場からの要望: 記載漏れの追記や書き間違いの訂正が実際に起きる。
+// 誰がいつ直したかは残す（支援の記録なので、黙って書き換わらないようにする）。
+let editingSessionId = null;   // 編集中の記録。null なら全部が表示モード
+let sessionsCache = [];        // 編集の保存後に描画し直すため保持
+
 function renderSessions(sessions) {
+  sessionsCache = sessions;
   const el = document.getElementById("sessionsEl");
   if (!sessions.length) {
     el.innerHTML = `<div class="empty-state"><i class="ti ti-camera" aria-hidden="true"></i><p>伴走支援の記録がありません</p></div>`;
     return;
   }
-  el.innerHTML = sessions.map((s) => {
-    const photos = (s.photoUrls || []).map((u) =>
-      `<a href="${u}" target="_blank" rel="noopener"><img class="session-photo" src="${u}" alt="支援写真" loading="lazy"></a>`
-    ).join("");
-    return `
-      <div class="card" style="margin-bottom:var(--space-3)">
-        <div class="card-body">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <strong style="font-size:14px"><i class="ti ti-calendar-event" aria-hidden="true"></i> ${escHtml(s.sessionDate || "日付未設定")}</strong>
-            <span style="font-size:12px;color:var(--color-ink-muted)">${escHtml(s.userName || "")} ・ ${formatDateTime(s.createdAt)}</span>
-          </div>
-          ${s.summary ? `<div style="font-size:13px;white-space:pre-wrap;margin-bottom:${photos ? "10px" : "0"}">${escHtml(s.summary)}</div>` : ""}
-          ${photos ? `<div class="session-photos">${photos}</div>` : ""}
+  el.innerHTML = sessions.map((s) =>
+    s._id === editingSessionId ? sessionEditHtml(s) : sessionViewHtml(s)
+  ).join("");
+  wireSessionButtons();
+}
+
+function sessionViewHtml(s) {
+  const photos = (s.photoUrls || []).map((u) =>
+    `<a href="${u}" target="_blank" rel="noopener"><img class="session-photo" src="${u}" alt="支援写真" loading="lazy"></a>`
+  ).join("");
+  const edited = s.updatedAt
+    ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:6px">編集済み ${formatDateTime(s.updatedAt)}${s.updatedBy ? `（${escHtml(s.updatedBy)}）` : ""}</div>`
+    : "";
+  return `
+    <div class="card" style="margin-bottom:var(--space-3)">
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
+          <strong style="font-size:14px"><i class="ti ti-calendar-event" aria-hidden="true"></i> ${escHtml(s.sessionDate || "日付未設定")}</strong>
+          <span style="font-size:12px;color:var(--color-ink-muted);margin-left:auto">${escHtml(s.userName || "")} ・ ${formatDateTime(s.createdAt)}</span>
+          <button class="btn btn-secondary sess-edit" data-id="${s._id}" type="button" style="font-size:12px;padding:4px 10px"><i class="ti ti-edit" aria-hidden="true"></i>編集</button>
         </div>
-      </div>`;
-  }).join("");
+        ${s.summary ? `<div style="font-size:13px;white-space:pre-wrap;margin-bottom:${photos ? "10px" : "0"}">${escHtml(s.summary)}</div>` : ""}
+        ${photos ? `<div class="session-photos">${photos}</div>` : ""}
+        ${edited}
+      </div>
+    </div>`;
+}
+
+function sessionEditHtml(s) {
+  const photos = (s.photoUrls || []).map((u, i) => `
+    <div style="position:relative;display:inline-block">
+      <img class="session-photo" src="${u}" alt="支援写真" loading="lazy">
+      <button class="sess-photo-del" data-idx="${i}" type="button" aria-label="この写真を外す"
+        style="position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(184,74,74,.92);color:#fff;font-size:14px;line-height:1;cursor:pointer">×</button>
+    </div>`).join("");
+  return `
+    <div class="card" style="margin-bottom:var(--space-3);border-color:var(--color-primary)">
+      <div class="card-body">
+        <div style="font-weight:600;font-size:13px;margin-bottom:10px"><i class="ti ti-edit" aria-hidden="true"></i> この記録を編集しています</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="sessEditDate">実施日</label>
+            <input class="form-control" type="date" id="sessEditDate" value="${escHtml(s.sessionDate || "")}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sessEditSummary">支援内容・メモ</label>
+          <textarea class="form-control" id="sessEditSummary" rows="6">${escHtml(s.summary || "")}</textarea>
+        </div>
+        ${photos ? `<div class="form-group"><label class="form-label">いまの写真（×で外せます）</label><div class="session-photos" id="sessEditPhotos">${photos}</div></div>` : ""}
+        <div class="form-group">
+          <label class="form-label" for="sessEditAdd">写真を追加</label>
+          <input class="form-control" type="file" id="sessEditAdd" accept="image/*" multiple>
+        </div>
+        <div id="sessEditErr" style="display:none;font-size:13px;color:var(--color-danger);font-weight:600;margin-bottom:8px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary sess-save" data-id="${s._id}" type="button"><i class="ti ti-check" aria-hidden="true"></i>変更を保存</button>
+          <button class="btn btn-secondary sess-cancel" type="button">キャンセル</button>
+          <button class="btn btn-danger sess-delete" data-id="${s._id}" type="button" style="margin-left:auto"><i class="ti ti-trash" aria-hidden="true"></i>この記録を削除</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+// 編集中に「×」で外した写真の添字。保存するまで実際には消さない
+let removedPhotoIdx = new Set();
+
+function wireSessionButtons() {
+  document.querySelectorAll(".sess-edit").forEach((b) => b.addEventListener("click", () => {
+    editingSessionId = b.dataset.id;
+    removedPhotoIdx = new Set();
+    renderSessions(sessionsCache);
+  }));
+  document.querySelectorAll(".sess-cancel").forEach((b) => b.addEventListener("click", () => {
+    editingSessionId = null;
+    removedPhotoIdx = new Set();
+    renderSessions(sessionsCache);
+  }));
+  document.querySelectorAll(".sess-photo-del").forEach((b) => b.addEventListener("click", () => {
+    removedPhotoIdx.add(Number(b.dataset.idx));
+    b.closest("div").style.display = "none";
+  }));
+  document.querySelectorAll(".sess-save").forEach((b) => b.addEventListener("click", () => saveSessionEdit(b.dataset.id)));
+  document.querySelectorAll(".sess-delete").forEach((b) => b.addEventListener("click", () => deleteSession(b.dataset.id)));
+}
+
+// 編集の保存。写真は「外した分をStorageからも消す」「追加分をアップする」を両方やる。
+// Storage の削除に失敗しても記録の更新は通す（記録が直せないほうが困るため）。
+async function saveSessionEdit(sessionId) {
+  const s0 = sessionsCache.find((x) => x._id === sessionId);
+  if (!s0) return;
+  const dateEl = document.getElementById("sessEditDate");
+  const sumEl = document.getElementById("sessEditSummary");
+  const addEl = document.getElementById("sessEditAdd");
+  const err = document.getElementById("sessEditErr");
+  const btn = document.querySelector(".sess-save");
+  err.style.display = "none";
+
+  const sessionDate = dateEl.value;
+  const summary = sumEl.value.trim();
+  const addFiles = Array.from(addEl.files || []);
+  const kept = (s0.photoUrls || []).filter((_, i) => !removedPhotoIdx.has(i));
+  const removed = (s0.photoUrls || []).filter((_, i) => removedPhotoIdx.has(i));
+
+  if (!sessionDate && !summary && !kept.length && !addFiles.length) {
+    err.textContent = "実施日・メモ・写真のいずれかを残してください（全部空にはできません）";
+    err.style.display = "block";
+    return;
+  }
+
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  try {
+    const urls = [...kept];
+    for (let i = 0; i < addFiles.length; i++) {
+      btn.innerHTML = `<i class="ti ti-loader-2 ti-spin"></i> 写真をアップ中 ${i + 1}/${addFiles.length}`;
+      const f = addFiles[i];
+      const safeName = `${Date.now()}_${i}_${f.name.replace(/[^\w.\-]/g, "_")}`;
+      const snap = await uploadBytes(storageRef(storage, `sessions/${sessionId}/photos/${safeName}`), f);
+      urls.push(await getDownloadURL(snap.ref));
+    }
+
+    btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 保存中...';
+    await updateDoc(doc(db, "sessions", sessionId), {
+      sessionDate: sessionDate || "",
+      summary,
+      photoUrls: urls,
+      updatedAt: serverTimestamp(),
+      updatedBy: currentUser?.displayName || currentUser?.email || "",
+    });
+
+    // 外した写真は実体も消す（利用者情報が写り込む可能性があるため残さない）
+    for (const u of removed) {
+      try { await deleteObject(storageRef(storage, u)); } catch (_) { /* 実体が無い等は無視 */ }
+    }
+
+    // 何をどう直したかをタイムラインに残す
+    await addDoc(collection(db, "activities"), {
+      caseId,
+      type: "visit",
+      occurredAt: serverTimestamp(),
+      userId: currentUser?.uid || "",
+      userName: currentUser?.displayName || currentUser?.email || "",
+      subject: `伴走支援セッションを編集${sessionDate ? `（${sessionDate}）` : ""}`,
+      body: summary + (removed.length ? `\n写真${removed.length}枚を削除` : "") + (addFiles.length ? `\n写真${addFiles.length}枚を追加` : ""),
+      attachmentUrls: [],
+    });
+    await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
+
+    editingSessionId = null;
+    removedPhotoIdx = new Set();
+    showToast("伴走支援の記録を更新しました");
+    renderSessions(latestSessions); // 編集中は購読側の描画を止めているので、ここで戻す
+  } catch (e) {
+    err.textContent = `保存に失敗しました: ${e.message}`;
+    err.style.display = "block";
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
+}
+
+async function deleteSession(sessionId) {
+  const s0 = sessionsCache.find((x) => x._id === sessionId);
+  if (!s0) return;
+  const photoNote = (s0.photoUrls || []).length ? `\n添付の写真${s0.photoUrls.length}枚も削除されます。` : "";
+  if (!confirm(`${s0.sessionDate || "日付未設定"} の伴走支援の記録を削除します。${photoNote}\nこの操作は元に戻せません。よろしいですか？`)) return;
+  try {
+    for (const u of (s0.photoUrls || [])) {
+      try { await deleteObject(storageRef(storage, u)); } catch (_) { /* 実体が無い等は無視 */ }
+    }
+    await deleteDoc(doc(db, "sessions", sessionId));
+    await addDoc(collection(db, "activities"), {
+      caseId,
+      type: "visit",
+      occurredAt: serverTimestamp(),
+      userId: currentUser?.uid || "",
+      userName: currentUser?.displayName || currentUser?.email || "",
+      subject: `伴走支援セッションを削除（${s0.sessionDate || "日付未設定"}）`,
+      body: s0.summary || "",
+      attachmentUrls: [],
+    });
+    await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
+    editingSessionId = null;
+    showToast("伴走支援の記録を削除しました");
+    renderSessions(latestSessions); // 編集中は購読側の描画を止めているので、ここで戻す
+  } catch (e) {
+    alert(`削除に失敗しました: ${e.message}`);
+  }
 }
 
 async function addSession(userId, userName) {
@@ -1205,6 +1385,9 @@ onAuthStateChanged(auth, async (user) => {
   );
   onSnapshot(sessQ, (snap) => {
     latestSessions = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    // 編集中に描き直すと、入力途中の文字が元の値で上書きされて消える。
+    // その間は手元のキャッシュだけ更新し、編集を終えてから描き直す。
+    if (editingSessionId) { sessionsCache = latestSessions; return; }
     renderSessions(latestSessions);
   });
 
