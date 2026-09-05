@@ -82,6 +82,9 @@ service cloud.firestore {
           && request.resource.data.signed.name.size() <= 100
           && request.resource.data.signed.signedAt == request.time
           && request.resource.data.signed.method == "web"
+          && (!("userAgent" in request.resource.data.signed)
+              || (request.resource.data.signed.userAgent is string
+                  && request.resource.data.signed.userAgent.size() <= 300))
         );
     }
 

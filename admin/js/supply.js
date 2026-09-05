@@ -632,7 +632,7 @@ function openShip(existing){
     note.style.display="block";
     note.innerHTML = locked
       ? `この出荷は<strong>${esc(SHIP_STATUS[s.status]||s.status)}</strong>です。請求書を出した後なので、`
-        + `<strong>数量・送料は変えられません</strong>（金額が変わってしまうため）。送付先の書き間違いだけ直せます。<br>`
+        + `<strong>数量・送料・出荷日は変えられません</strong>（請求書に印字される内容のため）。送付先の書き間違いだけ直せます。<br>`
         + `金額を直す必要がある場合は、入金の記録を取り消して請求をやり直すか、この出荷を削除して作り直してください。`
       : `もともと入っている品番の単価は、登録したときのまま変えません（新しく足した品番だけ今の単価が入ります）。<br>`
         + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「種別変更」</strong>から行ってください。`
@@ -641,7 +641,7 @@ function openShip(existing){
   }
 
   // 金額に関わる欄のロック
-  const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion"];
+  const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion","shipDate"];
   moneyIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=locked; });
   document.querySelectorAll("#shipItems .qty-input").forEach(i=>{ i.disabled=locked; });
 
@@ -655,9 +655,11 @@ function openShip(existing){
     delBtn.style.display = s ? "" : "none";
     delBtn.onclick = async ()=>{
       const target=editingShip; if(!target) return;
+      // 確認ダイアログと在庫の戻しは deleteShipment 側の作法に任せる。キャンセルしたら画面はそのまま
+      const done = await deleteShipment(target);
+      if(!done) return;
       document.getElementById("shipModal").classList.remove("open");
       editingShip=null;
-      await deleteShipment(target); // 確認ダイアログと在庫の戻しは deleteShipment 側の作法に任せる
     };
   }
 
@@ -716,7 +718,6 @@ async function saveShipEdit(){
 
   // 送付先はどの状態でも直せる（金額が変わらないため）
   const patch = {
-    shipDate:document.getElementById("shipDate").value||today(),
     postal:document.getElementById("shipPostal").value.trim(),
     company:document.getElementById("shipCompany").value.trim(),
     officeName:office,
@@ -729,12 +730,14 @@ async function saveShipEdit(){
 
   let items=null, delta={};
   if(!locked){
+    patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
     const before=qtyBySku(s0.items), after=qtyBySku(items);
     Object.keys({...before,...after}).forEach(sku=>{ delta[sku]=(after[sku]||0)-(before[sku]||0); });
 
-    // 増やすぶんだけ在庫が要る（在庫を通らない直送はそもそも動かさない）
+    // 増やすぶんだけ在庫が要る（在庫を通らない直送はそもそも動かさない）。
+    // ここは画面上の早めの確認。最終判定は下のトランザクション内で最新在庫を読んで行う
     if(shipUsedStock(s0)){
       for(const sku of Object.keys(delta)){
         if(delta[sku]<=0) continue;
@@ -758,20 +761,45 @@ async function saveShipEdit(){
 
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
   try{
-    await updateDoc(doc(db,"shipments",s0._id), patch);
-    // 在庫の差分を反映（増やしたら引く／減らしたら戻す）。何が動いたか履歴にも残す
-    if(items && shipUsedStock(s0)){
-      for(const sku of Object.keys(delta)){
-        const d=delta[sku]; if(!d) continue;
-        await updateDoc(doc(db,"products",sku),{stock:increment(-d)});
-        await addDoc(collection(db,"inventoryMovements"),{
-          sku, delta:-d, reason:"shipment_edit", refNo:s0.soNumber,
-          createdAt:serverTimestamp(), userName:currentUser.displayName||currentUser.email });
+    // 出荷・在庫・履歴を1つのトランザクションで書く。
+    // 差分は「開いた時点の items」ではなく、いま Firestore にある items から計算し直す
+    // （別タブで先に直されていたら二重に在庫を動かしてしまうため）。
+    const shipRef=doc(db,"shipments",s0._id);
+    let moved=0;
+    await runTransaction(db, async (tx)=>{
+      const snap=await tx.get(shipRef);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur=snap.data();
+      const a=cur.updatedAt?.toMillis?.()||0, b=s0.updatedAt?.toMillis?.()||0;
+      if(a!==b) throw new Error("他の人が先にこの出荷を変更しています。画面を更新してから直してください");
+      delta={}; moved=0; // トランザクションは再試行されることがあるので、毎回ここで初期化
+      if(items){
+        const before=qtyBySku(cur.items), after=qtyBySku(items);
+        Object.keys({...before,...after}).forEach(sku=>{ delta[sku]=(after[sku]||0)-(before[sku]||0); });
+        if(shipUsedStock(cur)){
+          // 読み取りは書き込みより前にまとめて済ませる（Firestore トランザクションの決まり）
+          for(const sku of Object.keys(delta)){
+            if(delta[sku]<=0) continue;
+            const p=(await tx.get(doc(db,"products",sku))).data()||{};
+            if((p.stock||0)<delta[sku]) throw new Error(`在庫不足: ${p.name||sku}（在庫 ${p.stock||0} / 追加で必要 ${delta[sku]}）`);
+          }
+        }
       }
-    }
+      tx.update(shipRef, patch);
+      // 在庫の差分を反映（増やしたら引く／減らしたら戻す）。何が動いたか履歴にも残す
+      if(items && shipUsedStock(cur)){
+        for(const sku of Object.keys(delta)){
+          const d=delta[sku]; if(!d) continue;
+          tx.update(doc(db,"products",sku),{stock:increment(-d)});
+          tx.set(doc(collection(db,"inventoryMovements")),{
+            sku, delta:-d, reason:"shipment_edit", refNo:s0.soNumber,
+            createdAt:serverTimestamp(), userName:currentUser.displayName||currentUser.email });
+          moved++;
+        }
+      }
+    });
     document.getElementById("shipModal").classList.remove("open");
     editingShip=null;
-    const moved=Object.keys(delta).filter(k=>delta[k]).length;
     toast(locked
       ? `出荷 ${s0.soNumber} の送付先を直しました`
       : `出荷 ${s0.soNumber} を修正しました${moved?"（在庫も差分を調整）":""}`);
@@ -819,7 +847,7 @@ async function deleteShipment(s){
     ? `出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`
     : `出荷 ${s.soNumber}（${s.officeName}）を削除します。\nこれは直送（ABサークルから認定事業所へ直接）の出荷なので、`
       + `自社在庫は動きません。よろしいですか？`;
-  if(!confirm(msg)) return;
+  if(!confirm(msg)) return false;
   try{
     if(restores){
       for(const it of (s.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
@@ -827,7 +855,8 @@ async function deleteShipment(s){
     }
     await deleteDoc(doc(db,"shipments",s._id));
     toast(restores ? `出荷 ${s.soNumber} を削除し、在庫を戻しました` : `出荷 ${s.soNumber} を削除しました（直送のため在庫は動かしていません）`);
-  }catch(e){ alert(`削除失敗: ${e.message}`); }
+    return true;
+  }catch(e){ alert(`削除失敗: ${e.message}`); return false; }
 }
 
 const SHIP_STATUS = { draft:"下書き", shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };

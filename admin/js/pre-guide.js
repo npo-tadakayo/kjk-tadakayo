@@ -116,7 +116,7 @@ function openModal() {
         preGuideMailedTo: to,
         updatedAt: serverTimestamp(),
       });
-      const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = new Date().toISOString();
+      const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
       ctx.toast("事前準備のご案内を送信しました");
       close();
       render();

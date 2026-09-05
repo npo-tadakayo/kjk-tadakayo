@@ -178,13 +178,13 @@ function populateAreaFilters() {
   const regionsPresent = REGIONS.filter((r) => rows.some((c) => c._area?.region === r));
   fill(region, regionsPresent, "すべての地域", "住所が未登録");
 
-  const inRegion = (c) => !region.value || region.value === AREA_NONE
+  const inRegion = (c) => (!region.value || region.value === AREA_NONE)
     ? true : c._area?.region === region.value;
   const prefs = [...new Set(rows.filter(inRegion).map((c) => c._area?.prefecture).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "ja"));
   fill(pref, prefs, "すべての都道府県", "住所が未登録");
 
-  const inPref = (c) => !pref.value || pref.value === AREA_NONE
+  const inPref = (c) => (!pref.value || pref.value === AREA_NONE)
     ? true : c._area?.prefecture === pref.value;
   const cities = [...new Set(rows.filter(inRegion).filter(inPref).map((c) => c._area?.city).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, "ja"));
@@ -220,7 +220,7 @@ function renderCases() {
   tbody.innerHTML = filtered.map((c) => `
     <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く"${c.archived ? ' style="opacity:.55"' : ""}>
       <td><strong>#${c.caseNumber || "—"}</strong></td>
-      <td>
+      <td class="col-office">
         <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
         ${c.corpName ? `<div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(c.corpName)}</div>` : ""}
       </td>

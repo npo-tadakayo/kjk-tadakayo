@@ -843,10 +843,10 @@ function sessionViewHtml(s) {
 }
 
 function sessionEditHtml(s) {
-  const photos = (s.photoUrls || []).map((u, i) => `
+  const photos = (s.photoUrls || []).map((u) => `
     <div style="position:relative;display:inline-block">
       <img class="session-photo" src="${u}" alt="支援写真" loading="lazy">
-      <button class="sess-photo-del" data-idx="${i}" type="button" aria-label="この写真を外す"
+      <button class="sess-photo-del" data-url="${u.replace(/"/g, "&quot;")}" type="button" aria-label="この写真を外す"
         style="position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(184,74,74,.92);color:#fff;font-size:14px;line-height:1;cursor:pointer">×</button>
     </div>`).join("");
   return `
@@ -878,22 +878,23 @@ function sessionEditHtml(s) {
     </div>`;
 }
 
-// 編集中に「×」で外した写真の添字。保存するまで実際には消さない
-let removedPhotoIdx = new Set();
+// 編集中に「×」で外した写真のURL。保存するまで実際には消さない
+// （添字で持つと、編集中に購読が更新されて配列がずれたとき別の写真を消してしまう）
+let removedPhotoUrls = new Set();
 
 function wireSessionButtons() {
   document.querySelectorAll(".sess-edit").forEach((b) => b.addEventListener("click", () => {
     editingSessionId = b.dataset.id;
-    removedPhotoIdx = new Set();
+    removedPhotoUrls = new Set();
     renderSessions(sessionsCache);
   }));
   document.querySelectorAll(".sess-cancel").forEach((b) => b.addEventListener("click", () => {
     editingSessionId = null;
-    removedPhotoIdx = new Set();
+    removedPhotoUrls = new Set();
     renderSessions(sessionsCache);
   }));
   document.querySelectorAll(".sess-photo-del").forEach((b) => b.addEventListener("click", () => {
-    removedPhotoIdx.add(Number(b.dataset.idx));
+    if (b.dataset.url) removedPhotoUrls.add(b.dataset.url);
     b.closest("div").style.display = "none";
   }));
   document.querySelectorAll(".sess-save").forEach((b) => b.addEventListener("click", () => saveSessionEdit(b.dataset.id)));
@@ -915,8 +916,8 @@ async function saveSessionEdit(sessionId) {
   const sessionDate = dateEl.value;
   const summary = sumEl.value.trim();
   const addFiles = Array.from(addEl.files || []);
-  const kept = (s0.photoUrls || []).filter((_, i) => !removedPhotoIdx.has(i));
-  const removed = (s0.photoUrls || []).filter((_, i) => removedPhotoIdx.has(i));
+  const kept = (s0.photoUrls || []).filter((u) => !removedPhotoUrls.has(u));
+  const removed = (s0.photoUrls || []).filter((u) => removedPhotoUrls.has(u));
 
   if (!sessionDate && !summary && !kept.length && !addFiles.length) {
     err.textContent = "実施日・メモ・写真のいずれかを残してください（全部空にはできません）";
@@ -926,6 +927,7 @@ async function saveSessionEdit(sessionId) {
 
   const orig = btn.innerHTML;
   btn.disabled = true;
+  const uploadedRefs = []; // 記録の更新に失敗したら、アップした分は片付ける（宙に浮いた写真を残さない）
   try {
     const urls = [...kept];
     for (let i = 0; i < addFiles.length; i++) {
@@ -933,17 +935,23 @@ async function saveSessionEdit(sessionId) {
       const f = addFiles[i];
       const safeName = `${Date.now()}_${i}_${f.name.replace(/[^\w.\-]/g, "_")}`;
       const snap = await uploadBytes(storageRef(storage, `sessions/${sessionId}/photos/${safeName}`), f);
+      uploadedRefs.push(snap.ref);
       urls.push(await getDownloadURL(snap.ref));
     }
 
     btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 保存中...';
-    await updateDoc(doc(db, "sessions", sessionId), {
-      sessionDate: sessionDate || "",
-      summary,
-      photoUrls: urls,
-      updatedAt: serverTimestamp(),
-      updatedBy: currentUser?.displayName || currentUser?.email || "",
-    });
+    try {
+      await updateDoc(doc(db, "sessions", sessionId), {
+        sessionDate: sessionDate || "",
+        summary,
+        photoUrls: urls,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser?.displayName || currentUser?.email || "",
+      });
+    } catch (e) {
+      for (const r of uploadedRefs) { try { await deleteObject(r); } catch (_) { /* 掃除の失敗は無視 */ } }
+      throw e;
+    }
 
     // 外した写真は実体も消す（利用者情報が写り込む可能性があるため残さない）
     for (const u of removed) {
@@ -964,7 +972,7 @@ async function saveSessionEdit(sessionId) {
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
     editingSessionId = null;
-    removedPhotoIdx = new Set();
+    removedPhotoUrls = new Set();
     showToast("伴走支援の記録を更新しました");
     renderSessions(latestSessions); // 編集中は購読側の描画を止めているので、ここで戻す
   } catch (e) {
@@ -982,10 +990,11 @@ async function deleteSession(sessionId) {
   const photoNote = (s0.photoUrls || []).length ? `\n添付の写真${s0.photoUrls.length}枚も削除されます。` : "";
   if (!confirm(`${s0.sessionDate || "日付未設定"} の伴走支援の記録を削除します。${photoNote}\nこの操作は元に戻せません。よろしいですか？`)) return;
   try {
+    // 先に記録を消し、通ったら写真の実体を消す（逆だと、記録の削除に失敗したとき写真だけ無い記録が残る）
+    await deleteDoc(doc(db, "sessions", sessionId));
     for (const u of (s0.photoUrls || [])) {
       try { await deleteObject(storageRef(storage, u)); } catch (_) { /* 実体が無い等は無視 */ }
     }
-    await deleteDoc(doc(db, "sessions", sessionId));
     await addDoc(collection(db, "activities"), {
       caseId,
       type: "visit",

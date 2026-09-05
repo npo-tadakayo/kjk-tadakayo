@@ -516,6 +516,17 @@ function encWord(s) { return `=?UTF-8?B?${b64(s)}?=`; }
 function wrap76(s) { return String(s).replace(/[\r\n]/g, "").replace(/(.{76})/g, "$1\r\n"); }
 
 // cc・添付（PDF等）に対応。attachments=[{filename, mimeType, contentBase64}]。なければ従来の text/plain。
+// 添付ファイル名をMIMEヘッダーに入れる前に無害化する。
+// 引用符・改行が入るとヘッダーが壊れる（ヘッダーインジェクション）。英数字・._- 以外は _ に、長さは80まで
+function safeAttachmentName(name) {
+  const raw = String(name || "file");
+  const dot = raw.lastIndexOf(".");
+  const ext = dot > 0 ? raw.slice(dot).replace(/[^\w.]/g, "").slice(0, 8) : "";
+  let base = (dot > 0 ? raw.slice(0, dot) : raw).replace(/[^\w.\-]/g, "_").slice(0, 70);
+  if (!/[A-Za-z0-9]/.test(base)) base = "file"; // 全部記号や日本語だったら読める名前に
+  return base + ext;
+}
+
 function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
   const headers = [
     `From: ${encWord("タダカヨ事務局")} <${sender}>`,
@@ -536,9 +547,9 @@ function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
     for (const att of attachments) {
       lines.push(
         `--${bd}`,
-        `Content-Type: ${att.mimeType || "application/pdf"}; name="${att.filename}"`,
+        `Content-Type: ${att.mimeType || "application/pdf"}; name="${safeAttachmentName(att.filename)}"`,
         "Content-Transfer-Encoding: base64",
-        `Content-Disposition: attachment; filename="${att.filename}"`, "",
+        `Content-Disposition: attachment; filename="${safeAttachmentName(att.filename)}"`, "",
         wrap76(att.contentBase64),
       );
     }
@@ -668,17 +679,22 @@ exports.sendPartnerMail = onCall(
       throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
     }
     // 請求書・領収書はPDF添付が本体。添付なしで送ると請求書が届かないので必須にする
+    const KINDS = ["invoice", "receipt", "dunning", "guide"];
+    if (kind !== undefined && kind !== "" && !KINDS.includes(kind)) {
+      throw new HttpsError("invalid-argument", "kind の値が不正です");
+    }
     if ((kind === "invoice" || kind === "receipt") && !pdfBase64) {
       throw new HttpsError("invalid-argument", "帳票PDFの生成に失敗しています（添付なしでは送信しません）");
     }
-    if (pdfBase64 && pdfBase64.length > 15_000_000) {
+    // base64 は元の約1.37倍。13.4M文字 ≒ 10MB
+    if (pdfBase64 && pdfBase64.length > 13_400_000) {
       throw new HttpsError("invalid-argument", "PDFが大きすぎます（10MB以下にしてください）");
     }
     try {
       const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
       const token = await gmailAccessToken(sender);
       const attachments = pdfBase64
-        ? [{ filename: filename || "document.pdf", mimeType: "application/pdf", contentBase64: pdfBase64 }]
+        ? [{ filename: safeAttachmentName(filename || "document.pdf"), mimeType: "application/pdf", contentBase64: pdfBase64 }]
         : undefined;
       const raw = buildRawMessage({ to, cc, subject, body, sender, attachments });
       const res = await fetch(

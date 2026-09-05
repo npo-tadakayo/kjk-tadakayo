@@ -492,6 +492,30 @@ function mailDocTemplate(kind, s, st){
   };
 }
 
+// 画面の #body を「印刷と同じ見え方」に整えた複製にして返す。
+// 複製側で input/select を確定値の文字に置き換え、編集専用（.rcpt-noprint）の要素を取り除く。
+// cloneNode は属性しか写さない（入力中の値は写らない）ので、値は元の要素から読む。
+export function printableClone(){
+  const src = document.getElementById("body");
+  const clone = src.cloneNode(true);
+  const srcIn = src.querySelectorAll("input, select, textarea");
+  const dstIn = clone.querySelectorAll("input, select, textarea");
+  dstIn.forEach((el, i) => {
+    const o = srcIn[i];
+    const span = document.createElement("span");
+    span.textContent = !o ? "" : (o.tagName === "SELECT" ? (o.options[o.selectedIndex]?.text || "") : o.value);
+    if (el.classList.contains("num")) span.className = "num";
+    el.replaceWith(span);
+  });
+  clone.querySelectorAll(".rcpt-noprint").forEach((n) => n.remove());
+  // html2canvas は描画済みのDOMが要るので、画面外に置いて渡す
+  const holder = document.createElement("div");
+  holder.style.cssText = `position:fixed;left:-10000px;top:0;width:${src.offsetWidth}px;background:#fff`;
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+  return { clone, cleanup: () => holder.remove() };
+}
+
 function setupMailDoc(kind, d, st){
   const btn = document.getElementById("mailDocBtn");
   if(!btn) return;
@@ -531,13 +555,17 @@ function setupMailDoc(kind, d, st){
     sendBtn.disabled = true;
     try{
       sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> PDFを作成中...';
-      // 領収書の編集用input・印刷対象外の列を落とすため、印刷時と同じ見た目でPDF化する
-      const el = document.getElementById("body");
-      const opt = { margin:[10,8,10,8], image:{type:"jpeg",quality:0.95},
-        html2canvas:{scale:2, useCORS:true}, jsPDF:{unit:"mm", format:"a4", orientation:"portrait"},
-        pagebreak:{mode:["avoid-all","css"]} };
-      const dataUri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
-      const pdfBase64 = String(dataUri).split(",")[1] || "";
+      // 領収書の編集用input・印刷対象外の列を落とすため、印刷時と同じ見た目に整えた複製をPDF化する
+      // （html2canvas は @media print を適用しないので、画面の #body をそのまま渡すと編集UIが写る）
+      const { clone, cleanup } = printableClone();
+      let dataUri;
+      try{
+        const opt = { margin:[10,8,10,8], image:{type:"jpeg",quality:0.95},
+          html2canvas:{scale:2, useCORS:true}, jsPDF:{unit:"mm", format:"a4", orientation:"portrait"},
+          pagebreak:{mode:["avoid-all","css"]} };
+        dataUri = await window.html2pdf().set(opt).from(clone).outputPdf("datauristring");
+      }finally{ cleanup(); }
+      const pdfBase64 = String(dataUri||"").split(",")[1] || "";
       if(!pdfBase64) throw new Error("PDFの生成に失敗しました");
       const filename = kind === "invoice"
         ? `${invoiceNoOf(d)}.pdf`

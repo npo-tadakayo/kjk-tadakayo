@@ -350,7 +350,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
    事業所名だけ折り返してよい列にして、ほかは折り返さない。
    これをしないと「地域」「市町村」が1文字ずつ縦に割れて、事業所名も3行になる。 */
 #casesTable th, #casesTable td { white-space: nowrap; }
-#casesTable th:nth-child(2), #casesTable td:nth-child(2) {
+#casesTable .col-office {
   white-space: normal;
   min-width: 190px;
 }

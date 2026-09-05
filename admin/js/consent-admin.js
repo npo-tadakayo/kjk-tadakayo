@@ -162,15 +162,18 @@ function wire(r, url) {
 
 // ---- 発行 ----
 async function issue() {
+  const btn = document.getElementById("consentIssueBtn");
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
   const c = ctx.getCase();
   const token = newToken();
   await setDoc(doc(ctx.db, "consentRequests", token), {
     caseId: ctx.caseId,
-    displayNo: `CST-${String(c.caseNo ?? ctx.caseId).slice(0, 12)}`,
+    displayNo: `CST-${String(c.caseNumber ?? ctx.caseId).slice(0, 12)}`,
     officeName: c.officeName || "",
     company: c.corpName || c.company || "",
     contactName: c.contactName || "",
-    email: c.contactEmail || c.email || "",
     status: "pending",
     document: CONSENT_DOCUMENT,          // ★この時点の条文全文を焼き込む
     createdAt: serverTimestamp(),
@@ -178,23 +181,28 @@ async function issue() {
   });
   ctx.toast("署名依頼を発行しました");
   await reload();
+  } catch (e) { alert(`発行に失敗しました: ${e.message}`); }
+  finally { if (btn) btn.disabled = false; }
 }
 
 // ---- 紙での取得を記録 ----
 async function recordPaper() {
+  const btn = document.getElementById("consentPaperBtn");
+  if (btn?.disabled) return;
   const c = ctx.getCase();
   const name = prompt("紙の承諾書に署名した確認者のお名前を入力してください", c.contactName || "");
   if (!name || !name.trim()) return;
   const dateStr = prompt("署名日（YYYY-MM-DD）", new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }));
   if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) { alert("日付は YYYY-MM-DD の形式で入力してください"); return; }
+  if (btn) btn.disabled = true;
+  try {
   const token = newToken();
   await setDoc(doc(ctx.db, "consentRequests", token), {
     caseId: ctx.caseId,
-    displayNo: `CST-${String(c.caseNo ?? ctx.caseId).slice(0, 12)}`,
+    displayNo: `CST-${String(c.caseNumber ?? ctx.caseId).slice(0, 12)}`,
     officeName: c.officeName || "",
     company: c.corpName || c.company || "",
     contactName: c.contactName || "",
-    email: c.contactEmail || c.email || "",
     status: "signed",
     document: CONSENT_DOCUMENT,
     signed: { name: name.trim().slice(0, 100), signedDate: dateStr, method: "paper", recordedBy: ctx.userName, signedAt: serverTimestamp() },
@@ -203,6 +211,8 @@ async function recordPaper() {
   });
   ctx.toast("紙での取得を記録しました（原本は事業所へお渡しください）");
   await reload();
+  } catch (e) { alert(`記録に失敗しました: ${e.message}`); }
+  finally { if (btn) btn.disabled = false; }
 }
 
 // ---- 依頼メール ----
