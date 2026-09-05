@@ -49,7 +49,7 @@
 
 ## 次回やること（優先順）
 
--1. **`sendPartnerMail` などが記録する日付が UTC**（`new Date().toISOString().slice(0,10)`）: 2026-09-06 01:12 JST の送信が `receiptMailedAt: 2026-09-05` になった。`invoiceMailedAt` / `dunningSentAt` / `mailLog.sentAt` も同じ。`toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})` に直して Functions 再デプロイ（小）
+（UTC日付のバグは下記§で修正・実機再テストで解消を確認済み）
 -0.5. **問い合わせ・見積もりフォームの住所分割**（都道府県／市町村／住所を別カラム・必須化・`offices` スキーマと既存データの移行）— 次田さん依頼「検討して」の段階。設計案を出してから着手
 -0.3. `functions/index.js` webhookMitsumori の重複判定が事業所名を見ていない（前セッションからの持ち越し）
 -0.2. 「CRM改訂のお知らせ」（`docs/CRM改訂のお知らせ_20260902.md`）の周知先・Chat投稿の要否を確認

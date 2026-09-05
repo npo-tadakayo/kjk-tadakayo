@@ -37,6 +37,13 @@ async function getChatWebhook() {
 
 // ===== Vertex AI (Gemini) — SA認証/ADC・鍵なし =====
 const VERTEX_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "kjk-tadakayo";
+
+// 送付日・報告日は JST の日付で記録する（new Date().toISOString() は UTC なので、
+// JSTの深夜0〜9時台に送ると前日の日付になってしまう。2026-09-06 実機テストで発覚）
+function todayJst() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+
 // データレジデンシー(個人情報の国内処理)のため既定を asia-northeast1 とする。
 // global は data residency 非対応のため使用しない（開発チーム指摘 H-5）。
 const VERTEX_LOCATION = process.env.VERTEX_AI_LOCATION || "asia-northeast1";
@@ -710,7 +717,7 @@ exports.sendPartnerMail = onCall(
       const sent = await res.json();
       if (shipmentId) {
         const now = admin.firestore.FieldValue.serverTimestamp();
-        const day = new Date().toISOString().slice(0, 10);
+        const day = todayJst();
         const log = { kind: kind || "mail", to, subject, sentAt: day, sentBy: email };
         const update = {
           mailLog: admin.firestore.FieldValue.arrayUnion(log),
@@ -905,7 +912,7 @@ exports.reportInvoiceToAccounting = onCall(
     // 4) 出荷に報告履歴を記録（再発行時に「報告済み」と分かるようにする）
     try {
       const now = admin.firestore.FieldValue.serverTimestamp();
-      const day = new Date().toISOString().slice(0, 10);
+      const day = todayJst();
       const update = {
         accountingReportedAt: day,
         accountingReportedBy: email,
