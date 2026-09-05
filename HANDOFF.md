@@ -43,12 +43,13 @@
    - 🔴 領収書メールのPDFに編集UIが写る → 印刷と同じ見え方の複製をPDF化（ハーネスで input/select/編集UI 0件を確認）
    - 🔴 承諾書の文書番号が `caseNo`（存在しない項目）→ `caseNumber`
    - 🟠 出荷修正の在庫差分を `runTransaction` 化（開いた後に他人が変えていたら止める）／ロック時は出荷日も固定／添付ファイル名の無害化／ほか低優先9件
+   - **領収書メール送付を本番画面から実機テスト済み**（2026-09-06 01:12〜01:14 JST・SH-2026-0004 を kjk-staff@ と自分宛に送信）。届いたPDF（A4 1ページ・335KB）に編集UIが写っていないことを目視確認。テストで付いた `receiptMailedAt/To`・`mailLog` は Firestore REST で削除して元に戻した。**テストメール2通は kjk-staff@tadakayo.jp と yoshinao-tsukuda@tadakayo.jp の受信箱に残っている**（件名「【テスト送信】」「【テスト送信2】」・不要なら削除）
    - **2026-09-06 01:00 JST に本番反映済み**（`ecda41c`）: hosting live（version `e08b00e13835cfec`）／firestore.rules／Functions 3本（sendPartnerMail・reportInvoiceToAccounting・sendSupplierOrder）。承諾書の表示番号は既発行5件を `CST-{案件番号}` に修正（署名済みは #125・#129・#2、未署名 #32・#1。当初「#96」と見込んだのは誤り）
 
 
 ## 次回やること（優先順）
 
--1. **領収書メール送付の実機確認（要ログイン・5分）**: 入金済の出荷で「領収書」→「領収書をメールで送付」→ 宛先を kjk-staff@tadakayo.jp にして送信 → 届いたPDFに用途区分プルダウン・×・「行を追加」が写っていないことを確認。ハーネス（実物 html2pdf）では確認済みだが、本番画面からの送信はログイン済みブラウザが無く未実施
+-1. **`sendPartnerMail` などが記録する日付が UTC**（`new Date().toISOString().slice(0,10)`）: 2026-09-06 01:12 JST の送信が `receiptMailedAt: 2026-09-05` になった。`invoiceMailedAt` / `dunningSentAt` / `mailLog.sentAt` も同じ。`toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})` に直して Functions 再デプロイ（小）
 -0.5. **問い合わせ・見積もりフォームの住所分割**（都道府県／市町村／住所を別カラム・必須化・`offices` スキーマと既存データの移行）— 次田さん依頼「検討して」の段階。設計案を出してから着手
 -0.3. `functions/index.js` webhookMitsumori の重複判定が事業所名を見ていない（前セッションからの持ち越し）
 -0.2. 「CRM改訂のお知らせ」（`docs/CRM改訂のお知らせ_20260902.md`）の周知先・Chat投稿の要否を確認
@@ -90,6 +91,7 @@
 - **html2canvas（html2pdf）は `@media print` を見ない**。画面の DOM をそのまま渡すと `.rcpt-noprint` や `<input>` が PDF に写る。帳票のメール添付は `printableClone()`（supply-print.js）で複製を整えてから渡す（2026-09-06）
 - **プレビューチャンネルでログインするには Firebase Auth の承認済みドメインに追加が必要**（localhost も未登録）。`PATCH identitytoolkit.googleapis.com/admin/v2/projects/kjk-tadakayo/config?updateMask=authorizedDomains`（ヘッダー `x-goog-user-project: kjk-tadakayo`）。既に登録済みのチャンネル名（`sess-edit` 等）を再利用すると手間が省ける
 - **Functions デプロイは `NODE_OPTIONS=--max-old-space-size=8192 FUNCTIONS_DISCOVERY_TIMEOUT=180`** を付ければ Drive 上からでも通る（node_modules 読込 58秒・既定10秒で落ちる。2026-09-06 は CLI が Node ヒープ不足で落ちたのでヒープも広げる）。`zsh -ic 'gcp tadakayo && …'` で1回にまとめる。**成否は `gcloud functions describe … --format="value(updateTime)"` で確認**（`| tail` を挟むと exit code 0 に見える）
+- **Playwright MCP のブラウザ（user-data-dir `~/Library/Caches/ms-playwright-mcp/`）に CRM のログインセッションが残っている**（2026-09-06・次田芳尚でログイン）。実機テストはまず `browser_navigate` で本番 URL を開いて試す。ログイン画面が出たら Google のポップアップで次田さんがサインインする必要がある（Claude は資格情報を入力しない）
 - **AppleScript から Chrome に流す JS は分離ワールド**（ページの `window` が見えない）。ページの値が要るときは inline `<script>` を注入して `document.body.dataset` 経由で受け取る。ログイン済み窓が無いときは Playwright MCP も Google 認証を通せない（資格情報入力は不可）→ **ローカルハーネス＋Firestore エミュレータ**で検証する（2026-09-06 実施。ルールの境界テストは `firebase emulators:start --only firestore --project demo-kjk` に REST で当てる）
 - **Functions デプロイは Drive 上から不可**: `functions/node_modules` の読込に **12分23秒**（ローカルなら0.1秒）かかり、Firebase CLI の10秒制限に間に合わない（`Cannot determine backend specification. Timeout after 10000`）。手順は ①`rsync -a --exclude node_modules functions/ <ローカル>/functions/` ②`.firebaserc` コピー＋`firebase.json` は `{"functions":{"source":"functions"}}` ③`npm ci --omit=dev` ④`deploy --only "functions:名前" --account yoshinao-tsukuda@tadakayo.jp`。**`--account` 必須**（一時ディレクトリは `login:use` 未設定＝279アカウントで `iam.serviceAccounts.ActAs` 403）
 - **push手順**: origin は `npo-tadakayo/kjk-tadakayo`。gh のアクティブが `ytsukuda4470` だと403 → `gh auth switch -u tsuku-29` → push
