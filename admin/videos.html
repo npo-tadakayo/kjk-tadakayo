@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動画マニュアル — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .doc{max-width:1100px;}
+    .vp-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start;}
+    @media (max-width:1023px){.vp-grid{grid-template-columns:1fr;}}
+    .player-card{background:#fff;border:1px solid var(--color-line);border-radius:12px;overflow:hidden;}
+    .player-card .ph{padding:14px 18px 8px;}
+    .player-card .ph h2{font-family:"Noto Serif JP",serif;font-size:18px;margin:0 0 4px;}
+    .player-card .ph p{font-size:13px;color:var(--color-ink-muted);margin:0;line-height:1.7;}
+    #player{background:#111;padding:12px;}
+    #player .vp-video{display:block;width:100%;max-height:62vh;background:#000;border-radius:6px;}
+    #player .vp-loading,#player .vp-error{color:#fff;font-size:13px;padding:60px 0;text-align:center;}
+    #player .vp-error{color:#ffd8d8;}
+    .player-card .pf{padding:12px 18px 14px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+    .vl{display:flex;flex-direction:column;gap:8px;}
+    .vl-item{display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;min-height:44px;padding:12px 14px;border-radius:12px;border:1px solid var(--color-line);background:#fff;cursor:pointer;}
+    .vl-item:hover{background:#fbf9f6;}
+    .vl-item.active{border-color:var(--color-primary,#c02828);background:#fdf2f2;}
+    .vl-item:focus-visible{outline:3px solid #c02828;outline-offset:2px;}
+    .vl-no{flex:0 0 30px;height:30px;border-radius:50%;background:var(--color-primary,#c02828);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;}
+    .vl-item.active .vl-no{background:#8a1c1c;}
+    .vl-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .vl-title{font-weight:600;font-size:14px;}
+    .vl-desc{font-size:12.5px;color:var(--color-ink-muted);line-height:1.6;}
+    .vl-meta{font-size:12px;color:var(--color-ink-muted);}
+    .vl-icon{margin-left:auto;align-self:center;color:var(--color-ink-muted);}
+    .callout{border-radius:8px;padding:12px 14px;margin:0 0 16px;font-size:13px;line-height:1.8;}
+    .callout.tip{background:#e8f5ec;border-left:4px solid #5a8a3a;}
+    .howto{font-size:13px;color:var(--color-ink-muted);line-height:1.8;margin-top:18px;}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">動画マニュアル</h1></div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+
+      <div class="doc" id="doc" style="display:none">
+        <div class="callout tip">
+          <strong>CRM の操作説明を、単元ごとに 3〜6分の動画にしています。</strong>
+          字幕付きなので音を出せない場所でも見られます（動画右下の「CC」で字幕の表示を切り替え）。
+          はじめての方は <strong>1 → 2 → 7</strong>、発注・出荷を担当する方は <strong>3 → 5</strong>、請求と入金は <strong>4</strong>、管理者は <strong>6</strong>、Web申し込みの流れは <strong>8</strong> をご覧ください。
+          文章で確かめたいときは <a href="/manual.html">マニュアル</a> へ（各手順に「動画で見る」ボタンがあります）。
+        </div>
+
+        <div class="vp-grid">
+          <section class="player-card" id="playerCard" aria-labelledby="playerTitle">
+            <div class="ph"><h2 id="playerTitle">—</h2><p id="playerMeta"></p></div>
+            <div id="player"></div>
+            <div class="pf">
+              <span style="color:var(--color-ink-muted)">画面はすべてサンプルデータです。実在の事業所・担当者は写っていません。</span>
+              <span id="playerNext" hidden style="margin-left:auto"></span>
+            </div>
+          </section>
+          <nav class="vl" id="videoList" aria-label="単元の一覧"></nav>
+        </div>
+
+        <p class="howto">
+          動画の正本は共有ドライブ「TM_介護情報基盤を広め隊 › 02_マニュアル・ガイドブック › 研修動画 › CRM操作説明_全7単元」にあります。
+          ここに出ているのはそのコピーで、差し替えは開発担当が行います（エンジニアノート参照）。
+        </p>
+      </div>
+    </main>
+  </div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/videos.js" type="module"></script>
+</body>
+</html>

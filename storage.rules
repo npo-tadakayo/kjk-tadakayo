@@ -18,6 +18,11 @@ service firebase.storage {
       allow write: if false;
     }
     // 見積書PDF（版ごと）。書き込みは Cloud Functions の SA のみ。事業所へは download token 付きURLをメールで渡す
+    // 動画マニュアル（CRM操作説明の mp4/vtt）。読むのは職員だけ。書き込みは開発担当が gcloud で行う（Admin 権限はルールを迂回）
+    match /training/{fileName} {
+      allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow write: if false;
+    }
     match /quotes/{caseId}/{fileName} {
       allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
       allow write: if false;
