@@ -238,6 +238,9 @@
       margin-bottom: 5px;
     }
     .form-label .req { color: var(--primary); }
+    .zip-hint { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.6; }
+    .zip-hint.is-ok { color: #2e7d32; font-weight: 700; }
+    .zip-hint.is-error { color: var(--primary); font-weight: 700; }
 
     input[type="text"],
     input[type="number"],
@@ -630,7 +633,8 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="contactZip">郵便番号<span class="req">*</span></label>
-        <input type="text" id="contactZip" placeholder="例: 150-0002" inputmode="numeric" maxlength="8" required autocomplete="postal-code">
+        <input type="text" id="contactZip" placeholder="例: 150-0002" inputmode="numeric" maxlength="8" required autocomplete="postal-code" aria-describedby="contactZipHint">
+        <span id="contactZipHint" class="zip-hint" aria-live="polite"></span>
       </div>
       <div class="form-group">
         <label class="form-label" for="contactPrefecture">都道府県<span class="req">*</span></label>
@@ -1028,8 +1032,18 @@
 
   // 郵便番号から都道府県・市町村・町域を自動入力（zipcloud・無料/APIキー不要）。
   // 自動入力に失敗しても手入力の邪魔をしないよう、失敗は握りつぶす。
-  function wireZipAutofill(zipEl, prefEl, cityEl, addrEl) {
-    let lastLookedUp = '';
+  function wireZipAutofill(zipEl, prefEl, cityEl, addrEl, hintEl) {
+    const HINT_DEFAULT = '郵便番号（7桁）を入れると、都道府県・市町村・町名まで自動で入ります。番地・建物名は「住所」欄に続けてご入力ください。';
+    const HINT_LOADING = '住所を検索しています…';
+    const HINT_OK      = '都道府県・市町村・町名を自動で入れました。番地・建物名を続けてご入力ください。';
+    const HINT_NOTFOUND= 'この郵便番号の住所が見つかりませんでした。都道府県・市町村・住所を直接ご入力ください。';
+    const HINT_FAILED  = '住所の自動入力ができませんでした。お手数ですが直接ご入力ください。';
+    function setHint(text, state) {
+      if (!hintEl) return;
+      hintEl.textContent = text;
+      hintEl.classList.remove('is-loading', 'is-ok', 'is-error');
+      if (state) hintEl.classList.add(state);
+    }
     // 政令指定都市の「◯◯市△△区」は、admin側の集計（area.js）が「市」までを市町村として
     // 扱い区を含めない方針のため、区は市町村欄に入れず住所欄側へ回す。
     // 東京23区のような「◯◯区」単独（市を伴わない）はそのまま市町村として扱う。
@@ -1038,26 +1052,40 @@
       if (m) return { city: m[1], wardPrefix: m[2] };
       return { city: address2 || '', wardPrefix: '' };
     }
-    async function run() {
-      const digits = (zipEl.value || '').replace(/[^0-9]/g, '');
-      if (digits.length !== 7 || digits === lastLookedUp) return;
-      lastLookedUp = digits;
+    let lastLookedUp = '';
+    async function lookup(digits) {
+      setHint(HINT_LOADING, 'is-loading');
       try {
         const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
         const data = await res.json();
         const r = data.results && data.results[0];
-        if (!r) return;
+        if (!r) { setHint(HINT_NOTFOUND, 'is-error'); return; }
         const { city, wardPrefix } = splitCity(r.address2);
         prefEl.value = r.address1 || '';
         cityEl.value = city;
         if (!addrEl.value.trim()) addrEl.value = wardPrefix + (r.address3 || '');
         [prefEl, cityEl, addrEl].forEach((el) => el.dispatchEvent(new Event('input', { bubbles: true })));
+        setHint(HINT_OK, 'is-ok');
+        // 続けて番地・建物名を入れてもらう
+        addrEl.focus();
+        try { addrEl.setSelectionRange(addrEl.value.length, addrEl.value.length); } catch (_) {}
       } catch (e) {
-        // 自動入力は失敗しても手入力できるので何もしない
+        setHint(HINT_FAILED, 'is-error'); // 自動入力は失敗しても手入力できる
       }
     }
-    zipEl.addEventListener('input', run);
-    zipEl.addEventListener('blur', run);
+    function onInput() {
+      // 数字だけ残して 123-4567 の形に整える
+      const digits = (zipEl.value || '').replace(/[^0-9]/g, '').slice(0, 7);
+      const formatted = digits.length > 3 ? `${digits.slice(0, 3)}-${digits.slice(3)}` : digits;
+      if (zipEl.value !== formatted) zipEl.value = formatted;
+      if (digits.length !== 7) { if (digits !== lastLookedUp) setHint(HINT_DEFAULT, null); return; }
+      if (digits === lastLookedUp) return;
+      lastLookedUp = digits;
+      lookup(digits);
+    }
+    setHint(HINT_DEFAULT, null);
+    zipEl.addEventListener('input', onInput);
+    zipEl.addEventListener('blur', onInput);
   }
 
   // 成約通知 Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
@@ -1080,7 +1108,8 @@
       document.getElementById('contactZip'),
       document.getElementById('contactPrefecture'),
       document.getElementById('contactCity'),
-      document.getElementById('contactAddress')
+      document.getElementById('contactAddress'),
+      document.getElementById('contactZipHint')
     );
     document.getElementById('consentCheck').addEventListener('change', updateLock);
     document.getElementById('prevEstNo').textContent = estNo;
