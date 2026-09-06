@@ -17,3 +17,6 @@ images/tadakayo_logo_remove.png
 
 # 議事録（個人情報を含む社内議論・Drive管理）
 議事録など/
+
+# 報告書ビルダーの中間HTML（PDFは 00_outbox/_リリース記録/ に置く）
+scripts/report.html
