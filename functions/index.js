@@ -433,8 +433,10 @@ exports.webhookMitsumori = onRequest(
       }
 
       // ---- 見積もりを作成（前の版は superseded） ----
+      // 見積番号は案件ごとに引き継ぎ、版だけ上げる。
+      // 事業所は「EST-… の第2版」として受け取れる（番号が毎回変わると、どれが最新か分からなくなる）。
       const version = (latest?.version || 0) + 1;
-      const estNo = await getNextQuoteNumber();
+      const estNo = latest?.estNo || await getNextQuoteNumber();
       const accessToken = newToken();
       const validUntil = daysFromNow(30);
       const batch = db.batch();
@@ -591,6 +593,296 @@ exports.sendQuotePdf = onRequest(
       console.error("sendQuotePdf error:", e);
       res.status(500).json({ status: "error", message: e.message });
     }
+  }
+);
+
+// ===== 申し込みを受ける（2026-09-06・Phase 2）=====
+// 事業所が見積もりページで「この内容で申し込む」を押したときの受け口。
+//   1. 見積もりの accessToken で本人確認（ログインの仕組みを事業所に強いない）
+//   2. 見積もりを accepted、案件を「受注確定」に
+//   3. 出荷の下書きを自動で作る（スタッフは在庫から出すか AB Circle へ発注するかを選ぶだけにする）
+//   4. 事業所へ確認メール、Chat へ通知
+//
+// 出荷の下書きに入れる明細は、見積書と同じ構成（カードリーダー＋伴走支援費＋特別割引）にする。
+// そうしないと、そのまま発行した請求書の金額が見積書と合わない。
+// 伴走支援費・特別割引は在庫のある品物ではないので nonStock: true を付け、在庫処理から外す。
+function shipmentItemsFromQuote(q) {
+  const items = [];
+  for (const it of (q.items || [])) {
+    const qty = (Number(it.subsidyQty) || 0) + (Number(it.extraQty) || 0);
+    if (qty <= 0) continue;
+    const unitPrice = it.sku === Pricing.SKU.BT ? Pricing.BT_PRICE : Pricing.USB_PRICE;
+    items.push({ sku: it.sku, name: PRODUCT_NAMES[it.sku] || it.sku, qty, unitPrice, connection: CONNECTION_LABELS[it.sku] || "" });
+  }
+  const fee = Number(q.amounts?.accompanyFee) || 0;
+  if (fee > 0) {
+    const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
+    items.push({ sku: "support-fee", name: `伴走支援費（1年間・補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
+  }
+  const discount = Number(q.amounts?.discount) || 0;
+  if (discount > 0) {
+    items.push({ sku: "discount", name: "特別割引（出精値引き）", qty: 1, unitPrice: -discount, nonStock: true });
+  }
+  return items;
+}
+const PRODUCT_NAMES = {
+  "cir415a-01": "介護情報基盤 汎用カードリーダ CIR415A",
+  "cir315a-02": "介護情報基盤 汎用カードリーダ CIR315A（Type-A）",
+  "cir315a-04": "介護情報基盤 汎用カードリーダ CIR315A（Type-C）",
+};
+const CONNECTION_LABELS = {
+  "cir415a-01": "Bluetooth／USB Type-C",
+  "cir315a-02": "USB Type-A",
+  "cir315a-04": "USB Type-C",
+};
+const PAY_LABELS = { after: "伴走支援の後にお支払い", before: "先にお支払い（前払い）" };
+
+exports.acceptQuote = onRequest(
+  { region: "asia-northeast1", cors: true, timeoutSeconds: 120, secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_MAIL },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(405).send("Method Not Allowed"); return; }
+    if (await appCheckGate(req, res, "acceptQuote")) return;
+    try {
+      const { quoteId, quoteToken, delivery, payMethod, preferredDate, note, agreedName } = req.body || {};
+      if (!quoteId || !quoteToken) { res.status(400).json({ status: "error", message: "quoteId・quoteToken は必須です" }); return; }
+      if (!agreedName || !String(agreedName).trim()) { res.status(400).json({ status: "error", message: "お申し込み者のお名前をご入力ください" }); return; }
+      const payKey = payMethod === "before" ? "before" : "after";
+
+      const qRef = db.collection("quotes").doc(String(quoteId));
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      const d = delivery || {};
+
+      // 状態の確認と書き込みをトランザクションでまとめる。
+      // 二重送信（ボタン連打・回線の再送）で出荷の下書きが2つできるのを防ぐ。
+      let q = null, soNumber = null, alreadyAccepted = false, shipRefId = null;
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(qRef);
+        if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
+        q = { id: snap.id, ...snap.data() };
+        if (q.accessToken !== quoteToken) throw new HttpsError("permission-denied", "この見積もりを操作する権限がありません");
+        if (q.status === "accepted") { alreadyAccepted = true; return; }
+        if (q.status !== "issued") throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（新しい見積もりが発行されている可能性があります）");
+        if (q.validUntil && q.validUntil.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "この見積もりは有効期限が切れています。お手数ですが、もう一度お見積もりをお作りください");
+
+        // 採番はトランザクションの中で行う（採番だけ進んで書き込みが失敗する事故を避ける）
+        const cRef = db.collection("_counters").doc("shipments");
+        const cSnap = await tx.get(cRef);
+        const n = (cSnap.exists ? cSnap.data().value : 0) + 1;
+        tx.set(cRef, { value: n });
+        soNumber = `SH-2026-${String(n).padStart(4, "0")}`;
+
+        const items = shipmentItemsFromQuote(q);
+        const shipRef = db.collection("shipments").doc();
+        shipRefId = shipRef.id;
+        tx.set(shipRef, {
+        soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "",
+        caseId: q.caseId, caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
+        company: d.company || q.corpName || "", officeName: d.officeName || q.officeName || "",
+        postal: d.postalCode || "", address: d.address || "",
+        contactName: d.contactName || q.contactName || "", phone: d.phone || "",
+        items, shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
+        shipDate: todayJst(), preferredDate: preferredDate || "", payMethod: payKey,
+        orderNote: String(note || "").slice(0, 1000),
+        createdAt: now, createdBy: "web（事業所のお申し込み）",
+      });
+      tx.update(qRef, {
+        status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
+        acceptedBy: String(agreedName).trim().slice(0, 100), payMethod: payKey,
+        delivery: { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
+          address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" },
+      });
+      tx.update(db.collection("cases").doc(q.caseId), {
+        status: STATUS.ORDERED, orderedAt: now, orderedVia: "web", updatedAt: now,
+        shipmentId: shipRef.id, payMethod: payKey,
+      });
+      tx.set(db.collection("activities").doc(), {
+        caseId: q.caseId, type: "memo", occurredAt: now, userId: "system",
+        subject: `お申し込みを受け付けました（${q.estNo}・出荷 ${soNumber} の下書きを作成）`,
+        body: `お申し込み者: ${String(agreedName).trim()}\n支払方法: ${PAY_LABELS[payKey]}\n`
+          + `届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n`
+          + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+          + (note ? `ご要望: ${note}\n` : ""),
+        attachmentUrls: [],
+      });
+      });
+
+      if (alreadyAccepted) {
+        res.status(200).json({ status: "already", soNumber: q.shipmentNo || "", caseNumber: q.caseNumber });
+        return;
+      }
+
+      // 事業所へ確認メール
+      const yen = (n) => `¥${Number(n || 0).toLocaleString()}`;
+      const to = q.contactEmail || "";
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        try {
+          await sendGmail({
+            to, cc: GMAIL_SENDER,
+            subject: `【NPO法人タダカヨ】お申し込みを受け付けました（${q.estNo}）`,
+            body:
+              `${[q.corpName, q.officeName].filter(Boolean).join("　")} 御中\n${String(agreedName).trim()} 様\n\n` +
+              `お申し込みをいただき、ありがとうございます。以下の内容で承りました。\n\n` +
+              `見積番号: ${q.estNo}（第${q.version}版）\n` +
+              `合計（税込）: ${yen(q.amounts?.totalIncl)}　／　助成金充当: ${yen(q.amounts?.grantAmt)}　／　自己負担: ${yen(q.amounts?.selfPay)}\n` +
+              `お支払い: ${PAY_LABELS[payKey]}\n` +
+              `お届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n` +
+              (preferredDate ? `ご希望日: ${preferredDate}\n` : "") +
+              `\nこのあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。\n` +
+              `台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。\n` +
+              `お気づきの点は、このメールへの返信でお知らせください。\n\n` +
+              `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+          });
+        } catch (e) { console.error("acceptQuote mail error:", e); }
+      }
+
+      const chatWebhook = await getChatWebhook();
+      await notifyChat(
+        chatWebhook,
+        `🎉 お申し込みを受け付けました [案件 #${q.caseNumber}]\n見積: ${q.estNo}（v${q.version}）\n事業所: ${q.officeName}（${q.corpName || ""}）\n`
+        + `金額: ${yen(q.amounts?.totalIncl)}（自己負担 ${yen(q.amounts?.selfPay)}）\nお支払い: ${PAY_LABELS[payKey]}\n`
+        + `出荷 ${soNumber} の下書きを作りました。供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
+      );
+
+      res.status(200).json({ status: "ok", soNumber, caseNumber: q.caseNumber });
+    } catch (e) {
+      // トランザクション内で投げた HttpsError は、事業所に見せてよい文言なのでそのまま返す
+      if (e instanceof HttpsError) {
+        const code = e.code === "not-found" ? 404 : (e.code === "permission-denied" ? 403 : 409);
+        res.status(code).json({ status: "error", message: e.message });
+        return;
+      }
+      console.error("acceptQuote error:", e);
+      res.status(500).json({ status: "error", message: e.message });
+    }
+  }
+);
+
+// ===== 見積もりの改版（2026-09-06・Phase 2）=====
+// 「見積もりを取ったあと、支援の調整で台数・タイプ・機種を変えたい」に応えるための関数。
+// 前の版は superseded にして残し、新しい版を作る（何をいつ変えたかが追える）。
+// 出荷が下書きのうちは、その明細も新しい版に合わせて作り直す。
+// 出荷を確定したあとは触らない（請求済・入金済の金額が動くと事故になるため）。既存の「出荷の修正」で直す。
+exports.reviseQuote = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    const { quoteId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, reason, sendMail } = request.data || {};
+    if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
+    if (!reason || !String(reason).trim()) throw new HttpsError("invalid-argument", "変更の理由をご入力ください（あとから経緯を追えるようにするためです）");
+
+    const baseSnap = await db.collection("quotes").doc(String(quoteId)).get();
+    if (!baseSnap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
+    const base = { id: baseSnap.id, ...baseSnap.data() };
+
+    const planKey = ["houmon", "kyojyu", "other"].includes(plan) ? plan : base.plan;
+    const calc = Pricing.computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
+    if (calc.subsidyTotal < 1) throw new HttpsError("invalid-argument", "補助対象のカードリーダーを1台以上にしてください");
+    if (calc.subsidyTotal > calc.plan.maxQty) throw new HttpsError("invalid-argument", `${calc.plan.label}の補助対象は最大${calc.plan.maxQty}台です`);
+    const connector = ["A", "C"].includes(usbConnector) ? usbConnector : null;
+    const items = Pricing.buildItems({ btQty, usbQty, btExtra, usbExtra, usbConnector: connector });
+    const amounts = {
+      readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount,
+      subsidyPartTotal: calc.subsidyPartTotal, extraPartTotal: calc.extraPartTotal,
+      totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay,
+    };
+
+    // 出荷の状態を確認（下書きなら作り直す・確定後は触らない）
+    let shipmentId = base.shipmentId || null, shipStatus = null;
+    if (shipmentId) {
+      const sh = await db.collection("shipments").doc(shipmentId).get();
+      shipStatus = sh.exists ? (sh.data().status || null) : null;
+      if (sh.exists && shipStatus !== "draft") {
+        throw new HttpsError("failed-precondition",
+          `この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
+      }
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const estNo = base.estNo; // 番号は引き継ぎ、版だけ上げる
+    const version = (Number(base.version) || 1) + 1;
+    const accessToken = newToken();
+    const quoteRef = db.collection("quotes").doc();
+    const cardReaders = [];
+    const bt = Number(btQty) || 0, usb = Number(usbQty) || 0, btx = Number(btExtra) || 0, usbx = Number(usbExtra) || 0;
+    if (bt > 0 || btx > 0) cardReaders.push({ type: "BT", subsidyQty: bt, extraQty: btx });
+    if (usb > 0 || usbx > 0) cardReaders.push({ type: "USB", subsidyQty: usb, extraQty: usbx, connector });
+
+    const batch = db.batch();
+    // 同じ案件の生きている版はすべて superseded に
+    const sibSnap = await db.collection("quotes").where("caseId", "==", base.caseId).get();
+    for (const d of sibSnap.docs) {
+      const st = d.data().status;
+      if (st === "issued" || st === "accepted") batch.update(d.ref, { status: "superseded", supersededAt: now });
+    }
+    batch.set(quoteRef, {
+      caseId: base.caseId, officeId: base.officeId || null, caseNumber: base.caseNumber || null,
+      estNo, version, plan: planKey, planLabel: calc.plan.label, items, amounts,
+      status: base.status === "accepted" ? "accepted" : "issued",
+      supersedes: base.id, reason: String(reason).trim().slice(0, 500),
+      validUntil: base.validUntil || daysFromNow(30),
+      createdVia: "staff", createdBy: email, createdAt: now,
+      contactEmail: base.contactEmail || "", contactName: base.contactName || "",
+      officeName: base.officeName || "", corpName: base.corpName || "",
+      accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
+      shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
+      payMethod: base.payMethod || null, delivery: base.delivery || null,
+      acceptedAt: base.acceptedAt || null, acceptedBy: base.acceptedBy || null,
+    });
+    batch.update(db.collection("cases").doc(base.caseId), {
+      latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
+      subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
+      expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
+      specialDiscount: calc.discount, selfPay: calc.selfPay,
+    });
+    // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）
+    if (shipmentId && shipStatus === "draft") {
+      batch.update(db.collection("shipments").doc(shipmentId), {
+        items: shipmentItemsFromQuote({ items, amounts }),
+        quoteId: quoteRef.id, estNo,
+        updatedAt: now, updatedBy: email,
+      });
+    }
+    const before = (base.items || []).map((i) => `${i.sku}×${(Number(i.subsidyQty) || 0) + (Number(i.extraQty) || 0)}`).join("・");
+    const after = items.map((i) => `${i.sku}×${(Number(i.subsidyQty) || 0) + (Number(i.extraQty) || 0)}`).join("・");
+    batch.set(db.collection("activities").doc(), {
+      caseId: base.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
+      subject: `見積もりを変更（${estNo} v${base.version} → v${version}）`,
+      body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${Number(base.amounts?.totalIncl || 0).toLocaleString()}）\n`
+        + `変更後: ${after}（¥${calc.totalIncl.toLocaleString()}）`
+        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : ""),
+      attachmentUrls: [],
+    });
+    await batch.commit();
+
+    // 事業所へ変更後の見積もりを知らせる（PDFはこの時点では無いので、金額と変更点をメールで伝える）
+    let mailed = false;
+    const to = base.contactEmail || "";
+    if (sendMail !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      const yen = (n) => `¥${Number(n || 0).toLocaleString()}`;
+      const diff = calc.totalIncl - (Number(base.amounts?.totalIncl) || 0);
+      try {
+        await sendGmail({
+          to, cc: GMAIL_SENDER,
+          subject: `【変更後】【NPO法人タダカヨ】お見積もりの内容を変更しました（${estNo}）`,
+          body:
+            `${[base.corpName, base.officeName].filter(Boolean).join("　")} 御中\n${base.contactName ? base.contactName + " 様" : "ご担当者様"}\n\n` +
+            `お打ち合わせの内容にもとづき、お見積もりを変更しました。\n\n` +
+            `見積番号: ${estNo}（第${version}版）\n` +
+            `変更後の合計（税込）: ${yen(calc.totalIncl)}　／　助成金充当: ${yen(calc.grantAmt)}　／　自己負担: ${yen(calc.selfPay)}\n` +
+            (diff !== 0 ? `前回との差額: ${diff > 0 ? "＋" : "−"}${yen(Math.abs(diff))}\n` : "") +
+            `\n内容にお間違いがないか、ご確認をお願いします。相違があればこのメールへの返信でお知らせください。\n\n` +
+            `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+        });
+        mailed = true;
+        await db.collection("activities").add({
+          caseId: base.caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
+          userId: request.auth.uid, userName: email,
+          subject: `メール送信: 【変更後】お見積もり（${estNo} v${version}）`, body: `宛先: ${to}`, attachmentUrls: [],
+        });
+      } catch (e) { console.error("reviseQuote mail error:", e); }
+    }
+    return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft") };
   }
 );
 

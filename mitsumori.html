@@ -238,6 +238,24 @@
       margin-bottom: 5px;
     }
     .form-label .req { color: var(--primary); }
+    .order-cta {
+      width: 210mm; max-width: 100%; margin: 16px 0 40px;
+      background: #fff; border: 2px solid var(--primary); border-radius: 12px; padding: 16px 20px;
+    }
+    .order-cta-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+    .order-cta-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .order-cta-note { font-size: 12px; color: var(--muted); line-height: 1.7; max-width: 560px; }
+    .order-btn {
+      background: var(--primary); color: #fff; border: none; border-radius: 8px;
+      padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer;
+      min-height: 44px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+    }
+    .order-btn:hover { background: var(--primary-dark); }
+    .order-btn:disabled { opacity: .6; cursor: default; }
+    .order-done {
+      background: #E8F3EC; border: 1px solid #a5d6a7; color: #1b5e20;
+      border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.8;
+    }
     .zip-hint { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.6; }
     .zip-hint.is-ok { color: #2e7d32; font-weight: 700; }
     .zip-hint.is-error { color: var(--primary); font-weight: 700; }
@@ -569,6 +587,7 @@
       body { background: white; }
       .app-header,
       .form-panel,
+      .order-cta,
       .modal-overlay { display: none !important; }
       .app-body { height: auto; display: block; }
       .preview-panel { padding: 0; background: white; }
@@ -990,9 +1009,81 @@
       <div class="est-notes" id="notesArea"></div>
 
     </div><!-- /est-doc -->
+
+    <!-- お申し込み（画面だけ・印刷やPDFには出さない） -->
+    <div class="order-cta" id="orderCta">
+      <div class="order-cta-inner">
+        <div>
+          <div class="order-cta-title">この内容でお申し込みになりますか？</div>
+          <div class="order-cta-note">
+            お申し込み後も、<b>台数や機種（Bluetooth／USB、USBの口の形）は支援の日程を調整する際に変更できます</b>。いまの時点で決めきれなくても大丈夫です。
+          </div>
+        </div>
+        <button type="button" class="order-btn" id="orderBtn">
+          <i class="ti ti-circle-check"></i>この内容で申し込む
+        </button>
+      </div>
+      <div class="order-done" id="orderDone" style="display:none"></div>
+    </div><!-- /order-cta -->
   </div><!-- /preview-panel -->
 
 </div><!-- /app-body -->
+
+<!-- ======== お申し込みモーダル ======== -->
+<div class="modal-overlay" id="orderModal">
+  <div class="modal-box" style="width:560px">
+    <div class="modal-title">お申し込みの確認</div>
+    <div class="modal-desc" id="orderSummary"></div>
+
+    <div class="modal-field">
+      <label class="modal-label" for="odCompany">お届け先（法人名・事業所名）</label>
+      <input type="text" id="odCompany" placeholder="法人名">
+      <input type="text" id="odOffice" placeholder="事業所名" style="margin-top:6px">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odZip">お届け先の住所</label>
+      <input type="text" id="odZip" placeholder="郵便番号（例: 150-0002）" inputmode="numeric" maxlength="8" autocomplete="postal-code">
+      <span id="odZipHint" class="zip-hint" aria-live="polite"></span>
+      <select id="odPref" style="margin-top:6px" autocomplete="address-level1"><option value="">都道府県</option></select>
+      <input type="text" id="odCity" placeholder="市町村" style="margin-top:6px" autocomplete="address-level2">
+      <input type="text" id="odAddress" placeholder="丁目・番地・建物名" style="margin-top:6px" autocomplete="address-line1">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odContact">当日のご担当者・連絡先</label>
+      <input type="text" id="odContact" placeholder="ご担当者名">
+      <input type="tel" id="odPhone" placeholder="電話番号" style="margin-top:6px" autocomplete="tel">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odPay">お支払い方法</label>
+      <select id="odPay">
+        <option value="after" selected>伴走支援の後にお支払い（請求書をお送りします）</option>
+        <option value="before">先にお支払い（前払い。支援の当日に助成金の申請までお手伝いできます）</option>
+      </select>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odDate">ご希望の時期（任意）</label>
+      <input type="text" id="odDate" placeholder="例: 10月中旬の午後、〇月〇日以降 など">
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odNote">ご要望・ご連絡事項（任意）</label>
+      <textarea id="odNote" rows="2" placeholder="例: 複数事業所分をまとめて相談したい"></textarea>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label" for="odName">お申し込み者のお名前<span class="req">*</span></label>
+      <input type="text" id="odName" placeholder="例: 山田 太郎">
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">
+        お申し込みは、上のお見積もりの内容とお支払い条件にご同意いただくものです。
+        伴走支援の進め方と個人情報の取扱いについての承諾書は、支援の前に別途ご確認いただきます。
+      </div>
+    </div>
+
+    <p id="orderError" style="display:none;color:var(--primary);font-size:12px;margin:4px 0 0;line-height:1.6"></p>
+    <div class="modal-actions">
+      <button type="button" class="modal-btn modal-btn-cancel" id="orderCancel">やめる</button>
+      <button type="button" class="modal-btn modal-btn-ok" id="orderSubmit">この内容で申し込む</button>
+    </div>
+  </div>
+</div>
 
 <!-- Firebase App Check（M-1 フォーム保護 / reCAPTCHA Enterprise・観察モード対応） -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -1159,6 +1250,23 @@
       document.getElementById('contactAddress'),
       document.getElementById('contactZipHint')
     );
+    // お申し込みモーダル：都道府県の選択肢は入力フォームのものを写して作る
+    const odPref = document.getElementById('odPref');
+    [...document.getElementById('contactPrefecture').options].slice(1).forEach((o) => {
+      odPref.appendChild(new Option(o.text, o.value));
+    });
+    wireZipAutofill(
+      document.getElementById('odZip'), odPref,
+      document.getElementById('odCity'), document.getElementById('odAddress'),
+      document.getElementById('odZipHint')
+    );
+    document.getElementById('orderBtn').addEventListener('click', openOrderModal);
+    document.getElementById('orderCancel').addEventListener('click', () => document.getElementById('orderModal').classList.remove('open'));
+    document.getElementById('orderSubmit').addEventListener('click', submitOrder);
+    document.getElementById('orderModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('orderModal')) document.getElementById('orderModal').classList.remove('open');
+    });
+    updateOrderCta();
     document.getElementById('consentCheck').addEventListener('change', updateLock);
     document.querySelectorAll('input[name="usbConnector"]').forEach((r) => r.addEventListener('change', () => { render(); updateLock(); }));
     document.getElementById('prevEstNo').textContent = '（送信時に発行）';
@@ -1232,8 +1340,8 @@
 
     document.getElementById('previewLock').hidden = unlocked;
 
-    // 「成約（必須入力＋同意誓約）と同時に」Webhook送信
-    // 1セッション1回のみ送信
+    // 見積もりの登録は「必須入力＋同意」が揃った時点で1回だけ自動で行う（記録とPDFメールのため）。
+    // そのあと台数などを変えた場合は、「申し込む」を押した時点で最新の構成を登録し直す（openOrderModal）。
     if (unlocked && !webhookSent) {
       webhookSent = true;
       notifyWebhook(buildNotifyPayload());
@@ -1382,6 +1490,7 @@
       document.getElementById('prevEstNo').textContent = estNo;
       if (data.validUntil) document.getElementById('prevExpiry').textContent = fmtDate(new Date(data.validUntil));
       render();
+      updateOrderCta();
       if (data.status === 'ok') sendQuotePdfToOffice();
     } catch (e) {
       // 通知失敗してもPDFダウンロードは継続
@@ -1441,6 +1550,117 @@
     } catch (e) {
       console.warn('見積書PDFの送付に失敗', e);
       setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
+    }
+  }
+
+  /* ──────── お申し込み（Phase 2） ──────── */
+  const ACCEPT_QUOTE_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/acceptQuote';
+
+  // 見積もりが出来てから「申し込む」を出す。作り直したら（版が変わったら）また押せる状態に戻す
+  function updateOrderCta() {
+    const cta = document.getElementById('orderCta');
+    if (!cta) return;
+    const ready = !!(quoteInfo && quoteInfo.quoteId && quoteInfo.quoteToken);
+    cta.style.display = ready ? 'block' : 'none';
+  }
+
+  async function openOrderModal() {
+    const btn = document.getElementById('orderBtn');
+    const orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i>お見積もりを確認しています...';
+    try {
+      // いま画面に出ている構成でサーバに登録し直す。
+      // 同じ内容なら既存の見積もりが返り、変えていれば新しい版が作られる。
+      // これで「画面の金額」と「実際に申し込まれる見積もり」が必ず一致する。
+      const before = quoteInfo && quoteInfo.quoteId;
+      await notifyWebhook(buildNotifyPayload());
+      // 新しい版になったら、その版のPDFも作って控えを残す（CRMからの再送もできるようにする）
+      if (quoteInfo && quoteInfo.quoteId !== before && quoteInfo.status === 'ok') {
+        btn.innerHTML = '<i class="ti ti-loader-2"></i>お見積書を作り直しています...';
+        await sendQuotePdfToOffice();
+      }
+    } finally {
+      btn.disabled = false; btn.innerHTML = orig;
+    }
+    if (!quoteInfo || !quoteInfo.quoteToken) {
+      alert('お見積もりの確認ができませんでした。通信の状態をご確認のうえ、もう一度お試しください。');
+      return;
+    }
+    const yen = (n) => `¥${Number(n || 0).toLocaleString()}`;
+    const planKey = document.querySelector('input[name="plan"]:checked').value;
+    const c = computeAmounts(planKey,
+      parseInt(document.getElementById('btQty').value) || 0,
+      parseInt(document.getElementById('usbQty').value) || 0,
+      parseInt(document.getElementById('btExtraQty').value) || 0,
+      parseInt(document.getElementById('usbExtraQty').value) || 0);
+    document.getElementById('orderSummary').innerHTML =
+      `お見積書 <b>${esc(estNo)}</b>　合計（税込） <b>${yen(c.totalIncl)}</b>　`
+      + `助成金充当 ${yen(c.grantAmt)}　自己負担 <b>${yen(c.selfPay)}</b><br>`
+      + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
+    // 事業所情報をお届け先の初期値にする（変えられる）
+    const v = (id) => (document.getElementById(id).value || '').trim();
+    const set = (id, val) => { const el = document.getElementById(id); if (!el.value) el.value = val; };
+    set('odCompany', v('corpName'));
+    set('odOffice', v('officeName'));
+    set('odZip', v('contactZip'));
+    set('odCity', v('contactCity'));
+    set('odAddress', v('contactAddress'));
+    set('odContact', v('contactName'));
+    set('odPhone', v('contactTel'));
+    const pref = document.getElementById('odPref');
+    if (!pref.value) pref.value = v('contactPrefecture');
+    document.getElementById('orderError').style.display = 'none';
+    document.getElementById('orderModal').classList.add('open');
+  }
+
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+  async function submitOrder() {
+    const err = document.getElementById('orderError');
+    const show = (m) => { err.textContent = m; err.style.display = 'block'; };
+    const v = (id) => (document.getElementById(id).value || '').trim();
+    if (!v('odName')) { show('お申し込み者のお名前をご入力ください'); return; }
+    if (!v('odOffice')) { show('お届け先の事業所名をご入力ください'); return; }
+    if (!v('odPref') || !v('odCity') || !v('odAddress')) { show('お届け先の住所（都道府県・市町村・番地）をご入力ください'); return; }
+    const btn = document.getElementById('orderSubmit');
+    const orig = btn.textContent;
+    btn.disabled = true; btn.textContent = '送信中...';
+    try {
+      const appCheckToken = await getAppCheckToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
+      const res = await fetch(ACCEPT_QUOTE_URL, {
+        method: 'POST', headers,
+        body: JSON.stringify({
+          quoteId: quoteInfo.quoteId, quoteToken: quoteInfo.quoteToken,
+          agreedName: v('odName'), payMethod: v('odPay') || 'after',
+          preferredDate: v('odDate'), note: v('odNote'),
+          delivery: {
+            company: v('odCompany'), officeName: v('odOffice'),
+            postalCode: v('odZip'),
+            address: [v('odPref'), v('odCity'), v('odAddress')].filter(Boolean).join(''),
+            contactName: v('odContact'), phone: v('odPhone'),
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || (data.status !== 'ok' && data.status !== 'already')) {
+        show(data.message || 'お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
+        return;
+      }
+      document.getElementById('orderModal').classList.remove('open');
+      document.getElementById('orderBtn').disabled = true;
+      document.querySelector('.order-cta-inner').style.display = 'none';
+      const done = document.getElementById('orderDone');
+      done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`
+        + `確認のメールを ${esc(v('contactEmail') || document.getElementById('contactEmail').value)} 宛にお送りしました。<br>`
+        + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
+      done.style.display = 'block';
+      done.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } catch (e) {
+      show('お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
+    } finally {
+      btn.disabled = false; btn.textContent = orig;
     }
   }
 

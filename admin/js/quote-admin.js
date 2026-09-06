@@ -74,6 +74,15 @@ function pdfCell(q) {
   return `<span style="font-size:12px;color:var(--color-ink-muted)">PDF未保存</span>`;
 }
 
+// 「内容を変更する」ボタン。出荷が下書きのうちだけ出す（確定後は供給管理の「出荷の修正」で直す）
+function reviseBtn(q, isLatest) {
+  if (!isLatest) return "";
+  if (q.status === "superseded" || q.status === "expired") return "";
+  return `<button class="btn btn-secondary" data-revise-id="${esc(q._id)}">
+    <i class="ti ti-edit" aria-hidden="true"></i> 内容を変更する
+  </button>`;
+}
+
 function resendBtn(q) {
   const busy = sendingIds.has(q._id);
   const label = q.mailedAt ? "事業所へ再送" : "事業所へ送付";
@@ -102,6 +111,7 @@ function rowHtml(q, isLatest) {
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${pdfCell(q)}
         ${resendBtn(q)}
+        ${reviseBtn(q, isLatest)}
       </div>
     </div>`;
 }
@@ -134,6 +144,13 @@ function wire() {
   host.querySelectorAll("[data-resend-id]").forEach((btn) => {
     btn.addEventListener("click", () => resend(btn.getAttribute("data-resend-id")));
   });
+  host.querySelectorAll("[data-revise-id]").forEach((btn) => {
+    btn.addEventListener("click", () => openRevise(btn.getAttribute("data-revise-id")));
+  });
+  const cancel = document.getElementById("reviseCancel");
+  if (cancel) cancel.addEventListener("click", closeRevise);
+  const submit = document.getElementById("reviseSubmit");
+  if (submit) submit.addEventListener("click", submitRevise);
 }
 
 async function resend(quoteId) {
@@ -149,6 +166,132 @@ async function resend(quoteId) {
   } finally {
     sendingIds.delete(quoteId);
     render();
+  }
+}
+
+// ---- 内容の変更（改版）----
+const PLAN_MAX = { houmon: 3, kyojyu: 2, other: 1 };
+let revising = null;
+
+function qtyOptions(max, sel) {
+  let o = "";
+  for (let i = 0; i <= max; i++) o += `<option value="${i}"${Number(sel) === i ? " selected" : ""}>${i}台</option>`;
+  return o;
+}
+
+function openRevise(quoteId) {
+  const q = quotes.find((x) => x._id === quoteId);
+  if (!q) return;
+  revising = q;
+  // 品番から今の構成を読み戻す（BT / USB と、USBの口の形）
+  let bt = 0, btx = 0, usb = 0, usbx = 0, connector = "";
+  for (const it of (q.items || [])) {
+    if (it.sku === "cir415a-01") { bt = Number(it.subsidyQty) || 0; btx = Number(it.extraQty) || 0; }
+    else { usb = Number(it.subsidyQty) || 0; usbx = Number(it.extraQty) || 0; connector = it.connector || (it.sku === "cir315a-04" ? "C" : "A"); }
+  }
+  const host = document.getElementById("reviseModalHost");
+  host.innerHTML = `
+    <div class="modal-overlay open" id="reviseModal">
+      <div class="modal" style="width:min(520px,95vw)">
+        <div class="modal-header">
+          <h3 style="font-size:15px;margin:0">見積もりの内容を変更（${esc(q.estNo)} v${esc(q.version)} → v${Number(q.version) + 1}）</h3>
+        </div>
+        <div class="modal-body" style="display:grid;gap:14px">
+          <p style="font-size:12.5px;color:var(--color-ink-muted);line-height:1.8;margin:0">
+            支援の調整で台数や機種が変わったときに使います。前の版は記録として残ります。
+            出荷の下書きがあれば、同じ内容に作り直します。<b>変更後の金額は事業所へメールでお知らせします。</b>
+          </p>
+          <div>
+            <label class="form-label" for="rvPlan">プラン</label>
+            <select class="form-control" id="rvPlan">
+              <option value="houmon"${q.plan === "houmon" ? " selected" : ""}>訪問・通所・短期滞在系（最大3台）</option>
+              <option value="kyojyu"${q.plan === "kyojyu" ? " selected" : ""}>居住・入所系（最大2台）</option>
+              <option value="other"${q.plan === "other" ? " selected" : ""}>その他（最大1台）</option>
+            </select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label class="form-label" for="rvBt">CIR415A（Bluetooth）補助対象</label>
+              <select class="form-control" id="rvBt">${qtyOptions(3, bt)}</select>
+            </div>
+            <div>
+              <label class="form-label" for="rvBtx">同・追加（自己負担）</label>
+              <select class="form-control" id="rvBtx">${qtyOptions(10, btx)}</select>
+            </div>
+            <div>
+              <label class="form-label" for="rvUsb">CIR315A（USB）補助対象</label>
+              <select class="form-control" id="rvUsb">${qtyOptions(3, usb)}</select>
+            </div>
+            <div>
+              <label class="form-label" for="rvUsbx">同・追加（自己負担）</label>
+              <select class="form-control" id="rvUsbx">${qtyOptions(10, usbx)}</select>
+            </div>
+          </div>
+          <div>
+            <label class="form-label" for="rvConn">USBの口の形</label>
+            <select class="form-control" id="rvConn">
+              <option value=""${!connector ? " selected" : ""}>未定（Type-A で手配）</option>
+              <option value="A"${connector === "A" ? " selected" : ""}>Type-A（四角い口）</option>
+              <option value="C"${connector === "C" ? " selected" : ""}>Type-C（小さい楕円）</option>
+            </select>
+          </div>
+          <div>
+            <label class="form-label" for="rvReason">変更の理由<span style="color:var(--color-primary)">必須</span></label>
+            <input class="form-control" id="rvReason" placeholder="例: 支援日程の相談でUSB Type-Cへ変更（〇月〇日 電話）">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px">
+            <input type="checkbox" id="rvMail" checked> 変更後の内容を事業所へメールで知らせる
+          </label>
+          <p id="rvError" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7"></p>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-secondary" id="reviseCancel">やめる</button>
+          <button class="btn btn-primary" id="reviseSubmit">この内容で変更する</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("reviseCancel").addEventListener("click", closeRevise);
+  document.getElementById("reviseSubmit").addEventListener("click", submitRevise);
+  document.getElementById("reviseModal").addEventListener("click", (e) => {
+    if (e.target.id === "reviseModal") closeRevise();
+  });
+}
+
+function closeRevise() {
+  const host = document.getElementById("reviseModalHost");
+  if (host) host.innerHTML = "";
+  revising = null;
+}
+
+async function submitRevise() {
+  if (!revising) return;
+  const err = document.getElementById("rvError");
+  const show = (m) => { err.textContent = m; err.style.display = "block"; };
+  const num = (id) => Number(document.getElementById(id).value) || 0;
+  const plan = document.getElementById("rvPlan").value;
+  const bt = num("rvBt"), usb = num("rvUsb");
+  const reason = (document.getElementById("rvReason").value || "").trim();
+  if (!reason) { show("変更の理由をご入力ください（あとから経緯を追えるようにするためです）"); return; }
+  if (bt + usb < 1) { show("補助対象のカードリーダーを1台以上にしてください"); return; }
+  if (bt + usb > (PLAN_MAX[plan] || 1)) { show(`このプランの補助対象は最大${PLAN_MAX[plan]}台です`); return; }
+  const btn = document.getElementById("reviseSubmit");
+  btn.disabled = true; btn.textContent = "変更中...";
+  try {
+    const fn = httpsCallable(ctx.functions, "reviseQuote");
+    const r = await fn({
+      quoteId: revising._id, plan, btQty: bt, usbQty: usb,
+      btExtra: num("rvBtx"), usbExtra: num("rvUsbx"),
+      usbConnector: document.getElementById("rvConn").value || null,
+      reason, sendMail: document.getElementById("rvMail").checked,
+    });
+    const d = r.data || {};
+    closeRevise();
+    ctx.toast(`見積もりを v${d.version} に変更しました`
+      + (d.shipmentUpdated ? "（出荷の下書きも更新）" : "")
+      + (d.mailed ? "。事業所へメールを送りました" : ""));
+  } catch (e) {
+    show(e.message || String(e));
+    btn.disabled = false; btn.textContent = "この内容で変更する";
   }
 }
 
@@ -173,6 +316,12 @@ export async function initQuoteCard(options) {
     host = document.createElement("div");
     host.id = "quoteCard";
     timeline.insertBefore(host, timeline.firstChild);
+  }
+
+  if (!document.getElementById("reviseModalHost")) {
+    const mh = document.createElement("div");
+    mh.id = "reviseModalHost";
+    document.body.appendChild(mh);
   }
 
   await loadProducts();

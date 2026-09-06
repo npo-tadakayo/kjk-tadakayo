@@ -435,9 +435,33 @@ async function createShipmentDraftFromPO(o){
 }
 // 直送の出荷下書き(draft) → 発送済(shipped)に確定。直送のため在庫は動かさない
 async function confirmDraftShipment(s){
-  if(!confirm(`出荷 ${s.soNumber}（${s.partnerName||s.officeName||""}）を発送済に確定します。\n直送のため在庫は変動しません。よろしいですか？`)) return;
-  try{ await updateDoc(doc(db,"shipments",s._id),{ status:"shipped", shipDate:s.shipDate||today(), confirmedAt:serverTimestamp() });
-    toast(`${s.soNumber} を発送済に確定しました`); }
+  // 在庫から出す出荷（Webのお申し込みで自動作成された下書き等）は、ここで在庫を引く。
+  // 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
+  const usesStock = shipUsedStock(s);
+  const its = usesStock ? stockItems(s.items) : [];
+  if(usesStock){
+    for(const it of its){
+      const p=products.find(x=>x.id===it.sku)||{};
+      if((p.stock||0) < (Number(it.qty)||0)){
+        alert(`在庫が足りません: ${p.name||it.sku}（在庫 ${p.stock||0} / 出荷 ${it.qty}）\n入荷を登録するか、AB Circle からの直送に切り替えてください。`);
+        return;
+      }
+    }
+  }
+  const lines = its.map(it=>`${it.sku} × ${it.qty}`).join("・");
+  const msg = usesStock
+    ? `出荷 ${s.soNumber}（${s.company||s.officeName||""}）を発送済に確定します。\n自社在庫から ${lines||"（在庫品なし）"} を引き落とします。よろしいですか？`
+    : `出荷 ${s.soNumber}（${s.partnerName||s.officeName||""}）を発送済に確定します。\n直送のため在庫は変動しません。よろしいですか？`;
+  if(!confirm(msg)) return;
+  try{
+    await updateDoc(doc(db,"shipments",s._id),{ status:"shipped", shipDate:s.shipDate||today(), confirmedAt:serverTimestamp() });
+    for(const it of its){
+      await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
+      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:s.soNumber,
+        createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email});
+    }
+    toast(usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`);
+  }
   catch(e){ alert(`確定失敗: ${e.message}`); }
 }
 
@@ -666,9 +690,16 @@ function openShip(existing){
   document.getElementById("shipModal").classList.add("open");
 }
 
+// 在庫を動かす明細だけを取り出す。
+// Webからのお申し込みで作った出荷には「伴走支援費」「特別割引」のような品物ではない明細が入る
+// （請求書の金額を見積書と合わせるため）。これらは products に無いので、在庫処理から外す。
+function stockItems(items){
+  return (items||[]).filter(it=> it && !it.nonStock && products.some(p=>p.id===it.sku));
+}
+
 // 品番ごとの数量にまとめる（在庫の差分計算用）
 function qtyBySku(items){
-  const m={}; (items||[]).forEach(i=>{ m[i.sku]=(m[i.sku]||0)+(Number(i.qty)||0); }); return m;
+  const m={}; stockItems(items).forEach(i=>{ m[i.sku]=(m[i.sku]||0)+(Number(i.qty)||0); }); return m;
 }
 
 async function saveShip(){
@@ -681,7 +712,7 @@ async function saveShip(){
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
-  for(const it of items){ const p=products.find(x=>x.id===it.sku);
+  for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
     if((p.stock||0)<it.qty){ const w=document.getElementById("shipStockWarn");
       w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
   const shippingMethod=document.getElementById("shipMethod").value||"manual";
@@ -700,7 +731,7 @@ async function saveShip(){
       contactName:document.getElementById("shipContact").value.trim(),
       phone:document.getElementById("shipPhone").value.trim(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
-    for(const it of items){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
+    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
       await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
     document.getElementById("shipModal").classList.remove("open");
     toast(`出荷 ${soNumber} を登録しました（在庫から引落）`);
@@ -850,7 +881,7 @@ async function deleteShipment(s){
   if(!confirm(msg)) return false;
   try{
     if(restores){
-      for(const it of (s.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
+      for(const it of stockItems(s.items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
         await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"shipment_canceled",refNo:s.soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
     }
     await deleteDoc(doc(db,"shipments",s._id));
@@ -1804,7 +1835,7 @@ async function shipFromOrder(o){
     return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:partnerPriceFor(p, Number(it.qty)||0) };
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
-  for(const it of items){ const p=products.find(x=>x.id===it.sku);
+  for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
     if(!p || (p.stock||0)<it.qty){ alert(`在庫不足: ${it.name}（在庫 ${p?p.stock||0:0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
   if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
   try{
@@ -1817,7 +1848,7 @@ async function shipFromOrder(o){
       shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
-    for(const it of items){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
+    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
       await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
     await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
     toast(`受注を出荷登録しました（${soNumber}）`);
