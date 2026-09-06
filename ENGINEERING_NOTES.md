@@ -276,6 +276,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-09-01〜03 | **CRM 大型改修（セッション㉔）**: 伴走支援承諾書オンライン署名（`consentRequests`・v1.1 条文）／サイドバー折り畳み／案件一覧に地域・都道府県・市町村・担当者（`area.js`）／出荷の修正・削除＋つなぎ方併記（`product-label.js`）／資料の事前送付・承諾書URL送付・請求書/領収書のPDF添付メール（`sendPartnerMail` 添付対応）／伴走支援記録の編集・削除。コミット `5479c52`〜`96734ff` |
 | 2026-09-06 | **コードレビュー指摘14件を修正**（`docs/レビュー指摘の修正案_20260903.md`）: 領収書PDFの編集UI写り込み（`printableClone`）／承諾書 displayNo の `caseNumber` 誤り／出荷修正の在庫差分を `runTransaction` 化＋楽観ロック（updatedAt 比較）／ロック時は出荷日も固定／添付ファイル名の無害化（`safeAttachmentName`）と `kind` 検証／rules に `signed.userAgent` 長さ上限／consentRequests に email を保存しない／セッション削除の順序（doc→Storage）・写真外しを URL 基準に／発行ボタン二重押し防止／`col-office` クラス化／pre-guide の日付を JST に／出荷削除の確認順。検証: ハーネス（DOM・実物 html2pdf）＋Firestore エミュレータ（ルール10ケース PASS）＋Codex review＋本番画面からの領収書メール実送信2回。`ecda41c` を hosting/rules/Functions とも本番反映（2026-09-06） |
 | 2026-09-06 | **送付日UTCバグ修正**（`1130b65`）／**問い合わせ・見積もりフォームの住所3カラム化＋郵便番号自動入力（zipcloud）＋重複判定バグ修正**: `offices` に `postalCode`/`prefecture`/`city`/`addressDetail` 追加（`address` 結合文字列は後方互換で維持・`area.js` 対応済みのため旧データ移行不要）。`webhookLpInquiry`/`webhookMitsumori` の重複チェックに事業所名の一致を追加。Codex review 1件（PDF出力パスのバリデーション漏れ）→即修正。lp hosting・Functions 2本を本番反映 |
+| 2026-09-06 | **LP 認定事業所 #002 プラスエス／#003 介護ITコンシェルジュ追加・#001 公式ロゴ化**（`c431463`）／**郵便番号欄の注釈と状態表示**（`edb35f9`）。Tabler サブセット再生成（45種）。`partners/hiroyuki-fujita@tadakayo.jp` 登録。lp live version `a566be9594331f12` |
 
 ---
 

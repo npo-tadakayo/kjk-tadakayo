@@ -54,6 +54,12 @@
     - ついでに、前セッションから持ち越しだった**重複送信判定のバグ**（事業所名を見ずメール＋時刻だけで判定）も同じ関数で修正: 同一メール・同一事業所名・5分以内のときのみ重複扱いに
     - 検証: ローカルhttpサーバ＋Playwright（zipcloud実通信・fetch/Formspreeはインターセプトしペイロード確認）→ preview channel `address-split` で本番相当環境の再現テスト → Codex review（1件指摘・即修正）→ Functions/lp hostingとも本番反映（`webhookLpInquiry`/`webhookMitsumori` 2026-09-06 01:49 JST・lp hosting version `3f765ce6f2d5e2e1`）→ 本番URLで郵便番号自動入力とFirestore書き込み内容を実物確認（テスト用の案件・事業所ドキュメントは削除済み）
     - ⚠ **本番Functionへのテスト呼び出し1件で、Chatへ「📥 新規LP問い合わせ [案件 #134]」の自動通知が飛んでいる**（`webhookLpInquiry` は通知を条件なしで送るため）。テストと分かる件名（【削除予定テスト】）なので実害はないが、気になれば該当Chatメッセージを手動で削除してください
+11. **LP 認定事業所に #002 プラスエス・#003 介護ITコンシェルジュを追加、#001 を公式ロゴ＋事実ベースの文面に**（`c431463`）。冒頭の説明も平易に。**CRM の `partners` に `hiroyuki-fujita@tadakayo.jp` を登録**（介護ITコンシェルジュ・認定事業所ポータルにこのアカウントでログイン可）
+    - ⚠ **介護ITコンシェルジュの介護情報基盤ページ https://www.careitc.jp/kaigo-kiban は 2026-09-06 時点で 404（未公開）**。リンクは張ってある。公開されたら確認するだけ
+    - ロゴ: 279 は brand-assets 公開PNG（`storage.googleapis.com/tougou-db-f9f9e…/brand/logos/horizontal-300.png`）を 640px に縮小、プラスエスは公式サイト（jimdo）から、介護ITコンシェルジュは公式サイト `assets/logo.png`。**Hosting の画像は `max-age=31536000, immutable`** なので差し替えるときはファイル名を変える
+    - Tabler アイコンは**自前サブセット**（`fonts/build-tabler-subset.sh`・index/mitsumori で使っている名前を自動で拾う）。**新しいアイコンを使ったら必ず再実行**（漏れると豆腐ではなく空白になる）。fontTools は `python3 -m pip install --user fonttools brotli`
+12. **郵便番号欄に自動入力の注釈と状態表示**（`edb35f9`）: 既定文／検索中／自動入力しました（緑）／見つからない・通信失敗（赤）。123-4567 に自動整形、完了後は住所欄へフォーカス。両フォーム
+    - **11・12 は 2026-09-06 11:45 JST に lp live 反映済み**（version `a566be9594331f12`・カスタムドメインで配信確認・preview `partners` は削除）
 
 
 ## 次回やること（優先順）
