@@ -66,7 +66,9 @@
 
 （UTC日付のバグは下記§で修正・実機再テストで解消を確認済み）
 （住所分割は下記§で実装・本番反映済み。旧データは office.address の結合文字列のまま残る＝area.js の解析フォールバックで表示は壊れない）
--0.4. **統合 Phase 2（Webで申し込みを受ける＋スタッフが改版できる）**: Phase 1 は実装・push 済み（`3658229`・**本番未反映**）。次は `acceptQuote`（申し込み→受注確定→出荷下書き自動作成）と `reviseQuote`（台数・タイプ・機種の改版と出荷下書き同期）。計画書 §6
+-0.4. **統合 Phase 2（Webで申し込みを受ける＋スタッフが改版できる）**: **Phase 1 は 2026-09-06 12:25 JST に本番反映済み**（lp `eb6431a17ff9cb3c` / admin `a63d447d88433a14` / Functions 4本 / rules / インデックス）。次は `acceptQuote`（申し込み→受注確定→出荷下書き自動作成）と `reviseQuote`（台数・タイプ・機種の改版と出荷下書き同期）。計画書 §6
+    - ⚠ **CRM の見積もりカードは実画面で未確認**（ブラウザのログインセッションが切れたため）。最初の見積もりが入ったときに、案件詳細の対応記録タブ先頭に出るか確認する
+    - 本番で通しテスト済み（案件#137/#138・EST-2026-0002/0003・PDFメール受信とレイアウトを実物で確認）。テストデータと Storage のPDFは削除済み
 -0.45. **同一法人で複数事業所をまとめて見積もる機能**（2026-09-05 MTG決定・議事録 §7）: 大規模法人が事業所ごとに入力するのが重い。1回の入力から複数事業所分の見積書を作る。将来は WAM NET から事業所情報を取得する連携も検討
 -0.46. **フォームで「①相談したい ②見積書がほしい ③正式に申込みたい」を判別**（同 §6）: Phase 1 で「見積もり成約」→「見積もり作成」の言い換えと導線分岐は入れた。**申込みの受け口（Phase 2）を入れて3つが揃う**
 -0.47. **認定事業者制度の書類サンプル作成**: 検討書 `docs/認定事業者制度_認定プロセスと取り交わす書類_検討_20260906.md` を作成済み（プロセス7段階・書類4点＋2点・形式は電子/オンライン署名を推奨）。§6 の6論点の回答後に、申請書・誓約書兼同意書・認定証のサンプル文面を作る
@@ -110,6 +112,7 @@
 ## ハマりポイント・注意事項
 
 - **html2canvas（html2pdf）は `@media print` を見ない**。画面の DOM をそのまま渡すと `.rcpt-noprint` や `<input>` が PDF に写る。帳票のメール添付は `printableClone()`（supply-print.js）で複製を整えてから渡す（2026-09-06）
+- **html2pdf は「そのときの画面幅のレイアウト」をそのまま写す**（2026-09-06 見積書で発生）。`mitsumori.html` の `.est-doc` は `@media (max-width:820px)` で `width:100%` になるため、狭い窓でPDF化するとA4に収まらず左が切れて2ページになった。**A4幅をインラインで固定した複製**（`quotePrintableClone()`・インラインは @media より優先）を渡して解決。`html2canvas.windowWidth` を渡してもCSSのメディアクエリ評価は変わらないので効かない
 - **プレビューチャンネルでログインするには Firebase Auth の承認済みドメインに追加が必要**（localhost も未登録）。`PATCH identitytoolkit.googleapis.com/admin/v2/projects/kjk-tadakayo/config?updateMask=authorizedDomains`（ヘッダー `x-goog-user-project: kjk-tadakayo`）。既に登録済みのチャンネル名（`sess-edit` 等）を再利用すると手間が省ける
 - **Functions デプロイは `NODE_OPTIONS=--max-old-space-size=8192 FUNCTIONS_DISCOVERY_TIMEOUT=180`** を付ければ Drive 上からでも通る（node_modules 読込 58秒・既定10秒で落ちる。2026-09-06 は CLI が Node ヒープ不足で落ちたのでヒープも広げる）。`zsh -ic 'gcp tadakayo && …'` で1回にまとめる。**成否は `gcloud functions describe … --format="value(updateTime)"` で確認**（`| tail` を挟むと exit code 0 に見える）
 - **Playwright MCP のブラウザ（user-data-dir `~/Library/Caches/ms-playwright-mcp/`）に CRM のログインセッションが残っている**（2026-09-06・次田芳尚でログイン）。実機テストはまず `browser_navigate` で本番 URL を開いて試す。ログイン画面が出たら Google のポップアップで次田さんがサインインする必要がある（Claude は資格情報を入力しない）
