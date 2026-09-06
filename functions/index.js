@@ -148,8 +148,11 @@ exports.webhookLpInquiry = onRequest(
     try {
       const body = req.body;
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const officeName = body.officeName || body.name || "";
 
-      // 重複チェック（同じメール+時刻5分以内）
+      // 重複チェック（同じメール＋同じ事業所名＋5分以内）。
+      // 事業所名を見ずに時刻だけで判定すると、同じ担当者が別事業所の分を
+      // 続けて送ったときに2件目が誤って捨てられていた（2026-09-06 修正）。
       const recentSnap = await db
         .collection("cases")
         .where("contactEmail", "==", body.email || "")
@@ -161,7 +164,8 @@ exports.webhookLpInquiry = onRequest(
       if (!recentSnap.empty) {
         const lastCase = recentSnap.docs[0].data();
         const lastTime = lastCase.receivedAt?.toDate?.() || new Date(0);
-        if (Date.now() - lastTime.getTime() < 5 * 60 * 1000) {
+        const sameOffice = (lastCase.officeName || "") === officeName;
+        if (sameOffice && Date.now() - lastTime.getTime() < 5 * 60 * 1000) {
           res.status(200).json({ status: "duplicate" });
           return;
         }
@@ -169,11 +173,22 @@ exports.webhookLpInquiry = onRequest(
 
       const caseNumber = await getNextCaseNumber();
 
+      // 住所は「都道府県／市町村／建物名等」の3カラムで受け、表示用に結合した文字列も持つ
+      // （2026-09-06 フォームに追加。offices.address は既存の読み手（出荷先プリフィル等）が
+      //   結合済み文字列を前提にしているため、結合形は変えずに残す）
+      const prefecture = body.prefecture || "";
+      const city = body.city || "";
+      const addressDetail = body.addressDetail || "";
       const officeData = {
         corpName: body.corpName || "",
-        officeName: body.officeName || body.name || "",
+        officeName,
         phone: body.phone || "",
         website: body.website || "",
+        postalCode: body.postalCode || "",
+        prefecture,
+        city,
+        addressDetail,
+        address: [prefecture, city, addressDetail].filter(Boolean).join(""),
         createdAt: now,
         updatedAt: now,
       };
@@ -246,8 +261,9 @@ exports.webhookMitsumori = onRequest(
     try {
       const body = req.body;
       const now = admin.firestore.FieldValue.serverTimestamp();
+      const officeName = body.officeName || "";
 
-      // 重複チェック（同じメール+5分以内）
+      // 重複チェック（同じメール＋同じ事業所名＋5分以内。理由は webhookLpInquiry と同じ）
       const recentSnap = await db
         .collection("cases")
         .where("contactEmail", "==", body.email || "")
@@ -259,7 +275,8 @@ exports.webhookMitsumori = onRequest(
       if (!recentSnap.empty) {
         const lastCase = recentSnap.docs[0].data();
         const lastTime = lastCase.receivedAt?.toDate?.() || new Date(0);
-        if (Date.now() - lastTime.getTime() < 5 * 60 * 1000) {
+        const sameOffice = (lastCase.officeName || "") === officeName;
+        if (sameOffice && Date.now() - lastTime.getTime() < 5 * 60 * 1000) {
           res.status(200).json({ status: "duplicate" });
           return;
         }
@@ -267,10 +284,18 @@ exports.webhookMitsumori = onRequest(
 
       const caseNumber = await getNextCaseNumber();
 
+      // 住所は3カラム（都道府県／市町村／建物名等）で受け、表示用の結合文字列も持つ（webhookLpInquiryと同じ方針）
+      const prefecture = body.prefecture || "";
+      const city = body.city || "";
+      const addressDetail = body.addressDetail || "";
       const officeData = {
         corpName: body.corpName || "",
-        officeName: body.officeName || "",
-        address: body.address || "",
+        officeName,
+        postalCode: body.postalCode || "",
+        prefecture,
+        city,
+        addressDetail,
+        address: [prefecture, city, addressDetail].filter(Boolean).join(""),
         phone: body.phone || "",
         website: body.website || "",
         createdAt: now,

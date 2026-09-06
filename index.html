@@ -2476,6 +2476,96 @@
             </div>
           </div>
 
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="zip">
+                郵便番号<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="text" id="zip" name="郵便番号"
+                placeholder="例：150-0002" inputmode="numeric" maxlength="8" required
+                autocomplete="postal-code" aria-describedby="zip-error">
+              <span id="zip-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>郵便番号を入力してください</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prefecture">
+                都道府県<span class="required">必須</span>
+              </label>
+              <select class="form-select" id="prefecture" name="都道府県" required
+                autocomplete="address-level1" aria-describedby="prefecture-error">
+                <option value="">選択してください</option>
+              <option value="北海道">北海道</option>
+              <option value="青森県">青森県</option>
+              <option value="岩手県">岩手県</option>
+              <option value="宮城県">宮城県</option>
+              <option value="秋田県">秋田県</option>
+              <option value="山形県">山形県</option>
+              <option value="福島県">福島県</option>
+              <option value="茨城県">茨城県</option>
+              <option value="栃木県">栃木県</option>
+              <option value="群馬県">群馬県</option>
+              <option value="埼玉県">埼玉県</option>
+              <option value="千葉県">千葉県</option>
+              <option value="東京都">東京都</option>
+              <option value="神奈川県">神奈川県</option>
+              <option value="新潟県">新潟県</option>
+              <option value="富山県">富山県</option>
+              <option value="石川県">石川県</option>
+              <option value="福井県">福井県</option>
+              <option value="山梨県">山梨県</option>
+              <option value="長野県">長野県</option>
+              <option value="岐阜県">岐阜県</option>
+              <option value="静岡県">静岡県</option>
+              <option value="愛知県">愛知県</option>
+              <option value="三重県">三重県</option>
+              <option value="滋賀県">滋賀県</option>
+              <option value="京都府">京都府</option>
+              <option value="大阪府">大阪府</option>
+              <option value="兵庫県">兵庫県</option>
+              <option value="奈良県">奈良県</option>
+              <option value="和歌山県">和歌山県</option>
+              <option value="鳥取県">鳥取県</option>
+              <option value="島根県">島根県</option>
+              <option value="岡山県">岡山県</option>
+              <option value="広島県">広島県</option>
+              <option value="山口県">山口県</option>
+              <option value="徳島県">徳島県</option>
+              <option value="香川県">香川県</option>
+              <option value="愛媛県">愛媛県</option>
+              <option value="高知県">高知県</option>
+              <option value="福岡県">福岡県</option>
+              <option value="佐賀県">佐賀県</option>
+              <option value="長崎県">長崎県</option>
+              <option value="熊本県">熊本県</option>
+              <option value="大分県">大分県</option>
+              <option value="宮崎県">宮崎県</option>
+              <option value="鹿児島県">鹿児島県</option>
+              <option value="沖縄県">沖縄県</option>
+              </select>
+              <span id="prefecture-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>都道府県を選択してください</span>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label" for="city">
+                市町村<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="text" id="city" name="市町村"
+                placeholder="例：渋谷区" required autocomplete="address-level2"
+                aria-describedby="city-error">
+              <span id="city-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>市町村を入力してください</span>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="address">
+                住所（丁目・番地・建物名）<span class="required">必須</span>
+              </label>
+              <input class="form-input" type="text" id="address" name="住所"
+                placeholder="例：渋谷1-2-3 〇〇ビル4F" required autocomplete="address-line1"
+                aria-describedby="address-error">
+              <span id="address-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>住所を入力してください</span>
+            </div>
+          </div>
+
           <div class="form-group">
             <label class="form-label" for="service-type">主なサービス種別</label>
             <select class="form-select" id="service-type" name="サービス種別">
@@ -2632,6 +2722,46 @@
     // お問い合わせ Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
     const CONTACT_WEBHOOK_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookLpInquiry';
 
+    // 郵便番号から都道府県・市町村・町域を自動入力（zipcloud・無料/APIキー不要）。
+    // 自動入力に失敗しても手入力の邪魔をしないよう、失敗は握りつぶす。
+    function wireZipAutofill(zipEl, prefEl, cityEl, addrEl) {
+      let lastLookedUp = '';
+      // 政令指定都市の「◯◯市△△区」は、admin側の集計（area.js）が「市」までを市町村として
+      // 扱い区を含めない方針のため、区は市町村欄に入れず住所欄側へ回す。
+      // 東京23区のような「◯◯区」単独（市を伴わない）はそのまま市町村として扱う。
+      function splitCity(address2) {
+        const m = String(address2 || '').match(/^(.+市)(.+区)$/);
+        if (m) return { city: m[1], wardPrefix: m[2] };
+        return { city: address2 || '', wardPrefix: '' };
+      }
+      async function run() {
+        const digits = (zipEl.value || '').replace(/[^0-9]/g, '');
+        if (digits.length !== 7 || digits === lastLookedUp) return;
+        lastLookedUp = digits;
+        try {
+          const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
+          const data = await res.json();
+          const r = data.results && data.results[0];
+          if (!r) return;
+          const { city, wardPrefix } = splitCity(r.address2);
+          prefEl.value = r.address1 || '';
+          cityEl.value = city;
+          if (!addrEl.value.trim()) addrEl.value = wardPrefix + (r.address3 || '');
+          [prefEl, cityEl, addrEl].forEach((el) => el.dispatchEvent(new Event('input', { bubbles: true })));
+        } catch (e) {
+          // 自動入力は失敗しても手入力できるので何もしない
+        }
+      }
+      zipEl.addEventListener('input', run);
+      zipEl.addEventListener('blur', run);
+    }
+    wireZipAutofill(
+      document.getElementById('zip'),
+      document.getElementById('prefecture'),
+      document.getElementById('city'),
+      document.getElementById('address')
+    );
+
     async function notifyContactWebhook(data) {
       const orgName    = data.get('事業所名') || '';
       const personName = data.get('担当者名') || '';
@@ -2639,6 +2769,10 @@
       const email      = data.get('email')   || '';
       const serviceType= data.get('サービス種別') || '';
       const message    = data.get('ご相談内容') || '';
+      const postalCode = data.get('郵便番号') || '';
+      const prefecture = data.get('都道府県') || '';
+      const city       = data.get('市町村') || '';
+      const addressDetail = data.get('住所') || '';
 
       // サービス種別はメッセージ先頭に付記（Function は message を1フィールドで保存するため）
       const fullMessage = [serviceType ? `【サービス種別】${serviceType}` : null, message]
@@ -2659,6 +2793,10 @@
             email: email,
             website: '',
             message: fullMessage,
+            postalCode: postalCode,
+            prefecture: prefecture,
+            city: city,
+            addressDetail: addressDetail,
           }),
         });
       } catch (e) {

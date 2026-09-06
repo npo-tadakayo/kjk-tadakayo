@@ -629,8 +629,69 @@
         <input type="email" id="contactEmail" placeholder="例: info@example.jp" required autocomplete="email">
       </div>
       <div class="form-group">
-        <label class="form-label" for="contactAddress">住所（任意）</label>
-        <input type="text" id="contactAddress" placeholder="例: 東京都〇〇区〇〇1-2-3" autocomplete="street-address">
+        <label class="form-label" for="contactZip">郵便番号<span class="req">*</span></label>
+        <input type="text" id="contactZip" placeholder="例: 150-0002" inputmode="numeric" maxlength="8" required autocomplete="postal-code">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactPrefecture">都道府県<span class="req">*</span></label>
+        <select id="contactPrefecture" required autocomplete="address-level1">
+          <option value="">選択してください</option>
+              <option value="北海道">北海道</option>
+              <option value="青森県">青森県</option>
+              <option value="岩手県">岩手県</option>
+              <option value="宮城県">宮城県</option>
+              <option value="秋田県">秋田県</option>
+              <option value="山形県">山形県</option>
+              <option value="福島県">福島県</option>
+              <option value="茨城県">茨城県</option>
+              <option value="栃木県">栃木県</option>
+              <option value="群馬県">群馬県</option>
+              <option value="埼玉県">埼玉県</option>
+              <option value="千葉県">千葉県</option>
+              <option value="東京都">東京都</option>
+              <option value="神奈川県">神奈川県</option>
+              <option value="新潟県">新潟県</option>
+              <option value="富山県">富山県</option>
+              <option value="石川県">石川県</option>
+              <option value="福井県">福井県</option>
+              <option value="山梨県">山梨県</option>
+              <option value="長野県">長野県</option>
+              <option value="岐阜県">岐阜県</option>
+              <option value="静岡県">静岡県</option>
+              <option value="愛知県">愛知県</option>
+              <option value="三重県">三重県</option>
+              <option value="滋賀県">滋賀県</option>
+              <option value="京都府">京都府</option>
+              <option value="大阪府">大阪府</option>
+              <option value="兵庫県">兵庫県</option>
+              <option value="奈良県">奈良県</option>
+              <option value="和歌山県">和歌山県</option>
+              <option value="鳥取県">鳥取県</option>
+              <option value="島根県">島根県</option>
+              <option value="岡山県">岡山県</option>
+              <option value="広島県">広島県</option>
+              <option value="山口県">山口県</option>
+              <option value="徳島県">徳島県</option>
+              <option value="香川県">香川県</option>
+              <option value="愛媛県">愛媛県</option>
+              <option value="高知県">高知県</option>
+              <option value="福岡県">福岡県</option>
+              <option value="佐賀県">佐賀県</option>
+              <option value="長崎県">長崎県</option>
+              <option value="熊本県">熊本県</option>
+              <option value="大分県">大分県</option>
+              <option value="宮崎県">宮崎県</option>
+              <option value="鹿児島県">鹿児島県</option>
+              <option value="沖縄県">沖縄県</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactCity">市町村<span class="req">*</span></label>
+        <input type="text" id="contactCity" placeholder="例: 渋谷区" required autocomplete="address-level2">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="contactAddress">住所（丁目・番地・建物名）<span class="req">*</span></label>
+        <input type="text" id="contactAddress" placeholder="例: 渋谷1-2-3 〇〇ビル4F" required autocomplete="address-line1">
       </div>
       <div class="form-group">
         <label class="form-label" for="contactWebsite">ホームページURL（任意）</label>
@@ -841,6 +902,10 @@
         <li data-key="contactName">ご担当者名</li>
         <li data-key="contactTel">電話番号</li>
         <li data-key="contactEmail">メールアドレス</li>
+        <li data-key="contactZip">郵便番号</li>
+        <li data-key="contactPrefecture">都道府県</li>
+        <li data-key="contactCity">市町村</li>
+        <li data-key="contactAddress">住所（丁目・番地・建物名）</li>
         <li data-key="readerQty">カードリーダー構成（1台以上）</li>
         <li data-key="consentCheck">同意（介護事業所関係者である旨）</li>
       </ul>
@@ -961,6 +1026,40 @@
   // 伴走支援費（税込・補助対象台数別）
   const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
 
+  // 郵便番号から都道府県・市町村・町域を自動入力（zipcloud・無料/APIキー不要）。
+  // 自動入力に失敗しても手入力の邪魔をしないよう、失敗は握りつぶす。
+  function wireZipAutofill(zipEl, prefEl, cityEl, addrEl) {
+    let lastLookedUp = '';
+    // 政令指定都市の「◯◯市△△区」は、admin側の集計（area.js）が「市」までを市町村として
+    // 扱い区を含めない方針のため、区は市町村欄に入れず住所欄側へ回す。
+    // 東京23区のような「◯◯区」単独（市を伴わない）はそのまま市町村として扱う。
+    function splitCity(address2) {
+      const m = String(address2 || '').match(/^(.+市)(.+区)$/);
+      if (m) return { city: m[1], wardPrefix: m[2] };
+      return { city: address2 || '', wardPrefix: '' };
+    }
+    async function run() {
+      const digits = (zipEl.value || '').replace(/[^0-9]/g, '');
+      if (digits.length !== 7 || digits === lastLookedUp) return;
+      lastLookedUp = digits;
+      try {
+        const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${digits}`);
+        const data = await res.json();
+        const r = data.results && data.results[0];
+        if (!r) return;
+        const { city, wardPrefix } = splitCity(r.address2);
+        prefEl.value = r.address1 || '';
+        cityEl.value = city;
+        if (!addrEl.value.trim()) addrEl.value = wardPrefix + (r.address3 || '');
+        [prefEl, cityEl, addrEl].forEach((el) => el.dispatchEvent(new Event('input', { bubbles: true })));
+      } catch (e) {
+        // 自動入力は失敗しても手入力できるので何もしない
+      }
+    }
+    zipEl.addEventListener('input', run);
+    zipEl.addEventListener('blur', run);
+  }
+
   // 成約通知 Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
   const WEBHOOK_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookMitsumori';
 
@@ -974,9 +1073,15 @@
     ['btQty','usbQty','btExtraQty','usbExtraQty'].forEach(id => {
       document.getElementById(id).addEventListener('change', () => { render(); updateLock(); });
     });
-    ['corpName','officeName','contactName','contactTel','contactEmail','contactAddress','contactWebsite'].forEach(id => {
+    ['corpName','officeName','contactName','contactTel','contactEmail','contactZip','contactPrefecture','contactCity','contactAddress','contactWebsite'].forEach(id => {
       document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
     });
+    wireZipAutofill(
+      document.getElementById('contactZip'),
+      document.getElementById('contactPrefecture'),
+      document.getElementById('contactCity'),
+      document.getElementById('contactAddress')
+    );
     document.getElementById('consentCheck').addEventListener('change', updateLock);
     document.getElementById('prevEstNo').textContent = estNo;
     setDates();
@@ -1004,6 +1109,10 @@
       contactTel:   !!(document.getElementById('contactTel').value || '').trim(),
       contactEmail: !!((document.getElementById('contactEmail').value || '').trim()) &&
                     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((document.getElementById('contactEmail').value || '').trim()),
+      contactZip:        /^\d{3}-?\d{4}$/.test((document.getElementById('contactZip').value || '').trim()),
+      contactPrefecture: !!(document.getElementById('contactPrefecture').value || '').trim(),
+      contactCity:       !!(document.getElementById('contactCity').value || '').trim(),
+      contactAddress:    !!(document.getElementById('contactAddress').value || '').trim(),
       readerQty:    readerQtyOK,
       consentCheck: document.getElementById('consentCheck').checked,
     };
@@ -1035,7 +1144,8 @@
 
     // 同意チェックは「他の必須項目すべてOK」の時のみ意味を持つ
     const consentBox = document.querySelector('.consent-box');
-    const otherReqOK = req.corpName && req.officeName && req.contactName && req.contactTel && req.contactEmail && req.readerQty;
+    const otherReqOK = req.corpName && req.officeName && req.contactName && req.contactTel && req.contactEmail &&
+      req.contactZip && req.contactPrefecture && req.contactCity && req.contactAddress && req.readerQty;
     if (consentBox) {
       consentBox.style.opacity = otherReqOK ? '1' : '0.5';
       consentBox.title = otherReqOK ? '' : '事業所情報とカードリーダー構成をすべてご入力ください';
@@ -1136,6 +1246,10 @@
       { id: 'contactName',  label: 'ご担当者名' },
       { id: 'contactTel',   label: '電話番号' },
       { id: 'contactEmail', label: 'メールアドレス' },
+      { id: 'contactZip',        label: '郵便番号' },
+      { id: 'contactPrefecture', label: '都道府県' },
+      { id: 'contactCity',       label: '市町村' },
+      { id: 'contactAddress',    label: '住所（丁目・番地・建物名）' },
     ];
     const missing = [];
     for (const f of fields) {
@@ -1199,6 +1313,9 @@
     const contactName = document.getElementById('contactName').value.trim();
     const contactTel  = document.getElementById('contactTel').value.trim();
     const contactEmail= document.getElementById('contactEmail').value.trim();
+    const contactZip  = (document.getElementById('contactZip').value || '').trim();
+    const contactPref = (document.getElementById('contactPrefecture').value || '').trim();
+    const contactCity = (document.getElementById('contactCity').value || '').trim();
     const contactAddr = (document.getElementById('contactAddress').value || '').trim();
     const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
 
@@ -1210,7 +1327,10 @@
       contactName:    contactName,
       phone:          contactTel,
       email:          contactEmail,
-      address:        contactAddr,
+      postalCode:     contactZip,
+      prefecture:     contactPref,
+      city:           contactCity,
+      addressDetail:  contactAddr,
       website:        contactWeb,
       subsidyPlan:    calc.plan.label,
       subsidyCategory: planKey,
@@ -1330,9 +1450,14 @@
     const contactName = (document.getElementById('contactName').value || '').trim();
     const contactTel  = (document.getElementById('contactTel').value || '').trim();
     const contactEmail= (document.getElementById('contactEmail').value || '').trim();
+    const contactZip  = (document.getElementById('contactZip').value || '').trim();
+    const contactPref = (document.getElementById('contactPrefecture').value || '').trim();
+    const contactCity = (document.getElementById('contactCity').value || '').trim();
     const contactAddr = (document.getElementById('contactAddress').value || '').trim();
+    const fullAddress = [contactPref, contactCity, contactAddr].filter(Boolean).join('');
     const contactLines = [];
-    if (contactAddr) contactLines.push(contactAddr);
+    if (contactZip) contactLines.push(`〒${contactZip}`);
+    if (fullAddress) contactLines.push(fullAddress);
     if (contactName) contactLines.push(`ご担当：${contactName} 様`);
     const tellinks = [];
     if (contactTel) tellinks.push(`TEL: ${contactTel}`);

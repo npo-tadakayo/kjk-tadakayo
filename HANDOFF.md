@@ -45,12 +45,21 @@
    - 🟠 出荷修正の在庫差分を `runTransaction` 化（開いた後に他人が変えていたら止める）／ロック時は出荷日も固定／添付ファイル名の無害化／ほか低優先9件
    - **領収書メール送付を本番画面から実機テスト済み**（2026-09-06 01:12〜01:14 JST・SH-2026-0004 を kjk-staff@ と自分宛に送信）。届いたPDF（A4 1ページ・335KB）に編集UIが写っていないことを目視確認。テストで付いた `receiptMailedAt/To`・`mailLog` は Firestore REST で削除して元に戻した。**テストメール2通は kjk-staff@tadakayo.jp と yoshinao-tsukuda@tadakayo.jp の受信箱に残っている**（件名「【テスト送信】」「【テスト送信2】」・不要なら削除）
    - **2026-09-06 01:00 JST に本番反映済み**（`ecda41c`）: hosting live（version `e08b00e13835cfec`）／firestore.rules／Functions 3本（sendPartnerMail・reportInvoiceToAccounting・sendSupplierOrder）。承諾書の表示番号は既発行5件を `CST-{案件番号}` に修正（署名済みは #125・#129・#2、未署名 #32・#1。当初「#96」と見込んだのは誤り）
+9. **送付日の記録がUTC日付になっていたバグを修正**（`sendPartnerMail`・`reportInvoiceToAccounting`）。`new Date().toISOString()`→`todayJst()`。再デプロイ・実機再送信で当日日付になることを確認（`1130b65`）
+10. **問い合わせ・見積もりフォームの住所を3カラム化＋郵便番号自動入力を実装**（次田さん依頼）
+    - LP問い合わせフォーム（`index.html`）に郵便番号・都道府県（プルダウン）・市町村・住所（丁目番地建物名）の4欄を新設（従来は住所欄が無かった）。全項目必須
+    - 見積もりツール（`mitsumori.html`）の住所欄（従来1欄・任意）を同じ4欄に分割し必須化。`downloadPDF()` が使う `validateContact()` にも追加（Codex review で指摘・修正済み。native submit を通らない独自バリデーションだったため二重にチェックが必要だった）
+    - 郵便番号入力で **zipcloud（無料・APIキー不要の公開API）** から都道府県・市町村・町域を自動入力。政令指定都市の「◯◯市△△区」は admin側の集計（area.js）に合わせ「市」までを市町村欄、区は住所欄へ回す（東京23区の「◯◯区」単独はそのまま市町村）
+    - `functions/index.js` の `webhookLpInquiry`・`webhookMitsumori` を更新: `offices` に `postalCode`/`prefecture`/`city`/`addressDetail` を新設。既存の呼び出し元（出荷先プリフィル等）との後方互換のため `address`（結合文字列）はそのまま維持し、新4フィールドから自動生成する。**旧データの移行は不要**（`area.js` の `areaOf()` が既に「`prefecture`/`city` があれば優先、無ければ `address` を解析」という設計だったため）
+    - ついでに、前セッションから持ち越しだった**重複送信判定のバグ**（事業所名を見ずメール＋時刻だけで判定）も同じ関数で修正: 同一メール・同一事業所名・5分以内のときのみ重複扱いに
+    - 検証: ローカルhttpサーバ＋Playwright（zipcloud実通信・fetch/Formspreeはインターセプトしペイロード確認）→ preview channel `address-split` で本番相当環境の再現テスト → Codex review（1件指摘・即修正）→ Functions/lp hostingとも本番反映（`webhookLpInquiry`/`webhookMitsumori` 2026-09-06 01:49 JST・lp hosting version `3f765ce6f2d5e2e1`）→ 本番URLで郵便番号自動入力とFirestore書き込み内容を実物確認（テスト用の案件・事業所ドキュメントは削除済み）
+    - ⚠ **本番Functionへのテスト呼び出し1件で、Chatへ「📥 新規LP問い合わせ [案件 #134]」の自動通知が飛んでいる**（`webhookLpInquiry` は通知を条件なしで送るため）。テストと分かる件名（【削除予定テスト】）なので実害はないが、気になれば該当Chatメッセージを手動で削除してください
 
 
 ## 次回やること（優先順）
 
 （UTC日付のバグは下記§で修正・実機再テストで解消を確認済み）
--0.5. **問い合わせ・見積もりフォームの住所分割**（都道府県／市町村／住所を別カラム・必須化・`offices` スキーマと既存データの移行）— 次田さん依頼「検討して」の段階。設計案を出してから着手
+（住所分割は下記§で実装・本番反映済み。旧データは office.address の結合文字列のまま残る＝area.js の解析フォールバックで表示は壊れない）
 -0.3. `functions/index.js` webhookMitsumori の重複判定が事業所名を見ていない（前セッションからの持ち越し）
 -0.2. 「CRM改訂のお知らせ」（`docs/CRM改訂のお知らせ_20260902.md`）の周知先・Chat投稿の要否を確認
 0. **説明動画シリーズの続き** → 正本は `06_介護情報基盤事業/ガイドブック動画_パイプライン/HANDOFF.md`。
