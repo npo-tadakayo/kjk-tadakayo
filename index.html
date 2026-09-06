@@ -830,6 +830,13 @@
       border-left: 4px solid var(--color-primary);
       border-radius: 0 var(--radius-md) var(--radius-md) 0;
       padding: 28px 32px;
+      display: flex; align-items: flex-start; gap: 26px;
+    }
+    .certified-def-mark { flex: 0 0 120px; width: 120px; }
+    .certified-def-mark img { width: 100%; height: auto; display: block; }
+    .certified-def-caption {
+      margin-top: 6px; text-align: center;
+      font-size: 14px !important; color: var(--color-text-muted);
     }
     .certified-def-box p { font-size: 15px; line-height: 1.9; color: var(--color-text-muted); }
     .certified-def-box strong { color: var(--color-text); }
@@ -849,10 +856,18 @@
       font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
       padding: 4px 12px; border-radius: 100px; margin-bottom: 14px;
     }
+    /* 認定マーク（タダトモ）。事業者名と認定番号が画像に入っているので、
+       文字のチップは置かず、このマークだけで示す。 */
+    .certified-mark { flex: 0 0 108px; width: 108px; }
+    .certified-mark img { width: 100%; height: auto; display: block; }
     .certified-head {
       display: flex; align-items: flex-start;
       justify-content: space-between; gap: 16px; flex-wrap: wrap;
       margin-bottom: 20px;
+    }
+    .certified-head-main {
+      display: flex; align-items: flex-start; gap: 18px;
+      flex: 1 1 320px; min-width: 0;
     }
     .certified-company { font-size: 22px; font-weight: 900; margin-bottom: 2px; }
     .certified-sub { font-size: 14px; color: var(--color-text-muted); margin-bottom: 8px; }
@@ -902,7 +917,10 @@
       .certified-logo-mark { width: 48px; height: 48px; font-size: 14px; }
       .certified-logo-img { height: 48px; width: 48px; }
       .certified-logo-img.wide { width: 112px; }
-      .certified-def-box { padding: 20px 20px; }
+      .certified-mark { flex: 0 0 84px; width: 84px; }
+      .certified-head-main { gap: 12px; }
+      .certified-def-box { padding: 20px 20px; flex-direction: column; gap: 16px; }
+      .certified-def-mark { flex: 0 0 auto; width: 96px; margin: 0 auto; }
     }
 
     /* ======== CONTACT FORM ======== */
@@ -2335,6 +2353,12 @@
 
       <!-- 定義説明ボックス -->
       <div class="certified-def-box">
+        <div class="certified-def-mark">
+          <img src="images/badges/tadatomo-generic.png"
+               alt="タダカヨ認定事業者「タダトモ」の認定マーク（見本）"
+               loading="lazy" width="300" height="300">
+          <p class="certified-def-caption">マークの見本</p>
+        </div>
         <p>
           <strong>「タダカヨ認定事業者」</strong>——愛称「<strong>タダトモ</strong>」は、自分たちの現場でITを使いこなし、
           その経験を近くの事業所にも分けている事業者です。
@@ -2353,19 +2377,21 @@
           <div class="certified-card-bar" aria-hidden="true"></div>
           <div class="certified-card-body">
 
-            <span class="certified-badge">
-              <i class="ti ti-rosette" aria-hidden="true"></i>
-              タダカヨ認定事業者　タダトモ TDT-001
-            </span>
-
             <div class="certified-head">
-              <div>
-                <h3 class="certified-company">株式会社279</h3>
-                <p class="certified-sub">つなぐ手ケアマネセンター</p>
-                <span class="certified-location">
-                  <i class="ti ti-map-pin" aria-hidden="true"></i>
-                  北海道・札幌市
-                </span>
+              <div class="certified-head-main">
+                <div class="certified-mark">
+                  <img src="images/badges/tadatomo-tdt-001.png"
+                       alt="タダカヨ認定事業者「タダトモ」認定番号 TDT-001 株式会社279"
+                       loading="lazy" width="300" height="300">
+                </div>
+                <div>
+                  <h3 class="certified-company">株式会社279</h3>
+                  <p class="certified-sub">つなぐ手ケアマネセンター</p>
+                  <span class="certified-location">
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                    北海道・札幌市
+                  </span>
+                </div>
               </div>
               <div class="certified-logo-img wide">
                 <img src="images/partner_279.png" alt="株式会社279のロゴ" loading="lazy" width="640" height="195">
@@ -2424,19 +2450,21 @@
           <div class="certified-card-bar" aria-hidden="true"></div>
           <div class="certified-card-body">
 
-            <span class="certified-badge">
-              <i class="ti ti-rosette" aria-hidden="true"></i>
-              タダカヨ認定事業者　タダトモ TDT-002
-            </span>
-
             <div class="certified-head">
-              <div>
-                <h3 class="certified-company">株式会社プラスエス</h3>
-                <p class="certified-sub">QCC大阪（住環境整備・福祉用具）</p>
-                <span class="certified-location">
-                  <i class="ti ti-map-pin" aria-hidden="true"></i>
-                  大阪府・八尾市
-                </span>
+              <div class="certified-head-main">
+                <div class="certified-mark">
+                  <img src="images/badges/tadatomo-tdt-002.png"
+                       alt="タダカヨ認定事業者「タダトモ」認定番号 TDT-002 株式会社プラスエス"
+                       loading="lazy" width="300" height="300">
+                </div>
+                <div>
+                  <h3 class="certified-company">株式会社プラスエス</h3>
+                  <p class="certified-sub">QCC大阪（住環境整備・福祉用具）</p>
+                  <span class="certified-location">
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                    大阪府・八尾市
+                  </span>
+                </div>
               </div>
               <div class="certified-logo-img">
                 <img src="images/partner_pluss.png" alt="株式会社プラスエスのロゴ" loading="lazy" width="600" height="600">
@@ -2495,19 +2523,21 @@
           <div class="certified-card-bar" aria-hidden="true"></div>
           <div class="certified-card-body">
 
-            <span class="certified-badge">
-              <i class="ti ti-rosette" aria-hidden="true"></i>
-              タダカヨ認定事業者　タダトモ TDT-003
-            </span>
-
             <div class="certified-head">
-              <div>
-                <h3 class="certified-company">株式会社介護ITコンシェルジュ</h3>
-                <p class="certified-sub">介護現場に寄り添い、IT・DXの定着を支援する</p>
-                <span class="certified-location">
-                  <i class="ti ti-map-pin" aria-hidden="true"></i>
-                  滋賀県・大津市（滋賀・京都を中心に全国対応）
-                </span>
+              <div class="certified-head-main">
+                <div class="certified-mark">
+                  <img src="images/badges/tadatomo-tdt-003.png"
+                       alt="タダカヨ認定事業者「タダトモ」認定番号 TDT-003 株式会社介護ITコンシェルジュ"
+                       loading="lazy" width="300" height="300">
+                </div>
+                <div>
+                  <h3 class="certified-company">株式会社介護ITコンシェルジュ</h3>
+                  <p class="certified-sub">介護現場に寄り添い、IT・DXの定着を支援する</p>
+                  <span class="certified-location">
+                    <i class="ti ti-map-pin" aria-hidden="true"></i>
+                    滋賀県・大津市（滋賀・京都を中心に全国対応）
+                  </span>
+                </div>
               </div>
               <div class="certified-logo-img">
                 <img src="images/partner_careitc.png" alt="株式会社介護ITコンシェルジュのロゴ" loading="lazy" width="264" height="256">

@@ -23,6 +23,15 @@ SERIF = "'Noto Serif JP','Yu Mincho',serif"
 SEAL_URL = "https://kjk-tadakayo-admin.web.app/images/seal-tadakayo.png"
 SEAL = f'<img src="{SEAL_URL}" alt="NPO法人タダカヨの角印" width="72" height="72">'
 
+# 認定マーク（タダトモ）。取り込み時に画像がドキュメントへコピーされるので、
+# 一時的に見える URL でも構わない。LP を本番に出したら BADGE_BASE を
+# https://kjk.tadakayo.jp/images/badges に戻すこと。
+BADGE_BASE = "https://kjk-tadakayo--badge-0906-42gcyz9r.web.app/images/badges"
+
+
+def badge(name, w=104, alt="タダカヨ認定事業者「タダトモ」の認定マーク"):
+    return f'<img src="{BADGE_BASE}/{name}.png" alt="{alt}" width="{w}" height="{w}">'
+
 
 def box(inner, bg=PINK, border=RED, pad="12pt"):
     """1セルの表で作るコールアウト。左に赤い縦線を立てる。"""
@@ -437,7 +446,8 @@ b.append(
             tr("1", "「タダカヨ認定事業者」の名称と認定マークは、<b>認定の期間中</b>に限り使えます"),
             tr(
                 "2",
-                "表示するときは、<b>認定番号を併記</b>してください"
+                "表示するときは、<b>認定番号を併記</b>してください。"
+                "認定マークには事業者名と認定番号が入っているので、そのままお使いいただけば満たせます"
                 f'<br><span style="font-size:9pt;color:{MUTED}">例：タダカヨ認定事業者　タダトモ TDT-003</span>',
                 bg="#FCFCFC",
             ),
@@ -455,6 +465,24 @@ b.append(
             tr("5", "認定が終わったときは、<b>速やかに表示を取り下げて</b>ください"),
         ]
     )
+)
+# 認定マークの見本（何を使えるのかを、文章だけでなく現物で示す）
+# ※ Google ドキュメントは「表の中の表」を文字列に潰してしまうので、必ず1段の表で作る
+b.append(
+    f'<table style="width:100%;border-collapse:collapse;margin:12pt 0"><tr>'
+    f'<td style="width:4pt;background-color:{RED};border:none"></td>'
+    f'<td style="width:116pt;background-color:{PINK};padding:12pt 0 12pt 16pt;'
+    f'border:none;text-align:center;vertical-align:middle">'
+    f'{badge("tadatomo-generic", 96)}'
+    f'<p style="margin:4pt 0 0 0;font-family:{SANS};font-size:8.5pt;color:{MUTED}">'
+    f"マークの見本</p></td>"
+    f'<td style="background-color:{PINK};padding:12pt 16pt;border:none;'
+    f'vertical-align:middle;font-family:{SANS};font-size:10.5pt;line-height:1.8">'
+    f"<b>お渡しする認定マーク</b><br>"
+    f"認定が決まったら、<b>事業者名と認定番号が入った専用のマーク</b>を PNG（背景透過）でお渡しします。"
+    f"名刺に 15mm ほどの大きさで置いても「タダトモ」が読めるようにしています。"
+    f'<br><span style="font-size:9pt;color:{MUTED}">※ 上は見本です。実際は認定番号が TDT-001 のように入ります</span>'
+    f"</td></tr></table>"
 )
 
 b.append(art(6, "個人情報の取扱い"))
@@ -575,22 +603,21 @@ b.append(
 
 b.append(sec("署", "記名・署名"))
 b.append(
-    box(
-        f'<span style="font-size:11pt;font-weight:700;color:{RED}">タダカヨ</span>'
-        f'<table style="width:100%;border-collapse:collapse;margin:8pt 0 0 0"><tr>'
-        f'<td style="border:none;padding:0;vertical-align:top;font-family:{SANS};'
-        f'font-size:10.5pt;line-height:1.9">'
-        "NPO法人タダカヨ<br>理事長　佐藤 拡史<br>"
-        "〒143-0014 東京都大田区大森中二丁目1番20-1001号<br>"
-        "介護情報基盤伴走支援事業　kjk-staff@tadakayo.jp</td>"
-        f'<td style="border:none;width:86pt;padding:0;text-align:right;'
-        f'vertical-align:middle">{SEAL}</td></tr></table>'
-        f'<p style="margin:8pt 0 0 0;font-family:{SANS};font-size:9pt;color:{MUTED};'
-        f'line-height:1.8">※ この誓約書は、上記の記名と角印をもってタダカヨの意思表示とし、'
-        "認定証の交付をもって認定の成立とします。</p>",
-        bg=GRAY,
-        border=RED,
-    )
+    # 表の中に表を置くと Docs が潰すので、1段の表で「文面＋角印」を並べる
+    f'<table style="width:100%;border-collapse:collapse;margin:14pt 0"><tr>'
+    f'<td style="width:4pt;background-color:{RED};border:none"></td>'
+    f'<td style="background-color:{GRAY};padding:12pt 0 12pt 12pt;border:none;'
+    f'vertical-align:top;font-family:{SANS};font-size:10.5pt;line-height:1.9">'
+    f'<span style="font-size:11pt;font-weight:700;color:{RED}">タダカヨ</span><br>'
+    "NPO法人タダカヨ<br>理事長　佐藤 拡史<br>"
+    "〒143-0014 東京都大田区大森中二丁目1番20-1001号<br>"
+    "介護情報基盤伴走支援事業　kjk-staff@tadakayo.jp"
+    f'<p style="margin:8pt 0 0 0;font-family:{SANS};font-size:9pt;color:{MUTED};'
+    f'line-height:1.8">※ この誓約書は、上記の記名と角印をもってタダカヨの意思表示とし、'
+    "認定証の交付をもって認定の成立とします。</p></td>"
+    f'<td style="width:86pt;background-color:{GRAY};padding:12pt 12pt 12pt 0;'
+    f'border:none;text-align:right;vertical-align:middle">{SEAL}</td>'
+    f"</tr></table>"
 )
 b.append(p("<b>認定事業者</b>", size="11pt", margin="14pt 0 4pt 0"))
 b.append(p("上記の内容を確認し、これを守ることに同意します。"))
@@ -639,7 +666,10 @@ cert.append(
     f'font-weight:700;color:{RED}">タダカヨ認定事業者「タダトモ」</p></td></tr></table>'
     f'<p style="margin:0 0 12pt 0;font-family:{SANS};font-size:11.5pt;line-height:1.9">'
     f"として認定します。</p>"
-    f'<table style="width:60%;border-collapse:collapse;margin:0 0 12pt 0">'
+    # 認定日・有効期限（左）と、その事業者の認定マーク（右）を横に並べる
+    f'<table style="width:100%;border-collapse:collapse;margin:0 0 12pt 0"><tr>'
+    f'<td style="border:none;padding:0;vertical-align:middle">'
+    f'<table style="width:74%;border-collapse:collapse;margin:0">'
     f'<tr><td style="width:34%;background-color:{GRAY};padding:7pt 10pt;'
     f'border:1pt solid #D9D9D9;font-family:{SANS};font-size:10pt;font-weight:700">認定日</td>'
     f'<td style="padding:7pt 10pt;border:1pt solid #D9D9D9;font-family:{SANS};'
@@ -648,6 +678,11 @@ cert.append(
     f'font-family:{SANS};font-size:10pt;font-weight:700">有効期限</td>'
     f'<td style="padding:7pt 10pt;border:1pt solid #D9D9D9;font-family:{SANS};'
     f'font-size:10pt">2027年3月31日</td></tr></table>'
+    f"</td>"
+    f'<td style="border:none;width:104pt;padding:0 0 0 16pt;text-align:right;'
+    f'vertical-align:middle">'
+    f'{badge("tadatomo-tdt-003", 96, alt="タダカヨ認定事業者「タダトモ」認定番号 TDT-003 株式会社介護ITコンシェルジュ")}'
+    f"</td></tr></table>"
     f'<p style="margin:0;font-family:{SANS};font-size:10.5pt;line-height:1.9">'
     f"貴事業者が、介護現場でITを活かし、その経験を地域の事業所へ分けてこられたことを"
     f"確認しました。介護情報基盤への対応に困っている事業所を、地域で支えていただくよう"
@@ -709,8 +744,25 @@ b.append(sec("2", "認定マーク"))
 b.append(
     p(
         "名刺・自社サイト・チラシに使う小さなバッジ画像です。認定証とは別に用意します。"
-        "<b>作ることが決定しました</b>（2026-09-06）。"
+        "<b>仮デザインができました</b>（2026-09-06）。事業者ごとに名前と認定番号を入れて発行します。"
     )
+)
+b.append(
+    f'<table style="width:100%;border-collapse:collapse;margin:10pt 0"><tr>'
+    + "".join(
+        f'<td style="border:1pt solid #D9D9D9;padding:12pt 8pt;text-align:center;'
+        f'background-color:#FFFFFF;vertical-align:top">'
+        f"{badge(f, 92, alt=cap)}"
+        f'<p style="margin:6pt 0 0 0;font-family:{SANS};font-size:9pt;color:{MUTED}">{cap}</p>'
+        f"</td>"
+        for f, cap in [
+            ("tadatomo-generic", "見本（TDT-000）"),
+            ("tadatomo-tdt-001", "TDT-001 株式会社279"),
+            ("tadatomo-tdt-002", "TDT-002 株式会社プラスエス"),
+            ("tadatomo-tdt-003", "TDT-003 株式会社介護ITコンシェルジュ"),
+        ]
+    )
+    + "</tr></table>"
 )
 b.append(
     table(
@@ -837,6 +889,21 @@ b.append(
         bg=GRAY,
         border="#BBBBBB",
     )
+)
+
+b.append(sec("0", "いまの仮デザイン"))
+b.append(
+    f'<table style="width:100%;border-collapse:collapse;margin:10pt 0"><tr>'
+    f'<td style="border:none;width:130pt;padding:0;text-align:center;vertical-align:middle">'
+    f'{badge("tadatomo-generic", 110)}</td>'
+    f'<td style="border:none;padding:0 0 0 16pt;vertical-align:middle;'
+    f'font-family:{SANS};font-size:10.5pt;line-height:1.9">'
+    f"2026-09-06 に受け取った<b>仮のデザイン</b>です。上に「タダトモ」、中央に二人が並んで歩く円、"
+    f"下に「タダカヨ認定事業者」と認定番号が入っています。<br>"
+    f"<b>この形で概ね進める前提</b>で、下のプロンプトは<b>詰めたいところを直すため</b>に使ってください。"
+    f'<br><span style="font-size:9pt;color:{MUTED}">残っている論点：中央の「2026」の扱い'
+    f"（有効期限が2027年3月31日なので、年度表記にするか外すか）【要確定】</span>"
+    f"</td></tr></table>"
 )
 
 b.append(sec("1", "そのまま貼るプロンプト（日本語）"))
