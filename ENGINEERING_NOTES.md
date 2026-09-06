@@ -253,7 +253,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-06-05 | 実機検証チェックリスト.md 作成（@tadakayoログイン前提の全機能通し確認・13セクション） |
 | 2026-06-05 | セキュリティ続報: H-4 は全SA（appspot/gmail-sa/compute）で USER_MANAGED 鍵ゼロ＝**実態クリア**と判明（キーレスDWD運用・追加対応不要）。H-3 は6関数が compute SA（roles/editor＋aiplatform.user）共有を確認。SECURITY_REMEDIATION.md（開発チーム向け対応状況レポート）作成 |
 | 2026-06-05 | M-5 Cloud Monitoring 完了: メール通知ch＋「Cloud Run(関数)5xxエラー検知」ポリシー作成（policy 17664915398047705537 / channel 17803807182395282661・要メールverify）。指摘10件は実質7件完了、残=M-1/H-3/M-3＋Gemini移行 |
-| 2026-06-05 | 発注モーダル(→AB Circle)の送付先に認定事業所セレクト追加（`activePartners`・選択で〒/住所/法人名・事業所名を自動入力・手入力可。supply.html/js `fillOrderShipTo`・`055ae42`） |
+| 2026-06-05 | 発注モーダル(→AB Circle)の送付先に認定事業者セレクト追加（`activePartners`・選択で〒/住所/法人名・事業所名を自動入力・手入力可。supply.html/js `fillOrderShipTo`・`055ae42`） |
 | 2026-06-05 | 本書に CRM システムの技術仕様（業務フロー/アーキテクチャ/ER/シーケンスの4図＋コレクション一覧＋認証＋デプロイ）を統合（アプリ内 engineering.html を正本化）／MANUAL.md 新規作成／partner.html モバイル対応／COOP `same-origin-allow-popups` 設定／.gitignore 整理 |
 | 2026-06-05 | 本番デプロイ（COOP/partner/docs）実施。COOPが `source:"**/*.html"` では cleanUrls 下でマッチせず無効と判明→`source:"**"` に修正（`ebf3ae1`）。残存 worktree 4つを整理（main 1本に） |
 | 2026-06-05 | 発注機能 仮作成→確定→送付（`1739c29`）: 発注を下書き(draft)→編集→確定の3段階化＋希望納期。「確定して送付」で発注書PDF(html2pdf)を添付しABサークルへGmail送信（プレビュー編集可）。設定に仕入先(supplier*)・発注メール定型文(poMail*)追加。商品マスタにJAN・wholesale31投入＋発注単価を数量帯別(unitPriceFor)。functions buildRawMessage を multipart 対応＋`sendSupplierOrder` callable 追加。発注書描画を `admin/js/po-doc.js` に共通化。AB Circle 2026-06-05 回答(memory reference_abcircle)反映 |
@@ -268,15 +268,15 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-07-30 | **入金・未集金・領収書記録＋発注の下書き戻し（セッション⑯）**: ①**入金を部分入金対応に**（`shipments.payments[]` に履歴・`prompt`廃止→モーダル・残額0で `paid`／残ありは `invoiced` のまま・入金の取消で自動巻き戻し・旧 `paymentAmount/paidAt` は `payList()` で1件の履歴として読替）。②**未集金の可視化**（`dueDateOf()`=請求月の翌月末・`overdueDays()`・サマリーに「未集金・残額／うち支払期限超過」・**請求先ごとの未集金表**（残額・対象出荷・最長超過日数、超過が上）・受注タブに「請求・入金」列を追加し `partnerOrderId` 経由で残額表示）。③**領収書の発行記録**（`receipts/{shipmentId}` に番号/発行日/金額/但し書き/明細/用途区分集計をスナップショット・出荷に `receiptIssuedAt` 書き戻し・**再表示時に復元して同内容で再発行**・一覧のボタンに「発行済 MM/DD」）。④**催促メール**（新 callable `sendPartnerMail`＝SA_MAIL/DWDキーレス・`mailLog[]`＋`dunningSentAt/dunningCount` 記録・文面は `DEFAULT_DUNNING_*`／`settings.dunningMailSubject/Body` で上書き）。⑤発注に**「下書きに戻す」**（`sent`→`draft`・`revertedAt/By` 記録・入荷済は対象外）、**直送発注は「入荷登録」を非表示**（在庫の誤加算防止・状態欄に「直送（入荷なし）」）、**送料100台以上無料を自動入力に反映**。⑥データ整備: PO-0046/0047/0048 を下書き→発注日2026-07-30で再送信（3件送信済み・CC控え確認）、PO-0047/0048 に直送フラグ・請求先・出荷下書きIDを紐付け、SH-2026-0003 を100→200台（¥1,600,000）に修正、出荷予定日を2026-07-30に。⑦**Functions デプロイの注意（実測）**: `functions/node_modules` が Google Drive 上にあるため `require('./index.js')` に **12分23秒**（同じコードをローカルにコピーすると 0.1秒）。Firebase CLI の解析タイムアウトは10秒なので Drive 上のままでは構造的にデプロイ不可（`Error: User code failed to load. Cannot determine backend specification. Timeout after 10000`）。**手順**: ①`rsync -a --exclude node_modules functions/ <ローカル>/functions/` ②`.firebaserc` をコピーし `firebase.json` は `{"functions":{"source":"functions"}}` のみ ③`npm ci --omit=dev` ④`npx firebase-tools deploy --only "functions:<名前>" --project kjk-tadakayo --account yoshinao-tsukuda@tadakayo.jp`。**`--account` 必須**（一時ディレクトリには `login:use` の設定が無く、既定の279アカウントで `iam.serviceAccounts.ActAs` 403 になる） | (本セッション) |
 | 2026-08-11 | **経理への請求書発行報告を新設**: 出荷を「請求済にする」ときに確認ダイアログを出し、`経理へ報告する`（既定ON・**再発行はOFF**）で経理へ ①Chatスペースへカード投稿 ②経理担当へ請求書PDF添付メール を送る。新 callable `reportInvoiceToAccounting`（`SA_MAIL`／PDFを Storage `invoices/{shipmentId}/` に保存し download token 付きURLをChatカードのボタンに載せる）。**⚠️ Google Chat の Incoming Webhook はファイル添付不可**（`media.upload` はユーザーOAuth認証のみ・SA/Webhook不可＝[公式ドキュメント](https://developers.google.com/workspace/chat/upload-media-attachments)で確認）ため、PDF本体はメール添付・ChatはPDFリンクという構成にした。設定（`accountingChatWebhookUrl` / `accountingEmail` / `accountingContactName` / `accountingEmailCc` / `invoiceMailSubject/Body`）は**すべて設定画面から変更可**でコード変更不要。Chat本文に「〇〇さんにもメールを送信しました」を出す（呼び名は `accountingContactName`）。あわせて請求書描画を `admin/js/invoice-doc.js` に共通化（`supply-print.js` は委譲・印刷とPDFで見た目が一致）。メール／Chatは片方失敗でも他方を続行し `warnings[]` を返す。報告漏れ・失敗は請求済の行の「経理へ報告」ボタンで後追い可（ステータスは変えない）。`storage.rules` に `invoices/**` を追加（クライアント書き込み禁止・読みは@tadakayo.jpのみ） |
 | 2026-08-12 | **入金まわりの未決3件を実装（`admin/js/supply.js` / `supply-print.js` / `invoice-doc.js` / `supply.html` / `supply-print.html`）**: ①**グループ会社間の過入金充当** — 充当を `openCreditModal()`＋`doApplyCredit()` の明示選択方式に変更。同一請求先は既定チェック＋FIFO自動配分で従来と同結果、`crossCreditSourcesFor()` が返す別請求先の過入金は「別請求先」バッジ付き・**既定オフ**・選択時は `confirm()` 必須。`creditFrom[]` に `fromBillTo`/`crossBillTo` を追加し請求書の充当行に充当元の請求先名を印字。自動サジェスト（請求済にした直後）は**同一請求先のみ**に限定 ②**返金明細書** `type=refund` を新設（`renderRefundStatement`・番号 RFND・返金全件＋請求/入金/返金/差引後の内訳・領収書ではない旨を明記・`refundStatementIssuedAt` 等で発行記録） ③**領収書の領収金額に実入金を自動反映** — 初期値 `min(netPaid, billableIncl)`、`#rcptGrand`（明細合計）と `#rcptTotal`（領収金額）を分離、一部入金は但し書き「内金として」自動化、充当分・内金分の理由を `#rcptAdjNote` に印字、印紙判定も領収金額基準。**検証**: 抽出した純関数で充当シナリオ24件（同一/別請求先・直送の請求先判定・FIFO順・キャンセル除外・返金後0・実データSH-0001の¥93再現）＝全合格／帳票6ケースをブラウザ描画（全額・一部・過入金・充当あり・返金1件・返金2件）／充当モーダルのDOM挙動（既定チェック・別請求先の既定オフ・残額超過でボタン無効）／`node --check` と全 `getElementById` の id 実在チェック |
-| 2026-06-07 | **CRM大規模改修（1日）**: ①出荷を認定事業所卸(`partnerPricing`)接続＋送料自動計算(レターパック/ゆうパック)＋請求書に送料明細計上 ②B3月次推移グラフ・B4申請期限の設定化(`subsidyDeadline`) ③**docpage重大バグ修正**(db未定義で `gateRole` 失敗→マニュアル/エンジニアノートが閲覧不能だったのを解消) ④Dモバイル/WCAG2.1AA底上げ(タップ44px・`:focus-visible`・最小フォント12px・案件行キーボード操作・モーダルEsc/フォーカストラップ・btn-primaryコントラスト#c02828) ⑤C2肥大化ファイル分割(`supply-pricing.js`/`case-detail-util.js`・挙動不変) ⑥**補助金区分訂正**(31居宅療養管理指導・78地域密着型通所介護を令和8年度交付要綱別添 `r8_jyoseikin.pdf` と突合し**訪問・通所系¥64,000・3台**に・LP/見積もり/料金md反映) ⑦**H-3完全クローズ**(App Engine default SAの`editor`・旧compute SA→`kjk-gmail-sa`の`tokenCreator`剥奪)＋users運用フロー文書化(SECURITY_REMEDIATION.md) ⑧**直送発注→出荷下書き自動生成**(発注確定時に`shipments`をdraftで自動作成・`shipType=dropship`・在庫経由なし・2段階)。全て本番反映・GitHub同期・実機/curl検証済み |
-| 2026-06-06 | **CRM最終統合＋設定化＋推移グラフ（セッション⑩・`aa12722`/`965a857`）**: #1=出荷dropship単価を商品マスタ仕入パススルー(`unitPriceFor`)から認定事業所卸(`partnerPricing`・数量帯別 `partnerPriceFor`)へ接続（卸価格の二重性を解消・未設定時フォールバック）＋出荷モーダルに配送方法（レターパック`¥600×⌈台数/3⌉`／ゆうパック表・滋賀発）を追加し送料を税抜換算して請求書に10%対象明細で計上＋出荷サマリーも送料込みに統一（supply/supply-print）。B4=申請期限を `settings.subsidyDeadline` で設定可能化し dashboard/cases/kanban のバナーが追従＋`deadlineLabel()` で期限ラベル動的化（`daysUntilDeadline(deadline)` 引数対応）。B3=ダッシュボードに月次新規案件グラフ（receivedAt基準・依存なし）。hosting:admin プレビュー(`supply-b34-0606`)→本番昇格・curl検証で新コード7種配信確認。残ブラッシュアップ（A2/A3ほぼ済・C2分割・Dモバイル）は次セッション |
+| 2026-06-07 | **CRM大規模改修（1日）**: ①出荷を認定事業者卸(`partnerPricing`)接続＋送料自動計算(レターパック/ゆうパック)＋請求書に送料明細計上 ②B3月次推移グラフ・B4申請期限の設定化(`subsidyDeadline`) ③**docpage重大バグ修正**(db未定義で `gateRole` 失敗→マニュアル/エンジニアノートが閲覧不能だったのを解消) ④Dモバイル/WCAG2.1AA底上げ(タップ44px・`:focus-visible`・最小フォント12px・案件行キーボード操作・モーダルEsc/フォーカストラップ・btn-primaryコントラスト#c02828) ⑤C2肥大化ファイル分割(`supply-pricing.js`/`case-detail-util.js`・挙動不変) ⑥**補助金区分訂正**(31居宅療養管理指導・78地域密着型通所介護を令和8年度交付要綱別添 `r8_jyoseikin.pdf` と突合し**訪問・通所系¥64,000・3台**に・LP/見積もり/料金md反映) ⑦**H-3完全クローズ**(App Engine default SAの`editor`・旧compute SA→`kjk-gmail-sa`の`tokenCreator`剥奪)＋users運用フロー文書化(SECURITY_REMEDIATION.md) ⑧**直送発注→出荷下書き自動生成**(発注確定時に`shipments`をdraftで自動作成・`shipType=dropship`・在庫経由なし・2段階)。全て本番反映・GitHub同期・実機/curl検証済み |
+| 2026-06-06 | **CRM最終統合＋設定化＋推移グラフ（セッション⑩・`aa12722`/`965a857`）**: #1=出荷dropship単価を商品マスタ仕入パススルー(`unitPriceFor`)から認定事業者卸(`partnerPricing`・数量帯別 `partnerPriceFor`)へ接続（卸価格の二重性を解消・未設定時フォールバック）＋出荷モーダルに配送方法（レターパック`¥600×⌈台数/3⌉`／ゆうパック表・滋賀発）を追加し送料を税抜換算して請求書に10%対象明細で計上＋出荷サマリーも送料込みに統一（supply/supply-print）。B4=申請期限を `settings.subsidyDeadline` で設定可能化し dashboard/cases/kanban のバナーが追従＋`deadlineLabel()` で期限ラベル動的化（`daysUntilDeadline(deadline)` 引数対応）。B3=ダッシュボードに月次新規案件グラフ（receivedAt基準・依存なし）。hosting:admin プレビュー(`supply-b34-0606`)→本番昇格・curl検証で新コード7種配信確認。残ブラッシュアップ（A2/A3ほぼ済・C2分割・Dモバイル）は次セッション |
 | 2026-07-02 | **領収書発行を追加＋帳票デザインをタダカヨ赤に統一（`e713f30`）**: 入金済み出荷（`status=paid`）に「領収書」ボタン→ `supply-print.html?type=receipt`。`renderReceipt`（supply-print.js）＝請求書と同じ発行元・登録番号・角印（印影は `settings.poSealImage`、無ければ `admin/images/seal-tadakayo.png` を常時表示＝請求書側も同フォールバックに統一）。明細は編集可能（`wireReceiptEditor`・行追加/削除・画面上のみでFirestoreには保存しない）。各行に助成金用途区分 A=カードリーダー/B=接続サポート等経費/X=対象外(送料等) を持ち、区分別の税抜/消費税/税込小計を自動再計算（申請額突合用）。但し書きはツールバーの入力で編集（印刷非表示 `rcpt-noprint`）。税込5万円以上で収入印紙欄を表示。あわせてデザイン統一＝supply-print/report の旧・緑 `#238e3a`→タダカヨ赤 `#E33535`（白文字ボタンは `#b82626` でWCAG確保）／CSS疑似印の色 `#c0392b`→朱色 `#D3381C`（po-doc.js含む）／Noto Serif/Sans JP webフォント読込追加／未定義だった `.btn-secondary` 定義追加。hosting:admin プレビュー(`receipt-0702`)→本番昇格・curl検証（renderReceipt/ti-receipt-2/E33535/seal png 200） |
 | 2026-07-03 | **CRMの赤をブランド指示書の正本値へ統一**: crm.css トークンを `#E03030`→`#E33535`（タダカヨレッド）／primary-dark `#b82626`→`#c02828`（白文字5.9:1）／primary-soft `#fdecec`→`#FFE4EC`（タダカヨピンク・ピンク面のdark文字4.9:1でAA適合）。supply-print/report のボタン・日付色も追従。LPは元々 `#E33535` のため変更不要＝これでLP・CRM・帳票の赤が正本値に一本化。hosting:admin プレビュー(`brand-e33535-0703`)→本番昇格・curl検証（旧色残0） |
-| 2026-07-03 | **LPブラッシュアップ（並行セッション・`52b4286`〜`b0d637c`）**: ①「導入の流れ」6ステップ新設（相談→見積→事前確認→設置90〜120分→申請→1年サポート）②FAQ3問追加＋JSON-LD同期（支払い=伴走支援後/前払い選択制・前払いならその場で申請サポート／対応地域／所要時間）③予算上限で受付終了の注意をバナー追記④タダサポ＋説明・認定事業所「順次拡大中」表現修正⑤Tabler IconsをCDN→自己ホストサブセット8KBへ（Pマーク: 外部CDNリクエスト0に）⑥キャラ画像WebP化（493KB→67KB）⑦キャラ画像の縦横比修正＝LP用画像が原本と違う比率だったため `_ブランド素材/多田佳代ちゃん/` 原本から再生成＋`?v=2` キャッシュバスター＋hero画像の `max-width:100%`×shrink-to-fit親の循環による横潰れを `max-width:none` で解消。preview channel→本番昇格・実機検証済み。**残: 実績・お客様の声セクション（パイロット結果待ち）** |
+| 2026-07-03 | **LPブラッシュアップ（並行セッション・`52b4286`〜`b0d637c`）**: ①「導入の流れ」6ステップ新設（相談→見積→事前確認→設置90〜120分→申請→1年サポート）②FAQ3問追加＋JSON-LD同期（支払い=伴走支援後/前払い選択制・前払いならその場で申請サポート／対応地域／所要時間）③予算上限で受付終了の注意をバナー追記④タダサポ＋説明・認定事業者「順次拡大中」表現修正⑤Tabler IconsをCDN→自己ホストサブセット8KBへ（Pマーク: 外部CDNリクエスト0に）⑥キャラ画像WebP化（493KB→67KB）⑦キャラ画像の縦横比修正＝LP用画像が原本と違う比率だったため `_ブランド素材/多田佳代ちゃん/` 原本から再生成＋`?v=2` キャッシュバスター＋hero画像の `max-width:100%`×shrink-to-fit親の循環による横潰れを `max-width:none` で解消。preview channel→本番昇格・実機検証済み。**残: 実績・お客様の声セクション（パイロット結果待ち）** |
 | 2026-09-01〜03 | **CRM 大型改修（セッション㉔）**: 伴走支援承諾書オンライン署名（`consentRequests`・v1.1 条文）／サイドバー折り畳み／案件一覧に地域・都道府県・市町村・担当者（`area.js`）／出荷の修正・削除＋つなぎ方併記（`product-label.js`）／資料の事前送付・承諾書URL送付・請求書/領収書のPDF添付メール（`sendPartnerMail` 添付対応）／伴走支援記録の編集・削除。コミット `5479c52`〜`96734ff` |
 | 2026-09-06 | **コードレビュー指摘14件を修正**（`docs/レビュー指摘の修正案_20260903.md`）: 領収書PDFの編集UI写り込み（`printableClone`）／承諾書 displayNo の `caseNumber` 誤り／出荷修正の在庫差分を `runTransaction` 化＋楽観ロック（updatedAt 比較）／ロック時は出荷日も固定／添付ファイル名の無害化（`safeAttachmentName`）と `kind` 検証／rules に `signed.userAgent` 長さ上限／consentRequests に email を保存しない／セッション削除の順序（doc→Storage）・写真外しを URL 基準に／発行ボタン二重押し防止／`col-office` クラス化／pre-guide の日付を JST に／出荷削除の確認順。検証: ハーネス（DOM・実物 html2pdf）＋Firestore エミュレータ（ルール10ケース PASS）＋Codex review＋本番画面からの領収書メール実送信2回。`ecda41c` を hosting/rules/Functions とも本番反映（2026-09-06） |
 | 2026-09-06 | **送付日UTCバグ修正**（`1130b65`）／**問い合わせ・見積もりフォームの住所3カラム化＋郵便番号自動入力（zipcloud）＋重複判定バグ修正**: `offices` に `postalCode`/`prefecture`/`city`/`addressDetail` 追加（`address` 結合文字列は後方互換で維持・`area.js` 対応済みのため旧データ移行不要）。`webhookLpInquiry`/`webhookMitsumori` の重複チェックに事業所名の一致を追加。Codex review 1件（PDF出力パスのバリデーション漏れ）→即修正。lp hosting・Functions 2本を本番反映 |
-| 2026-09-06 | **LP 認定事業所 #002 プラスエス／#003 介護ITコンシェルジュ追加・#001 公式ロゴ化**（`c431463`）／**郵便番号欄の注釈と状態表示**（`edb35f9`）。Tabler サブセット再生成（45種）。`partners/hiroyuki-fujita@tadakayo.jp` 登録。lp live version `a566be9594331f12` |
+| 2026-09-06 | **LP 認定事業者 #002 プラスエス／#003 介護ITコンシェルジュ追加・#001 公式ロゴ化**（`c431463`）／**郵便番号欄の注釈と状態表示**（`edb35f9`）。Tabler サブセット再生成（45種）。`partners/hiroyuki-fujita@tadakayo.jp` 登録。lp live version `a566be9594331f12` |
 
 ---
 
@@ -300,7 +300,7 @@ flowchart TD
   F --> G["採択・入金"]
   G --> H["アフターフォロー / 完了"]
   B -.失注.-> X["失注"]
-  C2["認定事業所"] -->|B2B発注| I["受注"]
+  C2["認定事業者"] -->|B2B発注| I["受注"]
   I --> J["在庫引当・出荷<br/>送付状"]
   classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
@@ -316,7 +316,7 @@ flowchart LR
   end
   subgraph 管理["管理画面 (Firebase Hosting)"]
     ADM["CRM管理画面<br/>kjk-tadakayo-admin.web.app"]
-    PT["認定事業所ポータル<br/>/partner.html"]
+    PT["認定事業者ポータル<br/>/partner.html"]
   end
   subgraph BE["Cloud Functions (asia-northeast1)"]
     WH["webhook受信"]
@@ -348,7 +348,7 @@ erDiagram
   cases ||--o{ sessions : "伴走支援"
   cases ||--|| documentChecklists : "書類チェック"
   cases ||--|| subsidyApplications : "申請情報"
-  partners ||--o{ partnerOrders : "認定事業所の発注"
+  partners ||--o{ partnerOrders : "認定事業者の発注"
   products ||--o{ inventoryMovements : "在庫増減"
   partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
   shipments ||--|| receipts : "領収書の発行記録"
@@ -400,7 +400,7 @@ erDiagram
 | `documentChecklists / subsidyApplications` | 書類チェック・助成金申請情報 |
 | `products / inventoryMovements` | 商品マスタ・在庫増減ログ |
 | `purchaseOrders / shipments` | 発注（→AB Circle）・出荷（→事業所） |
-| `partners / partnerOrders` | 認定事業所の許可リスト・受注 |
+| `partners / partnerOrders` | 認定事業者の許可リスト・受注 |
 | `receipts` | 領収書の発行記録（docId=出荷ID・番号/発行日/金額/明細のスナップショット） |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定 |
 | `_counters` | 案件番号・発注/出荷番号の採番 |
@@ -425,7 +425,7 @@ sequenceDiagram
 ## §C5 認証・セキュリティ
 
 - 管理画面: **Googleログイン＋@tadakayo.jp 限定**（Firestoreルールで強制）。組織の Workspace 2段階認証で2要素を担保（M-3）
-- 認定事業所ポータル: Googleログイン＋**許可リスト**（partners）。自分の発注のみ閲覧
+- 認定事業者ポータル: Googleログイン＋**許可リスト**（partners）。自分の発注のみ閲覧
 - メール送信: **ドメイン全体委任（DWD）・キーレス**（鍵を保存せず都度署名）。スコープは `gmail.send` のみ
 - AI: **Vertex AI + SA認証**（裸APIキー不使用）
 - ログイン: `signInWithPopup`（rule02準拠・redirect不使用）。COOP `same-origin-allow-popups` を admin HTML ヘッダに設定
@@ -438,7 +438,7 @@ sequenceDiagram
 | Firebaseプロジェクト | `kjk-tadakayo` |
 | 公開LP | https://kjk.tadakayo.jp |
 | 管理画面 | https://kjk-tadakayo-admin.web.app |
-| 認定事業所ポータル | https://kjk-tadakayo-admin.web.app/partner.html |
+| 認定事業者ポータル | https://kjk-tadakayo-admin.web.app/partner.html |
 | リージョン | asia-northeast1（Vertex AI も H-5 で global → asia-northeast1 に変更済） |
 | デプロイ | Node20 / `firebase deploy`（rule05: preview channel → 検証 → 本番昇格） |
 | Hosting のデプロイ | `node scripts/deploy-hosting.mjs --target admin --channel <名前>` → 検証 → `--live`（REST APIを直接叩く。firebase CLI の認証が279側に入れ替わっても通る） |

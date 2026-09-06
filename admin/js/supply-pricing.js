@@ -25,7 +25,7 @@ export function unitPriceFor(p, qty){
   return Number(p.wholesale1 ?? p.wholesale2_10 ?? 0);
 }
 
-// 認定事業所卸の数量帯index（partnerPricing配列の並び: [1台, 2〜10台, 11〜30台, 31台〜]）
+// 認定事業者卸の数量帯index（partnerPricing配列の並び: [1台, 2〜10台, 11〜30台, 31台〜]）
 export function partnerTierIndex(qty){
   if(qty>=31) return 3;
   if(qty>=11) return 2;

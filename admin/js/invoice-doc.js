@@ -21,12 +21,12 @@ export function invoiceTotals(s){
   return { goodsExcl, shipExcl, sub, tax, total, credit, payable: total-credit };
 }
 
-// 請求先の表示名（直送＝認定事業所／直接＝事業所）。supply.js の billToKey と対象は同じ
+// 請求先の表示名（直送＝認定事業者／直接＝事業所）。supply.js の billToKey と対象は同じ
 export function billToNameOf(s){
   return (s&&s.shipType)==="dropship" ? ((s&&s.partnerName)||"") : ((s&&s.company)||(s&&s.officeName)||"");
 }
 
-// 請求書（見積書の赤系を踏襲・認定事業所向け／卸価格・税別→税込）
+// 請求書（見積書の赤系を踏襲・認定事業者向け／卸価格・税別→税込）
 // st = appConfig/settings ／ opts.issueDate で発行日を上書きできる（既定は当日＝従来の挙動）
 export function renderInvoiceHtml(s, st, opts){
   st = st || {}; opts = opts || {};

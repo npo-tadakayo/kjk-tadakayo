@@ -1246,7 +1246,7 @@ exports.sendSupplierOrder = onCall(
   }
 );
 
-// 認定事業所・事業所へのメール送付（未集金の催促など）。送信成功で出荷に送信履歴を記録
+// 認定事業者・事業所へのメール送付（未集金の催促など）。送信成功で出荷に送信履歴を記録
 exports.sendPartnerMail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {

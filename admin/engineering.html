@@ -54,7 +54,7 @@ flowchart TD
   F --> G["採択・入金"]
   G --> H["アフターフォロー / 完了"]
   B -.失注.-> X["失注"]
-  C2["認定事業所"] -->|B2B発注| I["受注"]
+  C2["認定事業者"] -->|B2B発注| I["受注"]
   I --> J["在庫引当・出荷<br/>送付状"]
   classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
@@ -70,7 +70,7 @@ flowchart LR
   end
   subgraph 管理["管理画面 (Firebase Hosting)"]
     ADM["CRM管理画面<br/>kjk-tadakayo-admin.web.app"]
-    PT["認定事業所ポータル<br/>/partner.html"]
+    PT["認定事業者ポータル<br/>/partner.html"]
   end
   subgraph BE["Cloud Functions (asia-northeast1)"]
     WH["webhook受信"]
@@ -102,7 +102,7 @@ erDiagram
   cases ||--o{ sessions : "伴走支援"
   cases ||--|| documentChecklists : "書類チェック"
   cases ||--|| subsidyApplications : "申請情報"
-  partners ||--o{ partnerOrders : "認定事業所の発注"
+  partners ||--o{ partnerOrders : "認定事業者の発注"
   products ||--o{ inventoryMovements : "在庫増減"
   cases {
     int caseNumber
@@ -130,8 +130,8 @@ erDiagram
           <tr><td><code>documentChecklists / subsidyApplications</code></td><td>書類チェック・助成金申請情報</td></tr>
           <tr><td><code>products / inventoryMovements</code></td><td>商品マスタ・在庫増減ログ</td></tr>
           <tr><td><code>purchaseOrders / shipments</code></td><td>発注（→AB Circle）・出荷（→事業所）</td></tr>
-          <tr><td><code>partners / partnerOrders</code></td><td>認定事業所の許可リスト・受注</td></tr>
-          <tr><td><code>appConfig/settings</code></td><td>Webhook URL・送信元・<strong>認定事業所卸価格(partnerPricing)・送料表(letterpackFee/yupackTable)・申請期限(subsidyDeadline)</strong>・振込先・印影などの設定</td></tr>
+          <tr><td><code>partners / partnerOrders</code></td><td>認定事業者の許可リスト・受注</td></tr>
+          <tr><td><code>appConfig/settings</code></td><td>Webhook URL・送信元・<strong>認定事業者卸価格(partnerPricing)・送料表(letterpackFee/yupackTable)・申請期限(subsidyDeadline)</strong>・振込先・印影などの設定</td></tr>
           <tr><td><code>_counters</code></td><td>案件番号・発注/出荷番号の採番</td></tr>
         </table>
 
@@ -155,7 +155,7 @@ sequenceDiagram
         <h2>§5 認証・セキュリティ</h2>
         <ul>
           <li>管理画面: <strong>Googleログイン＋@tadakayo.jp 限定</strong>（Firestoreルールで強制）</li>
-          <li>認定事業所ポータル: Googleログイン＋<strong>許可リスト</strong>（partners）。自分の発注のみ閲覧</li>
+          <li>認定事業者ポータル: Googleログイン＋<strong>許可リスト</strong>（partners）。自分の発注のみ閲覧</li>
           <li>メール送信: <strong>ドメイン全体委任（DWD）・キーレス</strong>（鍵を保存せず都度署名）。スコープは <code>gmail.send</code> のみ</li>
           <li>AI: <strong>Vertex AI + SA認証</strong>（裸APIキー不使用）</li>
         </ul>
@@ -169,16 +169,16 @@ sequenceDiagram
           <tr><td>リージョン</td><td>asia-northeast1（Vertexのみ global）</td></tr>
           <tr><td>デプロイ</td><td>Node20 / <code>firebase deploy</code></td></tr>
         </table>
-        <div class="callout warn"><strong>注意:</strong> Webhook URL・メール送信元・<strong>認定事業所への卸価格・送料表・申請期限</strong>は「設定」「料金・送料」画面（appConfig/settings）から変更できます。コード変更・再デプロイは不要です（出荷の単価・送料、請求書の送料計上はこの設定値を使用）。</div>
+        <div class="callout warn"><strong>注意:</strong> Webhook URL・メール送信元・<strong>認定事業者への卸価格・送料表・申請期限</strong>は「設定」「料金・送料」画面（appConfig/settings）から変更できます。コード変更・再デプロイは不要です（出荷の単価・送料、請求書の送料計上はこの設定値を使用）。</div>
 
         <h2>§7 供給・請求の単価と送料（2026-06 統合）</h2>
         <div class="label">RULE｜出荷の単価・送料の決まり方</div>
         <ul>
-          <li><strong>認定事業所への直送(dropship)</strong>: 単価は <code>appConfig.settings.partnerPricing</code>（台数帯別: 1台 / 2〜10台 / 11〜30台 / 31台〜）を使用。未設定時は商品マスタの卸へフォールバック。</li>
+          <li><strong>認定事業者への直送(dropship)</strong>: 単価は <code>appConfig.settings.partnerPricing</code>（台数帯別: 1台 / 2〜10台 / 11〜30台 / 31台〜）を使用。未設定時は商品マスタの卸へフォールバック。</li>
           <li><strong>事業所への直接出荷(direct)</strong>: 単価はエンドユーザー定価（<code>products.listPrice</code>）。</li>
           <li><strong>送料</strong>: 配送方法で自動計算 — レターパック=<code>letterpackFee × ⌈総台数/3⌉</code> ／ ゆうパック=<code>yupackTable[サイズ][地域]</code>（滋賀発）。<code>shipments.shippingFee/shippingMethod/shippingLabel</code> に保存。<strong>shippingFee は税抜で保存する</strong>（2026-07-28 統一。発注側の送料欄が元から「税別」だったのに揃えた）。料金表は税込の実費なので、自動入力時に <code>÷1.1</code> して税抜に換算する。請求書・領収書は税抜のまま明細に載せ、消費税は小計に対して1回だけ計算する（インボイス制度の端数処理）。</li>
           <li><strong>請求書</strong>: 送料(税込実費)を税抜換算し、商品と合算して10%課税（適格請求書の明細に1行計上）。</li>
-          <li><strong>直送発注の自動出荷（2段階）</strong>: 発注(<code>purchaseOrders</code>)で「直送する」指定時、発注確定で <code>shipments</code> を <code>status=draft</code> で自動生成（<code>shipType=dropship</code>・<code>fulfillment=direct</code>・単価=認定事業所卸・<strong>在庫は経由しない</strong>・発注に <code>shipmentId</code> 記録で二重防止）。出荷タブで draft →「出荷を確定」で <code>shipped</code>（在庫を動かさず）→ 請求書/送付状。請求先は常に認定事業所。</li>
+          <li><strong>直送発注の自動出荷（2段階）</strong>: 発注(<code>purchaseOrders</code>)で「直送する」指定時、発注確定で <code>shipments</code> を <code>status=draft</code> で自動生成（<code>shipType=dropship</code>・<code>fulfillment=direct</code>・単価=認定事業者卸・<strong>在庫は経由しない</strong>・発注に <code>shipmentId</code> 記録で二重防止）。出荷タブで draft →「出荷を確定」で <code>shipped</code>（在庫を動かさず）→ 請求書/送付状。請求先は常に認定事業者。</li>
           <li><strong>領収書（2026-07 追加）</strong>: 入金済み出荷（<code>status=paid</code>）に対し <code>supply-print.html?type=receipt</code> で発行。発行元・登録番号・角印は請求書と共通（印影は <code>settings.poSealImage</code>、無ければ <code>images/seal-tadakayo.png</code>）。明細は画面上で編集・行追加でき、各行の用途区分 A=カードリーダー / B=接続サポート等経費 / X=対象外(送料等) ごとに税抜/消費税/税込小計を自動再計算。税込5万円以上で収入印紙欄を表示。</li>
           <li><strong>入金（2026-07-30 部分入金対応）</strong>: <code>shipments.payments[] = {amount(税込), date, note, recordedBy, recordedAt}</code> に履歴で積む。合計は <code>paymentAmount</code> にも同期（旧フィールド互換）。旧形式（<code>paymentAmount</code>+<code>paidAt</code>）は1件の履歴として読み替え。<strong>残額&gt;0 は <code>invoiced</code> のまま（一部入金）／残額≤0 で <code>paid</code></strong>＋<code>paidAt</code>=最終入金日。入金の取消も同じ判定で自動的に巻き戻す。</li>
           <li><strong>返金・複数回入金（2026-08-01 追加）</strong>: <code>shipments.refunds[] = {amount,date,method,note,recordedBy,recordedAt}</code>。判定はすべて<strong>純入金 <code>netPaid = 入金合計 − 返金合計</code></strong>（<code>payRemain</code>・<code>overpayOf</code>・サマリー・受注タブ）。旧フィールドは <code>paymentAmount</code>=純額・<code>refundAmount</code>=返金合計で同期。過入金の返金で <code>creditBalanceOf</code> は0（次回請求へ回さない）。<strong>請求額まで返金すると <code>paid</code>→<code>invoiced</code> に戻る</strong>（取引取消は出荷削除＝在庫も戻す）。入金は <code>payments[]</code> に何回でも追記でき、入金と返金は日付順にマージして純入金の累計を表示・個別に取消可。二重入金は「満額×2」＝過入金として①充当②返金で解消。</li>

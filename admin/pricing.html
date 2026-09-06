@@ -30,21 +30,21 @@
     </aside>
     <main class="main-content">
       <div class="page-header"><h1 class="page-title">料金・送料設定</h1><button class="btn btn-primary" id="saveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i> 保存</button></div>
-      <p style="font-size:13px;color:var(--color-ink-muted);margin:-8px 0 16px">認定事業所への卸価格・送料（レターパック／ゆうパック）を管理します。<strong>発注（AB Circleからの仕入）の単価は供給管理の商品マスタで管理</strong>します（ここでは別管理）。</p>
+      <p style="font-size:13px;color:var(--color-ink-muted);margin:-8px 0 16px">認定事業者への卸価格・送料（レターパック／ゆうパック）を管理します。<strong>発注（AB Circleからの仕入）の単価は供給管理の商品マスタで管理</strong>します（ここでは別管理）。</p>
 
       <div class="card" id="loadingEl"><div class="card-body"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div></div>
 
       <div id="app" style="display:none">
-        <!-- 認定事業所 卸価格 -->
+        <!-- 認定事業者 卸価格 -->
         <div class="card" style="margin-bottom:16px">
-          <div class="card-header"><span style="font-weight:600;font-size:14px">認定事業所 卸価格（税別・数量帯別）</span>
+          <div class="card-header"><span style="font-weight:600;font-size:14px">認定事業者 卸価格（税別・数量帯別）</span>
             <button class="btn btn-secondary" id="setStdBtn" type="button" style="font-size:12px;padding:5px 10px"><i class="ti ti-wand"></i> 確定値をセット</button></div>
           <div class="card-body" style="overflow-x:auto">
             <table class="price-table" style="border-collapse:collapse">
               <thead><tr><th>商品</th><th>1台</th><th>2〜10台</th><th>11〜30台</th><th>31台〜</th></tr></thead>
               <tbody id="wholeRows"></tbody>
             </table>
-            <p style="font-size:11px;color:var(--color-ink-muted);margin:8px 0 0">上限価格＝1〜10台の値。大口（11台〜）はこれより割引し、仕入の数量割引分を認定事業所に還元する設計。</p>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:8px 0 0">上限価格＝1〜10台の値。大口（11台〜）はこれより割引し、仕入の数量割引分を認定事業者に還元する設計。</p>
           </div>
         </div>
 

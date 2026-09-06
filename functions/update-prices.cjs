@@ -42,7 +42,7 @@ const APPLY = process.argv.includes("--apply");
     }
   }
 
-  console.log("--- appConfig/settings.partnerPricing（認定事業所卸） ---");
+  console.log("--- appConfig/settings.partnerPricing（認定事業者卸） ---");
   const sref = db.collection("appConfig").doc("settings");
   const ss = await sref.get();
   const curPP = (ss.exists && ss.data().partnerPricing) || null;

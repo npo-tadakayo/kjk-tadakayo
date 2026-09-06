@@ -12,7 +12,7 @@
     ]},
     { title: "受発注・物品", items: [
       ["/supply.html", "ti-package", "供給管理"],
-      ["/partner-admin.html", "ti-certificate", "認定事業所"],
+      ["/partner-admin.html", "ti-certificate", "認定事業者"],
       ["/pricing.html", "ti-coin", "料金・送料"],
       ["/simulator.html", "ti-calculator", "売上シミュレーター"],
     ]},

@@ -29,8 +29,8 @@
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="inventory" role="tab"><i class="ti ti-building-warehouse" aria-hidden="true"></i> 在庫・商品</button>
         <button class="tab" data-tab="orders" role="tab"><i class="ti ti-shopping-cart" aria-hidden="true"></i> 発注（→AB Circle）</button>
-        <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→認定事業所・事業所）</button>
-        <button class="tab" data-tab="partnerorders" role="tab"><i class="ti ti-inbox" aria-hidden="true"></i> 受注（認定事業所）</button>
+        <button class="tab" data-tab="shipments" role="tab"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷（→認定事業者・事業所）</button>
+        <button class="tab" data-tab="partnerorders" role="tab"><i class="ti ti-inbox" aria-hidden="true"></i> 受注（認定事業者）</button>
         <button class="tab" data-tab="partners" role="tab"><i class="ti ti-users" aria-hidden="true"></i> パートナー管理</button>
       </div>
 
@@ -58,7 +58,7 @@
       <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金。認定事業所への卸と、事業所への直接販売の両方をここで扱います</span>
+          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金。認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
@@ -72,31 +72,31 @@
         </div></div>
       </div>
 
-      <!-- 受注（認定事業所から） -->
+      <!-- 受注（認定事業者から） -->
       <div class="tab-content" id="tab-partnerorders">
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業所ポータルからの発注と、メールで届いた発注ファイル（CSV／JSON）の取込</span>
+          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者ポータルからの発注と、メールで届いた発注ファイル（CSV／JSON）の取込</span>
           <button class="btn btn-primary" id="importOrderBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>発注ファイルを取り込む</button>
         </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>受注番号 / 受注日時</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>ステータス</th><th>請求・入金</th><th></th></tr></thead>
+          <table><thead><tr><th>受注番号 / 受注日時</th><th>認定事業者</th><th>送付先</th><th>内容</th><th>ステータス</th><th>請求・入金</th><th></th></tr></thead>
           <tbody id="poBody"></tbody></table>
-          <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業所からの受注はありません</p></div>
+          <div id="poEmpty" class="empty-state" style="display:none"><i class="ti ti-inbox" aria-hidden="true"></i><p>認定事業者からの受注はありません</p></div>
         </div></div>
       </div>
 
       <!-- パートナー管理 -->
       <div class="tab-content" id="tab-partners">
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業所の登録・連絡先・担当者管理（@tadakayo.jp 職員のみ）</span>
-          <button class="btn btn-primary" id="newPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>認定事業所を追加</button>
+          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者の登録・連絡先・担当者管理（@tadakayo.jp 職員のみ）</span>
+          <button class="btn btn-primary" id="newPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>認定事業者を追加</button>
         </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>認定事業所</th><th>連絡先</th><th>担当者</th><th>状態</th><th></th></tr></thead>
+          <table><thead><tr><th>認定事業者</th><th>連絡先</th><th>担当者</th><th>状態</th><th></th></tr></thead>
           <tbody id="partnersBody"></tbody></table>
-          <div id="partnersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>登録された認定事業所がありません</p></div>
+          <div id="partnersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>登録された認定事業者がありません</p></div>
         </div></div>
-        <p style="font-size:12px;color:var(--color-ink-muted);margin-top:8px">※ ポータルURL: <strong>https://kjk-tadakayo-admin.web.app/partner.html</strong>（認定事業所さまに案内）。ログインメールは認定事業所さま自身のGoogleアカウント。</p>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin-top:8px">※ ポータルURL: <strong>https://kjk-tadakayo-admin.web.app/partner.html</strong>（認定事業者さまに案内）。ログインメールは認定事業者さま自身のGoogleアカウント。</p>
       </div>
     </main>
   </div>
@@ -125,10 +125,10 @@
         <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px">
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;min-height:44px">
             <input type="checkbox" id="orderDropship" style="width:18px;height:18px;accent-color:var(--color-primary)">
-            <span><strong>認定事業所へ直送する</strong>（AB Circleから直送。確定時に出荷の下書きを自動作成・在庫は経由しません）</span>
+            <span><strong>認定事業者へ直送する</strong>（AB Circleから直送。確定時に出荷の下書きを自動作成・在庫は経由しません）</span>
           </label>
         </div>
-        <div class="form-group"><label class="form-label" for="orderPartnerSelect">請求先の認定事業所<span id="dropshipReq" style="color:red;display:none"> *</span></label>
+        <div class="form-group"><label class="form-label" for="orderPartnerSelect">請求先の認定事業者<span id="dropshipReq" style="color:red;display:none"> *</span></label>
           <select class="form-control" id="orderPartnerSelect"><option value="">（手入力 / 自社で受け取り）</option></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">直送時はここが請求先になります。選ぶと下の届け先に住所を自動入力します（エンド事業所へ送る場合は手入力で上書き）。</p></div>
         <div class="form-group"><label class="form-label" for="orderShipTo">届け先（AB Circleからの納品先）</label><textarea class="form-control" id="orderShipTo" rows="2" placeholder="〒000-0000&#10;住所　事業所名"></textarea></div>
@@ -144,7 +144,7 @@
 
   <!-- 出荷モーダル -->
   <div class="modal-overlay" id="shipModal" role="dialog" aria-modal="true" aria-label="新規出荷">
-    <div class="modal"><div class="modal-header"><h2 id="shipModalTitle">新規出荷（→認定事業所・事業所）</h2>
+    <div class="modal"><div class="modal-header"><h2 id="shipModalTitle">新規出荷（→認定事業者・事業所）</h2>
       <button class="btn btn-secondary" id="closeShipBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <div id="shipEditNote" class="callout" style="display:none;font-size:12px;margin:0 0 12px;padding:10px 12px;border-left:3px solid #3a6e9e;background:var(--color-bg-subtle,#faf7f2)"></div>
@@ -152,9 +152,9 @@
           <div class="form-group"><label class="form-label" for="shipType">出荷種別 <span style="color:red">*</span></label>
             <select class="form-control" id="shipType">
               <option value="direct">事業所へ（タダカヨの在庫から発送・その事業所に請求）</option>
-              <option value="dropship">認定事業所へ（AB Circleから直送・認定事業所に請求）</option>
+              <option value="dropship">認定事業者へ（AB Circleから直送・認定事業者に請求）</option>
             </select></div>
-          <div class="form-group" id="shipPartnerWrap" style="display:none"><label class="form-label" for="shipPartner">請求先（認定事業所）<span style="color:red">*</span></label>
+          <div class="form-group" id="shipPartnerWrap" style="display:none"><label class="form-label" for="shipPartner">請求先（認定事業者）<span style="color:red">*</span></label>
             <select class="form-control" id="shipPartner"></select></div>
         </div>
         <div class="form-row">
@@ -216,16 +216,16 @@
             <div class="form-group"><label class="form-label" for="stcType">変更後の出荷種別 <span style="color:red">*</span></label>
               <select class="form-control" id="stcType">
                 <option value="direct">タダカヨから直接（自社実施）</option>
-                <option value="dropship">認定事業所からの依頼（直送）</option>
+                <option value="dropship">認定事業者からの依頼（直送）</option>
               </select></div>
-            <div class="form-group" id="stcPartnerWrap" style="display:none"><label class="form-label" for="stcPartner">請求先（認定事業所）<span style="color:red">*</span></label>
+            <div class="form-group" id="stcPartnerWrap" style="display:none"><label class="form-label" for="stcPartner">請求先（認定事業者）<span style="color:red">*</span></label>
               <select class="form-control" id="stcPartner"></select></div>
           </div>
           <label style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1px solid var(--color-line);border-radius:8px;cursor:pointer;margin-bottom:12px">
             <input id="stcReprice" type="checkbox" checked style="width:18px;height:18px;margin-top:2px;flex:0 0 auto">
             <span>
               <span style="font-weight:600">単価を変更後の種別の価格で入れ直す</span>
-              <span style="display:block;font-size:12px;color:var(--color-ink-muted);margin-top:2px">直送＝認定事業所卸（数量帯別）／直接＝エンドユーザー定価。外すと今の単価をそのまま残します。</span>
+              <span style="display:block;font-size:12px;color:var(--color-ink-muted);margin-top:2px">直送＝認定事業者卸（数量帯別）／直接＝エンドユーザー定価。外すと今の単価をそのまま残します。</span>
             </span>
           </label>
           <div class="table-wrap">
@@ -249,14 +249,14 @@
     </div>
   </div>
 
-  <!-- 認定事業所 追加/編集モーダル -->
-  <div class="modal-overlay" id="partnerModal" role="dialog" aria-modal="true" aria-label="認定事業所">
-    <div class="modal"><div class="modal-header"><h2 id="partnerModalTitle">認定事業所を追加</h2>
+  <!-- 認定事業者 追加/編集モーダル -->
+  <div class="modal-overlay" id="partnerModal" role="dialog" aria-modal="true" aria-label="認定事業者">
+    <div class="modal"><div class="modal-header"><h2 id="partnerModalTitle">認定事業者を追加</h2>
       <button class="btn btn-secondary" id="closePartnerBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="prEmail">ログインメール（Googleアカウント）<span style="color:red">*</span></label><input class="form-control" id="prEmail" type="email" placeholder="partner@example.com"></div>
-          <div class="form-group"><label class="form-label" for="prName">認定事業所名 <span style="color:red">*</span></label><input class="form-control" id="prName" type="text"></div>
+          <div class="form-group"><label class="form-label" for="prName">認定事業者名 <span style="color:red">*</span></label><input class="form-control" id="prName" type="text"></div>
         </div>
         <div class="form-group"><label class="form-label" for="prCorp">法人名</label><input class="form-control" id="prCorp" type="text"></div>
         <div class="form-row">
@@ -436,7 +436,7 @@
     </div>
   </div>
 
-  <!-- 発注方法のご案内メール（認定事業所へ・送信前に内容を確認して編集できる） -->
+  <!-- 発注方法のご案内メール（認定事業者へ・送信前に内容を確認して編集できる） -->
   <div class="modal-overlay" id="guideModal" role="dialog" aria-modal="true" aria-label="発注方法のご案内メール">
     <div class="modal" style="max-width:720px">
       <div class="modal-header"><h2>発注方法のご案内メール</h2>
@@ -500,7 +500,7 @@
         <button class="btn btn-secondary" id="closeImportBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <p style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px">
-          認定事業所さまからメールで届いた <strong>発注テンプレート.csv</strong> / <strong>発注スキーマサンプル.json</strong> をそのまま読み込めます。
+          認定事業者さまからメールで届いた <strong>発注テンプレート.csv</strong> / <strong>発注スキーマサンプル.json</strong> をそのまま読み込めます。
           同じ <code>partner_order_no</code> の行は1件の受注にまとまります。複数ファイルを一度に選べます。
         </p>
         <div class="form-group">
@@ -512,7 +512,7 @@
         <div id="importPreview" style="display:none">
           <div class="label" style="font-size:12px;font-weight:600;margin-bottom:6px">取り込む内容</div>
           <div class="table-wrap"><table>
-            <thead><tr><th>発注番号</th><th>認定事業所</th><th>送付先</th><th>内容</th><th>希望納期</th></tr></thead>
+            <thead><tr><th>発注番号</th><th>認定事業者</th><th>送付先</th><th>内容</th><th>希望納期</th></tr></thead>
             <tbody id="importBody"></tbody>
           </table></div>
         </div>

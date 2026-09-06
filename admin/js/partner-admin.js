@@ -43,7 +43,7 @@ function render(){
 function openEdit(email){
   const p = email ? partners.find(x=>x.email===email) : null;
   editingEmail = email || null;
-  $("editTitle").textContent = email ? "認定事業所の編集" : "認定事業所の登録";
+  $("editTitle").textContent = email ? "認定事業者の編集" : "認定事業者の登録";
   $("fEmail").value = p?.email || ""; $("fEmail").readOnly = !!email;
   $("fCompany").value = p?.company || p?.partnerName || "";
   $("fOffice").value = p?.office || "";
@@ -85,7 +85,7 @@ function openDoc(type, email){
   const label = type==="agreement" ? "協定書" : "説明資料";
   $("docTitle").textContent = `${label} — ${p.company||p.partnerName||p.email}`;
   $("docPreview").innerHTML = html;
-  const safe = (p.company||p.partnerName||"認定事業所").replace(/[\\/:*?"<>|\s]/g,"_");
+  const safe = (p.company||p.partnerName||"認定事業者").replace(/[\\/:*?"<>|\s]/g,"_");
   currentDoc = { filename: `${label}_${safe}.pdf` };
   $("docModal").classList.add("open");
 }

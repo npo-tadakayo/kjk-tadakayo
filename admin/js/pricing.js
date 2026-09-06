@@ -10,7 +10,7 @@ const $ = (id)=>document.getElementById(id);
 const yen = (n)=>"¥"+Math.round(Number(n)||0).toLocaleString("ja-JP");
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 
-// 商品（認定事業所 卸価格・確定値）税別・数量帯: 1台 / 2〜10台 / 11〜30台 / 31台〜
+// 商品（認定事業者 卸価格・確定値）税別・数量帯: 1台 / 2〜10台 / 11〜30台 / 31台〜
 // 卸は「パススルーではない」（2026-06-13 次田 確定）。タダカヨは AB Circle 仕入(products.wholesale)と
 // この卸価格の差益を一定確保する（卸益 概ね BT¥480 / USB¥510）。納品台数で卸価格が変わるテーブル。
 // 正本: 介護情報基盤伴走支援/04_認定基準/カードリーダー価格表・送料規定.md §2 / モデル料金表・利益シミュレーション.md

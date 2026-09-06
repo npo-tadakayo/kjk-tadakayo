@@ -468,7 +468,7 @@ const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛
 // 今までメールで送れるのは経理への報告だけで、請求先には印刷して渡すしかなかった。
 // ・PDFは経理報告と同じ html2pdf（画面の見た目のまま添付される）
 // ・送信は sendPartnerMail（添付対応版）。出荷に invoiceMailedAt / receiptMailedAt が残る
-// ・宛先の初期値: 認定事業所への請求なら partnerEmail（ドキュメントIDがメールアドレス）
+// ・宛先の初期値: 認定事業者への請求なら partnerEmail（ドキュメントIDがメールアドレス）
 const MAIL_DOC_LABEL = { invoice: "請求書", receipt: "領収書" };
 
 function mailDocTemplate(kind, s, st){
@@ -608,7 +608,7 @@ onAuthStateChanged(auth, async (user)=>{
     document.title = (TITLES[type]||"")+(d.poNumber||d.soNumber||"");
 
     if(type==="letterpack" || type==="plabel"){
-      // plabel=認定事業所宛（partners/{pid}）／letterpack=出荷のお届け先
+      // plabel=認定事業者宛（partners/{pid}）／letterpack=出荷のお届け先
       let toObj = d;
       if(type==="plabel"){
         toObj = { company:d.corpName||"", officeName:d.partnerName||"", postal:d.postal||"", address:d.address||"", phone:d.phone||"" };

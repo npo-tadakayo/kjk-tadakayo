@@ -185,7 +185,7 @@ function refreshOrderShipFee(fromQty){
 }
 function applyShipRegion(){ refreshOrderShipFee(false); }
 function onOrderQtyInput(){ updateOrderTotal(); refreshOrderShipFee(true); }
-// 認定事業所への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
+// 認定事業者への卸単価（料金・送料設定 appConfig.partnerPricing が正＝AB Circle仕入とは別管理）。
 // 未設定時は商品マスタの数量帯別卸（unitPriceFor）にフォールバック＝従来挙動を維持。
 function partnerPriceFor(p, qty){
   if(!p) return 0;
@@ -242,7 +242,7 @@ function openOrder(o){
   dchk.checked = !!(o&&o.dropship);
   if(dreq) dreq.style.display = dchk.checked?"":"none";
   dchk.onchange=()=>{ if(dreq) dreq.style.display = dchk.checked?"":"none"; };
-  // 認定事業所セレクト（直送時は請求先。選ぶと届け先住所を自動入力・手入力修正も可）
+  // 認定事業者セレクト（直送時は請求先。選ぶと届け先住所を自動入力・手入力修正も可）
   const sel=document.getElementById("orderPartnerSelect");
   sel.innerHTML = '<option value="">（手入力 / 自社で受け取り）</option>'+
     activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
@@ -270,7 +270,7 @@ async function saveOrder(){
   const items=collectItems("orderItems");
   if(!items.length){ alert("数量を入力してください"); return; }
   if(document.getElementById("orderDropship").checked && !document.getElementById("orderPartnerSelect").value){
-    alert("直送する場合は請求先の認定事業所を選択してください"); return; }
+    alert("直送する場合は請求先の認定事業者を選択してください"); return; }
   const btn=document.getElementById("saveOrderBtn"); btn.disabled=true;
   try{
     const total=items.reduce((s,i)=>s+i.qty*i.unitPrice,0);
@@ -417,7 +417,7 @@ async function deleteOrder(o){
   catch(e){ alert(`削除失敗: ${e.message}`); }
 }
 
-// 直送発注 → 出荷の下書き(draft)を自動生成（在庫は経由しない＝増減なし）。請求先=認定事業所・単価=認定事業所卸
+// 直送発注 → 出荷の下書き(draft)を自動生成（在庫は経由しない＝増減なし）。請求先=認定事業者・単価=認定事業者卸
 async function createShipmentDraftFromPO(o){
   const partner = activePartners.find(p=>p._id===o.dropshipPartnerEmail) || {};
   const items=(o.items||[]).map(it=>{ const p=products.find(x=>x.id===it.sku)||{};
@@ -565,8 +565,8 @@ function shipIsLocked(s){ return s && (s.status==="invoiced" || s.status==="paid
 function resolveShipItems(){
   // 修正時に「新しく足した品番」へ入れる単価の基準。
   // 古い出荷には shipType:"stock" という今の選択肢に無い値が入っている（SH-2026-0001）。
-  // それらも請求先は認定事業所なので、shipType の文字だけで見ずに
-  // 「認定事業所に請求する出荷か（partnerEmail があるか）」で卸価格を選ぶ。
+  // それらも請求先は認定事業者なので、shipType の文字だけで見ずに
+  // 「認定事業者に請求する出荷か（partnerEmail があるか）」で卸価格を選ぶ。
   const shipType = editingShip
     ? ((editingShip.shipType==="dropship" || editingShip.partnerEmail) ? "dropship" : "direct")
     : document.getElementById("shipType").value;
@@ -616,7 +616,7 @@ function openShip(existing){
   const locked = shipIsLocked(s);
 
   if(!s){
-    title.textContent="新規出荷（→認定事業所・事業所）";
+    title.textContent="新規出荷（→認定事業者・事業所）";
     label.textContent="出荷を登録";
     note.style.display="none";
     document.getElementById("shipDate").value=today();
@@ -661,7 +661,7 @@ function openShip(existing){
       : `もともと入っている品番の単価は、登録したときのまま変えません（新しく足した品番だけ今の単価が入ります）。<br>`
         + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「種別変更」</strong>から行ってください。`
         + (shipUsedStock(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。` 
-                            : `<br>この出荷は直送（ABサークルから認定事業所へ直接）のため、数量を変えても自社在庫は動きません。`);
+                            : `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`);
   }
 
   // 金額に関わる欄のロック
@@ -708,7 +708,7 @@ async function saveShip(){
   if(!office){ alert("事業所名を入力してください"); return; }
   const shipType=document.getElementById("shipType").value;
   const partnerEmail = shipType==="dropship" ? document.getElementById("shipPartner").value : "";
-  if(shipType==="dropship" && !partnerEmail){ alert("直送の場合は請求先（認定事業所）を選択してください"); return; }
+  if(shipType==="dropship" && !partnerEmail){ alert("直送の場合は請求先（認定事業者）を選択してください"); return; }
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
@@ -864,7 +864,7 @@ async function prefillShipFromCase(caseId){
   }catch(e){ alert(`取り込み失敗: ${e.message}`); }
 }
 
-// 直送（ABサークル → 認定事業所）の出荷は、そもそも自社在庫を引いていない。
+// 直送（ABサークル → 認定事業者）の出荷は、そもそも自社在庫を引いていない。
 // 削除のときに在庫を戻すと、実在しない在庫が増えてしまう（直送1件で最大200台の水増しになる）。
 // 在庫を引いたかどうかは shipType ではなく fulfillment で決まる（同ファイル「出荷種別の変更」の注記を参照）。
 //   fulfillment:"direct"    … 直送発注から自動生成。在庫を通らない → 戻さない
@@ -876,7 +876,7 @@ async function deleteShipment(s){
   const restores = shipUsedStock(s);
   const msg = restores
     ? `出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`
-    : `出荷 ${s.soNumber}（${s.officeName}）を削除します。\nこれは直送（ABサークルから認定事業所へ直接）の出荷なので、`
+    : `出荷 ${s.soNumber}（${s.officeName}）を削除します。\nこれは直送（ABサークルから認定事業者へ直接）の出荷なので、`
       + `自社在庫は動きません。よろしいですか？`;
   if(!confirm(msg)) return false;
   try{
@@ -922,7 +922,7 @@ function payRemain(s){ return Math.max(0, billableIncl(s)-netPaid(s)); }
 // 過入金＝請求額（充当後）より多く入った分（返金済みの分は除く）。うち未充当の残りが次回に回せる金額
 function overpayOf(s){ return Math.max(0, netPaid(s)-billableIncl(s)); }
 function creditBalanceOf(s){ return Math.max(0, overpayOf(s)-(Number(s.overpayUsed)||0)); }
-// 請求先の同一判定キー（直送＝認定事業所のメール／直接＝事業所名）
+// 請求先の同一判定キー（直送＝認定事業者のメール／直接＝事業所名）
 function billToKey(s){
   return s.shipType==="dropship" ? (s.partnerEmail||s.partnerName||"") : (s.company||s.officeName||"");
 }
@@ -961,8 +961,8 @@ function overdueDays(s){
 }
 // 未集金＝請求済（invoiced）で残額があるもの。発送済で未請求のものは「未請求」として別に数える
 function isUnpaid(s){ return s.status==="invoiced" && payRemain(s)>0; }
-// バッジ表示用。認定事業所に請求する出荷かどうか。
-// 古い出荷には今の選択肢に無い shipType:"stock" が入っていて、それも請求先は認定事業所なので
+// バッジ表示用。認定事業者に請求する出荷かどうか。
+// 古い出荷には今の選択肢に無い shipType:"stock" が入っていて、それも請求先は認定事業者なので
 // partnerEmail の有無まで見る。※ 請求先名そのもの（billToOf）の解釈は従来のまま変えない。
 function billsPartner(s){ return s.shipType==="dropship" || !!s.partnerEmail; }
 function billToOf(s){ return s.shipType==="dropship" ? (s.partnerName||s.partnerEmail||"") : (s.company||s.officeName||""); }
@@ -1005,7 +1005,7 @@ function renderShipments(ships){
     //   請求先: shipType（ただし古い "stock" は partnerEmail の有無で判断する）
     //   発送元: fulfillment（自社在庫を通ったか＝在庫を戻すかどうかの根拠でもある）
     const typeBadge = (billsPartner(s)
-        ? `<span class="badge badge-6">認定事業所へ請求</span>`
+        ? `<span class="badge badge-6">認定事業者へ請求</span>`
         : `<span class="badge badge-2">事業所へ請求</span>`)
       + (shipUsedStock(s)
         ? ` <span class="badge badge-2">自社在庫から発送</span>`
@@ -1115,7 +1115,7 @@ function renderShipments(ships){
 //   ・直送発注から自動生成（createShipmentDraftFromPO / fulfillment:"direct"）＝ 在庫を経由しない
 //   したがって種別を切り替えても在庫の実態は変わらない＝在庫は動かさない（画面にもその旨を明示する）。
 // 変わるのは「請求先」と「単価の基準」だけなので、そこだけをプレビュー付きで変更する。
-const SHIP_TYPE_LABEL = { direct:"事業所へ（タダカヨの在庫から発送・その事業所に請求）", dropship:"認定事業所へ（AB Circleから直送・認定事業所に請求）" };
+const SHIP_TYPE_LABEL = { direct:"事業所へ（タダカヨの在庫から発送・その事業所に請求）", dropship:"認定事業者へ（AB Circleから直送・認定事業者に請求）" };
 let typeChangingShip = null;
 // 変更後の種別に合わせて単価を入れ直した明細を返す（reprice=false なら今の単価のまま）
 function repricedShipItems(s, newType, reprice){
@@ -1180,7 +1180,7 @@ async function doChangeShipType(){
   const newType=stcSelectedType();
   const partnerId = newType==="dropship" ? document.getElementById("stcPartner").value : "";
   if(newType==="dropship" && !partnerId){
-    err.textContent="直送の場合は請求先（認定事業所）を選択してください"; err.style.display="block"; return; }
+    err.textContent="直送の場合は請求先（認定事業者）を選択してください"; err.style.display="block"; return; }
   const partner=activePartners.find(p=>p._id===partnerId)||{};
   const items=repricedShipItems(s,newType,document.getElementById("stcReprice").checked);
   const before=shipTotalIncl(s), after=shipTotalIncl({...s, items});
@@ -1206,7 +1206,7 @@ async function doChangeShipType(){
   finally{ btn.disabled=false; }
 }
 
-// ===== 未集金一覧（認定事業所・事業所ごとの残額と最長超過日数）=====
+// ===== 未集金一覧（認定事業者・事業所ごとの残額と最長超過日数）=====
 function renderReceivables(unpaid, active){
   const box=document.getElementById("arSummary");
   if(!box) return;
@@ -1702,7 +1702,7 @@ async function doInvoiceReport(){
   }finally{ btn.disabled=false; btn.innerHTML=orig; }
 }
 
-// ===== 受注（認定事業所から）=====
+// ===== 受注（認定事業者から）=====
 const PO_STATUS = { received:"受付済", confirmed:"受注確定", shipped:"出荷済", canceled:"キャンセル" };
 function fmtDT(ts){ if(!ts) return "—"; const d=ts.toDate?ts.toDate():new Date(ts); return d.toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"});}
 function renderPartnerOrders(orders){
@@ -1743,7 +1743,7 @@ function renderPartnerOrders(orders){
 }
 
 /* ===== 発注ファイル（CSV/JSON）の取込 — 仕様書§3 =====
-   認定事業所ポータルを使わず、メールでファイルを送ってくる相手の受け口。
+   認定事業者ポータルを使わず、メールでファイルを送ってくる相手の受け口。
    パースと検証は partner-order-import.js（副作用なし・単体テスト済み）に分離している。 */
 let importCandidates = [];
 
@@ -1805,7 +1805,7 @@ async function runImport(){
   btn.disabled = true;
   try{
     for(const o of importCandidates){
-      // 認定事業所名は partners マスタから解決（メール一致・無ければファイルの値のまま）
+      // 認定事業者名は partners マスタから解決（メール一致・無ければファイルの値のまま）
       const partner = activePartners.find(p=>p._id===o.partnerEmail) || {};
       const soNumber = seqFmt("SO", await nextSeq("partnerOrders"));
       await addDoc(collection(db,"partnerOrders"),{
@@ -1827,7 +1827,7 @@ async function runImport(){
   }finally{ btn.disabled = false; }
 }
 
-// 受注（認定事業所）→ 出荷（直送）へ変換
+// 受注（認定事業者）→ 出荷（直送）へ変換
 async function shipFromOrder(o){
   const sh=o.shipping||{};
   const items=(o.items||[]).map(it=>{
@@ -1912,7 +1912,7 @@ let editingPartnerId=null;
 function openPartnerModal(p){
   p=p||{};
   editingPartnerId = p._id || null;
-  document.getElementById("partnerModalTitle").textContent = editingPartnerId?"認定事業所を編集":"認定事業所を追加";
+  document.getElementById("partnerModalTitle").textContent = editingPartnerId?"認定事業者を編集":"認定事業者を追加";
   document.getElementById("prEmail").value = p._id||"";
   document.getElementById("prEmail").disabled = !!editingPartnerId; // メール=IDは編集不可
   document.getElementById("prName").value = p.partnerName||"";
@@ -1931,10 +1931,10 @@ async function savePartner(){
   const name=document.getElementById("prName").value.trim();
   const err=document.getElementById("prError"); err.style.display="none";
   if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ err.textContent="正しいログインメールを入力してください"; err.style.display="block"; return; }
-  if(!name){ err.textContent="認定事業所名を入力してください"; err.style.display="block"; return; }
+  if(!name){ err.textContent="認定事業者名を入力してください"; err.style.display="block"; return; }
   if(!editingPartnerId && partnersCache.some(p=>p._id===email)){ err.textContent="このメールは既に登録されています"; err.style.display="block"; return; }
   if(!editingPartnerId && email.endsWith("@tadakayo.jp") &&
-     !confirm("@tadakayo.jp は職員アカウントです。認定事業所として登録しますか？")) return;
+     !confirm("@tadakayo.jp は職員アカウントです。認定事業者として登録しますか？")) return;
   const contacts=Array.from(document.querySelectorAll("#prContacts .contact-row")).map(r=>({
     name:r.querySelector(".c-name").value.trim(), phone:r.querySelector(".c-phone").value.trim(), email:r.querySelector(".c-email").value.trim(),
   })).filter(c=>c.name||c.phone||c.email);
@@ -1954,7 +1954,7 @@ async function savePartner(){
   toast(`${name} を保存しました`);
 }
 
-// ===== 発注方法のご案内メール（認定事業所へ・催促メールと同じGmail基盤）=====
+// ===== 発注方法のご案内メール（認定事業者へ・催促メールと同じGmail基盤）=====
 const PORTAL_URL = "https://kjk-tadakayo-admin.web.app/partner";
 const ORDER_TEMPLATE_URL = "https://kjk.tadakayo.jp/発注テンプレート.csv";
 const DEFAULT_GUIDE_SUBJECT = "【タダカヨ】カードリーダーのご発注方法のご案内（{{事業所名}}）";
@@ -2092,7 +2092,7 @@ onAuthStateChanged(auth, async (user)=>{
     renderShipments(shipments);
     if(partnerOrdersCache.length) renderPartnerOrders(partnerOrdersCache);
   });
-  // 受注（認定事業所から）
+  // 受注（認定事業者から）
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
     partnerOrdersCache=snap.docs.map(d=>({_id:d.id,...d.data()}));
     renderPartnerOrders(partnerOrdersCache);

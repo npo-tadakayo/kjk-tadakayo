@@ -99,7 +99,7 @@ function renderHistory(orders){
 
 function startApp(){
   show("appView");
-  const mt=document.querySelector(".mh-title"); if(mt) mt.textContent="認定事業所ポータル"; // モバイルヘッダーのタイトル
+  const mt=document.querySelector(".mh-title"); if(mt) mt.textContent="認定事業者ポータル"; // モバイルヘッダーのタイトル
   $("partnerInfo").textContent = `${me.partnerName||""}（${me.email}）`;
   renderItemInputs();
   $("submitOrderBtn").addEventListener("click", submitOrder);

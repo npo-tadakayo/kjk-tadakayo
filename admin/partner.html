@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>認定事業所ポータル — タダカヨ介護情報基盤伴走支援</title>
+  <title>認定事業者ポータル — タダカヨ介護情報基盤伴走支援</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
@@ -16,8 +16,8 @@
 <body>
   <!-- ログイン前 -->
   <div id="loginView" style="min-height:100vh;display:none;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:24px;text-align:center">
-    <div style="font-family:'Noto Serif JP',serif;font-size:22px;color:var(--color-success)">認定事業所ポータル</div>
-    <div style="font-size:13px;color:var(--color-ink-muted);max-width:360px">タダカヨ 介護情報基盤伴走支援事業<br>パートナー認定事業所さま専用の発注ページです</div>
+    <div style="font-family:'Noto Serif JP',serif;font-size:22px;color:var(--color-success)">認定事業者ポータル</div>
+    <div style="font-size:13px;color:var(--color-ink-muted);max-width:360px">タダカヨ 介護情報基盤伴走支援事業<br>パートナー認定事業者さま専用の発注ページです</div>
     <button class="btn btn-primary" id="loginBtn" type="button" style="height:48px"><i class="ti ti-brand-google" aria-hidden="true"></i> Googleでログイン</button>
     <div id="loginError" style="font-size:13px;color:var(--color-danger);display:none"></div>
   </div>
@@ -26,7 +26,7 @@
   <div id="denyView" style="min-height:100vh;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;padding:24px;text-align:center">
     <i class="ti ti-lock" style="font-size:40px;color:var(--color-ink-light)" aria-hidden="true"></i>
     <div style="font-size:15px;font-weight:600">アクセス権限がありません</div>
-    <div style="font-size:13px;color:var(--color-ink-muted);max-width:380px">このアカウント（<span id="denyEmail"></span>）は認定事業所として登録されていません。タダカヨ事務局（kjk-staff@tadakayo.jp）へお問い合わせください。</div>
+    <div style="font-size:13px;color:var(--color-ink-muted);max-width:380px">このアカウント（<span id="denyEmail"></span>）は認定事業者として登録されていません。タダカヨ事務局（kjk-staff@tadakayo.jp）へお問い合わせください。</div>
     <button class="btn btn-secondary" id="denyLogout" type="button">別のアカウントでログイン</button>
   </div>
 
@@ -34,7 +34,7 @@
   <div id="appView" class="layout" style="display:none">
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="app-name">認定事業所ポータル</div>
+        <div class="app-name">認定事業者ポータル</div>
         <div class="app-sub">介護情報基盤伴走支援</div>
       </div>
       <nav class="sidebar-nav">
