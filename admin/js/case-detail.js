@@ -15,6 +15,7 @@ import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, to
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
+import { initQuoteCard } from "/js/quote-admin.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -1260,6 +1261,14 @@ onAuthStateChanged(auth, async (user) => {
     sendMail: (payload) => sendCaseEmailFn(payload),
     toast: showToast,
   });
+  // 見積もりカード（対応記録タブの先頭）。事業所側の見積もりツールで作成された quotes を表示・再送
+  initQuoteCard({
+    db, caseId,
+    getCase: () => currentCase,
+    toast: showToast,
+    userName: currentUser?.displayName || currentUser?.email || "",
+    functions,
+  }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
   renderCaseActions();

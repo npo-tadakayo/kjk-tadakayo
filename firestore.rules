@@ -88,6 +88,21 @@ service cloud.firestore {
         );
     }
 
+    // 問い合わせ→見積もり→申し込みを同じ事業所として繋ぐ継続トークン（2026-09-06）。
+    // ドキュメントIDが128bit乱数。URLを知っている本人だけが get できる。書き込みは Functions（Admin SDK）のみ。
+    match /leadTokens/{token} {
+      allow get: if true;
+      allow list: if isRegistered();
+      allow write: if false;
+    }
+
+    // 見積もり（版を重ねる記録）。閲覧は登録スタッフ、作成・改版は Functions が行う。
+    // スタッフが直接直すのは status などの軽微な項目に限る想定（editor）。
+    match /quotes/{quoteId} {
+      allow read: if isRegistered();
+      allow write: if isEditor();
+    }
+
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     match /{document=**} {
       allow read: if isRegistered();

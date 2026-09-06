@@ -609,6 +609,11 @@
   <!-- ======== フォームパネル ======== -->
   <div class="form-panel" id="formPanel">
 
+    <div id="leadBanner" style="display:none;background:#e8f5e9;border:1px solid #a5d6a7;color:#1b5e20;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:12px;">
+      <i class="ti ti-circle-check" aria-hidden="true"></i>
+      お問い合わせの内容を引き継ぎました。事業所さま情報は入力済みです（必要なら直せます）。カードリーダーの構成を選ぶと、お見積書をその場で作成し、メールでもお送りします。
+    </div>
+    <div id="quoteMailNote" style="display:none;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:12px;" aria-live="polite"></div>
     <div class="form-sec">
       <div class="form-sec-title">事業所さま情報（*は必須）</div>
       <div class="form-group">
@@ -827,6 +832,14 @@
           </div>
         </div>
         <div class="qty-note" style="margin-top:3px;">PC・有線接続向け</div>
+        <div style="margin-top:8px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">USBの差込口の形（あとから変更できます）</div>
+          <div id="usbConnectorGroup" style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
+            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="" checked> あとで決める</label>
+            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="A"> Type-A（四角い口）</label>
+            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="C"> Type-C（小さい楕円）</label>
+          </div>
+        </div>
       </div>
 
       <div style="background:var(--neutral);padding:10px 12px;border-radius:6px;font-size:12px;margin-top:4px;line-height:1.8;">
@@ -984,6 +997,8 @@
 <!-- Firebase App Check（M-1 フォーム保護 / reCAPTCHA Enterprise・観察モード対応） -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
+<script src="js/estimate-pricing.js"></script>
+<script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
     try {
@@ -1018,17 +1033,10 @@
 
 <script>
   /* ──────── 定数（すべて税込価格） ──────── */
-  const PLANS = {
-    houmon: { label: '訪問・通所・短期滞在系（居宅介護支援を含む）', maxQty: 3, limit: 64000 },
-    kyojyu: { label: '居住・入所系',                                  maxQty: 2, limit: 55000 },
-    other:  { label: 'その他',                                        maxQty: 1, limit: 42000 },
-  };
-  const BT_LABEL  = 'AB Circle CIR415A カードリーダー（Bluetooth）';
-  const USB_LABEL = 'AB Circle CIR315A カードリーダー（USB-A/C）';
-  const BT_PRICE  = 14500;  // 税込
-  const USB_PRICE = 6500;   // 税込
-  // 伴走支援費（税込・補助対象台数別）
-  const ACCOMPANY_FEE = { 1: 60000, 2: 55000, 3: 50000 };
+  // 価格ロジックは js/estimate-pricing.js（正本は functions/estimate-pricing.js）。
+  // サーバ（Cloud Functions）も同じファイルで金額を再計算するので、ここで数字を直接書かない。
+  const { PLANS, BT_LABEL, USB_LABEL, BT_PRICE, USB_PRICE, ACCOMPANY_FEE } = window.EstimatePricing;
+  const computeAmounts = window.EstimatePricing.computeAmounts;
 
   // 郵便番号から都道府県・市町村・町域を自動入力（zipcloud・無料/APIキー不要）。
   // 自動入力に失敗しても手入力の邪魔をしないよう、失敗は握りつぶす。
@@ -1093,6 +1101,46 @@
 
   let estNo = '';
   let webhookSent = false; // 連絡先Webhookの二重送信防止フラグ
+  let leadToken = null;    // LP問い合わせから引き継いだ継続トークン（?t=）
+  let quoteInfo = null;    // サーバが返した見積もり情報 { quoteId, estNo, quoteToken, validUntil, caseNumber }
+  const SEND_QUOTE_PDF_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/sendQuotePdf';
+  const LEAD_TOKEN_URL = 'https://firestore.googleapis.com/v1/projects/kjk-tadakayo/databases/(default)/documents/leadTokens/';
+
+  // ?t=トークン があれば、問い合わせ時の入力を引き継ぐ（Firestore ルールで leadTokens は get のみ公開）
+  async function loadLeadToken() {
+    const t = new URLSearchParams(location.search).get('t') || '';
+    if (!/^[0-9a-f]{32}$/.test(t)) return;
+    try {
+      const res = await fetch(LEAD_TOKEN_URL + t);
+      if (!res.ok) return;
+      const doc = await res.json();
+      const f = doc.fields || {};
+      const exp = f.expiresAt && f.expiresAt.timestampValue ? Date.parse(f.expiresAt.timestampValue) : 0;
+      if (exp && exp < Date.now()) return;
+      const pf = (f.prefill && f.prefill.mapValue && f.prefill.mapValue.fields) || {};
+      const sv = (k) => (pf[k] && pf[k].stringValue) || '';
+      const map = { corpName: 'corpName', officeName: 'officeName', contactName: 'contactName', phone: 'contactTel',
+                    email: 'contactEmail', postalCode: 'contactZip', prefecture: 'contactPrefecture', city: 'contactCity', addressDetail: 'contactAddress' };
+      let filled = 0;
+      Object.entries(map).forEach(([k, id]) => {
+        const el = document.getElementById(id); const v = sv(k);
+        if (el && v && !el.value) { el.value = v; filled++; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
+      leadToken = t;
+      if (filled) document.getElementById('leadBanner').style.display = 'block';
+    } catch (e) { /* 引き継げなくても手入力で進める */ }
+  }
+
+  function setQuoteMailNote(kind, text) {
+    const el = document.getElementById('quoteMailNote');
+    const styles = {
+      info:  { bg: '#eef3fb', bd: '#c5d5ee', fg: '#1f3a6e' },
+      ok:    { bg: '#e8f5e9', bd: '#a5d6a7', fg: '#1b5e20' },
+      error: { bg: '#fdecea', bd: '#f5c2c0', fg: '#8a1c1c' },
+    }[kind] || { bg: '#f5f5f5', bd: '#ddd', fg: '#333' };
+    el.style.background = styles.bg; el.style.border = `1px solid ${styles.bd}`; el.style.color = styles.fg;
+    el.textContent = text; el.style.display = text ? 'block' : 'none';
+  }
 
   /* ──────── 初期化 ──────── */
   window.addEventListener('DOMContentLoaded', () => {
@@ -1112,11 +1160,13 @@
       document.getElementById('contactZipHint')
     );
     document.getElementById('consentCheck').addEventListener('change', updateLock);
-    document.getElementById('prevEstNo').textContent = estNo;
+    document.querySelectorAll('input[name="usbConnector"]').forEach((r) => r.addEventListener('change', () => { render(); updateLock(); }));
+    document.getElementById('prevEstNo').textContent = '（送信時に発行）';
     setDates();
     syncPlanQty('houmon');
     render();
-    updateLock();
+    // 問い合わせからの引き継ぎ。入力が入ると updateLock が走るので最後に呼ぶ
+    loadLeadToken().finally(() => updateLock());
   });
 
   /* ──────── 必須項目＋同意のロック解除チェック ──────── */
@@ -1323,10 +1373,52 @@
         headers,
         body: JSON.stringify(payload),
       });
-      if (!res.ok) console.warn('成約通知エラー:', res.status);
+      if (!res.ok) { console.warn('見積もり登録エラー:', res.status); return; }
+      const data = await res.json().catch(() => null);
+      if (!data || !data.quoteId) return;
+      quoteInfo = data;
+      // 見積番号・有効期限はサーバの値に差し替える（PDFにも載る）
+      estNo = data.estNo || estNo;
+      document.getElementById('prevEstNo').textContent = estNo;
+      if (data.validUntil) document.getElementById('prevExpiry').textContent = fmtDate(new Date(data.validUntil));
+      render();
+      if (data.status === 'ok') sendQuotePdfToOffice();
     } catch (e) {
       // 通知失敗してもPDFダウンロードは継続
       console.warn('Webhook送信に失敗しました', e);
+    }
+  }
+
+  // 画面の見積書をPDFにして、事業所へメールで送る（控えが残る）。失敗してもダウンロードは使える
+  async function sendQuotePdfToOffice() {
+    if (!quoteInfo || !quoteInfo.quoteToken) return;
+    const to = (document.getElementById('contactEmail').value || '').trim();
+    setQuoteMailNote('info', `お見積書（${estNo}）をPDFにして ${to} 宛にお送りしています…`);
+    try {
+      // html2pdf は defer 読み込みなので、まだなら少し待つ
+      for (let i = 0; i < 20 && typeof window.html2pdf !== 'function'; i++) await new Promise((r) => setTimeout(r, 250));
+      if (typeof window.html2pdf !== 'function') throw new Error('PDFライブラリの読み込みに失敗');
+      const el = document.getElementById('estDoc');
+      const opt = { margin: [8, 8, 8, 8], image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true, windowWidth: 1100 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css'] } };
+      const dataUri = await window.html2pdf().set(opt).from(el).outputPdf('datauristring');
+      const pdfBase64 = String(dataUri).split(',')[1] || '';
+      if (!pdfBase64) throw new Error('PDFの生成に失敗');
+      const appCheckToken = await getAppCheckToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
+      const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers,
+        body: JSON.stringify({ quoteId: quoteInfo.quoteId, quoteToken: quoteInfo.quoteToken, pdfBase64 }) });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data.mailed || data.status === 'already')) {
+        setQuoteMailNote('ok', `お見積書（${estNo}）を ${to} 宛にメールでお送りしました。控えとしてご利用ください。台数や機種は、支援の日程調整の際に変更できます。`);
+      } else {
+        setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
+      }
+    } catch (e) {
+      console.warn('見積書PDFの送付に失敗', e);
+      setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
     }
   }
 
@@ -1371,6 +1463,8 @@
       totalAmount:    calc.totalIncl,
       specialDiscount: calc.discount,
       selfPay:        calc.selfPay,
+      usbConnector:   (document.querySelector('input[name="usbConnector"]:checked') || {}).value || null,
+      token:          leadToken || null,
       estNo:          estNo,
     };
   }
@@ -1399,49 +1493,6 @@
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
   /* ──────── 金額計算（税込ベース・特別割引算出） ──────── */
-  function computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra) {
-    const plan = PLANS[planKey];
-    btExtra  = btExtra  || 0;
-    usbExtra = usbExtra || 0;
-    const subsidyTotal = btQty + usbQty;
-    const extraTotal   = btExtra + usbExtra;
-
-    // 補助対象パート（税込・定価）
-    const btSubtotal  = BT_PRICE  * btQty;
-    const usbSubtotal = USB_PRICE * usbQty;
-    const devSubsidyIncl = btSubtotal + usbSubtotal;
-    // 伴走支援費（税込・補助対象台数別）
-    const accFeeIncl = subsidyTotal > 0
-      ? (ACCOMPANY_FEE[subsidyTotal] || ACCOMPANY_FEE[plan.maxQty] || 0)
-      : 0;
-    // 補助対象パート 小計
-    const subsidyPartSubtotal = devSubsidyIncl + accFeeIncl;
-    // 特別割引（補助金上限ぴったりに収めるための調整）
-    const discount = Math.max(0, subsidyPartSubtotal - plan.limit);
-    // 補助対象パート 請求額（= 補助金で全額カバー）
-    const subsidyPartTotal = subsidyPartSubtotal - discount;
-    // 助成金充当
-    const grantAmt = Math.min(plan.limit, subsidyPartTotal);
-
-    // 補助対象外パート（税込・定価・そのまま自己負担）
-    const btExtraSubtotal  = BT_PRICE  * btExtra;
-    const usbExtraSubtotal = USB_PRICE * usbExtra;
-    const extraPartTotal   = btExtraSubtotal + usbExtraSubtotal;
-
-    // 全体合計（税込）
-    const totalIncl = subsidyPartTotal + extraPartTotal;
-    // 自己負担 = 補助対象パートの未充当分 + 補助対象外パート
-    const selfPay = Math.max(0, subsidyPartTotal - grantAmt) + extraPartTotal;
-
-    return {
-      plan, btQty, usbQty, btExtra, usbExtra, subsidyTotal, extraTotal,
-      btSubtotal, usbSubtotal, devSubsidyIncl, accFeeIncl,
-      subsidyPartSubtotal, discount, subsidyPartTotal,
-      btExtraSubtotal, usbExtraSubtotal, extraPartTotal,
-      totalIncl, grantAmt, selfPay,
-    };
-  }
-
   /* ──────── 構成ラベル生成（例: "BT×2 + USB×1"） ──────── */
   function configLabel(btQty, usbQty) {
     const parts = [];

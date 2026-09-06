@@ -42,7 +42,7 @@ export function phaseEntryStatus(phaseId) {
 export const STATUS_ORDER = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 4];
 
 export const SOURCE_LABELS = {
-  lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり成約", manual: "手動登録",
+  lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり作成", manual: "手動登録",
 };
 
 // 紹介元（どこ経由で来た案件か。2026-08-21 次田さん要望）。

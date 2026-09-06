@@ -934,6 +934,9 @@
       margin-top: 4px; font-weight: 600;
     }
     .form-error-msg[hidden] { display: none; }
+    .success-next { margin-top: 18px; padding-top: 16px; border-top: 1px dashed #a5d6a7; }
+    .success-next-lead { font-size: 14px; margin-bottom: 12px; }
+    .success-next-note { font-size: 12px; color: var(--color-text-muted); margin-top: 10px; }
     .zip-hint { display: block; font-size: 12px; color: var(--color-text-muted); margin-top: 6px; line-height: 1.6; }
     .zip-hint.is-ok { color: #2e7d32; font-weight: 600; }
     .zip-hint.is-error { color: var(--color-primary); font-weight: 600; }
@@ -2591,16 +2594,34 @@
           <i class="ti ti-circle-check" aria-hidden="true"></i>
           <h3>送信できました！</h3>
           <p>担当スタッフから2営業日以内にご連絡いたします。少しお待ちください。</p>
+          <div class="success-next">
+            <p class="success-next-lead">お急ぎの方は、続けてその場でお見積書を作ることもできます（3分ほど。いま入力いただいた事業所情報は引き継がれます）。</p>
+            <a id="quoteNextLink" class="btn btn-primary" href="mitsumori.html">
+              <i class="ti ti-file-invoice" aria-hidden="true"></i>
+              今すぐ見積書を作る
+            </a>
+            <p class="success-next-note">担当者からの連絡を待つ場合は、このままで大丈夫です。</p>
+          </div>
         </div>
 
         <form id="contact-form" action="https://formspree.io/f/xjglevjk" method="POST" novalidate>
+          <div class="form-group">
+            <label class="form-label" for="corp-name">
+              法人名<span class="required">必須</span>
+            </label>
+            <input class="form-input" type="text" id="corp-name" name="法人名"
+              placeholder="例：社会福祉法人タダカヨ会（個人事業の場合は屋号）" required autocomplete="organization"
+              aria-describedby="corp-name-error">
+            <span id="corp-name-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>法人名を入力してください</span>
+          </div>
+
           <div class="form-row">
             <div class="form-group">
               <label class="form-label" for="org-name">
                 事業所名<span class="required">必須</span>
               </label>
               <input class="form-input" type="text" id="org-name" name="事業所名"
-                placeholder="例：タダカヨ介護センター" required autocomplete="organization"
+                placeholder="例：タダカヨ介護センター" required autocomplete="organization-title"
                 aria-describedby="org-name-error">
               <span id="org-name-error" class="form-error-msg" role="alert" aria-live="assertive" hidden>事業所名を入力してください</span>
             </div>
@@ -2945,6 +2966,7 @@
     );
 
     async function notifyContactWebhook(data) {
+      const corpName   = data.get('法人名') || '';
       const orgName    = data.get('事業所名') || '';
       const personName = data.get('担当者名') || '';
       const phone      = data.get('電話番号') || '';
@@ -2964,11 +2986,11 @@
         const appCheckToken = await getAppCheckToken();
         const headers = { 'Content-Type': 'application/json' };
         if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
-        await fetch(CONTACT_WEBHOOK_URL, {
+        const res = await fetch(CONTACT_WEBHOOK_URL, {
           method: 'POST',
           headers,
           body: JSON.stringify({
-            corpName: '',
+            corpName: corpName,
             officeName: orgName,
             name: personName,
             phone: phone,
@@ -2981,9 +3003,12 @@
             addressDetail: addressDetail,
           }),
         });
+        // 応答の token で、続けて作る見積もりを同じ案件に繋ぐ
+        return res.ok ? await res.json().catch(() => null) : null;
       } catch (e) {
         // Webhook失敗してもFormspreeメール送信があるので致命的ではない
         console.warn('Webhook送信に失敗しました', e);
+        return null;
       }
     }
 
@@ -3028,9 +3053,11 @@
         });
         const webhookPromise = notifyContactWebhook(data);
 
-        const [res] = await Promise.all([formspreePromise, webhookPromise]);
+        const [res, hook] = await Promise.all([formspreePromise, webhookPromise]);
 
         if (res.ok) {
+          const next = document.getElementById('quoteNextLink');
+          if (next) next.setAttribute('href', hook && hook.token ? `mitsumori.html?t=${encodeURIComponent(hook.token)}` : 'mitsumori.html');
           form.style.display = 'none';
           success.style.display = 'block';
           success.scrollIntoView({ behavior: 'smooth', block: 'center' });

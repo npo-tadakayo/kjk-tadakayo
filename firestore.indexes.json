@@ -4,33 +4,74 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "contactEmail", "order": "ASCENDING" },
-        { "fieldPath": "source", "order": "ASCENDING" },
-        { "fieldPath": "receivedAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "contactEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "source",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receivedAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "activities",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "caseId", "order": "ASCENDING" },
-        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "caseId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "sessions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "caseId", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "caseId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "partnerOrders",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "partnerEmail", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "partnerEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "contactEmail",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receivedAt",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],

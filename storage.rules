@@ -17,5 +17,10 @@ service firebase.storage {
       allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
       allow write: if false;
     }
+    // 見積書PDF（版ごと）。書き込みは Cloud Functions の SA のみ。事業所へは download token 付きURLをメールで渡す
+    match /quotes/{caseId}/{fileName} {
+      allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow write: if false;
+    }
   }
 }
