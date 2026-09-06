@@ -20,6 +20,8 @@
 .ti-analyze:before { content: "\f3a3"; }
 .ti-apps:before { content: "\ebb6"; }
 .ti-bluetooth:before { content: "\ea37"; }
+.ti-brand-google:before { content: "\ec1f"; }
+.ti-brand-youtube:before { content: "\ec90"; }
 .ti-building-community:before { content: "\ebf6"; }
 .ti-calculator:before { content: "\eb80"; }
 .ti-calendar-check:before { content: "\f824"; }
@@ -35,8 +37,10 @@
 .ti-external-link:before { content: "\ea99"; }
 .ti-file-certificate:before { content: "\ed4d"; }
 .ti-file-invoice:before { content: "\eb67"; }
+.ti-file-text:before { content: "\eaa2"; }
 .ti-headset:before { content: "\eb90"; }
 .ti-heart-handshake:before { content: "\f0f3"; }
+.ti-home-cog:before { content: "\f338"; }
 .ti-id-badge-2:before { content: "\f076"; }
 .ti-list-check:before { content: "\eb6a"; }
 .ti-list-details:before { content: "\ef40"; }
@@ -53,5 +57,7 @@
 .ti-send:before { content: "\eb1e"; }
 .ti-share-3:before { content: "\f7bd"; }
 .ti-tag:before { content: "\10096"; }
+.ti-truck:before { content: "\ebc4"; }
+.ti-user-check:before { content: "\eb49"; }
 .ti-walk:before { content: "\ec87"; }
 .ti-world:before { content: "\eb54"; }

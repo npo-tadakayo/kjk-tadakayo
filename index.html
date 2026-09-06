@@ -866,6 +866,13 @@
       justify-content: center; color: #fff; font-size: 18px; font-weight: 900;
       flex-shrink: 0; letter-spacing: -0.03em;
     }
+    .certified-logo-img {
+      height: 64px; width: 64px; background: #fff; border: 1px solid var(--color-border);
+      border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center;
+      padding: 6px; flex-shrink: 0;
+    }
+    .certified-logo-img.wide { width: 150px; }
+    .certified-logo-img img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
     .certified-features { display: grid; gap: 12px; margin-bottom: 24px; }
     .certified-feature {
       display: flex; align-items: flex-start; gap: 12px;
@@ -892,6 +899,8 @@
       .certified-card-body { padding: 24px 20px; }
       .certified-company { font-size: 18px; }
       .certified-logo-mark { width: 48px; height: 48px; font-size: 14px; }
+      .certified-logo-img { height: 48px; width: 48px; }
+      .certified-logo-img.wide { width: 112px; }
       .certified-def-box { padding: 20px 20px; }
     }
 
@@ -2313,25 +2322,25 @@
         <span class="section-label">CERTIFIED PARTNERS</span>
         <h2 class="section-title" id="certified-heading">タダカヨ認定事業所</h2>
         <p class="section-desc center">
-          ITを賢く活用し、現場にゆとりを生む——その理念を体現する事業所を、タダカヨが認定しています。
+          ITをうまく使って、現場に余裕をつくっている事業所を、タダカヨが「認定事業所」としてご紹介しています。
         </p>
       </div>
 
       <!-- 定義説明ボックス -->
       <div class="certified-def-box">
         <p>
-          <strong>「タダカヨ認定事業所」</strong>とは、タダカヨが提唱する
-          <strong>「ITを賢く活用し、現場にゆとりを生む」</strong>という高いクオリティを実証している事業者です。
-          地域に密着した支援活動を行いながら、テクノロジーと対人援助の質を高い水準で両立させ、
-          その実践から生まれた知見で地域の介護力向上に貢献しています。
-          認定事業所は<strong>順次拡大中</strong>で、このページで随時ご紹介していきます。
+          <strong>「タダカヨ認定事業所」</strong>は、自分たちの現場でITを使いこなし、
+          その経験を近くの事業所にも分けている事業者です。
+          カードリーダーの供給や介護情報基盤の導入支援を、タダカヨと一緒に担っています。
+          「うちの地域で相談できる先は？」というときは、まずこの中から近い事業所をご覧ください。
+          認定事業所は<strong>今後も増えていく予定</strong>で、このページで順にご紹介します。
         </p>
       </div>
 
       <!-- 事業所カード一覧 -->
       <div class="certified-grid">
 
-        <!-- カード: 株式会社２７９ -->
+        <!-- カード: 株式会社279 -->
         <div class="certified-card">
           <div class="certified-card-bar" aria-hidden="true"></div>
           <div class="certified-card-body">
@@ -2343,14 +2352,16 @@
 
             <div class="certified-head">
               <div>
-                <h3 class="certified-company">株式会社２７９</h3>
+                <h3 class="certified-company">株式会社279</h3>
                 <p class="certified-sub">つなぐ手ケアマネセンター</p>
                 <span class="certified-location">
                   <i class="ti ti-map-pin" aria-hidden="true"></i>
                   北海道・札幌市
                 </span>
               </div>
-              <div class="certified-logo-mark" aria-hidden="true">279</div>
+              <div class="certified-logo-img wide">
+                <img src="images/partner_279.png" alt="株式会社279のロゴ" loading="lazy" width="640" height="195">
+              </div>
             </div>
 
             <div class="certified-features">
@@ -2359,8 +2370,8 @@
                   <i class="ti ti-device-laptop" aria-hidden="true"></i>
                 </div>
                 <div>
-                  <strong>介護DXの最前線を、現場から体現。</strong>
-                  ICT・デジタル活用を極めたケアマネジメントを札幌から発信し、介護情報基盤ポータルへの対応支援など、他事業所の介護DX推進を実務レベルでサポートできる専門性を持つ。
+                  <strong>自分たちの事業所を、完全リモートで運営している。</strong>
+                  札幌の居宅介護支援事業所「つなぐ手ケアマネセンター」を、事務所に集まらない形で日々運営しています。ケアマネジャーが実際に使っている道具と手順を、そのまま他の事業所に渡せるのが強みです。
                 </div>
               </div>
               <div class="certified-feature">
@@ -2368,8 +2379,8 @@
                   <i class="ti ti-heart-handshake" aria-hidden="true"></i>
                 </div>
                 <div>
-                  <strong>効率化の先に、対人援助の質がある。</strong>
-                  テクノロジーによって生まれた時間を「利用者と向き合うこと」に充てるという姿勢を一貫して実践。介護の本質を手放さないDXのあり方を示している。
+                  <strong>空いた時間は、利用者と向き合うために使う。</strong>
+                  ICTを入れるのは仕事を減らすためではなく、利用者と話す時間を増やすため。介護の中身を変えないやり方を自分たちで試してから、他の事業所に勧めています。
                 </div>
               </div>
               <div class="certified-feature">
@@ -2377,8 +2388,8 @@
                   <i class="ti ti-share-3" aria-hidden="true"></i>
                 </div>
                 <div>
-                  <strong>知見を地域に還元する、オープンな専門家集団。</strong>
-                  自社の実績にとどまらず、地域の介護事業者への情報共有や伴走支援にも積極的。タダカヨとの連携を通じ、地域全体の介護DXをリードしている。
+                  <strong>介護情報基盤の導入支援を、事業として行っている。</strong>
+                  「hand in hand」の名前で、カードリーダーの導入から介護情報基盤ポータルの設定、職員向けの研修まで他の事業所を支援。2026年8月に経済産業大臣のDX認定を受けています。
                 </div>
               </div>
             </div>
@@ -2398,7 +2409,149 @@
 
           </div>
         </div>
-        <!-- ／カード: 株式会社２７９ -->
+        <!-- ／カード: 株式会社279 -->
+
+        <!-- カード: 株式会社プラスエス（QCC大阪） -->
+        <div class="certified-card">
+          <div class="certified-card-bar" aria-hidden="true"></div>
+          <div class="certified-card-body">
+
+            <span class="certified-badge">
+              <i class="ti ti-rosette" aria-hidden="true"></i>
+              タダカヨ認定事業所 #002
+            </span>
+
+            <div class="certified-head">
+              <div>
+                <h3 class="certified-company">株式会社プラスエス</h3>
+                <p class="certified-sub">QCC大阪（住環境整備・福祉用具）</p>
+                <span class="certified-location">
+                  <i class="ti ti-map-pin" aria-hidden="true"></i>
+                  大阪府・八尾市
+                </span>
+              </div>
+              <div class="certified-logo-img">
+                <img src="images/partner_pluss.png" alt="株式会社プラスエスのロゴ" loading="lazy" width="600" height="600">
+              </div>
+            </div>
+
+            <div class="certified-features">
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-home-cog" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>手すり一本から、住まいを整えてきた会社。</strong>
+                  代表は総合建設業の施工管理と介護業界20年の経験を持ち、住宅改修を自ら施工します。理学療法士・介護福祉士・事務スタッフがそれぞれの経験を持ち寄り、「できないこと」を「こうすればできる」に変える住環境づくりを続けています。
+                </div>
+              </div>
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-message-circle" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>わかりやすく説明することを、いちばん大切にしている。</strong>
+                  ご本人・ご家族・介護にかかわる方が安心して使えるようになるまでの道のりを、丁寧に案内する姿勢。カードリーダーの導入でも同じで、機器を渡して終わりにしません。
+                </div>
+              </div>
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-truck" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>大阪から、カードリーダーの供給と導入支援を担う。</strong>
+                  タダカヨの認定事業所として、関西の介護事業所へのカードリーダー供給と介護情報基盤の導入支援を行っています。福祉用具の相談と一緒に、マイナ資格確認の準備も進められます。
+                </div>
+              </div>
+            </div>
+
+            <div class="certified-links">
+              <a href="https://www.pluss-qcc.com/" target="_blank" rel="noopener noreferrer"
+                 class="btn btn-outline" style="min-height:44px;padding:10px 20px;font-size:14px;">
+                <i class="ti ti-world" aria-hidden="true"></i>
+                公式サイト
+              </a>
+              <a href="https://www.pluss-qcc.com/%E4%BB%8B%E8%AD%B7%E6%83%85%E5%A0%B1%E5%9F%BA%E7%9B%A4-%E5%B0%8E%E5%85%A5%E6%94%AF%E6%8F%B4/" target="_blank" rel="noopener noreferrer"
+                 class="btn btn-primary" style="min-height:44px;padding:10px 20px;font-size:14px;">
+                <i class="ti ti-external-link" aria-hidden="true"></i>
+                介護情報基盤 導入支援ページ
+              </a>
+            </div>
+
+          </div>
+        </div>
+        <!-- ／カード: 株式会社プラスエス -->
+
+        <!-- カード: 株式会社介護ITコンシェルジュ -->
+        <div class="certified-card">
+          <div class="certified-card-bar" aria-hidden="true"></div>
+          <div class="certified-card-body">
+
+            <span class="certified-badge">
+              <i class="ti ti-rosette" aria-hidden="true"></i>
+              タダカヨ認定事業所 #003
+            </span>
+
+            <div class="certified-head">
+              <div>
+                <h3 class="certified-company">株式会社介護ITコンシェルジュ</h3>
+                <p class="certified-sub">介護現場に寄り添い、IT・DXの定着を支援する</p>
+                <span class="certified-location">
+                  <i class="ti ti-map-pin" aria-hidden="true"></i>
+                  滋賀県・大津市（滋賀・京都を中心に全国対応）
+                </span>
+              </div>
+              <div class="certified-logo-img">
+                <img src="images/partner_careitc.png" alt="株式会社介護ITコンシェルジュのロゴ" loading="lazy" width="264" height="256">
+              </div>
+            </div>
+
+            <div class="certified-features">
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-user-check" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>介護福祉士として約20年、現場にいた人が支援する。</strong>
+                  代表は介護とIT、その両方の現場を知る伴走者。「人に向き合う時間を、仕組みから。」を掲げ、現場の人がツールに振り回されない導入の進め方を大切にしています。
+                </div>
+              </div>
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-brand-google" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>Google Workspace で、事業所の「情報の置き場」を整える。</strong>
+                  導入だけで終わらず、研修と定着まで付き合うのが本業。組織づくり・情報共有・業務改善の支援を、介護・福祉事業所向けに続けています。
+                </div>
+              </div>
+              <div class="certified-feature">
+                <div class="certified-feat-icon">
+                  <i class="ti ti-id-badge-2" aria-hidden="true"></i>
+                </div>
+                <div>
+                  <strong>生成AI・人材育成・ICT活用まで、ひとつの窓口で。</strong>
+                  介護情報基盤への対応（カードリーダー導入・マイナ資格確認アプリの設定・助成金申請）も、滋賀・京都を中心に全国の事業所を支援しています。
+                </div>
+              </div>
+            </div>
+
+            <div class="certified-links">
+              <a href="https://www.careitc.jp/" target="_blank" rel="noopener noreferrer"
+                 class="btn btn-outline" style="min-height:44px;padding:10px 20px;font-size:14px;">
+                <i class="ti ti-world" aria-hidden="true"></i>
+                公式サイト
+              </a>
+              <a href="https://www.careitc.jp/kaigo-kiban" target="_blank" rel="noopener noreferrer"
+                 class="btn btn-primary" style="min-height:44px;padding:10px 20px;font-size:14px;">
+                <i class="ti ti-external-link" aria-hidden="true"></i>
+                介護情報基盤ページ
+              </a>
+            </div>
+
+          </div>
+        </div>
+        <!-- ／カード: 株式会社介護ITコンシェルジュ -->
 
         <!-- 今後の認定事業所はここに追加 -->
 
