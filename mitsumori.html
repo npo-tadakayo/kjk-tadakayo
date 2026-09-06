@@ -1185,6 +1185,10 @@
     setHint(HINT_DEFAULT, null);
     zipEl.addEventListener('input', onInput);
     zipEl.addEventListener('blur', onInput);
+    // 引き継ぎで郵便番号と住所を一緒に入れるときは、その番号の検索を「済み」にしておく。
+    // そうしないと検索結果が引き継いだ市町村を上書きし、「札幌市中央区」が「札幌市」に変わる
+    // （2026-09-06 通しテストで発覚。住所欄が埋まっていると区が補われないため区が消える）
+    return { markLookedUp: (digits) => { lastLookedUp = String(digits || '').replace(/[^0-9]/g, '').slice(0, 7); } };
   }
 
   // 成約通知 Webhook（Cloud Function 経由 → Firestore に案件自動登録 + Chat通知）
@@ -1193,6 +1197,7 @@
   let estNo = '';
   let webhookSent = false; // 連絡先Webhookの二重送信防止フラグ
   let leadToken = null;    // LP問い合わせから引き継いだ継続トークン（?t=）
+  let contactZipAutofill = null; // 事業所情報欄の郵便番号自動入力（引き継ぎ時に検索を抑えるために持つ）
   let quoteInfo = null;    // サーバが返した見積もり情報 { quoteId, estNo, quoteToken, validUntil, caseNumber }
   const SEND_QUOTE_PDF_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/sendQuotePdf';
   const LEAD_TOKEN_URL = 'https://firestore.googleapis.com/v1/projects/kjk-tadakayo/databases/(default)/documents/leadTokens/';
@@ -1213,6 +1218,9 @@
       const map = { corpName: 'corpName', officeName: 'officeName', contactName: 'contactName', phone: 'contactTel',
                     email: 'contactEmail', postalCode: 'contactZip', prefecture: 'contactPrefecture', city: 'contactCity', addressDetail: 'contactAddress' };
       let filled = 0;
+      // 問い合わせで入れた住所をそのまま使う（郵便番号から住所を引き直さない）
+      const zipDigits = sv('postalCode').replace(/[^0-9]/g, '');
+      if (zipDigits.length === 7 && (sv('city') || sv('addressDetail')) && contactZipAutofill) contactZipAutofill.markLookedUp(zipDigits);
       Object.entries(map).forEach(([k, id]) => {
         const el = document.getElementById(id); const v = sv(k);
         if (el && v && !el.value) { el.value = v; filled++; el.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -1243,7 +1251,7 @@
     ['corpName','officeName','contactName','contactTel','contactEmail','contactZip','contactPrefecture','contactCity','contactAddress','contactWebsite'].forEach(id => {
       document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
     });
-    wireZipAutofill(
+    contactZipAutofill = wireZipAutofill(
       document.getElementById('contactZip'),
       document.getElementById('contactPrefecture'),
       document.getElementById('contactCity'),
