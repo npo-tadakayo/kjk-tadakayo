@@ -46,7 +46,7 @@ export const SOURCE_LABELS = {
 };
 
 // 紹介元（どこ経由で来た案件か。2026-08-21 次田さん要望）。
-// ⚠️ SOURCE_LABELS（流入経路＝LP問い合わせ/見積もり成約/手動登録）とは別物。
+// ⚠️ SOURCE_LABELS（流入経路＝LP問い合わせ/見積もり作成/手動登録）とは別物。
 //    こちらは「営業上、誰の紹介で来たか」を表す。未設定は null（決め打ちしない）。
 // 既定はこの2件。設定画面（appConfig/settings.referralSources）で増やせる。
 export const REFERRAL_DEFAULTS = [

@@ -16,7 +16,7 @@ const STATUS_LABELS = {
   6: "事前準備中", 7: "伴走支援待ち", 8: "伴走支援実施済", 9: "書類準備完了・申請ガイド中",
   10: "申請完了・採択待ち", 11: "採択・入金待ち", 12: "アフターフォロー中", 13: "案件完了",
 };
-const SOURCE_LABELS = { lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり成約", manual: "手動登録" };
+const SOURCE_LABELS = { lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり作成", manual: "手動登録" };
 const SUBSIDY_CAT = { houmon: "訪問・通所・短期滞在系（上限¥64,000）", kyojyu: "居住・入所系（上限¥55,000）", other: "その他（上限¥42,000）" };
 const ACTIVITY_LABELS = {
   phone_in: "電話（着信）", phone_out: "電話（発信）", email_in: "メール（受信）",

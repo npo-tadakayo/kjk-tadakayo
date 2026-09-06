@@ -843,9 +843,17 @@ async function prefillShipFromCase(caseId){
   try{
     const cs=await getDoc(doc(db,"cases",caseId)); if(!cs.exists()){ alert("案件が見つかりません"); return; }
     const c=cs.data();
+    const tab=document.querySelector('.tab[data-tab="shipments"]'); if(tab) tab.click();
+    // Web申込などで既にこの案件の出荷下書きがあれば、それを開く（二重作成の防止・計画書 §4.4）
+    const drafts=await getDocs(query(collection(db,"shipments"),where("caseId","==",caseId),where("status","==","draft")));
+    if(!drafts.empty){
+      const d=drafts.docs[0];
+      openShip({_id:d.id,...d.data()});
+      toast(`この案件の出荷下書き ${d.data().soNumber||""} を開きました（新しく作らず、こちらを確認・確定してください）`);
+      return;
+    }
     let office={};
     if(c.officeId){ try{ const os=await getDoc(doc(db,"offices",c.officeId)); if(os.exists()) office=os.data(); }catch(_){} }
-    const tab=document.querySelector('.tab[data-tab="shipments"]'); if(tab) tab.click();
     openShip();
     document.getElementById("shipType").value="direct";
     document.getElementById("shipPartnerWrap").style.display="none";

@@ -103,7 +103,7 @@ async function saveAssignee(value) {
 }
 
 // ===== 紹介元（referralSource） =====
-// ⚠️ source（LP問い合わせ/見積もり成約/手動登録＝流入経路）とは別物。こちらは「誰の紹介で来たか」。
+// ⚠️ source（LP問い合わせ/見積もり作成/手動登録＝流入経路）とは別物。こちらは「誰の紹介で来たか」。
 // 選択肢は appConfig/settings.referralSources（未設定なら REFERRAL_DEFAULTS）。保存する値は id。
 function renderReferralSelect() {
   const sel = document.getElementById("referralSelect");
@@ -680,10 +680,14 @@ async function mergeInto(other) {
 
   try {
     const batch = writeBatch(db);
-    // 統合元の記録・セッションを当案件へ付け替え
-    for (const col of ["activities", "sessions"]) {
+    // 統合元の記録・セッション・見積もり・出荷を当案件へ付け替え（見積もり・出荷は計画書 §4.4）
+    for (const col of ["activities", "sessions", "quotes", "shipments"]) {
       const snap = await getDocs(query(collection(db, col), where("caseId", "==", other._id)));
-      snap.forEach((d) => batch.update(d.ref, { caseId }));
+      snap.forEach((d) => batch.update(d.ref, { caseId, caseNumber: keep.caseNumber ?? null }));
+    }
+    // 見積もり・Web申込の目印（案件一覧の絞り込みと見積もりカードが見る値）は、残る側に無いときだけ引き継ぐ
+    for (const k of ["latestQuoteId", "quoteIssuedAt", "orderedAt", "orderedVia"]) {
+      if (keep[k] == null && other[k] != null) fill[k] = other[k];
     }
 
     // チェックリスト類（doc ID = caseId）を引き継ぐ。残る側に無いものだけ移し、絶対に上書きしない。

@@ -202,7 +202,7 @@ firebase deploy --only hosting --project kjk-tadakayo
 - ログイン画面（Google / @tadakayo.jp 制限・`signInWithPopup`）
 - 案件一覧（リアルタイム購読・検索・フィルタ・新規登録モーダル・申請期限カウントダウン）
 - 案件詳細（対応記録タイムライン / 書類チェック4項目+口座情報 / 申請情報7段階）
-- Webhook受信（LP問い合わせ・見積もり成約 → Firestore自動登録・重複検出・Chat通知）
+- Webhook受信（LP問い合わせ・見積もり作成 → Firestore自動登録・重複検出・Chat通知）
 - Firestoreセキュリティルール (@tadakayo.jp 制限)
 - Storageセキュリティルール (@tadakayo.jp 制限)
 
@@ -405,7 +405,7 @@ erDiagram
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定 |
 | `_counters` | 案件番号・発注/出荷番号の採番 |
 
-## §C4 シーケンス：見積もり成約 → 案件登録（SEQ）
+## §C4 シーケンス：見積もり作成 → 案件登録（SEQ）
 
 ```mermaid
 sequenceDiagram

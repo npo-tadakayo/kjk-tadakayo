@@ -76,7 +76,7 @@
     │
     ├── kjk.tadakayo.jp（LP）
     │       └── 問い合わせ → Formspree → メール通知
-    │       └── 見積もり成約 → Cloud Functions (webhook) → Firestore + Google Chat
+    │       └── 見積もり作成 → Cloud Functions (webhook) → Firestore + Google Chat
     │
     └── ※ admin.kjk.tadakayo.jp へのアクセスは不可（Cloudflareで完全遮断）
 

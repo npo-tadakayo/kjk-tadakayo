@@ -121,6 +121,7 @@ function currentFilters() {
     search: document.getElementById("searchInput").value.toLowerCase(),
     statusFilter: document.getElementById("statusFilter").value,
     sourceFilter: document.getElementById("sourceFilter").value,
+    quoteFilter: document.getElementById("quoteFilter")?.value || "",
     referralFilter: document.getElementById("referralFilter")?.value || "",
     showArchived: !!document.getElementById("showArchived")?.checked,
     regionFilter: document.getElementById("regionFilter")?.value || "",
@@ -135,7 +136,16 @@ function areaMatch(value, selected) {
   if (!selected) return true;
   return selected === AREA_NONE ? !value : value === selected;
 }
-function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, showArchived,
+// 見積もり・申し込みの状態（計画書 §4.4）。latestQuoteId / orderedVia は Functions が
+// 見積もり作成・Web申込のときに案件へ書く値。手動で注文ステータスにした案件は orderedVia を持たない。
+function quoteMatch(c, selected) {
+  if (!selected) return true;
+  if (selected === "none") return !c.latestQuoteId;
+  if (selected === "ordered_web") return c.orderedVia === "web";
+  if (selected === "issued") return !!c.latestQuoteId && !c.orderedAt;
+  return true;
+}
+function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, referralFilter, showArchived,
                           regionFilter, prefFilter, cityFilter }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
@@ -152,7 +162,7 @@ function matchFilters(c, { search, statusFilter, sourceFilter, referralFilter, s
   const matchArea = areaMatch(a.region, regionFilter)
     && areaMatch(a.prefecture, prefFilter)
     && areaMatch(a.city, cityFilter);
-  return matchSearch && matchStatus && matchSource && matchReferral && matchArea;
+  return matchSearch && matchStatus && matchSource && quoteMatch(c, quoteFilter) && matchReferral && matchArea;
 }
 
 // 地域→都道府県→市町村の順に絞り込む。上位を選ぶと、下位の選択肢は
@@ -205,7 +215,7 @@ function renderCases() {
     empty.style.display = "block";
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
-    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.referralFilter
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.referralFilter
       || f.regionFilter || f.prefFilter || f.cityFilter);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
@@ -468,6 +478,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("searchInput").addEventListener("input", renderCases);
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
+  document.getElementById("quoteFilter")?.addEventListener("change", renderCases);
   document.getElementById("referralFilter")?.addEventListener("change", renderCases);
   document.getElementById("showArchived")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
   // 上位を変えたら下位の選択肢を作り直す（存在しない組み合わせを残さない）
