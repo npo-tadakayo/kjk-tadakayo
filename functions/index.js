@@ -389,6 +389,14 @@ exports.webhookLpInquiry = onRequest(
 //   2. 金額はサーバで再計算（ブラウザの値を信用しない）
 //   3. quotes を作成（estNo をサーバ採番・版・品番ベースの明細・有効期限30日）。前の版は superseded
 //   4. PDFの保存とメール送付は別関数 sendQuotePdf（SA_MAIL）で行う。ここでは accessToken を返す
+// 利用者が見積もり画面でどの操作をしたか（2026-09-09・藤田副理事長の改修提案）。
+// 同意チェックでは何も起きず、下の操作を押したときだけ記録・送付が動く。
+const INTENT_LABEL = {
+  download: "（PDFをダウンロード）",
+  mail: "（メールで受け取る）",
+  order: "（お申し込みの確認へ）",
+};
+
 exports.webhookMitsumori = onRequest(
   { region: "asia-northeast1", cors: true, secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_WEBHOOK },
   async (req, res) => {
@@ -534,7 +542,7 @@ exports.webhookMitsumori = onRequest(
       const chatWebhook = await getChatWebhook();
       await notifyChat(
         chatWebhook,
-        `📝 見積もり作成 ${estNo}（v${version}） [案件 #${caseNumber}${created ? "・新規" : ""}]\n事業所: ${officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${calc.plan.label}\n構成: ${crSummary}\n金額: ¥${calc.totalIncl.toLocaleString()}（自己負担 ¥${calc.selfPay.toLocaleString()}）`
+        `📝 見積もり作成 ${estNo}（v${version}）${INTENT_LABEL[body.intent] || ""} [案件 #${caseNumber}${created ? "・新規" : ""}]\n事業所: ${officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${calc.plan.label}\n構成: ${crSummary}\n金額: ¥${calc.totalIncl.toLocaleString()}（自己負担 ¥${calc.selfPay.toLocaleString()}）`
       );
 
       res.status(200).json({ status: "ok", caseId, caseNumber, quoteId: quoteRef.id, estNo, version,
@@ -578,7 +586,8 @@ function quoteMailText(q, { resend = false } = {}) {
       `\nこの見積もりは仮のものではなく、そのままお申し込みいただけます。\n` +
       `台数や機種（Bluetooth／USB、USBの口の形）は、支援の日程を調整する際に変更できますので、\n` +
       `いまの時点で決めきれなくても大丈夫です。\n\n` +
-      `このあと担当スタッフから2営業日以内にご連絡します。ご不明な点はこのメールへの返信でお知らせください。\n\n` +
+      `ご不明な点は、このメールへの返信でお知らせください。\n` +
+      `導入のご相談や、この内容でのお申し込みをご希望の場合も、ご返信いただければ承ります。\n\n` +
       `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
   };
 }
@@ -651,9 +660,9 @@ exports.sendQuotePdf = onRequest(
 //   3. 出荷の下書きを自動で作る（スタッフは在庫から出すか AB Circle へ発注するかを選ぶだけにする）
 //   4. 事業所へ確認メール、Chat へ通知
 //
-// 出荷の下書きに入れる明細は、見積書と同じ構成（カードリーダー＋伴走支援費＋特別割引）にする。
+// 出荷の下書きに入れる明細は、見積書と同じ構成（カードリーダー＋伴走支援費＋金額調整）にする。
 // そうしないと、そのまま発行した請求書の金額が見積書と合わない。
-// 伴走支援費・特別割引は在庫のある品物ではないので nonStock: true を付け、在庫処理から外す。
+// 伴走支援費・金額調整は在庫のある品物ではないので nonStock: true を付け、在庫処理から外す。
 function shipmentItemsFromQuote(q) {
   const items = [];
   for (const it of (q.items || [])) {
@@ -665,11 +674,11 @@ function shipmentItemsFromQuote(q) {
   const fee = Number(q.amounts?.accompanyFee) || 0;
   if (fee > 0) {
     const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
-    items.push({ sku: "support-fee", name: `伴走支援費（1年間・補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
+    items.push({ sku: "support-fee", name: `伴走支援費（補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
   }
   const discount = Number(q.amounts?.discount) || 0;
   if (discount > 0) {
-    items.push({ sku: "discount", name: "特別割引（出精値引き）", qty: 1, unitPrice: -discount, nonStock: true });
+    items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });
   }
   return items;
 }

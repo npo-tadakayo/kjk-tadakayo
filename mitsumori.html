@@ -238,6 +238,24 @@
       margin-bottom: 5px;
     }
     .form-label .req { color: var(--primary); }
+    /* 見積書の受け取り方（発行トリガー）。見積書のすぐ上に置く */
+    .issue-cta {
+      width: 210mm; max-width: 100%; margin: 16px 0 8px;
+      background: #fff; border: 2px solid var(--primary); border-radius: 12px; padding: 16px 20px;
+    }
+    .issue-cta-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+    .issue-cta-note { font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .issue-cta-buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .issue-cta-sub { font-size: 12px; color: var(--muted); line-height: 1.7; margin-top: 8px; }
+    .issue-btn {
+      background: #fff; color: var(--text); border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 12px 20px; font-size: 14px; font-weight: 700; cursor: pointer;
+      min-height: 44px; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .issue-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+    .issue-btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .issue-btn-primary:hover { background: var(--primary-dark); color: #fff; }
+    .issue-btn:disabled { opacity: .6; cursor: default; }
     .order-cta {
       width: 210mm; max-width: 100%; margin: 16px 0 40px;
       background: #fff; border: 2px solid var(--primary); border-radius: 12px; padding: 16px 20px;
@@ -587,6 +605,7 @@
       body { background: white; }
       .app-header,
       .form-panel,
+      .issue-cta,
       .order-cta,
       .modal-overlay { display: none !important; }
       .app-body { height: auto; display: block; }
@@ -617,8 +636,11 @@
     </span>
   </div>
   <div class="app-header-actions">
-    <button class="hdr-btn hdr-btn-pdf" onclick="downloadPDF()">
-      <i class="ti ti-download"></i>PDFダウンロード
+    <button class="hdr-btn hdr-btn-mail" id="hdrMailBtn" onclick="issueQuote('mail')">
+      <i class="ti ti-mail"></i>メールで受け取る
+    </button>
+    <button class="hdr-btn hdr-btn-pdf" id="hdrPdfBtn" onclick="issueQuote('download')">
+      <i class="ti ti-download"></i>PDFでダウンロード
     </button>
   </div>
 </header>
@@ -630,7 +652,7 @@
 
     <div id="leadBanner" style="display:none;background:#e8f5e9;border:1px solid #a5d6a7;color:#1b5e20;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:12px;">
       <i class="ti ti-circle-check" aria-hidden="true"></i>
-      お問い合わせの内容を引き継ぎました。事業所さま情報は入力済みです（必要なら直せます）。カードリーダーの構成を選ぶと、お見積書をその場で作成し、メールでもお送りします。
+      お問い合わせの内容を引き継ぎました。事業所さま情報は入力済みです（必要なら直せます）。カードリーダーの構成を選ぶと、お見積もりの内容が表示されます。受け取り方はそのあとお選びいただけます。
     </div>
     <div id="quoteMailNote" style="display:none;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:12px;" aria-live="polite"></div>
     <div class="form-sec">
@@ -728,7 +750,7 @@
       <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:-4px;">
         ※ 必須項目（事業所情報＋カードリーダー構成）すべて入力し、最後に同意にチェックすると<br>
         　 見積もり内容が表示され、PDFをダウンロードできます。<br>
-        ※ ご入力いただいた内容は、NPO法人タダカヨへ自動連絡されます。
+        ※ お見積書をメールで受け取る場合の宛先になります。
       </p>
     </div>
 
@@ -879,33 +901,33 @@
             <strong>介護事業所さまへ：</strong>
             私は介護事業所の関係者（職員・経営者・運営委託者など）であり、本サービスのお見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
             ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。<br>
-            ※ チェックすると見積もり内容が表示され、タダカヨへ自動連絡されます。
+            ※ チェックすると、お見積もりの内容が右側に表示されます。<strong>この時点ではタダカヨへ送信されません。</strong>
           </span>
         </label>
       </div>
     </div>
 
     <div class="form-sec">
-      <div class="form-sec-title">パック内容</div>
+      <div class="form-sec-title">サービス内容</div>
       <div class="check-group">
         <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
           <input type="checkbox" checked disabled>
           <div>
             <div class="card-name">補助金申請サポート<span class="badge-free">無料</span></div>
-            <div class="card-desc">介護情報基盤助成金の申請代行（タダカヨが完全無料でサポート）</div>
+            <div class="card-desc">介護情報基盤助成金の申請手続きの支援（必要書類・入力内容の確認をお手伝いします）</div>
           </div>
         </label>
         <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
           <input type="checkbox" checked disabled>
           <div>
-            <div class="card-name">伴走支援費（1年間）<span class="badge-rec">必須</span></div>
-            <div class="card-desc" id="accompanyNote">¥50,000（税込・3台構成時）— 導入設定・申請サポート・1年間サポート</div>
+            <div class="card-name">伴走支援費<span class="badge-rec">必須</span></div>
+            <div class="card-desc" id="accompanyNote">¥50,000（税込・3台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談</div>
           </div>
         </label>
         <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
           <input type="checkbox" checked disabled>
           <div>
-            <div class="card-name">特別割引（出精値引き）<span class="badge-rec">自動適用</span></div>
+            <div class="card-name">金額調整<span class="badge-rec">自動適用</span></div>
             <div class="card-desc">合計を助成金上限ぴったりに調整 ― 自己負担¥0を実現</div>
           </div>
         </label>
@@ -930,7 +952,8 @@
       <div class="preview-lock-title">必要事項のご入力をお願いします</div>
       <div class="preview-lock-body">
         左のフォームに事業所さま情報をご入力いただき、<br>
-        同意にチェックを入れると、お見積もり内容がこちらに表示され、PDFをダウンロードいただけます。
+        同意にチェックを入れると、お見積もりの内容がこちらに表示されます。<br>
+        受け取り方（PDFのダウンロード／メール）は、表示後にお選びいただけます。
       </div>
       <ul class="preview-lock-checklist" id="lockChecklist">
         <li data-key="corpName">法人名</li>
@@ -1011,6 +1034,24 @@
     </div><!-- /est-doc -->
 
     <!-- お申し込み（画面だけ・印刷やPDFには出さない） -->
+    <!-- 見積書の受け取り方を利用者が選ぶ（2026-09-09・藤田副理事長の改修提案 REQ-01〜03）。
+         同意チェックだけでは何も送信せず、ここを押した時点で初めて記録・メール送付を行う。 -->
+    <div class="issue-cta" id="issueCta" style="display:none">
+      <div class="issue-cta-title">お見積書の受け取り方をお選びください</div>
+      <div class="issue-cta-note">
+        押した時点で、この内容のお見積書を発行します。<b>この操作までは、タダカヨへ送信されません。</b>
+      </div>
+      <div class="issue-cta-buttons">
+        <button type="button" class="issue-btn issue-btn-primary" id="issueDownloadBtn" onclick="issueQuote('download')">
+          <i class="ti ti-download" aria-hidden="true"></i>PDFでダウンロード
+        </button>
+        <button type="button" class="issue-btn" id="issueMailBtn" onclick="issueQuote('mail')">
+          <i class="ti ti-mail" aria-hidden="true"></i>メールで受け取る
+        </button>
+      </div>
+      <div class="issue-cta-sub">メールでの受け取りを選ぶと、ご入力のメールアドレスへお見積書（PDF）をお送りします。</div>
+    </div>
+
     <div class="order-cta" id="orderCta">
       <div class="order-cta-inner">
         <div>
@@ -1350,10 +1391,11 @@
 
     // 見積もりの登録は「必須入力＋同意」が揃った時点で1回だけ自動で行う（記録とPDFメールのため）。
     // そのあと台数などを変えた場合は、「申し込む」を押した時点で最新の構成を登録し直す（openOrderModal）。
-    if (unlocked && !webhookSent) {
-      webhookSent = true;
-      notifyWebhook(buildNotifyPayload());
-    }
+    // 2026-09-09: 同意チェックでは送信しない（藤田副理事長の改修提案 REQ-01/02）。
+    // 以前はここで自動的にサーバーへ登録し、見積書のメール送付まで走っていた。
+    // いまは「PDFでダウンロード」「メールで受け取る」を押したときだけ issueQuote() が動く。
+    const issue = document.getElementById('issueCta');
+    if (issue) issue.style.display = unlocked ? 'block' : 'none';
   }
 
   /* ──────── ラジオ初期化 ──────── */
@@ -1403,7 +1445,7 @@
       const total = (parseInt(document.getElementById('btQty').value) || 0) +
                     (parseInt(document.getElementById('usbQty').value) || 0);
       const fee = ACCOMPANY_FEE[total] || ACCOMPANY_FEE[plan.maxQty];
-      note.textContent = `¥${fee.toLocaleString()}（税込・${total}台構成時）— 導入設定・申請サポート・1年間サポート`;
+      note.textContent = `¥${fee.toLocaleString()}（税込・${total}台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談`;
     }
   }
 
@@ -1499,9 +1541,9 @@
       if (data.validUntil) document.getElementById('prevExpiry').textContent = fmtDate(new Date(data.validUntil));
       render();
       updateOrderCta();
-      if (data.status === 'ok') sendQuotePdfToOffice();
+      // 2026-09-09: ここでの自動メール送付をやめた。メールは issueQuote('mail') からのみ送る
     } catch (e) {
-      // 通知失敗してもPDFダウンロードは継続
+      // 登録に失敗しても画面は壊さない（呼び出し元で案内する）
       console.warn('Webhook送信に失敗しました', e);
     }
   }
@@ -1581,7 +1623,7 @@
       // 同じ内容なら既存の見積もりが返り、変えていれば新しい版が作られる。
       // これで「画面の金額」と「実際に申し込まれる見積もり」が必ず一致する。
       const before = quoteInfo && quoteInfo.quoteId;
-      await notifyWebhook(buildNotifyPayload());
+      await notifyWebhook(buildNotifyPayload('order'));
       // 新しい版になったら、その版のPDFも作って控えを残す（CRMからの再送もできるようにする）
       if (quoteInfo && quoteInfo.quoteId !== before && quoteInfo.status === 'ok') {
         btn.innerHTML = '<i class="ti ti-loader-2"></i>お見積書を作り直しています...';
@@ -1673,7 +1715,7 @@
   }
 
   // Cloud Function (webhookMitsumori) が期待する構造化データを生成
-  function buildNotifyPayload() {
+  function buildNotifyPayload(intent) {
     const planKey     = document.querySelector('input[name="plan"]:checked').value;
     const btQty       = parseInt(document.getElementById('btQty').value)       || 0;
     const usbQty      = parseInt(document.getElementById('usbQty').value)      || 0;
@@ -1693,6 +1735,8 @@
     const calc = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
 
     return {
+      intent: intent || 'quote',   // download / mail / order（利用者がどの操作をしたか）
+
       corpName:       corp,
       officeName:     office,
       contactName:    contactName,
@@ -1720,12 +1764,49 @@
   }
 
   /* ──────── PDFダウンロード ──────── */
-  function downloadPDF() {
+  // 見積書を発行する。ここが唯一の送信トリガー（2026-09-09）。
+  //   intent='download' … 記録に残してPDFを保存（メールは送らない）
+  //   intent='mail'     … 記録に残して、ご入力のメールアドレスへPDFを送る
+  // どちらも案件として記録する（後から見返せるようにするため・2026-09-09 次田さん判断）。
+  let issuing = false;
+  async function issueQuote(intent) {
+    if (issuing) return;
     if (!validateContact()) {
       document.getElementById('formError').scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
-    // Webhook通知はロック解除時に既に送信済み（updateLock内）
+    issuing = true;
+    const btns = ['issueDownloadBtn', 'issueMailBtn', 'hdrPdfBtn', 'hdrMailBtn']
+      .map((id) => document.getElementById(id)).filter(Boolean);
+    const labels = btns.map((b) => b.innerHTML);
+    btns.forEach((b) => { b.disabled = true; });
+    const active = document.getElementById(intent === 'mail' ? 'issueMailBtn' : 'issueDownloadBtn');
+    if (active) active.innerHTML = '<i class="ti ti-loader-2"></i>お見積書を作成しています...';
+    try {
+      // まだ登録していない、または内容が変わっていれば登録し直す（同じ内容なら既存の版が返る）
+      await notifyWebhook(buildNotifyPayload(intent));
+      if (intent === 'mail') {
+        if (quoteInfo && quoteInfo.quoteToken) {
+          await sendQuotePdfToOffice();
+        } else {
+          setQuoteMailNote('error', 'お見積書のメール送付ができませんでした。「PDFでダウンロード」からお受け取りください。');
+        }
+      } else {
+        setQuoteMailNote('ok', 'お見積書を発行しました。印刷の画面が開きます（PDFとして保存できます）。');
+        printQuotePdf();
+      }
+      // スマホでは画面が長く、申し込みの案内まで届きにくい。発行できたらその場まで送る
+      const cta = document.getElementById('orderCta');
+      if (cta && cta.style.display !== 'none') {
+        setTimeout(() => cta.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+      }
+    } finally {
+      issuing = false;
+      btns.forEach((b, i) => { b.disabled = false; b.innerHTML = labels[i]; });
+    }
+  }
+
+  function printQuotePdf() {
     const corp   = document.getElementById('corpName').value.trim();
     const office = document.getElementById('officeName').value.trim();
     const nameForFile = [corp, office].filter(Boolean).join('_');
@@ -1742,7 +1823,7 @@
   /* ──────── 金額フォーマット ──────── */
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
-  /* ──────── 金額計算（税込ベース・特別割引算出） ──────── */
+  /* ──────── 金額計算（税込ベース・金額調整の算出） ──────── */
   /* ──────── 構成ラベル生成（例: "BT×2 + USB×1"） ──────── */
   function configLabel(btQty, usbQty) {
     const parts = [];
@@ -1800,7 +1881,7 @@
     // accompanyNote 更新
     const note = document.getElementById('accompanyNote');
     if (note) {
-      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.subsidyTotal}台構成時）— 導入設定・申請サポート・1年間サポート`;
+      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.subsidyTotal}台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談`;
     }
 
     /* ── 明細テーブル ── */
@@ -1810,7 +1891,7 @@
     if (btQty > 0) {
       tbody.innerHTML += `<tr>
         <td>${BT_LABEL}
-          <div class="est-sub-note">補助対象 ${btQty}台（伴走支援パック構成）</div>
+          <div class="est-sub-note">補助対象 ${btQty}台（伴走支援の対象）</div>
         </td>
         <td>${btQty}台</td>
         <td>${yen(BT_PRICE)}</td>
@@ -1820,7 +1901,7 @@
     if (usbQty > 0) {
       tbody.innerHTML += `<tr>
         <td>${USB_LABEL}
-          <div class="est-sub-note">補助対象 ${usbQty}台（伴走支援パック構成）</div>
+          <div class="est-sub-note">補助対象 ${usbQty}台（伴走支援の対象）</div>
         </td>
         <td>${usbQty}台</td>
         <td>${yen(USB_PRICE)}</td>
@@ -1830,8 +1911,8 @@
 
     if (c.subsidyTotal > 0) {
       tbody.innerHTML += `<tr>
-        <td>伴走支援費（1年間）<span class="est-badge-free">補助金申請サポート含む</span>
-          <div class="est-sub-note">導入設定・マイナ資格確認アプリ設定・介護DX証明書設定・申請代行・1年間サポート</div>
+        <td>伴走支援費<span class="est-badge-free">申請手続きの支援を含む</span>
+          <div class="est-sub-note">初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談</div>
         </td>
         <td>1式</td>
         <td>${yen(c.accFeeIncl)}</td>
@@ -1841,7 +1922,7 @@
 
     if (c.discount > 0) {
       tbody.innerHTML += `<tr style="color:#c02828;">
-        <td><strong>特別割引（出精値引き）</strong>
+        <td><strong>金額調整</strong>
           <div class="est-sub-note">合計を助成金上限ぴったりに収めるための調整</div>
         </td>
         <td>1式</td>
@@ -1894,7 +1975,7 @@
       </div>` : ''}
       ${c.discount > 0 ? `
       <div class="est-total-row sub" style="color:#c02828;">
-        <span>特別割引（出精値引き）</span><span>−${yen(c.discount)}</span>
+        <span>金額調整</span><span>−${yen(c.discount)}</span>
       </div>` : ''}
       ${extraRow}
       <div class="est-total-row grand">
@@ -1920,8 +2001,8 @@
       ・カードリーダー構成：<strong>${configFullLabel(btQty, usbQty, btExtra, usbExtra)}</strong><br>
       ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
       ・本見積書の有効期限は<strong>${fmtDate(expiry)}</strong>までです。<br>
-      ・「特別割引（出精値引き）」は、補助対象パートの合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
-      ・助成金の支給には事業所様の申請要件の充足が必要です。タダカヨが申請代行を含めて全面サポートします。${extraNote}
+      ・「金額調整」は、補助対象の合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
+      ・助成金の支給には、事業所さまが申請の要件を満たしている必要があります。タダカヨは申請手続きの支援を行います（代行はいたしません）。${extraNote}
     `;
   }
 </script>
