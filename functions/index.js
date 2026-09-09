@@ -13,6 +13,7 @@ const CHAT_WEBHOOK_URL = defineSecret("CHAT_WEBHOOK_URL");
 
 // H-3 関数別の専用SA（最小権限・SECURITY_REMEDIATION H-3）。compute SA(editor)依存を解消。
 const SA_WEBHOOK = "fn-webhook-sa@kjk-tadakayo.iam.gserviceaccount.com"; // datastore.user + CHAT secretAccessor
+                                                                        // + kjk-gmail-sa tokenCreator（2026-09-09・問い合わせ通知メール用。宛先は自分たちの受信箱に固定）
 const SA_BATCH   = "fn-batch-sa@kjk-tadakayo.iam.gserviceaccount.com";   // datastore.user + CHAT secretAccessor
 const SA_AI      = "fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com";      // aiplatform.user のみ
 const SA_MAIL    = "fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com";    // datastore.user + kjk-gmail-sa tokenCreator
@@ -145,6 +146,41 @@ async function readLeadToken(token) {
   return { id: d.id, ...t };
 }
 
+// LP問い合わせの通知メール（事務局宛）。
+// 2026-09-09 まで、この通知は外部サービス（Formspree）が担っていた。そこへ問い合わせの内容
+// （氏名・連絡先・住所）がそのまま渡っていたため、タダカヨのサーバーから送る形に置き換えた。
+// ⚠️ 宛先は設定の送信元アドレス（＝自分たちの受信箱）に固定する。入力値を宛先にしない
+//    （公開エンドポイントなので、宛先を外から指定できると迷惑メールの踏み台になる）。
+// 送信に失敗しても問い合わせの受付そのものは止めない（Chat通知と同じ扱い）。
+async function notifyInquiryMail({ officeName, corpName, name, phone, email, postalCode,
+                                   prefecture, city, addressDetail, message, caseNumber, caseId, existing }) {
+  try {
+    const box = (await getSettings()).gmailSender || GMAIL_SENDER;
+    const addr = [postalCode ? `〒${postalCode}` : "", prefecture, city, addressDetail]
+      .filter(Boolean).join(" ");
+    const head = existing
+      ? `既存の案件 #${caseNumber} に追記されました（同じ事業所からの再問い合わせ）`
+      : `新しい案件 #${caseNumber} として登録しました`;
+    await sendGmail({
+      to: box,
+      subject: `【LP問い合わせ】${officeName || "（事業所名なし）"}（案件 #${caseNumber}）`,
+      body:
+        `${head}\n\n` +
+        `法人名: ${corpName || "—"}\n` +
+        `事業所名: ${officeName || "—"}\n` +
+        `ご担当者: ${name || "—"}\n` +
+        `電話: ${phone || "—"}\n` +
+        `メール: ${email || "—"}\n` +
+        `住所: ${addr || "—"}\n\n` +
+        `ご相談内容:\n${message || "（記載なし）"}\n\n` +
+        `--- CRM で開く ---\n` +
+        `https://kjk-tadakayo-admin.web.app/case-detail.html?id=${caseId}\n`,
+    });
+  } catch (e) {
+    console.error("問い合わせ通知メールの送信に失敗:", e.message);
+  }
+}
+
 // Google Chat に通知
 async function notifyChat(webhookUrl, message) {
   if (!webhookUrl) return;
@@ -254,6 +290,12 @@ exports.webhookLpInquiry = onRequest(
           chatWebhook,
           `📥 LP問い合わせ（既存の案件 #${existing.caseNumber} に追記）\n事業所: ${officeName}\n担当者: ${body.name || ""}\nメッセージ: ${body.message || ""}`
         );
+        await notifyInquiryMail({
+          officeName, corpName: body.corpName || "", name: body.name || "", phone: body.phone || "",
+          email: body.email || "", postalCode: body.postalCode || "", prefecture: body.prefecture || "",
+          city: body.city || "", addressDetail: body.addressDetail || "", message: body.message || "",
+          caseNumber: existing.caseNumber, caseId: existing.id, existing: true,
+        });
         res.status(200).json({ status: "ok", caseId: existing.id, caseNumber: existing.caseNumber, token, existing: true });
         return;
       }
@@ -324,6 +366,12 @@ exports.webhookLpInquiry = onRequest(
         chatWebhook,
         `📥 新規LP問い合わせ [案件 #${caseNumber}]\n事業所: ${officeData.officeName}\n担当者: ${body.name || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nメッセージ: ${body.message || ""}`
       );
+      await notifyInquiryMail({
+        officeName: officeData.officeName, corpName: body.corpName || "", name: body.name || "",
+        phone: body.phone || "", email: body.email || "", postalCode: body.postalCode || "",
+        prefecture: body.prefecture || "", city: body.city || "", addressDetail: body.addressDetail || "",
+        message: body.message || "", caseNumber, caseId: caseRef.id, existing: false,
+      });
 
       // 送信完了画面の「今すぐ見積もりを作る」用の継続トークン
       const token = await issueLeadToken(caseRef.id, officeRef.id, prefill);

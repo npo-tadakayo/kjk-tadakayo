@@ -2636,7 +2636,7 @@
           </div>
         </div>
 
-        <form id="contact-form" action="https://formspree.io/f/xjglevjk" method="POST" novalidate>
+        <form id="contact-form" method="POST" novalidate>
           <div class="form-group">
             <label class="form-label" for="corp-name">
               法人名<span class="required">必須</span>
@@ -2925,7 +2925,7 @@
         : '';
     }, { passive: true });
 
-    // Form: AJAX submit via Formspree + Google Chat Webhook 並行通知
+    // Form: AJAX送信 → Cloud Functions（案件登録＋Chat通知＋事務局へのメール通知）
     const form = document.getElementById('contact-form');
     const success = document.getElementById('form-success');
 
@@ -3038,7 +3038,7 @@
         // 応答の token で、続けて作る見積もりを同じ案件に繋ぐ
         return res.ok ? await res.json().catch(() => null) : null;
       } catch (e) {
-        // Webhook失敗してもFormspreeメール送信があるので致命的ではない
+        // 失敗したら null を返す。呼び出し側でエラー表示に切り替える（2026-09-09 以降、送信先はここだけ）
         console.warn('Webhook送信に失敗しました', e);
         return null;
       }
@@ -3077,19 +3077,14 @@
       submitBtn.textContent = '送信中...';
 
       try {
-        // Formspreeへのメール送信 と Google Chat Webhook通知 を並行実行
-        const formspreePromise = fetch(form.action, {
-          method: 'POST',
-          body: data,
-          headers: { 'Accept': 'application/json' }
-        });
-        const webhookPromise = notifyContactWebhook(data);
+        // 2026-09-09: 外部サービス（Formspree）への送信をやめ、タダカヨのサーバー（Cloud Functions）だけに送る。
+        // Functions が案件として登録し、Google Chat と事務局のメールへ通知する。
+        // 外部へ個人情報を渡さないための変更（PMS対応）。成功判定もこの応答で行う。
+        const hook = await notifyContactWebhook(data);
 
-        const [res, hook] = await Promise.all([formspreePromise, webhookPromise]);
-
-        if (res.ok) {
+        if (hook && hook.token) {
           const next = document.getElementById('quoteNextLink');
-          if (next) next.setAttribute('href', hook && hook.token ? `mitsumori.html?t=${encodeURIComponent(hook.token)}` : 'mitsumori.html');
+          if (next) next.setAttribute('href', `mitsumori.html?t=${encodeURIComponent(hook.token)}`);
           form.style.display = 'none';
           success.style.display = 'block';
           success.scrollIntoView({ behavior: 'smooth', block: 'center' });
