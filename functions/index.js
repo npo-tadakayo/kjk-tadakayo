@@ -539,11 +539,17 @@ exports.webhookMitsumori = onRequest(
       await batch.commit();
 
       const crSummary = cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ");
+      // 見積もりを受け取っただけの段階では Chat に流さない（2026-09-11 次田さん判断・藤田副理事長の改修提案 REQ-03）。
+      // 設定画面の「見積もりが作られたときも Chat に通知する」を入れたときだけ送る。**既定は送らない**。
+      // 相談・お申し込みの通知（webhookLpInquiry・acceptQuote）はこの設定に関係なく従来どおり送る。
+      const notifySettings = await getSettings();
+      if (notifySettings.notifyQuoteChat === true) {
       const chatWebhook = await getChatWebhook();
       await notifyChat(
         chatWebhook,
         `📝 見積もり作成 ${estNo}（v${version}）${INTENT_LABEL[body.intent] || ""} [案件 #${caseNumber}${created ? "・新規" : ""}]\n事業所: ${officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${calc.plan.label}\n構成: ${crSummary}\n金額: ¥${calc.totalIncl.toLocaleString()}（自己負担 ¥${calc.selfPay.toLocaleString()}）`
       );
+      }
 
       res.status(200).json({ status: "ok", caseId, caseNumber, quoteId: quoteRef.id, estNo, version,
         quoteToken: accessToken, validUntil: validUntil.toDate().toISOString() });
@@ -700,7 +706,7 @@ exports.acceptQuote = onRequest(
     if (req.method !== "POST") { res.status(405).send("Method Not Allowed"); return; }
     if (await appCheckGate(req, res, "acceptQuote")) return;
     try {
-      const { quoteId, quoteToken, delivery, payMethod, preferredDate, note, agreedName } = req.body || {};
+      const { quoteId, quoteToken, delivery, payMethod, preferredDate, note, agreedName, agreedPolicy } = req.body || {};
       if (!quoteId || !quoteToken) { res.status(400).json({ status: "error", message: "quoteId・quoteToken は必須です" }); return; }
       if (!agreedName || !String(agreedName).trim()) { res.status(400).json({ status: "error", message: "お申し込み者のお名前をご入力ください" }); return; }
       const payKey = payMethod === "before" ? "before" : "after";
@@ -745,6 +751,8 @@ exports.acceptQuote = onRequest(
       tx.update(qRef, {
         status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
         acceptedBy: String(agreedName).trim().slice(0, 100), payMethod: payKey,
+        // 申し込み画面で「プライバシーポリシー・利用規約に同意」に入れたかどうかを残す（監査用）
+        agreedPolicy: agreedPolicy === true, agreedPolicyAt: now,
         delivery: { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
           address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" },
       });

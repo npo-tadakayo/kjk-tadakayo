@@ -901,7 +901,8 @@
             <strong>介護事業所さまへ：</strong>
             私は介護事業所の関係者（職員・経営者・運営委託者など）であり、本サービスのお見積もりを<strong>業務目的で</strong>取得することに同意します。<br>
             ※ 本見積書は介護事業所さま向けのサービスです。同業の販売代理店・卸業者・転売目的の方への発行はお断りしております。<br>
-            ※ チェックすると、お見積もりの内容が右側に表示されます。<strong>この時点ではタダカヨへ送信されません。</strong>
+            ※ チェックすると、お見積もりの内容が右側に表示されます。<strong>この時点ではタダカヨへ送信されません。</strong><br>
+            ※ ご入力いただいた内容は、<a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>と<a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>に従って取り扱います。
           </span>
         </label>
       </div>
@@ -1116,6 +1117,13 @@
         お申し込みは、上のお見積もりの内容とお支払い条件にご同意いただくものです。
         伴走支援の進め方と個人情報の取扱いについての承諾書は、支援の前に別途ご確認いただきます。
       </div>
+    </div>
+
+    <div class="modal-field">
+      <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.8;cursor:pointer">
+        <input type="checkbox" id="odAgree" style="width:18px;height:18px;margin-top:2px;flex:none">
+        <span><a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>と<a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>を確認し、同意します<span class="req">*</span></span>
+      </label>
     </div>
 
     <p id="orderError" style="display:none;color:var(--primary);font-size:12px;margin:4px 0 0;line-height:1.6"></p>
@@ -1643,9 +1651,23 @@
       parseInt(document.getElementById('usbQty').value) || 0,
       parseInt(document.getElementById('btExtraQty').value) || 0,
       parseInt(document.getElementById('usbExtraQty').value) || 0);
+    // 送信前に、何をどの条件で申し込むのかを一覧で見せる（藤田副理事長の改修提案 REQ-07）
+    const planKeyM = document.querySelector('input[name="plan"]:checked').value;
+    const nBt  = (parseInt(document.getElementById('btQty').value) || 0) + (parseInt(document.getElementById('btExtraQty').value) || 0);
+    const nUsb = (parseInt(document.getElementById('usbQty').value) || 0) + (parseInt(document.getElementById('usbExtraQty').value) || 0);
+    const connM = (document.querySelector('input[name="usbConnector"]:checked') || {}).value || '';
+    const connLabel = connM === 'A' ? 'Type-A（四角い口）' : connM === 'C' ? 'Type-C（小さい楕円）' : '未定（Type-A で手配）';
+    const koseiM = [nBt ? `Bluetooth ${nBt}台` : null, nUsb ? `USB ${nUsb}台（${connLabel}）` : null]
+      .filter(Boolean).join(' ／ ') || '—';
+    const mailM = (document.getElementById('contactEmail').value || '').trim();
     document.getElementById('orderSummary').innerHTML =
-      `お見積書 <b>${esc(estNo)}</b>　合計（税込） <b>${yen(c.totalIncl)}</b>　`
-      + `助成金充当 ${yen(c.grantAmt)}　自己負担 <b>${yen(c.selfPay)}</b><br>`
+      `<div style="background:#faf7f2;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.9">`
+      + `<div><b>お見積書</b>　${esc(estNo)}</div>`
+      + `<div><b>プラン</b>　${esc((PLANS[planKeyM] || {}).label || '')}</div>`
+      + `<div><b>カードリーダー</b>　${esc(koseiM)}</div>`
+      + `<div><b>合計（税込）</b>　${yen(c.totalIncl)}　助成金充当 ${yen(c.grantAmt)}　<b>自己負担 ${yen(c.selfPay)}</b></div>`
+      + `<div><b>ご連絡先メール</b>　${esc(mailM)}</div>`
+      + `</div>`
       + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
     // 事業所情報をお届け先の初期値にする（変えられる）
     const v = (id) => (document.getElementById(id).value || '').trim();
@@ -1672,6 +1694,7 @@
     if (!v('odName')) { show('お申し込み者のお名前をご入力ください'); return; }
     if (!v('odOffice')) { show('お届け先の事業所名をご入力ください'); return; }
     if (!v('odPref') || !v('odCity') || !v('odAddress')) { show('お届け先の住所（都道府県・市町村・番地）をご入力ください'); return; }
+    if (!document.getElementById('odAgree').checked) { show('個人情報保護方針と利用規約への同意にチェックをお願いします'); return; }
     const btn = document.getElementById('orderSubmit');
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = '送信中...';
@@ -1683,7 +1706,7 @@
         method: 'POST', headers,
         body: JSON.stringify({
           quoteId: quoteInfo.quoteId, quoteToken: quoteInfo.quoteToken,
-          agreedName: v('odName'), payMethod: v('odPay') || 'after',
+          agreedName: v('odName'), agreedPolicy: true, payMethod: v('odPay') || 'after',
           preferredDate: v('odDate'), note: v('odNote'),
           delivery: {
             company: v('odCompany'), officeName: v('odOffice'),

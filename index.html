@@ -2799,11 +2799,12 @@
           <div class="form-submit-wrap">
             <button type="submit" class="btn btn-primary btn-lg">
               <i class="ti ti-send" aria-hidden="true"></i>
-              無料で相談する
+              導入について相談する
             </button>
             <p class="form-note">
               送信後、2営業日以内にご連絡いたします。
-              情報は相談対応のみに使用し、第三者への提供はいたしません。
+              ご入力いただいた内容は、ご相談への回答とお見積もりの作成にのみ使用し、第三者への提供はいたしません。<br>
+              くわしくは<a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>と<a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>をご確認ください。
             </p>
           </div>
         </form>
@@ -2825,6 +2826,8 @@
           <a href="https://tadakayo.jp" target="_blank" rel="noopener noreferrer">tadakayo.jp</a>
           <a href="https://kaigo-abcircle.com/" target="_blank" rel="noopener noreferrer">AB Circle Japan</a>
           <a href="https://www.kaigo-kiban-portal.jp/" target="_blank" rel="noopener noreferrer">介護情報基盤ポータル</a>
+          <a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>
+          <a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>
         </div>
         <p class="footer-copy">
           © 2026 NPO法人タダカヨ　|　本LPに記載の助成金情報は2026年7月時点のものです。最新情報は介護情報基盤ポータル（国保中央会）でご確認ください。
@@ -3093,12 +3096,12 @@
           }
         } else {
           submitBtn.disabled = false;
-          submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 無料で相談する';
+          submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 導入について相談する';
           alert('送信中にエラーが発生しました。お手数ですが、しばらくしてから再度お試しください。');
         }
       } catch {
         submitBtn.disabled = false;
-        submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 無料で相談する';
+        submitBtn.innerHTML = '<i class="ti ti-send" aria-hidden="true"></i> 導入について相談する';
         alert('送信中にエラーが発生しました。お手数ですが、しばらくしてから再度お試しください。');
       }
     });

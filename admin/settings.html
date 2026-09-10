@@ -29,7 +29,17 @@
           <div class="form-group">
             <label class="form-label" for="chatWebhookUrl">Google Chat Webhook URL</label>
             <input class="form-control" id="chatWebhookUrl" type="text" placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...">
-            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">LP問い合わせ・見積もり作成・日次フォローアップの通知先。変更は即時反映（最大60秒）。</p>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">LP問い合わせ・お申し込み・日次フォローアップの通知先。変更は即時反映（最大60秒）。</p>
+          </div>
+          <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="notifyQuoteChat" style="width:18px;height:18px;flex:none">
+              <span>見積もりが作られたときも Chat に通知する</span>
+            </label>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">
+              事業所さまが<strong>見積書を受け取っただけ</strong>の段階でも通知します。<strong>通常はオフのままで構いません</strong>
+              （ご相談・お申し込みの通知は、この設定に関係なく届きます）。見積もりの内容は案件一覧の「見積もり・申し込み」から確認できます。
+            </p>
           </div>
           <div class="form-group">
             <label class="form-label" for="gmailSender">メール送信元アドレス</label>

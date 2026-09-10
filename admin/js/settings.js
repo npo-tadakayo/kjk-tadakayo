@@ -184,6 +184,8 @@ onAuthStateChanged(auth, async (user)=>{
   const s = snap.exists() ? snap.data() : {};
   $("chatWebhookUrl").value = s.chatWebhookUrl || "";
   $("gmailSender").value = s.gmailSender || "kjk-staff@tadakayo.jp";
+  // 見積もり作成時の Chat 通知は既定オフ（2026-09-11）。未設定＝オフとして扱う
+  $("notifyQuoteChat").checked = s.notifyQuoteChat === true;
   // 差出人リスト（旧単一値があれば移行）
   let senders = Array.isArray(s.senders) ? s.senders.slice() : [];
   if (!senders.length && s.senderName) senders = [{ name:s.senderName, postal:s.senderPostal||"", address:s.senderAddress||"", phone:s.senderPhone||"" }];
@@ -243,6 +245,7 @@ onAuthStateChanged(auth, async (user)=>{
       await setDoc(doc(db,"appConfig","settings"),{
         chatWebhookUrl: $("chatWebhookUrl").value.trim(),
         gmailSender: $("gmailSender").value.trim(),
+        notifyQuoteChat: $("notifyQuoteChat").checked,
         senders: collectSenders(),
         poIssuerName: $("poIssuerName").value.trim(),
         poIssuerAddr: $("poIssuerAddr").value.trim(),
