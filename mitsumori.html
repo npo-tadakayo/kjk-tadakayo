@@ -136,6 +136,7 @@
       z-index: 200;
       align-items: center;
       justify-content: center;
+      padding: 20px;
     }
     .modal-overlay.open { display: flex; }
     .modal-box {
@@ -145,6 +146,13 @@
       width: 480px;
       max-width: 92vw;
       box-shadow: 0 8px 40px rgba(0,0,0,.2);
+      /* 画面の高さが足りないとき、箱が画面の外へはみ出して申し込みボタンに
+         届かなくなっていた（2026-09-11 板垣さん報告・蜂須賀さん再現）。
+         箱の中だけをスクロールさせて、必ず画面内に収まるようにする。 */
+      max-height: calc(100vh - 40px);
+      max-height: calc(100dvh - 40px);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
     .modal-title {
       font-size: 16px;
@@ -176,6 +184,13 @@
       display: flex;
       gap: 8px;
       margin-top: 20px;
+      /* スクロールの途中でもボタンが常に見えるように、箱の下端へ貼り付ける */
+      position: sticky;
+      bottom: -24px;
+      background: white;
+      padding: 12px 0 24px;
+      margin-bottom: -24px;
+      border-top: 1px solid var(--border);
     }
     .modal-btn {
       flex: 1;
@@ -196,6 +211,12 @@
     .modal-btn-primary:hover { background: var(--primary-dark); }
     .modal-btn-secondary { background: #f5f5f5; color: var(--text); }
     .modal-btn-secondary:hover { background: var(--border); }
+    /* 申込モーダルは -ok / -cancel を使っているのに定義が無く、
+       どちらも灰色のままで押せるボタンに見えていなかった（2026-09-11 修正） */
+    .modal-btn-ok { background: var(--primary); color: white; }
+    .modal-btn-ok:hover { background: var(--primary-dark); }
+    .modal-btn-cancel { background: #f5f5f5; color: var(--text); }
+    .modal-btn-cancel:hover { background: var(--border); }
     .modal-close-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
     .modal-close-btn {
       background: none; border: none; cursor: pointer;
