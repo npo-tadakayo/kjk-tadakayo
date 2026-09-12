@@ -516,6 +516,21 @@ export function printableClone(){
   return { clone, cleanup: () => holder.remove() };
 }
 
+// 宛先は「認定事業者 → 出荷の送付先メール → 案件の担当者メール」の順で自動で入れる。
+// 入れたあとも画面で直せる（先方の担当が変わることがあるため）。
+async function defaultMailTo(d){
+  if(d.partnerEmail) return d.partnerEmail;
+  if(d.email) return d.email;
+  if(d.contactEmail) return d.contactEmail;
+  if(d.caseId){
+    try{
+      const cs = await getDoc(doc(db,"cases",d.caseId));
+      if(cs.exists()) return cs.data().contactEmail || "";
+    }catch(_){ /* 案件が消えていても送付自体は手入力で続けられる */ }
+  }
+  return "";
+}
+
 function setupMailDoc(kind, d, st){
   const btn = document.getElementById("mailDocBtn");
   if(!btn) return;
@@ -527,7 +542,7 @@ function setupMailDoc(kind, d, st){
   document.getElementById("mailDocCancel").onclick = close;
   modal.onclick = (e)=>{ if(e.target === modal) close(); };
 
-  btn.onclick = ()=>{
+  btn.onclick = async ()=>{
     const t = mailDocTemplate(kind, d, st);
     document.getElementById("mailDocTitle").textContent = `${MAIL_DOC_LABEL[kind]}をメールで送付（${d.soNumber || ""}）`;
     const sentAt = kind === "invoice" ? d.invoiceMailedAt : d.receiptMailedAt;
@@ -535,7 +550,7 @@ function setupMailDoc(kind, d, st){
     document.getElementById("mailDocSummary").innerHTML =
       `請求先: <strong>${esc(d.shipType === "dropship" || d.partnerEmail ? (d.partnerName || d.partnerEmail || "") : (d.company || d.officeName || ""))}</strong>`
       + (sentAt ? `<br><span style="color:#c87a1f">この${MAIL_DOC_LABEL[kind]}は ${esc(sentAt)} に ${esc(sentTo || "")} へ送付済みです（再送になります）</span>` : "");
-    document.getElementById("mailDocTo").value = d.partnerEmail || "";
+    document.getElementById("mailDocTo").value = await defaultMailTo(d);
     document.getElementById("mailDocCc").value = "";
     document.getElementById("mailDocSubject").value = t.subject;
     document.getElementById("mailDocBody").value = t.body;

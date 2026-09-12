@@ -476,6 +476,9 @@ function renderOrders(orders){
   document.querySelectorAll(".confirm-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) confirmOrder(o); }));
   document.querySelectorAll(".del-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) deleteOrder(o); }));
 }
+// 案件から出荷を作ったときに、その案件のIDを保存するため覚えておく
+// （請求書メールの宛先や、支援報告書の紐付けに使う）
+let prefillCaseId = null;
 let receivingPO = null;
 function closeReceiveModal(){ document.getElementById("receiveModal").classList.remove("open"); receivingPO=null; }
 // 入荷はどの保管場所に入れるかで在庫の置き場所が変わるので、確認ダイアログではなく場所を選ばせる
@@ -784,6 +787,7 @@ function updateShipTotal(){
 
 function openShip(existing){
   editingShip = existing || null;
+  prefillCaseId = null;   // 案件から開いた場合は prefillShipFromCase が開いた後に入れ直す
   const s = editingShip;
   itemRows("shipItems");
   document.getElementById("shipStockWarn").style.display="none";
@@ -803,7 +807,7 @@ function openShip(existing){
     label.textContent="出荷を登録";
     note.style.display="none";
     document.getElementById("shipDate").value=today();
-    ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone"].forEach(id=>document.getElementById(id).value="");
+    ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone","shipEmail"].forEach(id=>document.getElementById(id).value="");
     typeSel.value="direct"; typeSel.disabled=false;
     document.getElementById("shipPartner").disabled=false; // 修正モードで止めたままにしない
     document.getElementById("shipPartnerWrap").style.display="none";
@@ -817,6 +821,7 @@ function openShip(existing){
     document.getElementById("shipAddress").value=s.address||"";
     document.getElementById("shipContact").value=s.contactName||"";
     document.getElementById("shipPhone").value=s.phone||"";
+    document.getElementById("shipEmail").value=s.email||"";
     // 種別（請求先）はここでは変えない。表示だけ合わせて操作させない
     typeSel.value = s.shipType==="dropship" ? "dropship" : "direct";
     typeSel.disabled = true;
@@ -925,6 +930,8 @@ async function saveShip(){
       officeName:office, address:document.getElementById("shipAddress").value.trim(),
       contactName:document.getElementById("shipContact").value.trim(),
       phone:document.getElementById("shipPhone").value.trim(),
+      email:document.getElementById("shipEmail").value.trim(),
+      ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(originLocationId,-it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,originLocationId)); }
@@ -950,6 +957,7 @@ async function saveShipEdit(){
     address:document.getElementById("shipAddress").value.trim(),
     contactName:document.getElementById("shipContact").value.trim(),
     phone:document.getElementById("shipPhone").value.trim(),
+    email:document.getElementById("shipEmail").value.trim(),
     updatedAt:serverTimestamp(),
     updatedBy:currentUser.displayName||currentUser.email,
   };
@@ -1057,6 +1065,8 @@ async function prefillShipFromCase(caseId){
     document.getElementById("shipAddress").value = c.address||office.address||"";
     document.getElementById("shipContact").value = c.contactName||"";
     document.getElementById("shipPhone").value   = c.contactPhone||office.phone||"";
+    document.getElementById("shipEmail").value   = c.contactEmail||office.email||"";
+    prefillCaseId = caseId;   // 保存時に出荷へ持たせる
     (c.cardReaders||[]).forEach(r=>{
       const qty=(Number(r.subsidyQty)||0)+(Number(r.extraQty)||0);
       const sku = r.type==="BT" ? "cir415a-01" : r.type==="USB" ? "cir315a-02" : null;

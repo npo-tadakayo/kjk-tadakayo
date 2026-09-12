@@ -179,6 +179,12 @@
           <div class="form-group"><label class="form-label" for="shipContact">送付先担当者</label><input class="form-control" type="text" id="shipContact"></div>
           <div class="form-group"><label class="form-label" for="shipPhone">電話</label><input class="form-control" type="text" id="shipPhone"></div>
         </div>
+        <!-- 請求書・領収書をメールで送るときの宛先。案件から作った出荷には自動で入る（2026-09-12 追加） -->
+        <div class="form-group">
+          <label class="form-label" for="shipEmail">送付先メール</label>
+          <input class="form-control" type="email" id="shipEmail" placeholder="例: info@example.jp">
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">請求書・領収書をメールで送るときの宛先に使います（送信前に変更できます）。</p>
+        </div>
         <!-- 自社在庫から出すときは、どの保管場所から出すかを指定する（2026-09-12 追加） -->
         <div class="form-group" id="shipOriginWrap">
           <label class="form-label" for="shipOrigin">発送元の保管場所 <span style="color:red">*</span></label>
