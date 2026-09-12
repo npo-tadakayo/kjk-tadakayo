@@ -12,6 +12,7 @@ import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf,
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
+import { PREFECTURES } from "/js/area.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -22,6 +23,7 @@ const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
 const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
 
 let products = [];
+let locations = [];          // 保管場所マスタ（2026-09-12 追加）
 let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
@@ -64,6 +66,103 @@ function initTabs(){
   }
 }
 
+// ===== 保管場所（2026-09-12 追加） =====
+// 在庫は「合計 products.stock」と「場所ごと products.stockByLocation」の両方を持つ。
+// 合計を残したのは、既存の在庫チェック・表示・請求まわりをそのまま動かすため。
+// ★在庫を動かすときは必ず stockPatch() を通すこと。stock だけ動かすと内訳と合計がずれる。
+function activeLocations(){ return locations.filter(l=>l.active!==false); }
+function defaultLocationId(){ const a=activeLocations(); return ((a.find(l=>l.isDefault)||a[0]||{})._id)||""; }
+function locationName(id){ const l=locations.find(x=>x._id===id); return l?(l.name||""):""; }
+function locationPref(id){ const l=locations.find(x=>x._id===id); return l?(l.pref||""):""; }
+function stockAt(p, locId){ return Number(((p||{}).stockByLocation||{})[locId])||0; }
+// 保管場所を作る前に登録された出荷には originLocationId が無い。既定の場所から出したものとして扱う
+function shipLocationOf(s){ return (s&&s.originLocationId) || defaultLocationId(); }
+function stockPatch(locId, delta){
+  const patch = { stock: increment(delta) };
+  if(locId) patch[`stockByLocation.${locId}`] = increment(delta);
+  return patch;
+}
+function movement(sku, delta, reason, refNo, locId){
+  return { sku, delta, reason, refNo: refNo||"", locationId: locId||"", locationName: locationName(locId),
+    createdAt: serverTimestamp(), userName: currentUser.displayName||currentUser.email };
+}
+function fillLocationSelect(el, selected){
+  if(!el) return;
+  const list = activeLocations();
+  el.innerHTML = list.length
+    ? list.map(l=>`<option value="${esc(l._id)}">${esc(l.name)}${l.pref?`（${esc(l.pref)}）`:""}</option>`).join("")
+    : '<option value="">保管場所が未登録です</option>';
+  const want = (selected && list.some(l=>l._id===selected)) ? selected : defaultLocationId();
+  el.value = want;
+}
+// 合計と内訳の差＝どの場所に置いたか決まっていない在庫。移行前のぶんがここに出る
+function unassignedStock(p){
+  const by=p.stockByLocation||{};
+  const assigned=locations.reduce((a,l)=>a+(Number(by[l._id])||0),0);
+  return (Number(p.stock)||0) - assigned;
+}
+function locationBreakdownHtml(p){
+  const by=p.stockByLocation||{};
+  const rows=locations.filter(l=>(Number(by[l._id])||0)!==0)
+    .map(l=>`${esc(l.name)} <strong>${Number(by[l._id])||0}</strong>`);
+  const un=unassignedStock(p);
+  if(un!==0) rows.push(`<span style="color:var(--color-danger)">未割当 <strong>${un}</strong></span>`);
+  return rows.length?rows.join("<br>"):'<span style="color:var(--color-ink-muted)">—</span>';
+}
+
+let editingLoc = null;
+function renderLocations(){
+  const body=document.getElementById("locationsBody"); if(!body) return;
+  body.innerHTML = locations.map(l=>{
+    const total=products.reduce((a,p)=>a+stockAt(p,l._id),0);
+    return `<tr>
+      <td><strong>${esc(l.name)}</strong>${l.isDefault?' <span style="font-size:11px;color:var(--color-ink-muted)">（既定）</span>':""}</td>
+      <td>${esc(l.pref||"—")}</td>
+      <td class="num">${total} 台</td>
+      <td>${l.active===false?'<span style="color:var(--color-ink-muted)">使っていない</span>':"使用中"}</td>
+      <td><button class="btn btn-secondary loc-edit" data-id="${esc(l._id)}" style="font-size:12px;padding:4px 10px"><i class="ti ti-pencil" aria-hidden="true"></i> 編集</button></td>
+    </tr>`;
+  }).join("");
+  const empty=document.getElementById("locationsEmpty"); if(empty) empty.style.display=locations.length?"none":"";
+  document.querySelectorAll(".loc-edit").forEach(b=>b.addEventListener("click",()=>openLocationModal(locations.find(x=>x._id===b.dataset.id))));
+}
+function closeLocationModal(){ document.getElementById("locationModal").classList.remove("open"); editingLoc=null; }
+function openLocationModal(existing){
+  editingLoc = existing || null;
+  const pref=document.getElementById("locPref");
+  pref.innerHTML='<option value="">選択してください</option>'+PREFECTURES.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join("");
+  document.getElementById("locationModalTitle").textContent = existing?"保管場所の編集":"保管場所を追加";
+  document.getElementById("locName").value = existing?(existing.name||""):"";
+  pref.value = existing?(existing.pref||""):"";
+  document.getElementById("locActive").checked = existing? existing.active!==false : true;
+  document.getElementById("locNameErr").textContent="";
+  document.getElementById("locationModal").classList.add("open");
+  document.getElementById("locName").focus();
+}
+async function saveLocation(){
+  const name=document.getElementById("locName").value.trim();
+  const pref=document.getElementById("locPref").value;
+  const active=document.getElementById("locActive").checked;
+  const err=document.getElementById("locNameErr");
+  if(!name){ err.textContent="保管場所の名前を入力してください"; return; }
+  if(!pref){ err.textContent="都道府県を選んでください（ゆうパックの送料が発地で変わるため）"; return; }
+  const btn=document.getElementById("saveLocationBtn"); btn.disabled=true;
+  try{
+    if(editingLoc){
+      await updateDoc(doc(db,"locations",editingLoc._id),{name,pref,active,updatedAt:serverTimestamp()});
+      toast(`保管場所「${name}」を更新しました`);
+    }else{
+      await addDoc(collection(db,"locations"),{name,pref,active,
+        isDefault: locations.length===0,   // 最初の1件を既定にする
+        sort: locations.length, createdAt:serverTimestamp(),
+        createdBy: currentUser.displayName||currentUser.email});
+      toast(`保管場所「${name}」を追加しました`);
+    }
+    closeLocationModal();
+  }catch(e){ err.textContent=`保存に失敗しました: ${e.message}`; }
+  finally{ btn.disabled=false; }
+}
+
 // ===== 在庫・商品 =====
 function renderProducts(){
   document.getElementById("productsBody").innerHTML = products.map(p=>`
@@ -73,6 +172,7 @@ function renderProducts(){
       <td>${esc(connectionLabel(p)) || "—"}</td>
       <td class="num">${yen(p.wholesale2_10)}</td>
       <td><strong style="font-size:16px">${p.stock||0}</strong> 台</td>
+      <td style="font-size:12px;line-height:1.8">${locationBreakdownHtml(p)}</td>
       <td>
         <button class="btn btn-secondary stock-btn" data-sku="${p.id}" style="font-size:12px;padding:4px 10px"><i class="ti ti-adjustments" aria-hidden="true"></i> 在庫調整</button>
       </td>
@@ -92,7 +192,29 @@ function openStockModal(sku){
   if (!p) return;
   stockSku = sku;
   document.getElementById("stockModalTitle").textContent = `在庫調整：${p.name}`;
-  document.getElementById("stockCurrent").textContent = `現在の在庫：${p.stock||0} 台`;
+  document.getElementById("stockCurrent").textContent = `現在の在庫（全体）：${p.stock||0} 台`;
+  const locSel = document.getElementById("stockLocation");
+  fillLocationSelect(locSel, null);
+  const showAt = ()=>{
+    const el=document.getElementById("stockLocationCurrent");
+    el.textContent = locSel.value ? `この場所の在庫：${stockAt(p, locSel.value)} 台` : "先に保管場所を登録してください";
+  };
+  // 保管場所を使う前からあった在庫は「未割当」になっている。合計を動かさずに場所へ移せるようにする
+  const un = unassignedStock(p);
+  const assignBtn = document.getElementById("stockAssignBtn");
+  if(assignBtn){
+    assignBtn.style.display = un > 0 ? "" : "none";
+    assignBtn.onclick = doAssign;
+  }
+  const showAtAll = ()=>{
+    showAt();
+    if(un > 0){
+      const el=document.getElementById("stockLocationCurrent");
+      el.innerHTML = `${esc(el.textContent)}<br><span style="color:var(--color-danger)">まだ場所が決まっていない在庫が ${un} 台あります。`
+        + `「この場所に割り当て」を押すと、合計を増やさずにこの場所の在庫にできます。</span>`;
+    }
+  };
+  locSel.onchange = showAtAll; showAtAll();
   document.getElementById("stockQty").value = "1";
   document.getElementById("stockReason").value = "manual";
   setStockErr("");
@@ -105,23 +227,42 @@ function openStockModal(sku){
   m.onclick = (e)=>{ if (e.target === m) closeStockModal(); };
   document.getElementById("stockQty").focus();
 }
+// 未割当の在庫を保管場所へ移す。★合計(stock)は動かさない（置き場所を決めるだけ）
+async function doAssign(){
+  const p = products.find(x=>x.id===stockSku); if(!p) return;
+  const locId = document.getElementById("stockLocation").value;
+  if(!locId){ setStockErr("保管場所を選んでください"); return; }
+  const q = parseInt(document.getElementById("stockQty").value, 10);
+  if(!Number.isFinite(q) || q<=0){ setStockErr("台数は1以上で入力してください"); return; }
+  const un = unassignedStock(p);
+  if(q > un){ setStockErr(`まだ場所が決まっていない在庫は ${un} 台です`); return; }
+  const btn = document.getElementById("stockAssignBtn"); btn.disabled = true;
+  try{
+    await updateDoc(doc(db,"products",stockSku), { [`stockByLocation.${locId}`]: increment(q) });
+    await addDoc(collection(db,"inventoryMovements"), movement(stockSku, q, "location_assign", "", locId));
+    toast(`${p.name} を ${locationName(locId)} に ${q}台 割り当てました（在庫の合計は変わりません）`);
+    closeStockModal();
+  }catch(e){ setStockErr(`割り当てに失敗しました: ${e.message}`); }
+  finally{ btn.disabled = false; }
+}
+
 async function doStockAdjust(dir){
   const p = products.find(x=>x.id===stockSku);
   if (!p) return;
   setStockErr("");
+  const locId = document.getElementById("stockLocation").value;
+  if(!locId){ setStockErr("保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
   const q = parseInt(document.getElementById("stockQty").value, 10);
   if (!(q > 0)) { setStockErr("正の整数を入力してください"); return; }
-  if (dir === "out" && (p.stock||0) < q) { setStockErr(`在庫不足（現在 ${p.stock||0} 台）`); return; }
+  if (dir === "out" && stockAt(p, locId) < q) { setStockErr(`この場所の在庫が足りません（${locationName(locId)} ${stockAt(p, locId)} 台）`); return; }
   const reason = `${document.getElementById("stockReason").value}_${dir}`;
   const btnIn = document.getElementById("stockInBtn"), btnOut = document.getElementById("stockOutBtn");
   btnIn.disabled = true; btnOut.disabled = true;
   try {
     const delta = dir === "in" ? q : -q;
-    await updateDoc(doc(db,"products",stockSku), { stock: increment(delta) });
-    await addDoc(collection(db,"inventoryMovements"), {
-      sku: stockSku, delta, reason,
-      createdAt: serverTimestamp(), userName: currentUser.displayName||currentUser.email });
-    toast(`${p.name} を ${dir==="in"?"+":"-"}${q}台 調整しました`);
+    await updateDoc(doc(db,"products",stockSku), stockPatch(locId, delta));
+    await addDoc(collection(db,"inventoryMovements"), movement(stockSku, delta, reason, "", locId));
+    toast(`${p.name}（${locationName(locId)}）を ${dir==="in"?"+":"-"}${q}台 調整しました`);
     closeStockModal();
   } catch(e){ setStockErr(`調整に失敗しました: ${e.message}`); }
   finally { btnIn.disabled = false; btnOut.disabled = false; }
@@ -335,15 +476,37 @@ function renderOrders(orders){
   document.querySelectorAll(".confirm-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) confirmOrder(o); }));
   document.querySelectorAll(".del-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) deleteOrder(o); }));
 }
+let receivingPO = null;
+function closeReceiveModal(){ document.getElementById("receiveModal").classList.remove("open"); receivingPO=null; }
+// 入荷はどの保管場所に入れるかで在庫の置き場所が変わるので、確認ダイアログではなく場所を選ばせる
 async function receiveOrder(id, orders){
-  const o=orders.find(x=>x._id===id);
-  if(!confirm(`発注 ${o.poNumber} を入荷登録します。在庫に加算されます。よろしいですか？`)) return;
+  const o=orders.find(x=>x._id===id); if(!o) return;
+  receivingPO = o;
+  const lines=(o.items||[]).map(it=>`${esc(it.sku)} × ${Number(it.qty)||0}台`).join("・");
+  document.getElementById("receiveSummary").innerHTML =
+    `発注 <strong>${esc(o.poNumber||"")}</strong> を入荷登録します。<br>${lines||"（明細がありません）"}`;
+  fillLocationSelect(document.getElementById("receiveLocation"), null);
+  document.getElementById("receiveErr").textContent="";
+  document.getElementById("receiveModal").classList.add("open");
+}
+async function doReceive(){
+  const o=receivingPO; if(!o) return;
+  const locId=document.getElementById("receiveLocation").value;
+  const err=document.getElementById("receiveErr");
+  if(!locId){ err.textContent="入荷先の保管場所を選んでください（未登録なら在庫タブから追加できます）"; return; }
+  const btn=document.getElementById("doReceiveBtn"); btn.disabled=true;
   try{
-    for(const it of (o.items||[])){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
-      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"po_received",refNo:o.poNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
-    await updateDoc(doc(db,"purchaseOrders",id),{status:"received",receivedAt:serverTimestamp()});
-    toast(`${o.poNumber} を入荷登録しました`);
-  }catch(e){ alert(`入荷登録失敗: ${e.message}`);}
+    for(const it of (o.items||[])){
+      const q=Number(it.qty)||0; if(!q) continue;
+      await updateDoc(doc(db,"products",it.sku), stockPatch(locId, q));
+      await addDoc(collection(db,"inventoryMovements"), movement(it.sku, q, "po_received", o.poNumber, locId));
+    }
+    await updateDoc(doc(db,"purchaseOrders",o._id),{status:"received",receivedAt:serverTimestamp(),
+      receivedLocationId:locId, receivedLocationName:locationName(locId)});
+    toast(`${o.poNumber} を ${locationName(locId)} に入荷登録しました`);
+    closeReceiveModal();
+  }catch(e){ err.textContent=`入荷登録に失敗しました: ${e.message}`; }
+  finally{ btn.disabled=false; }
 }
 // 発注済(sent) → 下書き(draft) に戻す（発注を取り消して内容を直すとき）
 // 入荷済(received)は在庫が動いているため対象外＝ボタンを出していない
@@ -439,26 +602,26 @@ async function confirmDraftShipment(s){
   // 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
   const usesStock = shipUsedStock(s);
   const its = usesStock ? stockItems(s.items) : [];
+  const locId = usesStock ? shipLocationOf(s) : "";
   if(usesStock){
     for(const it of its){
       const p=products.find(x=>x.id===it.sku)||{};
-      if((p.stock||0) < (Number(it.qty)||0)){
-        alert(`在庫が足りません: ${p.name||it.sku}（在庫 ${p.stock||0} / 出荷 ${it.qty}）\n入荷を登録するか、AB Circle からの直送に切り替えてください。`);
+      if(stockAt(p, locId) < (Number(it.qty)||0)){
+        alert(`在庫が足りません: ${p.name||it.sku}（${locationName(locId)||"保管場所未設定"} ${stockAt(p,locId)} / 出荷 ${it.qty}）\n入荷を登録するか、別の保管場所に変えてください。`);
         return;
       }
     }
   }
   const lines = its.map(it=>`${it.sku} × ${it.qty}`).join("・");
   const msg = usesStock
-    ? `出荷 ${s.soNumber}（${s.company||s.officeName||""}）を発送済に確定します。\n自社在庫から ${lines||"（在庫品なし）"} を引き落とします。よろしいですか？`
+    ? `出荷 ${s.soNumber}（${s.company||s.officeName||""}）を発送済に確定します。\n${locationName(locId)||"自社在庫"} から ${lines||"（在庫品なし）"} を引き落とします。よろしいですか？`
     : `出荷 ${s.soNumber}（${s.partnerName||s.officeName||""}）を発送済に確定します。\n直送のため在庫は変動しません。よろしいですか？`;
   if(!confirm(msg)) return;
   try{
     await updateDoc(doc(db,"shipments",s._id),{ status:"shipped", shipDate:s.shipDate||today(), confirmedAt:serverTimestamp() });
     for(const it of its){
-      await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
-      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:s.soNumber,
-        createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email});
+      await updateDoc(doc(db,"products",it.sku), stockPatch(locId, -it.qty));
+      await addDoc(collection(db,"inventoryMovements"), movement(it.sku, -it.qty, "shipment", s.soNumber, locId));
     }
     toast(usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`);
   }
@@ -478,8 +641,24 @@ function yupackData(){
 function shipTotalQty(){
   let n=0; document.querySelectorAll('#shipItems .qty-input').forEach(i=>{ n+=parseInt(i.value,10)||0; }); return n;
 }
+// ゆうパックの送料は発地で変わる。発送元に選んだ場所の都道府県を出して取り違えを防ぐ。
+// 料金表そのものは1つ（滋賀発で作られている）なので、違う発地のときは注意を出す。
+function updateShipOriginHint(){
+  const el=document.getElementById("shipOriginHint");
+  const locId=(document.getElementById("shipOrigin")||{}).value||"";
+  const pref=locationPref(locId);
+  const opt=document.getElementById("shipYupackOpt");
+  if(opt) opt.textContent = pref ? `ゆうパック（まとめ・${pref}発）` : "ゆうパック（まとめ）";
+  if(!el) return;
+  const m=(document.getElementById("shipMethod")||{}).value||"";
+  el.textContent = (m==="yupack" && pref && pref!=="滋賀県")
+    ? `※ 送料表は滋賀発の料金です。${pref}発は金額が変わることがあるので、送料欄をご確認ください。`
+    : "";
+}
+
 // 配送方法に応じて送料・名目を自動入力（手入力は維持）
 function recalcShipFee(){
+  updateShipOriginHint();
   const method=document.getElementById('shipMethod').value;
   const feeEl=document.getElementById('shipFee'), labelEl=document.getElementById('shipFeeLabel');
   document.getElementById('yupackWrap').style.display = method==='yupack' ? '' : 'none';
@@ -487,6 +666,10 @@ function recalcShipFee(){
   if(method==='letterpack'){
     const packs=Math.max(1,Math.ceil(shipTotalQty()/3));
     feeEl.value=taxExcl(packs*letterpackFee()); labelEl.value=`送料（レターパック ${packs}通）`;
+  } else if(method==='none'){
+    // 郵送しない（手渡し・持参・現地設置）。送料は 0 円で、出庫の記録だけ残す
+    feeEl.value=0; labelEl.value='郵送なし（手渡し・持参）';
+    document.getElementById('yupackWrap').style.display='none';
   } else if(method==='yupack'){
     const d=yupackData(); const size=document.getElementById('shipYuSize').value;
     const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
@@ -687,6 +870,14 @@ function openShip(existing){
     };
   }
 
+  // 発送元の保管場所。直送（自社在庫を通らない）のときは隠す
+  const usesStockNow = s ? shipUsedStock(s) : true;
+  const ow=document.getElementById("shipOriginWrap");
+  if(ow) ow.style.display = usesStockNow ? "" : "none";
+  const oSel=document.getElementById("shipOrigin");
+  if(oSel){ fillLocationSelect(oSel, s && s.originLocationId); oSel.disabled = locked; }
+  updateShipOriginHint();
+
   document.getElementById("shipModal").classList.add("open");
 }
 
@@ -712,9 +903,12 @@ async function saveShip(){
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
+  const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
+  if(stockItems(items).length && !originLocationId){
+    alert("発送元の保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
   for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
-    if((p.stock||0)<it.qty){ const w=document.getElementById("shipStockWarn");
-      w.style.display="block"; w.textContent=`在庫不足: ${p.name}（在庫 ${p.stock||0} / 出荷 ${it.qty}）`; return; } }
+    if(stockAt(p,originLocationId)<it.qty){ const w=document.getElementById("shipStockWarn");
+      w.style.display="block"; w.textContent=`在庫不足: ${p.name}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${it.qty}）`; return; } }
   const shippingMethod=document.getElementById("shipMethod").value||"manual";
   const shippingFee=Number(document.getElementById("shipFee").value)||0;
   const shippingLabel=document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"");
@@ -724,6 +918,7 @@ async function saveShip(){
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType, partnerEmail, partnerName,
       status:"shipped", shippingMethod, shippingFee, shippingLabel,
+      originLocationId, originLocationName: locationName(originLocationId),
       shipDate:document.getElementById("shipDate").value||today(),
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
@@ -731,10 +926,10 @@ async function saveShip(){
       contactName:document.getElementById("shipContact").value.trim(),
       phone:document.getElementById("shipPhone").value.trim(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
-    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
-      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(originLocationId,-it.qty));
+      await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,originLocationId)); }
     document.getElementById("shipModal").classList.remove("open");
-    toast(`出荷 ${soNumber} を登録しました（在庫から引落）`);
+    toast(`出荷 ${soNumber} を登録しました（${locationName(originLocationId)||"在庫"}から引落）`);
   }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
 }
 
@@ -812,7 +1007,8 @@ async function saveShipEdit(){
           for(const sku of Object.keys(delta)){
             if(delta[sku]<=0) continue;
             const p=(await tx.get(doc(db,"products",sku))).data()||{};
-            if((p.stock||0)<delta[sku]) throw new Error(`在庫不足: ${p.name||sku}（在庫 ${p.stock||0} / 追加で必要 ${delta[sku]}）`);
+            const have=Number((p.stockByLocation||{})[shipLocationOf(cur)])||0;
+            if(have<delta[sku]) throw new Error(`在庫不足: ${p.name||sku}（${locationName(shipLocationOf(cur))} ${have} / 追加で必要 ${delta[sku]}）`);
           }
         }
       }
@@ -821,10 +1017,8 @@ async function saveShipEdit(){
       if(items && shipUsedStock(cur)){
         for(const sku of Object.keys(delta)){
           const d=delta[sku]; if(!d) continue;
-          tx.update(doc(db,"products",sku),{stock:increment(-d)});
-          tx.set(doc(collection(db,"inventoryMovements")),{
-            sku, delta:-d, reason:"shipment_edit", refNo:s0.soNumber,
-            createdAt:serverTimestamp(), userName:currentUser.displayName||currentUser.email });
+          tx.update(doc(db,"products",sku), stockPatch(shipLocationOf(cur), -d));
+          tx.set(doc(collection(db,"inventoryMovements")), movement(sku, -d, "shipment_edit", s0.soNumber, shipLocationOf(cur)));
           moved++;
         }
       }
@@ -889,8 +1083,9 @@ async function deleteShipment(s){
   if(!confirm(msg)) return false;
   try{
     if(restores){
-      for(const it of stockItems(s.items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(it.qty)});
-        await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:it.qty,reason:"shipment_canceled",refNo:s.soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+      const backTo = shipLocationOf(s);
+      for(const it of stockItems(s.items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
+        await addDoc(collection(db,"inventoryMovements"), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo)); }
     }
     await deleteDoc(doc(db,"shipments",s._id));
     toast(restores ? `出荷 ${s.soNumber} を削除し、在庫を戻しました` : `出荷 ${s.soNumber} を削除しました（直送のため在庫は動かしていません）`);
@@ -1843,8 +2038,10 @@ async function shipFromOrder(o){
     return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:partnerPriceFor(p, Number(it.qty)||0) };
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
+  const fromLoc = defaultLocationId();
+  if(stockItems(items).length && !fromLoc){ alert("保管場所が登録されていません。先に在庫タブで追加してください"); return; }
   for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
-    if(!p || (p.stock||0)<it.qty){ alert(`在庫不足: ${it.name}（在庫 ${p?p.stock||0:0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
+    if(!p || stockAt(p,fromLoc)<it.qty){ alert(`在庫不足: ${it.name}（${locationName(fromLoc)} ${p?stockAt(p,fromLoc):0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
   if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
   try{
     const soNumber=seqFmt("SH",await nextSeq("shipments"));
@@ -1852,12 +2049,13 @@ async function shipFromOrder(o){
     await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"shipped", partnerOrderId:o._id,
+      originLocationId: fromLoc, originLocationName: locationName(fromLoc),
       shippingMethod:"letterpack", shippingFee:taxExcl(packs*letterpackFee()), shippingLabel:`送料（レターパック ${packs}通）`,
       shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
-    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku),{stock:increment(-it.qty)});
-      await addDoc(collection(db,"inventoryMovements"),{sku:it.sku,delta:-it.qty,reason:"shipment",refNo:soNumber,createdAt:serverTimestamp(),userName:currentUser.displayName||currentUser.email}); }
+    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(fromLoc,-it.qty));
+      await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,fromLoc)); }
     await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
     toast(`受注を出荷登録しました（${soNumber}）`);
   }catch(e){ alert(`出荷登録失敗: ${e.message}`); }
@@ -2088,7 +2286,14 @@ onAuthStateChanged(auth, async (user)=>{
   onSnapshot(query(collection(db,"products")),(snap)=>{
     products=snap.docs.map(d=>({_id:d.id,id:d.id,...d.data()})).sort((a,b)=>a.id.localeCompare(b.id));
     renderProducts();
+    renderLocations();   // 保管場所の「在庫合計」は商品側の数字から出しているので、ここでも描き直す
     if(shipCaseId && !prefilled){ prefilled=true; prefillShipFromCase(shipCaseId); }
+  });
+  // 保管場所（在庫の内訳・出荷元の選択肢に使う）
+  onSnapshot(query(collection(db,"locations")),(snap)=>{
+    locations=snap.docs.map(d=>({_id:d.id,...d.data()}))
+      .sort((a,b)=>(Number(a.sort)||0)-(Number(b.sort)||0)||String(a.name||"").localeCompare(String(b.name||"")));
+    renderLocations(); renderProducts();
   });
   // 発注一覧
   onSnapshot(query(collection(db,"purchaseOrders"),orderBy("createdAt","desc")),(snap)=>{
@@ -2105,6 +2310,16 @@ onAuthStateChanged(auth, async (user)=>{
     partnerOrdersCache=snap.docs.map(d=>({_id:d.id,...d.data()}));
     renderPartnerOrders(partnerOrdersCache);
   });
+  // 保管場所・入荷先のモーダル
+  document.getElementById("newLocationBtn").addEventListener("click",()=>openLocationModal(null));
+  document.getElementById("saveLocationBtn").addEventListener("click",saveLocation);
+  document.getElementById("closeLocationBtn").addEventListener("click",closeLocationModal);
+  document.getElementById("cancelLocationBtn").addEventListener("click",closeLocationModal);
+  document.getElementById("doReceiveBtn").addEventListener("click",doReceive);
+  document.getElementById("closeReceiveBtn").addEventListener("click",closeReceiveModal);
+  document.getElementById("cancelReceiveBtn").addEventListener("click",closeReceiveModal);
+  document.getElementById("shipOrigin").addEventListener("change",updateShipOriginHint);
+
   // 入金の記録モーダル
   document.getElementById("closePayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
   document.getElementById("cancelPayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));

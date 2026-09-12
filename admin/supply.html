@@ -37,8 +37,19 @@
       <!-- 在庫・商品 -->
       <div class="tab-content active" id="tab-inventory">
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th class="num">卸価格(2-10台)</th><th>在庫</th><th>調整</th></tr></thead>
+          <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th class="num">卸価格(2-10台)</th><th>在庫</th><th>保管場所ごと</th><th>調整</th></tr></thead>
           <tbody id="productsBody"></tbody></table>
+        </div></div>
+
+        <!-- 保管場所マスタ。出荷元・入荷先として選ぶ（2026-09-12 追加）。増えたらここから足す -->
+        <div class="page-header" style="margin:20px 0 8px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">保管場所（出荷元・入荷先として選べます。増えたらここに追加してください）</span>
+          <button class="btn btn-secondary" id="newLocationBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>保管場所を追加</button>
+        </div>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>保管場所</th><th>都道府県</th><th class="num">在庫合計</th><th>状態</th><th></th></tr></thead>
+          <tbody id="locationsBody"></tbody></table>
+          <div id="locationsEmpty" class="empty-state" style="display:none"><i class="ti ti-building-warehouse" aria-hidden="true"></i><p>保管場所が登録されていません</p></div>
         </div></div>
       </div>
 
@@ -168,6 +179,12 @@
           <div class="form-group"><label class="form-label" for="shipContact">送付先担当者</label><input class="form-control" type="text" id="shipContact"></div>
           <div class="form-group"><label class="form-label" for="shipPhone">電話</label><input class="form-control" type="text" id="shipPhone"></div>
         </div>
+        <!-- 自社在庫から出すときは、どの保管場所から出すかを指定する（2026-09-12 追加） -->
+        <div class="form-group" id="shipOriginWrap">
+          <label class="form-label" for="shipOrigin">発送元の保管場所 <span style="color:red">*</span></label>
+          <select class="form-control" id="shipOrigin"></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">発送済に確定したとき、この場所の在庫から引き落とします。</p>
+        </div>
         <div id="shipItems"></div>
         <!-- 送料（配送方法から自動計算・手修正可）。直送=レターパック / まとめ=ゆうパック(滋賀発) -->
         <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px;margin-top:4px">
@@ -175,8 +192,10 @@
           <select class="form-control" id="shipMethod">
             <option value="">指定しない / 送料を手入力</option>
             <option value="letterpack">レターパック（直送・3台ごとに1通）</option>
-            <option value="yupack">ゆうパック（まとめ・滋賀発）</option>
+            <option value="yupack" id="shipYupackOpt">ゆうパック（まとめ）</option>
+            <option value="none">郵送なし（手渡し・持参）</option>
           </select>
+          <p id="shipOriginHint" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></p>
         </div>
         <div class="form-row" id="yupackWrap" style="display:none">
           <div class="form-group"><label class="form-label" for="shipYuSize">ゆうパック サイズ</label>
@@ -464,11 +483,16 @@
   </div>
 
   <div class="modal-overlay" id="stockModal" role="dialog" aria-modal="true" aria-label="在庫調整">
-    <div class="modal" style="max-width:420px">
+    <div class="modal" style="max-width:560px">
       <div class="modal-header"><h2 id="stockModalTitle">在庫調整</h2>
         <button class="btn btn-secondary" id="closeStockBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <p id="stockCurrent" style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <div class="form-group">
+          <label class="form-label" for="stockLocation">保管場所 <span style="color:red">*</span></label>
+          <select class="form-control" id="stockLocation"></select>
+          <p id="stockLocationCurrent" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></p>
+        </div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" for="stockQty">台数 <span style="color:red">*</span></label>
@@ -487,8 +511,60 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelStockBtn" type="button">キャンセル</button>
+        <button class="btn btn-secondary" id="stockAssignBtn" type="button" style="display:none"><i class="ti ti-arrows-exchange" aria-hidden="true"></i>この場所に割り当て</button>
         <button class="btn btn-secondary" id="stockOutBtn" type="button"><i class="ti ti-arrow-up" aria-hidden="true"></i>出庫（－）</button>
         <button class="btn btn-primary" id="stockInBtn" type="button"><i class="ti ti-arrow-down" aria-hidden="true"></i>入庫（＋）</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保管場所の追加・編集（2026-09-12 追加） -->
+  <div class="modal-overlay" id="locationModal" role="dialog" aria-modal="true" aria-label="保管場所">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header"><h2 id="locationModalTitle">保管場所を追加</h2>
+        <button class="btn btn-secondary" id="closeLocationBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="locName">保管場所の名前 <span style="color:red">*</span></label>
+          <input class="form-control" id="locName" type="text" placeholder="例: 滋賀倉庫">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="locPref">都道府県 <span style="color:red">*</span></label>
+          <select class="form-control" id="locPref"></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ゆうパックの送料は<strong>発地</strong>で変わります。ここで選んだ都道府県を発送元として扱います。</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="display:flex;gap:8px;align-items:center;cursor:pointer">
+            <input type="checkbox" id="locActive" checked style="width:18px;height:18px">
+            <span>使用中（外すと出荷元の選択肢に出なくなります）</span>
+          </label>
+        </div>
+        <div class="field-error" id="locNameErr" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelLocationBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveLocationBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 入荷先の保管場所を選ぶ（2026-09-12 追加） -->
+  <div class="modal-overlay" id="receiveModal" role="dialog" aria-modal="true" aria-label="入荷登録">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header"><h2 id="receiveModalTitle">入荷登録</h2>
+        <button class="btn btn-secondary" id="closeReceiveBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="receiveSummary" style="font-size:13px;margin:0 0 12px;line-height:1.8"></p>
+        <div class="form-group">
+          <label class="form-label" for="receiveLocation">入荷先の保管場所 <span style="color:red">*</span></label>
+          <select class="form-control" id="receiveLocation"></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この場所の在庫に加算します。</p>
+        </div>
+        <div class="field-error" id="receiveErr" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelReceiveBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="doReceiveBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>入荷を登録</button>
       </div>
     </div>
   </div>
