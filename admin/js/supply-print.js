@@ -531,6 +531,31 @@ async function defaultMailTo(d){
   return "";
 }
 
+// 支援報告書は別ページ（report.html）で作っている。スタイルごと正しくPDFにするため、
+// 画面外に置いた iframe でそのページを開き、中で html2pdf を走らせて base64 を受け取る。
+// mode=client を付けているので、社内の対応履歴は載らない。
+function buildReportPdf(caseId){
+  return new Promise((resolve, reject)=>{
+    const ifr=document.createElement("iframe");
+    ifr.style.cssText="position:fixed;left:-10000px;top:0;width:820px;height:1400px;border:0";
+    ifr.src=`/report.html?id=${encodeURIComponent(caseId)}&mode=client`;
+    let finished=false;
+    const finish=(fn,v)=>{ if(finished) return; finished=true; clearTimeout(timer); ifr.remove(); fn(v); };
+    const timer=setTimeout(()=>finish(reject,new Error("支援報告書の読み込みに時間がかかっています。もう一度お試しください")), 40000);
+    ifr.onload=async ()=>{
+      try{
+        const w=ifr.contentWindow;
+        // ログイン確認と案件の読み込みが終わるまで待つ（最大30秒）
+        for(let i=0;i<60 && !w.__reportReady;i++) await new Promise(r=>setTimeout(r,500));
+        if(!w.__reportReady) throw new Error("支援報告書を作れませんでした（案件が見つからない可能性があります）");
+        finish(resolve, await w.__reportPdf());
+      }catch(e){ finish(reject, e); }
+    };
+    ifr.onerror=()=>finish(reject,new Error("支援報告書の画面を開けませんでした"));
+    document.body.appendChild(ifr);
+  });
+}
+
 function setupMailDoc(kind, d, st){
   const btn = document.getElementById("mailDocBtn");
   if(!btn) return;
@@ -554,6 +579,10 @@ function setupMailDoc(kind, d, st){
     document.getElementById("mailDocCc").value = "";
     document.getElementById("mailDocSubject").value = t.subject;
     document.getElementById("mailDocBody").value = t.body;
+    const rWrap=document.getElementById("mailDocReportWrap");
+    const rChk=document.getElementById("mailDocReport");
+    if(rWrap) rWrap.style.display = (kind === "invoice" && d.caseId) ? "" : "none";
+    if(rChk) rChk.checked = false;
     document.getElementById("mailDocError").style.display = "none";
     modal.style.display = "flex";
   };
@@ -585,13 +614,23 @@ function setupMailDoc(kind, d, st){
       const filename = kind === "invoice"
         ? `${invoiceNoOf(d)}.pdf`
         : `${d.receiptNo || ("RCPT-" + (d.soNumber || id))}.pdf`;
+      // 同封する書類（いまは支援報告書のみ）
+      const extraAttachments = [];
+      if(document.getElementById("mailDocReport")?.checked && d.caseId){
+        sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 支援報告書を作成中...';
+        const reportB64 = await buildReportPdf(d.caseId);
+        if(!reportB64) throw new Error("支援報告書のPDFを作れませんでした");
+        // 添付名は英数字にする（日本語はメール側で _ に置き換わるため）
+        extraAttachments.push({ filename: `support-report-${d.soNumber || id}.pdf`, contentBase64: reportB64 });
+      }
       sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
-      await sendPartnerMailFn({ to, cc: cc || undefined, subject, body, shipmentId: id, kind, pdfBase64, filename });
+      await sendPartnerMailFn({ to, cc: cc || undefined, subject, body, shipmentId: id, kind, pdfBase64, filename,
+        extraAttachments: extraAttachments.length ? extraAttachments : undefined });
       // 画面内の状態も更新（再送の注意書きに効く）
       if(kind === "invoice"){ d.invoiceMailedAt = todayJst(); d.invoiceMailedTo = to; }
       else { d.receiptMailedAt = todayJst(); d.receiptMailedTo = to; }
       document.getElementById("mailDocModal").style.display = "none";
-      alert(`${MAIL_DOC_LABEL[kind]}を ${to} へ送付しました`);
+      alert(`${MAIL_DOC_LABEL[kind]}${document.getElementById("mailDocReport")?.checked ? "と支援報告書" : ""}を ${to} へ送付しました`);
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;
       err.style.display = "block";

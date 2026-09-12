@@ -1319,7 +1319,7 @@ exports.sendPartnerMail = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    const { to, cc, subject, body, shipmentId, kind, pdfBase64, filename } = request.data || {};
+    const { to, cc, subject, body, shipmentId, kind, pdfBase64, filename, extraAttachments } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
     }
@@ -1334,16 +1334,27 @@ exports.sendPartnerMail = onCall(
     if ((kind === "invoice" || kind === "receipt") && !pdfBase64) {
       throw new HttpsError("invalid-argument", "帳票PDFの生成に失敗しています（添付なしでは送信しません）");
     }
-    // base64 は元の約1.37倍。13.4M文字 ≒ 10MB
-    if (pdfBase64 && pdfBase64.length > 13_400_000) {
-      throw new HttpsError("invalid-argument", "PDFが大きすぎます（10MB以下にしてください）");
+    // 請求書に支援報告書などを同封する（2026-09-12 追加）。帳票本体に続けて添付する
+    const extras = Array.isArray(extraAttachments) ? extraAttachments.filter((a) => a && a.contentBase64) : [];
+    if (extras.length > 3) {
+      throw new HttpsError("invalid-argument", "同封できる書類は3つまでです");
+    }
+    // base64 は元の約1.37倍。13.4M文字 ≒ 10MB。同封ぶんも足して超えないか見る
+    const totalB64 = (pdfBase64 ? pdfBase64.length : 0) + extras.reduce((n, a) => n + String(a.contentBase64).length, 0);
+    if (totalB64 > 13_400_000) {
+      throw new HttpsError("invalid-argument", "添付の合計が大きすぎます（10MB以下にしてください）");
     }
     try {
       const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
       const token = await gmailAccessToken(sender);
-      const attachments = pdfBase64
-        ? [{ filename: safeAttachmentName(filename || "document.pdf"), mimeType: "application/pdf", contentBase64: pdfBase64 }]
-        : undefined;
+      const attachList = [];
+      if (pdfBase64) {
+        attachList.push({ filename: safeAttachmentName(filename || "document.pdf"), mimeType: "application/pdf", contentBase64: pdfBase64 });
+      }
+      for (const a of extras) {
+        attachList.push({ filename: safeAttachmentName(a.filename || "attachment.pdf"), mimeType: "application/pdf", contentBase64: a.contentBase64 });
+      }
+      const attachments = attachList.length ? attachList : undefined;
       const raw = buildRawMessage({ to, cc, subject, body, sender, attachments });
       const res = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,

@@ -10,6 +10,9 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 const caseId = new URLSearchParams(location.search).get("id");
+// mode=client は事業所へ送る用。社内のやり取り（対応履歴）は載せない。
+// 請求書メールに同封するときは、この画面を裏で開いてPDFにしている（supply-print.js）。
+const CLIENT_MODE = new URLSearchParams(location.search).get("mode") === "client";
 
 const STATUS_LABELS = {
   1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注", 5: "担当者決定",
@@ -118,8 +121,7 @@ function renderReport(c, subsidy, sessions, activities) {
     <h2 class="sec">伴走支援の記録</h2>
     ${sessionsHtml}
 
-    <h2 class="sec">対応履歴</h2>
-    ${actHtml}
+    ${CLIENT_MODE ? "" : `<h2 class="sec">対応履歴</h2>${actHtml}`}
 
     <div class="footer">
       本報告書はタダカヨの介護情報基盤伴走支援CRMにより自動生成されました。／ NPO法人タダカヨ
@@ -127,7 +129,22 @@ function renderReport(c, subsidy, sessions, activities) {
   `;
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("reportBody").style.display = "block";
+  window.__reportReady = true;   // 親画面（請求書のメール送付）が描き終わりを待つための目印
 }
+
+// 請求書メールに同封するときに、親画面から呼ばれてPDFのbase64を返す
+window.__reportPdf = async function () {
+  const el = document.getElementById("reportBody");
+  if (!el || !window.html2pdf) throw new Error("支援報告書のPDFを作れませんでした");
+  const opt = {
+    margin: [10, 8, 10, 8], image: { type: "jpeg", quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    pagebreak: { mode: ["avoid-all", "css"] },
+  };
+  const uri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
+  return String(uri || "").split(",")[1] || "";
+};
 
 onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) {

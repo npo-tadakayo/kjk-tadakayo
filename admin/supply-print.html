@@ -175,6 +175,14 @@
           <textarea id="mailDocBody" rows="10" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--line);font-size:13px;font-family:inherit;line-height:1.7"></textarea>
         </div>
         <div style="font-size:12px;color:var(--muted)">いま表示している帳票をそのままPDFにして添付します。送付の記録は出荷に残ります。</div>
+        <!-- 支援報告書の同封（案件が紐づいている出荷のときだけ出す・2026-09-12 追加） -->
+        <div id="mailDocReportWrap" style="display:none;border-top:1px solid var(--line);padding-top:12px">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.7;cursor:pointer">
+            <input type="checkbox" id="mailDocReport" style="width:18px;height:18px;margin-top:2px;flex:none">
+            <span><strong>支援報告書も同封する</strong><br>
+              <span style="color:var(--muted);font-size:12px">事業所さま向けの内容です（社内の対応履歴は載りません）。PDFがもう1つ添付されます。</span></span>
+          </label>
+        </div>
         <div id="mailDocError" style="display:none;font-size:13px;color:#b84a4a;font-weight:600"></div>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--line)">
