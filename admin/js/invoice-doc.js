@@ -47,12 +47,16 @@ export function invoiceTotals(s){
 }
 
 // 発行元の連絡先（設定で入れた分だけ出す）。請求書・領収証で同じ並びにする（2026-09-13 追加）
-export function issuerContactHtml(st){
+// 🔴 担当者だけは設定に持たせない。**案件の担当営業（cases.assignedUserName）**を
+//    contactName で受け取って出す（2026-09-13 次田さん指示）。
+//    担当営業が決まっていなければ空欄のまま出し、発行のときに画面で知らせる。
+export function issuerContactHtml(st, contactName){
   st = st || {};
   const addr = [st.invoiceIssuerPostal ? `〒${esc(st.invoiceIssuerPostal)}` : "", esc(st.invoiceIssuerAddress||"")]
     .filter(Boolean).join(" ");
+  const person = String(contactName||"").trim();
   const line2 = [st.invoiceIssuerTel ? `TEL: ${esc(st.invoiceIssuerTel)}` : "",
-                 st.invoiceIssuerContact ? `担当: ${esc(st.invoiceIssuerContact)}` : ""]
+                 person ? `担当: ${esc(person)}` : ""]
     .filter(Boolean).join("　／　");
   return (addr ? `${addr}<br>` : "") + (line2 ? `${line2}<br>` : "");
 }
@@ -126,7 +130,7 @@ export function renderInvoiceHtml(s, st, opts){
     <div class="inv">
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
-          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st)}kjk-staff@tadakayo.jp<br>発行日: ${esc(issueDate)}</div>
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st, opts.contactName)}kjk-staff@tadakayo.jp<br>発行日: ${esc(issueDate)}</div>
           <img class="seal-kaku-img" src="${st.poSealImage || "/images/seal-tadakayo.png"}" alt="タダカヨの角印">
         </div></div>
       <h1 class="inv-title">請　求　書</h1>

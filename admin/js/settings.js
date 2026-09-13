@@ -224,7 +224,6 @@ onAuthStateChanged(auth, async (user)=>{
   $("invoiceIssuerPostal").value = s.invoiceIssuerPostal || "";
   $("invoiceIssuerTel").value = s.invoiceIssuerTel || "";
   $("invoiceIssuerAddress").value = s.invoiceIssuerAddress || "";
-  $("invoiceIssuerContact").value = s.invoiceIssuerContact || "";
   $("billingBankName").value = s.billingBankName || "";
   $("billingBranchName").value = s.billingBranchName || "";
   $("billingAccountType").value = s.billingAccountType || "普通";
@@ -273,7 +272,6 @@ onAuthStateChanged(auth, async (user)=>{
         invoiceIssuerPostal: $("invoiceIssuerPostal").value.trim(),
         invoiceIssuerTel: $("invoiceIssuerTel").value.trim(),
         invoiceIssuerAddress: $("invoiceIssuerAddress").value.trim(),
-        invoiceIssuerContact: $("invoiceIssuerContact").value.trim(),
         billingBankName: $("billingBankName").value.trim(),
         billingBranchName: $("billingBranchName").value.trim(),
         billingAccountType: $("billingAccountType").value,

@@ -1841,8 +1841,14 @@ async function openInvoiceReport(s, opts){
   document.getElementById("invReportSubject").value = fill(st.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT);
   document.getElementById("invReportBody").value = fill(st.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY);
   // PDF生成の対象。請求書の発行日は請求済にする当日＝請求書PDFの記載と支払期限を揃える
+  // 書面の「担当」は案件の担当営業（無ければ空欄のまま）。
+  // ⚠ この関数には送付先担当者の contactName が既にあるので別名にする
+  let salesRepName = "";
+  if(s.caseId){
+    try{ const cs = await getDoc(doc(db,"cases",s.caseId)); if(cs.exists()) salesRepName = cs.data().assignedUserName || ""; }catch(_){}
+  }
   document.getElementById("invReportPreview").innerHTML =
-    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt }, st, { products });
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt }, st, { products, contactName: salesRepName });
   document.getElementById("invReportError").style.display="none";
   syncInvReportFields();
   document.getElementById("invReportModal").classList.add("open");

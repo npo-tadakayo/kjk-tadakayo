@@ -101,7 +101,7 @@ function renderLetterpack(s, sender, variant){
 }
 
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
-function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: today, products }); }
+function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: today, products, contactName }); }
 
 // 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
@@ -147,7 +147,24 @@ function rcptRow(r){
 // 領収証の明細の単価が税込か（事業所向け＝税込／認定事業者向けの卸＝税抜）。
 // renderReceipt が入れ、wireReceiptEditor が集計に使う（2026-09-13）
 let rcptTaxIncluded = false;
-function renderReceipt(s, st, saved){
+// 書面の「担当」に出す担当営業。案件から引いて入れる（無ければ空のまま）
+let docContactName = "";
+let docNeedsContact = false;
+async function salesRepOf(s){
+  if(!s || !s.caseId) return "";
+  try{
+    const cs = await getDoc(doc(db,"cases",s.caseId));
+    return cs.exists() ? (cs.data().assignedUserName || "") : "";
+  }catch(_){ return ""; }
+}
+// 発行するとき、担当営業が空なら知らせる（書面の「担当」欄が空のまま出るため）
+function confirmContactFilled(what){
+  if(!docNeedsContact || docContactName) return true;
+  return confirm(`担当営業が入っていないため、${what}の「担当」欄が空欄になります。\n\n`
+    + `案件に担当営業が割り当てられていないか、この出荷が案件に紐づいていません。\n`
+    + `案件一覧から担当営業を設定すると入ります。\n\nこのまま進めますか？`);
+}
+function renderReceipt(s, st, saved, contactName){
   st = st || {};
   const items=s.items||[];
   const taxIncl = priceIsTaxIncluded(s);
@@ -200,7 +217,7 @@ function renderReceipt(s, st, saved){
     <div class="inv">
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
-          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st)}kjk-staff@tadakayo.jp<br>発行日: ${issueDate}</div>
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st, contactName)}kjk-staff@tadakayo.jp<br>発行日: ${issueDate}</div>
           <img class="seal-kaku-img" src="${sealSrc}" alt="タダカヨの角印">
         </div></div>
       <h1 class="inv-title">領　収　証</h1>
@@ -454,6 +471,7 @@ function collectReceiptSnapshot(){
   };
 }
 async function saveReceiptIssue(s, shipmentId, userEmail){
+  if(!confirmContactFilled("この領収証")) return;
   const btn=document.getElementById("rcptSaveBtn");
   const info=document.getElementById("rcptSaveInfo");
   const snap=collectReceiptSnapshot();
@@ -608,6 +626,7 @@ function setupMailDoc(kind, d, st){
   };
 
   document.getElementById("mailDocSend").onclick = async (e)=>{
+    if(!confirmContactFilled(`この${MAIL_DOC_LABEL[kind]}`)) return;
     const to = document.getElementById("mailDocTo").value.trim();
     const cc = document.getElementById("mailDocCc").value.trim();
     const subject = document.getElementById("mailDocSubject").value.trim();
@@ -663,7 +682,11 @@ function setupMailDoc(kind, d, st){
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user))) return;
-  document.getElementById("printBtn").addEventListener("click",()=>{ try{ document.activeElement&&document.activeElement.blur(); }catch(_){} window.print(); });
+  document.getElementById("printBtn").addEventListener("click",()=>{
+    if(!confirmContactFilled("この書面")) return;
+    try{ document.activeElement&&document.activeElement.blur(); }catch(_){}
+    window.print();
+  });
   // 「供給管理へ」の戻り先を、この帳票を開いた元タブにする（一覧へ戻す）
   const backTab = { po:"orders", invoice:"shipments", receipt:"shipments", refund:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
   const backBtn = document.querySelector(".btn-back");
@@ -713,11 +736,14 @@ onAuthStateChanged(auth, async (user)=>{
       if(type==="receipt"){
         try{ const rs=await getDoc(doc(db,"receipts",docId)); if(rs.exists()) savedReceipt=rs.data(); }catch(_){}
       }
+      // 書面の「担当」は案件の担当営業を出す（請求書・領収証のみ）
+      docNeedsContact = (type==="invoice" || type==="receipt");
+      docContactName = docNeedsContact ? await salesRepOf(d) : "";
       document.getElementById("body").innerHTML =
         type==="po" ? renderPO(d, settings)
-        : type==="invoice" ? renderInvoice(d, settings)
+        : type==="invoice" ? renderInvoice(d, settings, docContactName)
         : type==="refund" ? renderRefundStatement(d, settings)
-        : renderReceipt(d, settings, savedReceipt);
+        : renderReceipt(d, settings, savedReceipt, docContactName);
       // 請求書・領収証はメールでも送れる（送付状・宛名・発注書は対象外）
       if(type==="invoice" || type==="receipt") setupMailDoc(type, d, settings);
       // 返金明細書: 発行記録のボタンを出す（返金がある出荷のみ意味を持つ）
