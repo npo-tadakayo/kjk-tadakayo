@@ -7,18 +7,43 @@ function yen(n){ return "¥"+Number(n||0).toLocaleString("ja-JP"); }
 // 請求書番号（出荷番号 SH… → INV…）。Chatの報告本文・PDFファイル名でも同じ番号を使う
 export function invoiceNoOf(s){ return String((s&&s.soNumber)||"").replace(/^SH/,"INV"); }
 
-// 請求金額の計算。supply.js の shipTotalIncl と同じ税計算にすること（ズレると請求書と一覧が食い違う）
-// 送料は税抜で保存されている（2026-07-28 統一）。消費税は小計に対して1回だけ計算（インボイス制度の端数処理）
+// 🔴 明細の単価が「税込」か「税抜」かは、請求先で変わる（2026-09-13 是正）。
+//   ・事業所へ直接販売（direct）＝ 見積もりの定価をそのまま入れている。
+//     見積もりの価格は **すべて税込**（js/estimate-pricing.js の BT_PRICE/ACCOMPANY_FEE のコメント参照）。
+//     見積書にも「金額はすべて税込」と明記しているので、ここで10%を足すと二重課税になる。
+//   ・認定事業者への卸（dropship / partnerEmail あり / 旧 shipType:"stock"）＝ 卸価格表は **税別**。
+//     こちらは従来どおり小計に10%を足す。
+//   判定は supply.js の billsPartner と同じにすること（ズレると請求書と一覧が食い違う）。
+export function priceIsTaxIncluded(s){
+  return !(((s&&s.shipType)==="dropship") || !!(s&&s.partnerEmail));
+}
+
+// 請求金額の計算。一覧・請求書・領収書・経理報告はすべてこの関数を通すこと。
+// 送料は請求先によらず税抜で保存されている（2026-07-28 統一）。
+// 消費税は「税率ごとに1回だけ」計算する（インボイス制度の端数処理）。
 export function invoiceTotals(s){
   const items = (s&&s.items)||[];
-  const goodsExcl = items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
+  const goods = items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
   const shipExcl = Number(s&&s.shippingFee)||0;
-  const sub = goodsExcl+shipExcl;
-  const tax = Math.floor(sub*0.1);
-  const total = sub+tax;
+  const taxIncluded = priceIsTaxIncluded(s);
+  let goodsExcl, shipIncl, sub, tax, total;
+  if (taxIncluded) {
+    // 明細は税込。送料だけ税抜なので税込に直してから足し、消費税は合計から割り戻す
+    shipIncl = Math.round(shipExcl * 1.1);
+    total = goods + shipIncl;
+    tax = Math.floor(total * 10 / 110);
+    sub = total - tax;              // 税抜相当
+    goodsExcl = goods - Math.floor(goods * 10 / 110);
+  } else {
+    goodsExcl = goods;
+    shipIncl = shipExcl;
+    sub = goodsExcl + shipExcl;
+    tax = Math.floor(sub * 0.1);
+    total = sub + tax;
+  }
   // 過入金の充当（前回多くお振込みいただいた分を今回の請求から差し引く。税込金額に対する充当）
   const credit = Math.min(Number(s&&s.creditApplied)||0, total);
-  return { goodsExcl, shipExcl, sub, tax, total, credit, payable: total-credit };
+  return { taxIncluded, goods, goodsExcl, shipExcl, shipIncl, sub, tax, total, credit, payable: total-credit };
 }
 
 // 請求先の表示名（直送＝認定事業者／直接＝事業所）。supply.js の billToKey と対象は同じ
@@ -32,8 +57,10 @@ export function renderInvoiceHtml(s, st, opts){
   st = st || {}; opts = opts || {};
   const issueDate = opts.issueDate || new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
   const items = s.items||[];
-  const { shipExcl, sub, tax, total, credit, payable } = invoiceTotals(s);
+  const { taxIncluded, shipExcl, shipIncl, sub, tax, total, credit, payable } = invoiceTotals(s);
   const shipFeeIncl = shipExcl; // 明細行を出すかの判定に使う
+  const shipShown = taxIncluded ? shipIncl : shipExcl;   // 明細に出す送料（列の税基準に合わせる）
+  const priceUnit = taxIncluded ? "税込" : "税抜";
   // 充当元の内訳。別請求先（グループ会社）からの充当は請求先名も出す＝どこの入金を回したかが書面で追える
   const creditFromList = (Array.isArray(s.creditFrom)?s.creditFrom:[]).filter(c=>c.soNumber);
   const creditFrom = creditFromList
@@ -42,6 +69,9 @@ export function renderInvoiceHtml(s, st, opts){
   const hasCrossCredit = creditFromList.some(c=>c.crossBillTo);
   const invNo = invoiceNoOf(s);
   const billName = billToNameOf(s);
+  // 宛先の住所（見本の書式に合わせて記載。直送＝認定事業者宛のときは出荷の住所が届け先なので出さない）
+  const billAddr = (s.shipType==="dropship" || s.partnerEmail) ? ""
+    : [s.postal?`〒${esc(s.postal)}`:"", esc(s.address||"")].filter(Boolean).join(" ");
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
   const regNo = st.invoiceRegNo || "";
   const regLine = regNo
@@ -67,7 +97,7 @@ export function renderInvoiceHtml(s, st, opts){
     return cn || conn;
   };
   const rows2 = items.map(i=>`<tr><td>${esc(i.name)}${connOf(i)?`<div style="font-size:11px;color:#6a5e48">つなぎ方: ${esc(connOf(i))}</div>`:""}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
-    + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipExcl)}</td><td class="num">${yen(shipExcl)}</td></tr>` : "");
+    + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipShown)}</td><td class="num">${yen(shipShown)}</td></tr>` : "");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
@@ -77,15 +107,19 @@ export function renderInvoiceHtml(s, st, opts){
         </div></div>
       <h1 class="inv-title">請　求　書</h1>
       <div class="to">${esc(billName)} 御中</div>
+      ${billAddr ? `<div class="meta">${billAddr}</div>` : ""}
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
       <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>
       <div class="grand">${credit>0?"今回お支払額（税込・充当後）":"ご請求金額（税込）"}　<strong>${yen(payable)}</strong></div>
-      <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(税抜)</th><th style="width:116px">金額(税抜)</th></tr></thead>
+      <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(${priceUnit})</th><th style="width:116px">金額(${priceUnit})</th></tr></thead>
         <tbody>${rows2}</tbody></table>
       <table class="po-sum" style="margin-top:10px"><tbody>
-        <tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
-        <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>
+        ${taxIncluded
+          ? `<tr><td class="lbl">税込小計</td><td class="num">${yen(total)}</td></tr>
+             <tr><td class="lbl">うち消費税（10%）</td><td class="num">${yen(tax)}</td></tr>`
+          : `<tr><td class="lbl">10%対象 小計（税抜）</td><td class="num">${yen(sub)}</td></tr>
+             <tr><td class="lbl">消費税額（10%）</td><td class="num">${yen(tax)}</td></tr>`}
         <tr${credit>0?"":' class="grand"'}><td class="lbl">合計（税込）</td><td class="num"><strong>${yen(total)}</strong></td></tr>
         ${credit>0?`<tr><td class="lbl">${hasCrossCredit?"お預かり分の充当":"前回お預かり分の充当"}${creditFrom?`（${esc(creditFrom)} の過入金）`:""}</td><td class="num">−${yen(credit)}</td></tr>
         <tr class="grand"><td class="lbl">今回お支払額（税込）</td><td class="num"><strong>${yen(payable)}</strong></td></tr>`:""}

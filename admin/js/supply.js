@@ -8,7 +8,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, 
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf,
-  DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
+  DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals } from "/js/invoice-doc.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
@@ -773,15 +773,19 @@ function resolveShipItems(){
 function updateShipTotal(){
   const el=document.getElementById("shipTotalLine"); if(!el) return;
   const items=resolveShipItems();
-  const goods=items.reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
   const fee=Number(document.getElementById("shipFee").value)||0;
-  const sub=goods+fee, tax=Math.floor(sub*0.1);
+  // 税基準は請求先で変わる。修正中はその出荷、新規は画面の出荷種別から見る
+  const basis = editingShip || { shipType: document.getElementById("shipType").value,
+                                 partnerEmail: document.getElementById("shipPartner").value||"" };
+  const t = invoiceTotals({ shipType: basis.shipType, partnerEmail: basis.partnerEmail, items, shippingFee: fee });
   const wasIncl = editingShip ? shipTotalIncl(editingShip) : null;
-  const now=sub+tax;
+  const now = t.total;
   const diff = (wasIncl!==null && now!==wasIncl)
     ? ` <span style="color:var(--color-warn,#c87a1f);font-weight:700">（登録時 ${yen(wasIncl)} から変わります）</span>` : "";
   el.innerHTML = items.length
-    ? `商品 ${yen(goods)}　＋　送料 ${yen(fee)}　＋　消費税 ${yen(tax)}　＝　<strong style="font-size:15px">${yen(now)}</strong>（税込）${diff}`
+    ? (t.taxIncluded
+        ? `商品 ${yen(t.goods)}（税込）　＋　送料 ${yen(t.shipIncl)}（税込）　＝　<strong style="font-size:15px">${yen(now)}</strong>（税込・うち消費税 ${yen(t.tax)}）${diff}`
+        : `商品 ${yen(t.goods)}　＋　送料 ${yen(fee)}　＋　消費税 ${yen(t.tax)}　＝　<strong style="font-size:15px">${yen(now)}</strong>（税込）${diff}`)
     : `<span style="color:var(--color-ink-muted)">数量を入力すると合計が出ます</span>`;
 }
 
@@ -1105,13 +1109,12 @@ async function deleteShipment(s){
 
 const SHIP_STATUS = { draft:"下書き", shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };
 const SHIP_STATUS_BADGE = { draft:2, shipped:7, invoiced:9, paid:3, canceled:4 };
-// 出荷の金額（送料込み）。送料は税込実費を税抜換算して小計に含め、請求書(renderInvoice)と同じ税計算にする
-function shipGoodsExcl(s){ return (s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0); }
-// 送料は税抜で保存する（2026-07-28 統一。発注側の送料欄が元から「税別」だったのに揃えた）
-function shipFeeExcl(s){ return Number(s.shippingFee)||0; }
-function shipSubExcl(s){ return shipGoodsExcl(s)+shipFeeExcl(s); }
-function shipTotal(s){ return shipSubExcl(s); }
-function shipTotalIncl(s){ const sub=shipSubExcl(s); return sub+Math.floor(sub*0.1); }
+// 出荷の金額。**計算は invoice-doc.js の invoiceTotals に一本化した**（2026-09-13）。
+// 事業所向けは明細が税込・認定事業者向けは税抜と基準が違うので、ここで自前に計算しない。
+function shipFeeExcl(s){ return Number(s.shippingFee)||0; }   // 送料は常に税抜で保存（2026-07-28 統一）
+function shipGoodsExcl(s){ return invoiceTotals(s).goodsExcl; }
+function shipSubExcl(s){ return invoiceTotals(s).sub; }
+function shipTotalIncl(s){ return invoiceTotals(s).total; }
 
 // ===== 入金・未集金（2026-07-30 追加）=====
 // 入金は payments[] に履歴として積む（部分入金・分割払い対応）。

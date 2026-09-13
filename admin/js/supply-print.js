@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serv
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -144,24 +144,39 @@ function rcptRow(r){
       <td class="rcpt-noprint"><button type="button" class="ri-del" aria-label="行を削除"><i class="ti ti-x"></i></button></td>
     </tr>`;
 }
+// 領収書の明細の単価が税込か（事業所向け＝税込／認定事業者向けの卸＝税抜）。
+// renderReceipt が入れ、wireReceiptEditor が集計に使う（2026-09-13）
+let rcptTaxIncluded = false;
 function renderReceipt(s, st, saved){
   st = st || {};
   const items=s.items||[];
+  const taxIncl = priceIsTaxIncluded(s);
+  rcptTaxIncluded = taxIncl;
   // 明細: 発行を記録済みならその内容を復元（同じ領収書を再発行できる）。無ければ出荷から組み立てる
   let rowsInit;
   if(saved && Array.isArray(saved.items) && saved.items.length){
     rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
   }else{
-    // 初期明細＝出荷の商品（A:カードリーダー・型名/用途を明記）＋送料（X:対象外）。あとから編集・行追加できる
-    rowsInit = items.map(i=>({
-      kind:"A",
-      name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
-      qty:Number(i.qty)||0, price:Number(i.unitPrice)||0,
-    }));
+    // 初期明細＝出荷の商品＋送料（X:対象外）。あとから編集・行追加できる。
+    // 🔴 区分は品番から自動で振る（2026-09-13）。以前は全部Aだったため、
+    //    伴走支援費も値引きも「カードリーダー費」に混ざり、助成金の申請対象額の内訳がずれていた。
+    rowsInit = items.map(i=>{
+      const sku=String(i.sku||"");
+      const qty=Number(i.qty)||0, price=Number(i.unitPrice)||0;
+      if(sku==="support-fee") return { kind:"B", name: i.name || "介護情報基盤との接続サポート等経費", qty, price };
+      // 値引き（金額調整）は伴走支援費から引いている性格なのでBに入れる。
+      // これでA＋B＝実際にお支払いいただいた額＝助成金の申請対象額になる
+      if(sku==="discount")    return { kind:"B", name: i.name || "値引き", qty, price };
+      return { kind:"A",
+        name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
+        qty, price };
+    });
     if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
   }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
   const toName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
+  // 宛先の住所（見本の書式に合わせて記載。入っていない出荷では出さない）
+  const toAddr = [s.postal?`〒${esc(s.postal)}`:"", esc(s.address||"")].filter(Boolean).join(" ");
   const issuerName = st.invoiceIssuerName || "NPO法人タダカヨ";
   const regNo = st.invoiceRegNo || "";
   const regLine = regNo
@@ -189,7 +204,8 @@ function renderReceipt(s, st, saved){
         </div></div>
       <h1 class="inv-title">領　収　書</h1>
       <div class="to">${esc(toName)} 御中</div>
-      <div class="meta">領収書番号: ${esc(rcptNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
+      <div class="meta">領収書番号: ${esc(rcptNo)}　／　関連請求書番号: ${esc(invoiceNoOf(s))}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
+      ${toAddr ? `<div class="meta">${toAddr}</div>` : ""}
       <div class="grand">領収金額（税込）　<strong id="rcptTotal">${yen(initAmount)}</strong></div>
       <!-- 実入金との突き合わせ。画面だけの案内で印刷には出さない -->
       <div class="rcpt-noprint" id="rcptPayInfo" style="font-size:12px;color:var(--muted);margin:6px 0 0;line-height:1.8">
@@ -218,8 +234,8 @@ function renderReceipt(s, st, saved){
         <th class="rcpt-noprint" style="width:150px">用途区分</th>
         <th>品名（型名・用途）</th>
         <th style="width:60px">数量</th>
-        <th style="width:104px">単価(税抜)</th>
-        <th style="width:116px">金額(税抜)</th>
+        <th style="width:104px">単価(${taxIncl?"税込":"税抜"})</th>
+        <th style="width:116px">金額(${taxIncl?"税込":"税抜"})</th>
         <th class="rcpt-noprint" style="width:38px"></th>
       </tr></thead>
         <tbody id="rcptItems">${rowsInit.map(rcptRow).join("")}</tbody></table>
@@ -322,19 +338,21 @@ function netPaidOf(s){
   const ref=(Array.isArray(s.refunds)?s.refunds:[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
   return paid-ref;
 }
-// 請求額（税込・過入金の充当後）＝相手に実際に支払ってもらう額
+// 請求額（税込・過入金の充当後）＝相手に実際に支払ってもらう額。
+// 税基準（事業所向け＝税込／認定事業者向け＝税抜）は invoiceTotals に任せる
 function billableInclOf(s){
-  const goods=(s.items||[]).reduce((a,i)=>a+(Number(i.unitPrice)||0)*(Number(i.qty)||0),0);
-  const sub=goods+(Number(s.shippingFee)||0);
-  const incl=sub+Math.floor(sub*0.1);
-  return Math.max(0, incl-(Number(s.creditApplied)||0));
+  return Math.max(0, invoiceTotals(s).payable);
 }
 
 // 領収書の明細表を編集可能にし、用途区分A/B/対象外ごとの税込小計・領収金額・収入印紙欄を自動再計算する
 function wireReceiptEditor(){
   const tbody=document.getElementById("rcptItems"); if(!tbody) return;
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=yen(v); };
-  const incl=e=>e+Math.floor(e*0.1), taxOf=e=>Math.floor(e*0.1);
+  // 単価が税込のときは足さずに割り戻す。税抜のときは従来どおり10%を足す
+  const ti = rcptTaxIncluded;
+  const incl  = ti ? (v=>v)                        : (e=>e+Math.floor(e*0.1));
+  const taxOf = ti ? (v=>Math.floor(v*10/110))     : (e=>Math.floor(e*0.1));
+  const exclOf= ti ? (v=>v-Math.floor(v*10/110))   : (e=>e);
   const amtInput=document.getElementById("rcptAmountInput");
   let itemsTotal=0;
   // 領収金額は明細合計と別建て（実入金を初期値にしている）。ズレは画面上で知らせる
@@ -379,13 +397,13 @@ function wireReceiptEditor(){
       const amt=q*p; sub[k]=(sub[k]||0)+amt;
       const cell=tr.querySelector(".ri-amt"); if(cell) cell.textContent=yen(amt);
     });
-    set("aExcl",sub.A); set("aTax",taxOf(sub.A)); set("aIncl",incl(sub.A));
-    set("bExcl",sub.B); set("bTax",taxOf(sub.B)); set("bIncl",incl(sub.B));
+    set("aExcl",exclOf(sub.A)); set("aTax",taxOf(sub.A)); set("aIncl",incl(sub.A));
+    set("bExcl",exclOf(sub.B)); set("bTax",taxOf(sub.B)); set("bIncl",incl(sub.B));
     // 助成金の申請対象額＝A(税込)＋B(税込)。表示中の aIncl・bIncl と同じ丸め方で足す
     set("abIncl", incl(sub.A)+incl(sub.B));
     renderGuard(rows);
     const xRow=document.getElementById("xRow"); if(xRow) xRow.style.display = sub.X>0 ? "" : "none";
-    set("xExcl",sub.X); set("xTax",taxOf(sub.X)); set("xIncl",incl(sub.X));
+    set("xExcl",exclOf(sub.X)); set("xTax",taxOf(sub.X)); set("xIncl",incl(sub.X));
     itemsTotal=incl(sub.A)+incl(sub.B)+incl(sub.X);
     set("rcptGrand",itemsTotal);
     syncAmount();
