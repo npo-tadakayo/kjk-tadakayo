@@ -6,12 +6,13 @@
   // ===== グループ定義（ここだけ直せば全画面に反映）=====
   var GROUPS = [
     { title: "案件", items: [
-      ["/dashboard.html", "ti-chart-bar", "ダッシュボード"],
+      ["/dashboard.html", "ti-chart-bar", "ホーム（今日やること）"],
       ["/cases.html", "ti-layout-list", "案件一覧"],
       ["/kanban.html", "ti-layout-kanban", "カンバン"],
     ]},
-    { title: "受発注・物品", items: [
-      ["/supply.html", "ti-package", "供給管理"],
+    { title: "お金と物品", items: [
+      ["/supply.html?tab=shipments", "ti-truck-delivery", "出荷・請求・入金"],
+      ["/supply.html?tab=inventory", "ti-building-warehouse", "在庫・発注"],
       ["/partner-admin.html", "ti-certificate", "認定事業者"],
       ["/pricing.html", "ti-coin", "料金・送料"],
       ["/simulator.html", "ti-calculator", "売上シミュレーター"],
@@ -34,6 +35,15 @@
     // 詳細画面は親メニューをハイライト
     if (path.indexOf("case-detail") >= 0) return href === "/cases.html";
     if (path.indexOf("partner") >= 0) return href === "/partner-admin.html";
+    // 供給管理は入口が2つ（同じ supply.html を ?tab= で開く）。パス一致だけでなく
+    // tab パラメータまで見て、一致した項目だけを強調する（in/orders=在庫・発注 / それ以外・無指定=出荷・請求・入金）
+    // Hosting の cleanUrls で実際のパスは "/supply"（.html なし）になる。supply-print は別画面なので除く
+    if (/(^|\/)supply(\.html)?$/.test(path)) {
+      var tab = "";
+      try { tab = new URLSearchParams(location.search).get("tab") || ""; } catch (e) {}
+      var isStockTab = (tab === "inventory" || tab === "orders");
+      return isStockTab ? href === "/supply.html?tab=inventory" : href === "/supply.html?tab=shipments";
+    }
     // 末尾のファイル名で厳密一致（/cases.html・/cases いずれも可）
     var file = (path.split("/").pop() || "dashboard.html").replace(/\.html$/, "") || "dashboard";
     return href === "/" + file + ".html";

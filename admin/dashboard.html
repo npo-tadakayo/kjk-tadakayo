@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ダッシュボード — タダカヨ CRM</title>
+  <title>ホーム — タダカヨ CRM</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
@@ -27,7 +27,8 @@
 
     <main class="main-content">
       <div class="page-header">
-        <h1 class="page-title">ダッシュボード</h1>
+        <h1 class="page-title">ホーム</h1>
+        <p class="page-intro" style="margin:4px 0 0">今日やることと、案件の状況をまとめて見る画面です。</p>
       </div>
 
       <div id="deadlineBanner" class="deadline-banner safe" style="display:none">
@@ -40,6 +41,15 @@
       </div>
 
       <div id="dashContent" style="display:none">
+        <!-- 今日やること -->
+        <div class="card todo-card" style="margin-bottom:20px">
+          <div class="card-header"><strong>今日やること</strong></div>
+          <div class="card-body">
+            <p class="todo-hint">上から順に片付けると業務が止まりません。</p>
+            <div id="todoList" class="todo-list"></div>
+          </div>
+        </div>
+
         <!-- サマリー -->
         <div class="stat-grid" id="statGrid"></div>
 

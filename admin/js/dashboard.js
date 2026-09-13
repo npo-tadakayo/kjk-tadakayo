@@ -4,19 +4,69 @@ import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
+import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// ファネル用グルーピング（ダッシュボード固有）
-const ENGAGED = [3, 5, 6, 7, 8, 9, 10, 11, 12, 13]; // 受注確定以降
+// ファネル用グルーピング（ENGAGED は constants.js の ENGAGED_STATUSES＝SSOT。今日やることカードとも共有）
+const ENGAGED = ENGAGED_STATUSES;
 const APPLIED = [10, 11, 12, 13];
 const ADOPTED = [11, 12, 13];
 
 function yen(n) { return "¥" + Number(n || 0).toLocaleString("ja-JP"); }
+
+// ===== 今日やること（先頭カード） =====
+// cases / shipments それぞれ「読み込み中」「取得できませんでした」「件数」の3状態を持つ。
+let todoCases = null;      // null=読み込み中 / 配列=取得済み
+let todoCasesError = false;
+let todoShipments = null;
+let todoShipmentsError = false;
+
+function countRow(data, error, fn) {
+  if (error) return { state: "error" };
+  if (!data) return { state: "loading" };
+  return { state: "ok", count: data.filter(fn).length };
+}
+
+function todoRowHtml({ icon, label, href, state, count }) {
+  let right;
+  if (state === "loading") right = `<span class="todo-count todo-count-muted">集計中…</span>`;
+  else if (state === "error") right = `<span class="todo-count todo-count-error">取得できませんでした</span>`;
+  else right = count > 0
+    ? `<span class="todo-count todo-count-active">${count}件</span>`
+    : `<span class="todo-count todo-count-zero">なし</span>`;
+  return `<div class="todo-row">
+    <div class="todo-icon"><i class="ti ${icon}" aria-hidden="true"></i></div>
+    <div class="todo-label">${label}</div>
+    ${right}
+    <a class="btn btn-secondary todo-open" href="${href}">開く</a>
+  </div>`;
+}
+
+function renderTodo() {
+  const el = document.getElementById("todoList");
+  if (!el) return;
+  const rows = [
+    { icon: "ti-inbox", label: "新しく届いた問い合わせ", href: "/cases.html?status=1",
+      ...countRow(todoCases, todoCasesError, (c) => c.status === 1) },
+    { icon: "ti-user-question", label: "担当営業が決まっていない案件", href: "/cases.html?assigned=none",
+      ...countRow(todoCases, todoCasesError, (c) => ENGAGED.includes(c.status) && !c.assignedUserId) },
+    { icon: "ti-users", label: "伴走支援待ち", href: "/cases.html?status=7",
+      ...countRow(todoCases, todoCasesError, (c) => c.status === 7) },
+    { icon: "ti-truck-delivery", label: "出荷の下書き（確定が必要）", href: "/supply.html?tab=shipments",
+      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "draft") },
+    { icon: "ti-receipt", label: "発送済で請求書を出していない", href: "/supply.html?tab=shipments",
+      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "shipped") },
+    { icon: "ti-cash", label: "請求済で入金待ち", href: "/supply.html?tab=shipments",
+      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "invoiced") },
+    { icon: "ti-receipt-2", label: "入金済で領収証を出していない", href: "/supply.html?tab=shipments",
+      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "paid" && !s.receiptIssuedAt) },
+  ];
+  el.innerHTML = rows.map(todoRowHtml).join("");
+}
 
 let deadline = DEADLINE;
 function updateDeadlineBanner() {
@@ -152,5 +202,21 @@ onAuthStateChanged(auth, async (user) => {
     document.getElementById("loadingEl").style.display = "none";
     document.getElementById("dashContent").style.display = "block";
     render(cases);
+    todoCases = cases;
+    todoCasesError = false;
+    renderTodo();
+  }, () => {
+    todoCasesError = true;
+    renderTodo();
+  });
+
+  // 出荷（今日やることカードの下4行のみで使用。統計カードは触らない）
+  onSnapshot(collection(db, "shipments"), (snap) => {
+    todoShipments = snap.docs.map((d) => d.data()).filter((s) => s.status !== "canceled");
+    todoShipmentsError = false;
+    renderTodo();
+  }, () => {
+    todoShipmentsError = true;
+    renderTodo();
   });
 });

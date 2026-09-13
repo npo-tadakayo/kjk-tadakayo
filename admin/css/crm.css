@@ -245,6 +245,13 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   letter-spacing: -0.01em;
 }
 
+/* 画面タイトル直下の一行説明。初見の職員が「この画面で何をするか」を掴むための共通スタイル */
+.page-intro {
+  font-size: 13px;
+  color: var(--color-ink-muted);
+  margin: calc(var(--space-2) * -1) 0 var(--space-4);
+}
+
 /* ========== Banner ========== */
 .deadline-banner {
   display: flex;
@@ -1047,4 +1054,38 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
   #breakdownGrid { grid-template-columns: 1fr !important; }
   .bar-label { flex-basis: 120px; }
   .table-wrap { overflow-x: auto; }
+}
+
+/* ========== 今日やること（ダッシュボード先頭カード） ========== */
+.todo-hint { font-size: 13px; color: var(--color-ink-muted); margin-bottom: var(--space-3); }
+.todo-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.todo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  min-height: 44px;
+}
+.todo-icon { flex: 0 0 auto; font-size: 20px; color: var(--color-ink-muted); }
+.todo-label { flex: 1; font-size: 13px; color: var(--color-ink); }
+.todo-count {
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 9999px;
+  white-space: nowrap;
+}
+.todo-count-active { background: var(--color-danger-soft); color: var(--color-danger); }
+.todo-count-zero { background: var(--color-bg); color: var(--color-ink-muted); font-weight: 500; }
+.todo-count-muted { background: var(--color-bg); color: var(--color-ink-muted); font-weight: 500; }
+.todo-count-error { background: var(--color-danger-soft); color: var(--color-danger); font-weight: 500; }
+.todo-open { padding: 8px 14px; font-size: 13px; }
+@media (max-width: 640px) {
+  .todo-row { flex-wrap: wrap; }
+  .todo-label { flex: 1 1 100%; order: 1; }
+  .todo-count { order: 2; }
+  .todo-open { order: 3; }
 }

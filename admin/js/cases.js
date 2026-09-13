@@ -6,7 +6,7 @@ import { getFirestore, collection, query, orderBy, onSnapshot,
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import {
-  STATUS_LABELS, SOURCE_LABELS, PHASES, LOST,
+  STATUS_LABELS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
   ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
   referralOptions, referralLabel,
@@ -76,6 +76,16 @@ function updateDeadlineBanner() {
 
 let allCases = [];
 let sortState = { field: "receivedAt", dir: "desc" };
+
+// URLパラメータでの初期絞り込み（ダッシュボード「今日やること」からの遷移用）。
+// ?status=N は既存の statusFilter セレクトへそのまま反映（init 内）。
+// ?assigned=none は「担当営業が決まっていない案件」＝ステータス3〜13（失注除く）かつ assignedUserId 未設定。
+// 対応するプルダウンUIは無いため、既存の絞り込みセレクトは増やさず表示側だけを絞り込む。
+const urlParams = new URLSearchParams(location.search);
+const urlAssignedNone = urlParams.get("assigned") === "none";
+function matchAssignedNone(c) {
+  return !urlAssignedNone || (ENGAGED_STATUSES.includes(Number(c.status)) && !c.assignedUserId);
+}
 
 // 事業所（offices）の辞書。案件には住所が無く officeId しか持たないため、
 // 都道府県・地域・市町村はここから引く（住所の分解は area.js）。
@@ -203,7 +213,7 @@ function populateAreaFilters() {
 
 function renderCases() {
   const f = currentFilters();
-  const filtered = sortCases(allCases.filter((c) => matchFilters(c, f)));
+  const filtered = sortCases(allCases.filter((c) => matchFilters(c, f) && matchAssignedNone(c)));
 
   const tbody = document.getElementById("casesBody");
   const table = document.getElementById("casesTable");
@@ -216,7 +226,7 @@ function renderCases() {
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
     const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.referralFilter
-      || f.regionFilter || f.prefFilter || f.cityFilter);
+      || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
       ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
@@ -466,6 +476,12 @@ onAuthStateChanged(auth, async (user) => {
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   populateStatusFilter();
+  // ?status=N（ダッシュボード「今日やること」からの遷移）を既存のステータス絞り込みへ反映
+  const urlStatus = urlParams.get("status");
+  if (urlStatus) {
+    const sel = document.getElementById("statusFilter");
+    if (sel.querySelector(`option[value="${urlStatus}"]`)) sel.value = urlStatus;
+  }
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
   document.getElementById("newCaseBtn").addEventListener("click", openModal);

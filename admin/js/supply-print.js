@@ -690,7 +690,12 @@ onAuthStateChanged(auth, async (user)=>{
   // 「供給管理へ」の戻り先を、この帳票を開いた元タブにする（一覧へ戻す）
   const backTab = { po:"orders", invoice:"shipments", receipt:"shipments", refund:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
   const backBtn = document.querySelector(".btn-back");
-  if (backBtn && backTab) backBtn.href = `/supply.html?tab=${backTab}`;
+  if (backBtn && backTab) {
+    backBtn.href = `/supply.html?tab=${backTab}`;
+    // メニューの名前に合わせる（在庫・発注 ／ 出荷・請求・入金）。「供給管理」という名前は 2026-09-13 に廃止
+    const lbl = backBtn.querySelector(".btn-back-label");
+    if (lbl) lbl.textContent = (backTab==="orders" || backTab==="inventory") ? "在庫・発注へ" : "出荷・請求・入金へ";
+  }
   await loadProducts();
   const docId = type==="plabel" ? params.get("pid") : id;
   if(!type||!docId){ document.getElementById("loadingEl").textContent="パラメータが不正です"; return; }

@@ -18,6 +18,10 @@ export const STATUS_COLORS = {
 
 export const LOST = 4; // 失注（別枠・どのフェーズからも遷移しうる）
 
+// 受注確定以降（失注除く）。ダッシュボードのファネル集計・「今日やること」の
+// 「担当営業が決まっていない案件」判定など、複数画面で使う共通グルーピング。
+export const ENGAGED_STATUSES = [3, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+
 // 5フェーズ（13ステータスを束ねる）。失注(4)は別枠。
 export const PHASES = [
   { id: 1, label: "受付・受注",     color: "#1d4ed8", statuses: [1, 2, 3] },

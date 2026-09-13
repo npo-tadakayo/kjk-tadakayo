@@ -3,11 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>供給管理 — タダカヨ CRM</title>
+  <title id="pageTitleTag">在庫・発注 — タダカヨ CRM</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
+  <!-- .page-intro の本体は /css/crm.css。タブの中に置くので、見出し直下用の負の上余白だけ打ち消す -->
+  <style>
+    .tab-content > .page-intro { margin-top: 0; }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -24,7 +28,7 @@
     </aside>
 
     <main class="main-content">
-      <div class="page-header"><h1 class="page-title">供給管理</h1></div>
+      <div class="page-header"><h1 class="page-title" id="pageTitle">在庫・発注</h1></div>
 
       <div class="tabs" role="tablist">
         <button class="tab active" data-tab="inventory" role="tab"><i class="ti ti-building-warehouse" aria-hidden="true"></i> 在庫・商品</button>
@@ -36,6 +40,7 @@
 
       <!-- 在庫・商品 -->
       <div class="tab-content active" id="tab-inventory">
+        <p class="page-intro">保管場所ごとの在庫を確認し、入庫・出庫・割り当てを記録します。</p>
         <div class="card"><div class="table-wrap">
           <table><thead><tr><th>品番</th><th>商品名</th><th>接続</th><th class="num">卸価格(2-10台)</th><th>在庫</th><th>保管場所ごと</th><th>調整</th></tr></thead>
           <tbody id="productsBody"></tbody></table>
@@ -55,6 +60,7 @@
 
       <!-- 発注 -->
       <div class="tab-content" id="tab-orders">
+        <p class="page-intro">AB Circle への発注を作り、届いたら入荷登録します。</p>
         <div class="page-header" style="margin-bottom:12px">
           <span style="font-size:13px;color:var(--color-ink-muted)">タダカヨ → AB Circle Japan への発注</span>
           <button class="btn btn-primary" id="newOrderBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規発注</button>
@@ -68,8 +74,9 @@
 
       <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
+        <p class="page-intro">発送 → 請求 → 入金 → 領収証 の順に進めます。行のボタンは左から順に押します。</p>
         <div class="page-header" style="margin-bottom:12px">
-          <span style="font-size:13px;color:var(--color-ink-muted)">発送 → 請求 → 入金。認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
+          <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
@@ -85,6 +92,7 @@
 
       <!-- 受注（認定事業者から） -->
       <div class="tab-content" id="tab-partnerorders">
+        <p class="page-intro">認定事業者からの発注を受け取り、出荷に進めます。</p>
         <div class="page-header" style="margin-bottom:12px">
           <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者ポータルからの発注と、メールで届いた発注ファイル（CSV／JSON）の取込</span>
           <button class="btn btn-primary" id="importOrderBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>発注ファイルを取り込む</button>
@@ -98,6 +106,7 @@
 
       <!-- パートナー管理 -->
       <div class="tab-content" id="tab-partners">
+        <p class="page-intro">認定事業者の登録と卸価格を管理します。</p>
         <div class="page-header" style="margin-bottom:12px">
           <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者の登録・連絡先・担当者管理（@tadakayo.jp 職員のみ）</span>
           <button class="btn btn-primary" id="newPartnerBtn" type="button"><i class="ti ti-user-plus" aria-hidden="true"></i>認定事業者を追加</button>

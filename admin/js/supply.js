@@ -51,18 +51,47 @@ function seqFmt(prefix,n){ return `${prefix}-2026-${String(n).padStart(4,"0")}`;
 function taxExcl(inclusive){ return Math.round((Number(inclusive)||0)/1.1); }
 
 // ===== タブ =====
+// 供給管理は1ページのまま、URL の ?tab= で2つの入口（在庫・発注／出荷・請求・入金）を開き分ける契約。
+// パラメータ名 "tab" と5つの値（inventory/orders/shipments/partnerorders/partners）は
+// ダッシュボード側も依存しているので変えないこと。
+const VALID_TABS = ["inventory","orders","shipments","partnerorders","partners"];
+const TAB_GROUP_TITLE = {
+  inventory: "在庫・発注", orders: "在庫・発注",
+  shipments: "出荷・請求・入金", partnerorders: "出荷・請求・入金", partners: "出荷・請求・入金",
+};
+function applyTabHeading(tabName){
+  const label = TAB_GROUP_TITLE[tabName] || "在庫・発注";
+  const h1 = document.getElementById("pageTitle");
+  if (h1) h1.textContent = label;
+  document.title = `${label} — タダカヨ CRM`;
+}
+// タブを開く。URL の ?tab= も history.replaceState で追従させる（リロードしても同じタブが開く）
+function activateTab(tabName){
+  const btn = document.querySelector(`.tab[data-tab="${tabName}"]`);
+  const content = document.getElementById(`tab-${tabName}`);
+  if (!btn || !content) return false;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  document.querySelectorAll(".tab-content").forEach(x=>x.classList.remove("active"));
+  btn.classList.add("active");
+  content.classList.add("active");
+  applyTabHeading(tabName);
+  const url = new URL(location.href);
+  url.searchParams.set("tab", tabName);
+  history.replaceState(null, "", url);
+  return true;
+}
 function initTabs(){
   document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>{
-    document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
-    document.querySelectorAll(".tab-content").forEach(x=>x.classList.remove("active"));
-    t.classList.add("active");
-    document.getElementById(`tab-${t.dataset.tab}`).classList.add("active");
+    activateTab(t.dataset.tab);
   }));
-  // 帳票ページから「供給管理へ」で戻ったとき、元のタブ（?tab=）を開く
+  // 直接リンク／帳票ページから「供給管理へ」で戻ったとき、?tab= の値でタブを初期表示する。
+  // 不正な値・無指定は従来どおり既定タブ（HTML側で active な inventory）のまま
   const wanted = new URLSearchParams(location.search).get("tab");
-  if (wanted){
-    const t = document.querySelector(`.tab[data-tab="${wanted}"]`);
-    if (t) t.click();
+  if (wanted && VALID_TABS.includes(wanted)) {
+    activateTab(wanted);
+  } else {
+    const activeTab = document.querySelector(".tab.active");
+    applyTabHeading(activeTab ? activeTab.dataset.tab : "inventory");
   }
 }
 

@@ -46,7 +46,8 @@
           <li><strong>ダッシュボード</strong>: 件数・補助金額・進捗の全体像と<strong>月次の新規案件グラフ</strong>（直近6か月）</li>
           <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み（ステータス・流入元・<strong>紹介元</strong>・<strong>地域／都道府県／市町村</strong>）・並び替え・CSV出力</li>
           <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）</li>
-          <li><strong>供給管理</strong>: 在庫・発注・出荷・認定事業者の受注</li>
+          <li><strong>出荷・請求・入金</strong>: 発送・請求書・入金の記録、認定事業者からの受注</li>
+          <li><strong>在庫・発注</strong>: 在庫の確認・AB Circleへの発注・入荷登録</li>
           <li><strong>売上シミュレーター</strong>: 件数を入れて年間の売上・利益を試算</li>
           <li><strong>認定事業者</strong>: 認定事業者の一覧・登録、協定書/説明資料の作成</li>
           <li><strong>料金・送料</strong>: 認定事業者への卸価格・レターパック/ゆうパック送料の設定</li>
@@ -160,7 +161,7 @@
         <div class="step"><span class="n">1</span>LP の問い合わせフォームを送信する</div>
         <div class="step"><span class="n">2</span>送信後の画面の「<strong>今すぐ見積書を作る</strong>」を押すと、見積もりツールに<strong>入力済みの内容が引き継がれた状態</strong>で開く</div>
         <div class="step"><span class="n">3</span>台数・接続タイプを選んで、そのまま「<strong>注文する</strong>」へ進める</div>
-        <div class="step"><span class="n">4</span>注文が入ると、供給管理の出荷タブに<strong>下書きが自動でできる</strong></div>
+        <div class="step"><span class="n">4</span>注文が入ると、出荷・請求・入金の出荷タブに<strong>下書きが自動でできる</strong></div>
         <p><strong>スタッフがすること</strong></p>
         <ul>
           <li><strong>注文が入ったら</strong>: 出荷タブの「下書き」を確かめて「<strong>出荷を確定</strong>」。合計は<strong>見積もりの金額とかならず一致</strong>するので、入れ直す必要はありません</li>
@@ -173,7 +174,7 @@
         <div class="callout tip">「内容を変更する」で版を上げたとき、事業所には<strong>金額と変更点がメールで届きます</strong>（この時点ではPDFは付きません）。PDFで渡したいときは、続けて同じカードの「<strong>事業所へ送付</strong>」を押してください。</div>
         <div class="callout warn"><strong>古い版の見積書は無効になります。</strong> 版を上げると、それ以前の版は「差し替え済み」になり、事業所が古いリンクから注文することはできません。作り直したら、必ず新しい見積書を送ってください。</div>
 
-        <h3>カードリーダーの発注・出荷（供給管理）</h3>
+        <h3>カードリーダーの発注（在庫・発注）・出荷（出荷・請求・入金）</h3>
         <p><button data-video="U3"></button></p>
         <ul>
           <li><strong>発注</strong>: 「新規発注」で数量入力 → 発注書PDF → 届いたら「入荷登録」（在庫が増えます）。<strong>直送の発注には「入荷登録」が出ません</strong>（手元に届かないため。在庫が誤って増えるのを防いでいます）。送料は<strong>1便100台以上で無料</strong>なので、お届け地域を選んでも100台以上なら0円が入ります</li>
@@ -232,13 +233,13 @@
 
         <h3>認定事業者からの発注を受ける（ポータル）</h3>
         <p><button data-video="U5"></button></p>
-        <div class="step"><span class="n">1</span>供給管理「パートナー管理」で認定事業者のログイン用メールと名称を登録</div>
+        <div class="step"><span class="n">1</span>出荷・請求・入金「パートナー管理」で認定事業者のログイン用メールと名称を登録</div>
         <div class="step"><span class="n">2</span>同じ行の「<strong>発注案内</strong>」ボタンを押すと、ポータルのURL・ログイン方法・発注ファイル（CSV）の書き方をまとめた<strong>ご案内メール</strong>を送れます。送信前に宛先・件名・本文がプレビューで出るので、確認・編集してから「この内容で送信する」を押してください（送信すると行に「済 月/日」が付きます。何度でも送れます）</div>
-        <div class="step"><span class="n">3</span>届いた発注は供給管理「受注（認定事業者）」で確認・ステータス更新</div>
+        <div class="step"><span class="n">3</span>届いた発注は出荷・請求・入金「受注（認定事業者）」で確認・ステータス更新</div>
 
         <h3>発注ファイル（CSV／JSON）をメールで受け取った場合</h3>
         <p>ポータルを使わない相手には <strong>発注テンプレート.csv</strong> または <strong>発注スキーマサンプル.json</strong> をお渡しし、記入したファイルをメールで送ってもらいます。</p>
-        <div class="step"><span class="n">1</span>供給管理 →「受注（認定事業者）」タブ →「<strong>発注ファイルを取り込む</strong>」</div>
+        <div class="step"><span class="n">1</span>出荷・請求・入金 →「受注（認定事業者）」タブ →「<strong>発注ファイルを取り込む</strong>」</div>
         <div class="step"><span class="n">2</span>届いたファイルを選ぶ（<strong>複数まとめて選べます</strong>。CSVとJSONの混在も可）</div>
         <div class="step"><span class="n">3</span>プレビュー表で内容を確認する。品番の誤り・数量0・住所の抜けは<strong>何行目の何が問題か</strong>が赤く出ます</div>
         <div class="step"><span class="n">4</span>「受注として登録」を押すと<strong>受注番号（SO-2026-0001 など）が自動で付いて</strong>一覧に並びます</div>

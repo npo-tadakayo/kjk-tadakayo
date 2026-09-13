@@ -43,6 +43,7 @@
         <div class="case-header" id="caseHeader">
           <div class="case-number" id="caseNumber"></div>
           <div class="case-title" id="caseTitle"></div>
+          <p class="page-intro" style="margin:0 0 var(--space-3)">この案件の状況と、次にやることをここで進めます。</p>
           <div class="case-meta" id="caseMeta"></div>
           <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
             <div style="display:flex;align-items:center;gap:var(--space-2)">
@@ -447,7 +448,7 @@
                 <label class="form-label" for="aiQuestion">自由に質問する</label>
                 <div style="display:flex;gap:8px">
                   <input class="form-control" type="text" id="aiQuestion" placeholder="例: この事業所への次の一手は？">
-                  <button class="btn btn-primary ai-btn" data-task="assistant" type="button" style="flex:0 0 auto">
+                  <button class="btn btn-secondary ai-btn" data-task="assistant" type="button" style="flex:0 0 auto">
                     <i class="ti ti-send" aria-hidden="true"></i> 質問
                   </button>
                 </div>
