@@ -15,7 +15,7 @@ export const VIDEOS = [
     desc: "ABサークルへの発注、入荷登録、出荷、直送、送料", file: "crm-u3",
     roles: ["供給管理"] },
   { id: "U4", no: 4, title: "請求・入金・経理報告", duration: "5分49秒", version: "v1.0", updated: "2026-08-31",
-    desc: "請求書、領収書（用途区分A/B）、入金、未集金、返金明細書", file: "crm-u4",
+    desc: "請求書、領収証（用途区分A/B）、入金、未集金、返金明細書", file: "crm-u4",
     roles: ["供給管理", "経理"] },
   { id: "U5", no: 5, title: "認定事業者とのやりとり", duration: "3分36秒", version: "v1.2", updated: "2026-09-06",
     desc: "ポータル登録、発注ファイルの取り込み、卸価格", file: "crm-u5",

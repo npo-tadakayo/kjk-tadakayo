@@ -46,6 +46,26 @@ export function invoiceTotals(s){
   return { taxIncluded, goods, goodsExcl, shipExcl, shipIncl, sub, tax, total, credit, payable: total-credit };
 }
 
+// 発行元の連絡先（設定で入れた分だけ出す）。請求書・領収証で同じ並びにする（2026-09-13 追加）
+export function issuerContactHtml(st){
+  st = st || {};
+  const addr = [st.invoiceIssuerPostal ? `〒${esc(st.invoiceIssuerPostal)}` : "", esc(st.invoiceIssuerAddress||"")]
+    .filter(Boolean).join(" ");
+  const line2 = [st.invoiceIssuerTel ? `TEL: ${esc(st.invoiceIssuerTel)}` : "",
+                 st.invoiceIssuerContact ? `担当: ${esc(st.invoiceIssuerContact)}` : ""]
+    .filter(Boolean).join("　／　");
+  return (addr ? `${addr}<br>` : "") + (line2 ? `${line2}<br>` : "");
+}
+
+// 品目の用途説明。助成金の申請で「何に使うものか」が書面から分かるように帳票へ出す（2026-09-13 追加）
+export function itemPurposeNote(sku){
+  const k = String(sku||"");
+  if (k === "support-fee") return "導入設定・マイナ資格確認アプリ設定・介護DX証明書設定・1年間サポート";
+  if (k === "discount") return "";
+  if (/^cir/i.test(k)) return "介護情報基盤で使用するマイナ資格確認アプリ対応カードリーダー";
+  return "";
+}
+
 // 請求先の表示名（直送＝認定事業者／直接＝事業所）。supply.js の billToKey と対象は同じ
 export function billToNameOf(s){
   return (s&&s.shipType)==="dropship" ? ((s&&s.partnerName)||"") : ((s&&s.company)||(s&&s.officeName)||"");
@@ -96,13 +116,17 @@ export function renderInvoiceHtml(s, st, opts){
     if (/bluetooth/i.test(conn)) return cn ? `Bluetooth／${cn}` : "Bluetooth";
     return cn || conn;
   };
-  const rows2 = items.map(i=>`<tr><td>${esc(i.name)}${connOf(i)?`<div style="font-size:11px;color:#6a5e48">つなぎ方: ${esc(connOf(i))}</div>`:""}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`).join("")
+  const rows2 = items.map(i=>{
+    const sub = [ connOf(i) ? `つなぎ方: ${esc(connOf(i))}` : "", esc(itemPurposeNote(i.sku)) ]
+      .filter(Boolean).map(x=>`<div style="font-size:11px;color:#6a5e48">${x}</div>`).join("");
+    return `<tr><td>${esc(i.name)}${sub}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`;
+  }).join("")
     + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipShown)}</td><td class="num">${yen(shipShown)}</td></tr>` : "");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
-          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${esc(issueDate)}</div>
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st)}kjk-staff@tadakayo.jp<br>発行日: ${esc(issueDate)}</div>
           <img class="seal-kaku-img" src="${st.poSealImage || "/images/seal-tadakayo.png"}" alt="タダカヨの角印">
         </div></div>
       <h1 class="inv-title">請　求　書</h1>

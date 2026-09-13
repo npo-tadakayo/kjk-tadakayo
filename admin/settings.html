@@ -118,6 +118,13 @@
               <div class="form-group"><label class="form-label" for="invoiceIssuerName">発行事業者名</label><input class="form-control" id="invoiceIssuerName" type="text" placeholder="NPO法人タダカヨ"></div>
               <div class="form-group"><label class="form-label" for="invoiceRegNo">登録番号（T＋13桁）</label><input class="form-control" id="invoiceRegNo" type="text" placeholder="T1234567890123"></div>
             </div>
+            <!-- 発行元の連絡先（2026-09-13 追加）。請求書・領収証の発行元欄に印字される。入れた項目だけ出る -->
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="invoiceIssuerPostal">郵便番号</label><input class="form-control" id="invoiceIssuerPostal" type="text" placeholder="143-0014"></div>
+              <div class="form-group"><label class="form-label" for="invoiceIssuerTel">電話番号</label><input class="form-control" id="invoiceIssuerTel" type="text" placeholder="050-0000-0000"></div>
+            </div>
+            <div class="form-group"><label class="form-label" for="invoiceIssuerAddress">住所</label><input class="form-control" id="invoiceIssuerAddress" type="text" placeholder="東京都大田区大森中2-1-20-1001"></div>
+            <div class="form-group"><label class="form-label" for="invoiceIssuerContact">担当者名</label><input class="form-control" id="invoiceIssuerContact" type="text" placeholder="藤田 博之"></div>
           </div>
           <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">請求書の振込先口座</div>

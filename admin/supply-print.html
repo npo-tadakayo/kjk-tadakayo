@@ -72,7 +72,7 @@
     .po-company-info .po-org{margin-top:0;}
     .seal-kaku-img{width:82px;height:82px;object-fit:contain;flex:0 0 auto;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .issuer-wrap{display:flex;align-items:flex-start;gap:12px;justify-content:flex-end;}
-    /* 領収書: 編集可能な明細表 */
+    /* 領収証: 編集可能な明細表 */
     .rcpt-items input{width:100%;border:1px solid var(--line);border-radius:5px;padding:5px 7px;font-size:13px;font-family:inherit;color:var(--ink);background:#fff;}
     .rcpt-items input.num{text-align:right;}
     .rcpt-items .ri-kind{width:100%;border:1px solid var(--line);border-radius:5px;padding:5px 6px;font-size:12px;font-family:inherit;background:#fff;}
@@ -149,7 +149,7 @@
   </div>
   <div class="sheet"><div class="loading" id="loadingEl"><i class="ti ti-loader-2 ti-spin"></i> 読み込み中...</div>
     <div id="body" style="display:none"></div></div>
-  <!-- 帳票のメール送付（請求書・領収書。PDFを添付して請求先へ送る） -->
+  <!-- 帳票のメール送付（請求書・領収証。PDFを添付して請求先へ送る） -->
   <div class="modal-overlay" id="mailDocModal" style="display:none;position:fixed;inset:0;background:rgba(30,25,18,.5);z-index:100;align-items:center;justify-content:center;padding:20px">
     <div style="background:var(--bg);border-radius:16px;max-width:640px;width:100%;max-height:90vh;overflow:auto">
       <div style="display:flex;align-items:center;gap:10px;padding:16px 22px;border-bottom:1px solid var(--line)">

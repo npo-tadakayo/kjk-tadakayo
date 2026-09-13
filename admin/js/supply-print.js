@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serv
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -103,7 +103,7 @@ function renderLetterpack(s, sender, variant){
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
 function renderInvoice(s, st){ return renderInvoiceHtml(s, st, { issueDate: today, products }); }
 
-// 領収書（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
+// 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
 //   内訳＝見積のような編集可能な明細表（伴走支援サポート費など行を追加できる）。）
 // 用途区分（助成金: A=カードリーダー / B=接続サポート等経費 / X=対象外）
@@ -137,14 +137,14 @@ function rcptRow(r){
   const opts=RCPT_KINDS.map(([v,l])=>`<option value="${v}"${(r.kind||"A")===v?" selected":""}>${l}</option>`).join("");
   return `<tr>
       <td class="rcpt-noprint"><select class="ri-kind">${opts}</select></td>
-      <td><input class="ri-name" value="${esc(r.name||"")}"></td>
+      <td><input class="ri-name" value="${esc(r.name||"")}">${r.note?`<div class="ri-note" style="font-size:11px;color:#6a5e48;margin-top:2px">${esc(r.note)}</div>`:""}</td>
       <td><input class="ri-qty num" type="number" min="0" step="1" value="${Number(r.qty)||0}"></td>
       <td><input class="ri-price num" type="number" min="0" step="1" value="${Number(r.price)||0}"></td>
       <td class="num ri-amt"></td>
       <td class="rcpt-noprint"><button type="button" class="ri-del" aria-label="行を削除"><i class="ti ti-x"></i></button></td>
     </tr>`;
 }
-// 領収書の明細の単価が税込か（事業所向け＝税込／認定事業者向けの卸＝税抜）。
+// 領収証の明細の単価が税込か（事業所向け＝税込／認定事業者向けの卸＝税抜）。
 // renderReceipt が入れ、wireReceiptEditor が集計に使う（2026-09-13）
 let rcptTaxIncluded = false;
 function renderReceipt(s, st, saved){
@@ -152,10 +152,10 @@ function renderReceipt(s, st, saved){
   const items=s.items||[];
   const taxIncl = priceIsTaxIncluded(s);
   rcptTaxIncluded = taxIncl;
-  // 明細: 発行を記録済みならその内容を復元（同じ領収書を再発行できる）。無ければ出荷から組み立てる
+  // 明細: 発行を記録済みならその内容を復元（同じ領収証を再発行できる）。無ければ出荷から組み立てる
   let rowsInit;
   if(saved && Array.isArray(saved.items) && saved.items.length){
-    rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
+    rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", note:r.note||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
   }else{
     // 初期明細＝出荷の商品＋送料（X:対象外）。あとから編集・行追加できる。
     // 🔴 区分は品番から自動で振る（2026-09-13）。以前は全部Aだったため、
@@ -163,13 +163,14 @@ function renderReceipt(s, st, saved){
     rowsInit = items.map(i=>{
       const sku=String(i.sku||"");
       const qty=Number(i.qty)||0, price=Number(i.unitPrice)||0;
-      if(sku==="support-fee") return { kind:"B", name: i.name || "介護情報基盤との接続サポート等経費", qty, price };
+      const note = itemPurposeNote(sku);
+      if(sku==="support-fee") return { kind:"B", name: i.name || "介護情報基盤との接続サポート等経費", note, qty, price };
       // 値引き（金額調整）は伴走支援費から引いている性格なのでBに入れる。
       // これでA＋B＝実際にお支払いいただいた額＝助成金の申請対象額になる
-      if(sku==="discount")    return { kind:"B", name: i.name || "値引き", qty, price };
+      if(sku==="discount")    return { kind:"B", name: i.name || "値引き", note:"", qty, price };
       return { kind:"A",
         name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
-        qty, price };
+        note, qty, price };
     });
     if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
   }
@@ -199,12 +200,12 @@ function renderReceipt(s, st, saved){
     <div class="inv">
       <div class="doc-head"><div></div>
         <div class="issuer-wrap">
-          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>kjk-staff@tadakayo.jp<br>発行日: ${issueDate}</div>
+          <div class="issuer"><div class="org">${esc(issuerName)}</div>介護情報基盤伴走支援事業<br>${regLine}<br>${issuerContactHtml(st)}kjk-staff@tadakayo.jp<br>発行日: ${issueDate}</div>
           <img class="seal-kaku-img" src="${sealSrc}" alt="タダカヨの角印">
         </div></div>
-      <h1 class="inv-title">領　収　書</h1>
+      <h1 class="inv-title">領　収　証</h1>
       <div class="to">${esc(toName)} 御中</div>
-      <div class="meta">領収書番号: ${esc(rcptNo)}　／　関連請求書番号: ${esc(invoiceNoOf(s))}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
+      <div class="meta">領収証番号: ${esc(rcptNo)}　／　関連請求書番号: ${esc(invoiceNoOf(s))}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       ${toAddr ? `<div class="meta">${toAddr}</div>` : ""}
       <div class="grand">領収金額（税込）　<strong id="rcptTotal">${yen(initAmount)}</strong></div>
       <!-- 実入金との突き合わせ。画面だけの案内で印刷には出さない -->
@@ -247,7 +248,7 @@ function renderReceipt(s, st, saved){
         <tbody>
           <tr><td class="lbl">カードリーダー費（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
           <tr><td class="lbl">接続サポート等経費（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
-          <!-- 助成金の申請対象額。印刷物（領収書そのもの）の見た目は変えないので画面だけに出す -->
+          <!-- 助成金の申請対象額。印刷物（領収証そのもの）の見た目は変えないので画面だけに出す -->
           <tr class="rcpt-noprint"><td class="lbl">助成金の申請対象額（A＋B・税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="abIncl">¥0</strong></td></tr>
           <tr id="xRow" style="display:none"><td class="lbl">対象外（送料等）</td><td class="num" id="xExcl">¥0</td><td class="num" id="xTax">¥0</td><td class="num" id="xIncl">¥0</td></tr>
           <tr class="grand"><td class="lbl">明細合計（税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="rcptGrand">¥0</strong></td></tr>
@@ -261,7 +262,7 @@ function renderReceipt(s, st, saved){
 
 // ===== 返金明細書（2026-08-12 追加）=====
 // 過入金の返金・返品やキャンセルに伴う返金の「相手に渡す証憑」。
-// 領収書と違い当方が支払う側の書面なので、金額の内訳（請求額・入金額・返金額）を並べて経緯が追えるようにする。
+// 領収証と違い当方が支払う側の書面なので、金額の内訳（請求額・入金額・返金額）を並べて経緯が追えるようにする。
 function renderRefundStatement(s, st){
   st = st || {};
   const refunds = Array.isArray(s.refunds) ? s.refunds : [];
@@ -302,7 +303,7 @@ function renderRefundStatement(s, st){
         <tr><td class="lbl">返金額（税込・合計）</td><td class="num">−${yen(refundTotal)}</td></tr>
         <tr class="grand"><td class="lbl">差引後のご入金額（税込）</td><td class="num"><strong>${yen(paid-refundTotal)}</strong></td></tr>
       </tbody></table>
-      <p style="font-size:12px;color:var(--muted);margin-top:10px">※ 本書は当方からのご返金の明細です（領収書ではありません）。${lastDate?`最終の返金日は ${esc(lastDate)} です。`:""}お振込の場合、着金までお時間をいただくことがあります。</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:10px">※ 本書は当方からのご返金の明細です（領収証ではありません）。${lastDate?`最終の返金日は ${esc(lastDate)} です。`:""}お振込の場合、着金までお時間をいただくことがあります。</p>
       <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}　／　お問い合わせ: kjk-staff@tadakayo.jp</div>
     </div>`;
 }
@@ -344,7 +345,7 @@ function billableInclOf(s){
   return Math.max(0, invoiceTotals(s).payable);
 }
 
-// 領収書の明細表を編集可能にし、用途区分A/B/対象外ごとの税込小計・領収金額・収入印紙欄を自動再計算する
+// 領収証の明細表を編集可能にし、用途区分A/B/対象外ごとの税込小計・領収金額・収入印紙欄を自動再計算する
 function wireReceiptEditor(){
   const tbody=document.getElementById("rcptItems"); if(!tbody) return;
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=yen(v); };
@@ -427,7 +428,7 @@ function wireReceiptEditor(){
   recompute();
 }
 
-// 領収書の発行記録: 画面の明細・但し書き・用途区分の集計を receipts/{出荷ID} にスナップショット保存し、
+// 領収証の発行記録: 画面の明細・但し書き・用途区分の集計を receipts/{出荷ID} にスナップショット保存し、
 // 出荷側にも発行日を書き戻す（誰にいつ何を発行したか後から確認でき、再発行も同じ内容で出せる）
 function collectReceiptSnapshot(){
   const tbody=document.getElementById("rcptItems");
@@ -435,6 +436,7 @@ function collectReceiptSnapshot(){
   const items=[...(tbody?tbody.querySelectorAll("tr"):[])].map(tr=>({
     usage: tr.querySelector(".ri-kind")?.value||"A",
     name: tr.querySelector(".ri-name")?.value||"",
+    note: tr.querySelector(".ri-note")?.textContent||"",
     qty: Number(tr.querySelector(".ri-qty")?.value)||0,
     unitPrice: Number(tr.querySelector(".ri-price")?.value)||0,
   })).filter(r=>r.name||r.qty);
@@ -479,15 +481,15 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
   finally{ btn.disabled=false; }
 }
 
-const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収書 ",refund:"返金明細書 "};
+const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収証 ",refund:"返金明細書 "};
 
-// ===== 帳票のメール送付（請求書・領収書）=====
+// ===== 帳票のメール送付（請求書・領収証）=====
 // いま画面に出ている帳票をそのままPDF化して、請求先へ添付メールで送る（2026-09-01 新設）。
 // 今までメールで送れるのは経理への報告だけで、請求先には印刷して渡すしかなかった。
 // ・PDFは経理報告と同じ html2pdf（画面の見た目のまま添付される）
 // ・送信は sendPartnerMail（添付対応版）。出荷に invoiceMailedAt / receiptMailedAt が残る
 // ・宛先の初期値: 認定事業者への請求なら partnerEmail（ドキュメントIDがメールアドレス）
-const MAIL_DOC_LABEL = { invoice: "請求書", receipt: "領収書" };
+const MAIL_DOC_LABEL = { invoice: "請求書", receipt: "領収証" };
 
 function mailDocTemplate(kind, s, st){
   const label = MAIL_DOC_LABEL[kind];
@@ -500,7 +502,7 @@ function mailDocTemplate(kind, s, st){
       `出荷（${s.soNumber || ""}）の請求書をPDFにてお送りいたします。\n` +
       `お支払期限・お振込先はPDFに記載しております。ご確認のほどよろしくお願い申し上げます。`
     : `平素より大変お世話になっております。\n` +
-      `ご入金を確認いたしましたので、領収書（出荷 ${s.soNumber || ""}）をPDFにてお送りいたします。\n` +
+      `ご入金を確認いたしましたので、領収証（出荷 ${s.soNumber || ""}）をPDFにてお送りいたします。\n` +
       `助成金の申請書類としてもご利用いただけます。`;
   return {
     subject: `【${issuerName}】${label}のご送付（${s.soNumber || ""}）`,
@@ -617,7 +619,7 @@ function setupMailDoc(kind, d, st){
     sendBtn.disabled = true;
     try{
       sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> PDFを作成中...';
-      // 領収書の編集用input・印刷対象外の列を落とすため、印刷時と同じ見た目に整えた複製をPDF化する
+      // 領収証の編集用input・印刷対象外の列を落とすため、印刷時と同じ見た目に整えた複製をPDF化する
       // （html2canvas は @media print を適用しないので、画面の #body をそのまま渡すと編集UIが写る）
       const { clone, cleanup } = printableClone();
       let dataUri;
@@ -706,7 +708,7 @@ onAuthStateChanged(auth, async (user)=>{
 
     if(type==="po" || type==="invoice" || type==="receipt" || type==="refund"){
       let settings={}; try{ const ss=await getDoc(doc(db,"appConfig","settings")); settings=ss.exists()?ss.data():{}; }catch(_){}
-      // 領収書: 発行を記録済みなら保存内容（明細・但し書き・発行日）を復元して同じものを再発行できるようにする
+      // 領収証: 発行を記録済みなら保存内容（明細・但し書き・発行日）を復元して同じものを再発行できるようにする
       let savedReceipt=null;
       if(type==="receipt"){
         try{ const rs=await getDoc(doc(db,"receipts",docId)); if(rs.exists()) savedReceipt=rs.data(); }catch(_){}
@@ -716,7 +718,7 @@ onAuthStateChanged(auth, async (user)=>{
         : type==="invoice" ? renderInvoice(d, settings)
         : type==="refund" ? renderRefundStatement(d, settings)
         : renderReceipt(d, settings, savedReceipt);
-      // 請求書・領収書はメールでも送れる（送付状・宛名・発注書は対象外）
+      // 請求書・領収証はメールでも送れる（送付状・宛名・発注書は対象外）
       if(type==="invoice" || type==="receipt") setupMailDoc(type, d, settings);
       // 返金明細書: 発行記録のボタンを出す（返金がある出荷のみ意味を持つ）
       if(type==="refund"){
@@ -733,7 +735,7 @@ onAuthStateChanged(auth, async (user)=>{
         }
         return;
       }
-      // 領収書: 明細表を編集可能に（行追加で伴走支援サポート費など見積内容を記載）＋但し書き編集
+      // 領収証: 明細表を編集可能に（行追加で伴走支援サポート費など見積内容を記載）＋但し書き編集
       if(type==="receipt"){
         wireReceiptEditor();
         const out=document.getElementById("rcptNoteText");

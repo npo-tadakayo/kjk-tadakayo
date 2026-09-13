@@ -1247,7 +1247,7 @@ function renderShipments(ships){
         + payCount + refTxt + creditTxt + balTxt + usedTxt
         // 請求先への帳票メール送付の記録（supply-print のメール送付が書く）
         + (s.invoiceMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">請求書をメール送付済み ${esc(String(s.invoiceMailedAt).slice(5))}</div>` : "")
-        + (s.receiptMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">領収書をメール送付済み ${esc(String(s.receiptMailedAt).slice(5))}</div>` : "")
+        + (s.receiptMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">領収証をメール送付済み ${esc(String(s.receiptMailedAt).slice(5))}</div>` : "")
         // 経理への請求書発行報告（未報告なら気づけるように出す）
         + (s.accountingReportedAt
             ? `<div style="font-size:12px;color:var(--color-ink-muted)">経理へ報告済み ${esc(String(s.accountingReportedAt).slice(5))}</div>`
@@ -1278,7 +1278,7 @@ function renderShipments(ships){
         <div class="row-actions">
         ${lifeBtns}
         <a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>
-        ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収書${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : ""}
+        ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収証${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : ""}
         ${refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : ""}
         <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
         <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
