@@ -1250,7 +1250,7 @@ exports.reviseQuote = onCall(
       estNo, version, plan: planKey, planLabel: calc.plan.label, items, amounts,
       status: base.status === "accepted" ? "accepted" : "issued",
       supersedes: base.id, reason: String(reason).trim().slice(0, 500),
-      validUntil: base.validUntil || daysFromNow(30),
+      validUntil: daysFromNow(30),   // 改版は新しい見積書なので有効期限を30日振り直す（2026-09-14）
       createdVia: "staff", createdBy: email, createdAt: now,
       contactEmail: base.contactEmail || "", contactName: base.contactName || "",
       officeName: base.officeName || "", corpName: base.corpName || "",

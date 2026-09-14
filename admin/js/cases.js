@@ -384,7 +384,7 @@ function fmtFull(ts) {
 function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
-  const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","紹介元",
+  const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","ご希望","紹介元",
     "ステータス","担当営業","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
@@ -392,6 +392,7 @@ function exportCsv() {
       c.caseNumber || "", c.officeName || "", c.corpName || "", c.contactName || "",
       c._area?.region || "", c._area?.prefecture || "", c._area?.city || "",
       c.contactPhone || "", c.contactEmail || "", SOURCE_LABELS[c.source] || c.source || "",
+      INQUIRY_INTENT_LABELS[c.inquiryIntent] || c.inquiryIntent || "",
       referralLabel(c.referralSource, appSettings),
       STATUS_LABELS[c.status] || "", c.assignedUserName || "未割当",
       c.subsidyCategory || "", c.expectedSubsidyAmount || "",

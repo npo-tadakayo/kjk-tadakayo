@@ -687,6 +687,12 @@
       @page { size: A4 portrait; margin: 15mm; }
     }
 
+    @media (max-width: 560px) {
+      /* スマホ幅ではヘッダーの見出しを畳み、2つのボタンを小さくして横はみ出しを防ぐ（2026-09-14） */
+      .app-header { padding-left: 10px; padding-right: 10px; }
+      .app-header-title { display: none; }
+      .hdr-btn { padding: 8px 10px; font-size: 12px; gap: 4px; }
+    }
     @media (max-width: 820px) {
       .app-body { flex-direction: column; height: auto; }
       .form-panel { width: 100%; }
@@ -978,6 +984,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
+<script src="js/split-city.js"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -1035,11 +1042,7 @@
     // 政令指定都市の「◯◯市△△区」は、admin側の集計（area.js）が「市」までを市町村として
     // 扱い区を含めない方針のため、区は市町村欄に入れず住所欄側へ回す。
     // 東京23区のような「◯◯区」単独（市を伴わない）はそのまま市町村として扱う。
-    function splitCity(address2) {
-      const m = String(address2 || '').match(/^(.+市)(.+区)$/);
-      if (m) return { city: m[1], wardPrefix: m[2] };
-      return { city: address2 || '', wardPrefix: '' };
-    }
+    // splitCity は js/split-city.js（LPと共通）
     let lastLookedUp = '';
     async function lookup(digits) {
       setHint(HINT_LOADING, 'is-loading');

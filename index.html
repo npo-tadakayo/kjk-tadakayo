@@ -2881,7 +2881,8 @@
   </footer>
 
   <!-- Firebase App Check（M-1 フォーム保護 / reCAPTCHA Enterprise・観察モード対応） -->
-  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="js/split-city.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
   <script>
     (function () {
@@ -2996,11 +2997,7 @@
       // 政令指定都市の「◯◯市△△区」は、admin側の集計（area.js）が「市」までを市町村として
       // 扱い区を含めない方針のため、区は市町村欄に入れず住所欄側へ回す。
       // 東京23区のような「◯◯区」単独（市を伴わない）はそのまま市町村として扱う。
-      function splitCity(address2) {
-        const m = String(address2 || '').match(/^(.+市)(.+区)$/);
-        if (m) return { city: m[1], wardPrefix: m[2] };
-        return { city: address2 || '', wardPrefix: '' };
-      }
+      // splitCity は js/split-city.js（見積もりツールと共通）
       let lastLookedUp = '';
       async function lookup(digits) {
         setHint(HINT_LOADING, 'is-loading');
@@ -3100,7 +3097,13 @@
       const label = document.getElementById('quoteNextLinkLabel');
       const lead = document.getElementById('success-next-lead');
       const note = document.getElementById('success-next-note');
+      const head = document.getElementById('form-success-lead');
       if (btn) btn.classList.remove('btn-lg');
+      if (head) head.textContent = (intent === 'order')
+        ? 'お申し込みのご希望を承りました。担当スタッフからもご連絡しますが、次の画面で見積書を作るとそのままお申し込みまで進めます。'
+        : (intent === 'quote')
+          ? '見積書のご希望を承りました。次の画面で見積書をその場で作れます（担当スタッフからも2営業日以内にご連絡します）。'
+          : '担当スタッフから2営業日以内にご連絡いたします。少しお待ちください。';
       if (intent === 'order') {
         if (label) label.textContent = '見積書を作って申し込む';
         if (lead) lead.textContent = 'お申し込みには見積書（構成と金額）が必要です。次の画面で構成を選ぶと、その場で申し込みに進めます。';
