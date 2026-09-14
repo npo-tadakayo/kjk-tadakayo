@@ -69,7 +69,7 @@ Fable 司令塔＋Sonnet 4体（C: LPフォーム 18万／Bf: mitsumori 34万／
 テストデータ（案件 #160〜166・EST-2026-0026〜0032・SH-2026-0021〜0026・事業所7・記録・leadToken 2・Storage PDF 3）は削除済み（0件確認）。
 追加で直したもの: 見積もりツールの `input[type=tel|url|email]` にスタイルが当たっておらず細かった → 追加（lp live `6a453812c0183508`）。
 
-**残っている小さな宿題**: 見積もりツールのヘッダー2ボタンが 375px ではみ出す（既存）／`reviseQuote` は前版の `validUntil` を引き継ぐ（改版時に30日を振り直すか要判断）／ `leadTokens.usedFor` に "order" を積んでいない（単一経路も同じ・実害なし）／LP完了画面の「2営業日以内にご連絡」が order でも出る（文言の整理）／CSV出力に `inquiryIntent` 列なし／複数事業所のPDFダウンロードは `window.print()` 一括（事業所ごとの分割保存はブラウザの印刷ダイアログで）。
+**小さな宿題は 2026-09-14 15:0x に5件まとめて解消**（commit `2a046e4`・lp live `d4b088ff3e7b254e`・admin live `3a3def7272b51db3`・Functions `reviseQuote`）: 改版時に有効期限を30日振り直す／LP完了画面の先頭文をご希望で出し分け／CSVに「ご希望」列／見積もりツール 560px 以下でヘッダー見出しを畳む／`splitCity` を `js/split-city.js` に共通化。**据え置き**:  `leadTokens.usedFor` に "order" を積んでいない（単一経路も同じ・実害なし）／LP完了画面の「2営業日以内にご連絡」が order でも出る（文言の整理）／CSV出力に `inquiryIntent` 列なし／複数事業所のPDFダウンロードは `window.print()` 一括（事業所ごとの分割保存はブラウザの印刷ダイアログで）。
 
 ## 現在の状態（2026-09-14 朝・前回終了時）
 
