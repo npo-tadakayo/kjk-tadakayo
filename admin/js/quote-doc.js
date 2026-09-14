@@ -135,10 +135,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
                onerror="this.outerHTML='&lt;div class=&quot;qdoc-logo-ph&quot;&gt;特定非営利活動法人タダカヨ&lt;/div&gt;'">
         </div>
         <div class="qdoc-title-wrap"><div class="qdoc-title">見　積　書</div></div>
-        <div class="qdoc-hanko-wrap">
-          <img src="/images/seal-tadakayo.png" alt="タダカヨの角印" class="qdoc-hanko"
-               onerror="this.outerHTML='&lt;div class=&quot;qdoc-hanko-ph&quot;&gt;印&lt;br&gt;鑑&lt;/div&gt;'">
-        </div>
+        <div class="qdoc-hanko-wrap" aria-hidden="true"></div>
       </div>
 
       <div class="qdoc-meta">
@@ -155,11 +152,15 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
       </div>
 
       <div class="qdoc-issuer">
-        <div class="qdoc-issuer-name">特定非営利活動法人タダカヨ</div>
-        <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
-          〒143-0014　東京都大田区大森中2-1-20-1001<br>
-          TEL: 050-6872-9884　／　担当: 佐藤拡史
+        <div class="qdoc-issuer-text">
+          <div class="qdoc-issuer-name">特定非営利活動法人タダカヨ</div>
+          <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
+            〒143-0014　東京都大田区大森中2-1-20-1001<br>
+            TEL: 050-6872-9884　／　担当: 佐藤拡史
+          </div>
         </div>
+        <img src="/images/seal-tadakayo.png" alt="タダカヨの角印" class="qdoc-hanko"
+             onerror="this.outerHTML='&lt;div class=&quot;qdoc-hanko-ph&quot;&gt;印&lt;br&gt;鑑&lt;/div&gt;'">
       </div>
 
       <table class="qdoc-table">
@@ -230,7 +231,9 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-info-table td{padding:0 0 0 12px;}
 .qdoc-info-table .lbl{color:#6a5e48;white-space:nowrap;}
 .qdoc-info-table .val{font-weight:600;white-space:nowrap;}
-.qdoc-issuer{background:#fafafa;border:1px solid #E8E4DC;border-radius:8px;padding:8px 14px;margin-bottom:7mm;font-size:9.5pt;line-height:1.8;}
+.qdoc-issuer{background:#fafafa;border:1px solid #E8E4DC;border-radius:8px;padding:8px 14px;margin-bottom:7mm;font-size:9.5pt;line-height:1.8;display:flex;align-items:center;gap:12px;}
+.qdoc-issuer-text{flex:1;min-width:0;}
+.qdoc-issuer .qdoc-hanko,.qdoc-issuer .qdoc-hanko-ph{flex:0 0 auto;margin-left:-4px;}
 .qdoc-issuer-name{font-size:11pt;font-weight:700;margin-bottom:2px;}
 .qdoc-table{width:100%;border-collapse:collapse;font-size:10pt;margin-bottom:5mm;}
 .qdoc-table th{background:#222;color:#fff;padding:7px 10px;font-size:9.5pt;font-weight:600;}
