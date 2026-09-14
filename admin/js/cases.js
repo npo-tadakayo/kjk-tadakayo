@@ -9,7 +9,7 @@ import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES,
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
   ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
-  referralOptions, referralLabel,
+  referralOptions, referralLabel, INQUIRY_INTENT_LABELS,
 } from "/js/constants.js";
 import { areaOf, REGIONS } from "/js/area.js";
 
@@ -132,6 +132,7 @@ function currentFilters() {
     statusFilter: document.getElementById("statusFilter").value,
     sourceFilter: document.getElementById("sourceFilter").value,
     quoteFilter: document.getElementById("quoteFilter")?.value || "",
+    intentFilter: document.getElementById("intentFilter")?.value || "",
     referralFilter: document.getElementById("referralFilter")?.value || "",
     showArchived: !!document.getElementById("showArchived")?.checked,
     regionFilter: document.getElementById("regionFilter")?.value || "",
@@ -155,7 +156,13 @@ function quoteMatch(c, selected) {
   if (selected === "issued") return !!c.latestQuoteId && !c.orderedAt;
   return true;
 }
-function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, referralFilter, showArchived,
+// ご希望（inquiryIntent）。未設定は空欄扱いなので「未設定」を選べるようにする。
+const INTENT_NONE = "__none__";
+function intentMatch(c, selected) {
+  if (!selected) return true;
+  return selected === INTENT_NONE ? !c.inquiryIntent : c.inquiryIntent === selected;
+}
+function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, intentFilter, referralFilter, showArchived,
                           regionFilter, prefFilter, cityFilter }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
@@ -172,7 +179,8 @@ function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, refe
   const matchArea = areaMatch(a.region, regionFilter)
     && areaMatch(a.prefecture, prefFilter)
     && areaMatch(a.city, cityFilter);
-  return matchSearch && matchStatus && matchSource && quoteMatch(c, quoteFilter) && matchReferral && matchArea;
+  return matchSearch && matchStatus && matchSource && quoteMatch(c, quoteFilter)
+    && intentMatch(c, intentFilter) && matchReferral && matchArea;
 }
 
 // 地域→都道府県→市町村の順に絞り込む。上位を選ぶと、下位の選択肢は
@@ -225,7 +233,7 @@ function renderCases() {
     empty.style.display = "block";
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
-    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.referralFilter
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.intentFilter || f.referralFilter
       || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
@@ -248,7 +256,7 @@ function renderCases() {
       <td>${escHtml(c._area?.region || "") || areaBlank()}</td>
       <td>${escHtml(c._area?.prefecture || "") || areaBlank()}</td>
       <td>${escHtml(c._area?.city || "") || areaBlank()}</td>
-      <td>${SOURCE_LABELS[c.source] || c.source || "—"}</td>
+      <td>${SOURCE_LABELS[c.source] || c.source || "—"}${intentBadge(c)}</td>
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
       <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span></td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
@@ -262,6 +270,15 @@ function renderCases() {
 // 未登録であることが分かる表示にする（申込フォームが住所を聞いていないため実際に多い）。
 function areaBlank() {
   return '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>';
+}
+
+// 「ご希望」（inquiryIntent）を流入元の隣に小さく出す。未設定は何も出さない。
+// 「正式に申込みたい」は他より目立たせる（既存の badge-1 の赤系トーンを流用）。
+function intentBadge(c) {
+  if (!c.inquiryIntent) return "";
+  const label = INQUIRY_INTENT_LABELS[c.inquiryIntent] || c.inquiryIntent;
+  const cls = c.inquiryIntent === "order" ? "badge-1" : "badge-2";
+  return ` <span class="badge ${cls}" style="font-size:11px">${escHtml(label)}</span>`;
 }
 
 function archivedBadge(c) {
@@ -495,6 +512,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
   document.getElementById("quoteFilter")?.addEventListener("change", renderCases);
+  document.getElementById("intentFilter")?.addEventListener("change", renderCases);
   document.getElementById("referralFilter")?.addEventListener("change", renderCases);
   document.getElementById("showArchived")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
   // 上位を変えたら下位の選択肢を作り直す（存在しない組み合わせを残さない）

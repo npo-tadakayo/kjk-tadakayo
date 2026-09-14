@@ -1,9 +1,41 @@
-# タダカヨの介護情報基盤伴走支援 LP / CRM 申し送り — 2026-09-14（UI改善A〜C・税の是正・キャンセル・機能一覧 本番反映済み）
+# タダカヨの介護情報基盤伴走支援 LP / CRM 申し送り — 2026-09-14（Issue #5 の3機能を実装・Functions は本番反映済み・Hosting も live 昇格済み）
 
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
-## 現在の状態（2026-09-14 終了時）
+## 現在の状態（2026-09-14 午後・Issue #5 実装後）
+
+- **Issue #5 の未着手3機能を実装**（下の節）。**Functions 6本は本番反映済み**（10:35 / 11:0x JST・後方互換）。**Hosting（lp・admin）も live 昇格済み**（lp live `c66e3b14fdcf1e0a`／admin live `7fe79a7484138e2e`・11:1x JST・次田さん承認）。
+  - lp preview: https://kjk-tadakayo--sess-edit-aqvlhy8r.web.app（version `3805d44cd529cbb8`）
+  - admin preview: https://kjk-tadakayo-admin--sess-edit-1tasqzda.web.app（version `e600f45a4b8e1c9a`）
+- コミット: 本節の実装は 1コミット（`feat(見積もり): Issue #5 …`）で push 済み（ハッシュは git log）
+- 通し確認は本番 Functions ＋ プレビュー Hosting で実施し、**テストデータ（案件 #157〜159・EST-2026-0023〜0025・SH-2026-0019/0020・事業所3・記録・leadToken・Storage PDF）はすべて削除済み**（0件を確認）。番号は進んでいる。認可ドメインは本番4件に戻した
+- Chat 通知（🛒 お申し込み 2事業所／📥 LP問い合わせ ご希望: 正式に申込みたい）が基盤スペースに流れているはず。**テスト投稿なので無視してよい旨を一言入れると親切**
+
+## 見積もり Phase 3・複数事業所まとめ見積もり・LPフォーム「ご希望」3択（2026-09-14 実装・Functions 本番反映済み）
+
+Fable 司令塔＋Sonnet 4体（C: LPフォーム 18万／Bf: mitsumori 34万／Af: CRM 22万／Wave2: Functions 23万トークン）。検収・通し確認・Codex レビュー対応は司令塔が直営。
+決定（次田さん・同日）: ①複数事業所は**事業所ごとに案件＋見積書（EST番号も別）、`groupId` で束ねる** ②LPの「正式に申込みたい」は**見積もりツールへ誘導し発行後すぐ申込モーダル**（申込には見積書が必須）。
+
+| # | 何 | どこ |
+|---|---|---|
+| C | LPフォームに必須ラジオ「ご希望」（consult／quote／order）。完了画面を出し分け（order は「見積書を作って申し込む」→ `mitsumori.html?t=…&intent=order`）。`cases.inquiryIntent`、Chat 通知の2行目に「ご希望: …」（🛒📝📥）。案件一覧に「ご希望」バッジ＋絞り込み、案件詳細ヘッダーにバッジ。⚠ ラジオは既存の `[required]` 判定から漏れる作りだったので個別判定に | index.html / webhookLpInquiry / constants.js / cases.js / cases.html / case-detail.js |
+| B | 見積もりツール「＋同一法人の事業所を追加」（最大10）。共通＝法人名・担当者・電話・メール、事業所ごと＝事業所名・住所・電話・URL・プラン・構成。見積書は事業所ごと1枚＋法人合計表。`webhookMitsumori(offices[])` → `sendQuotePdf(pdfs[])`（1通に全PDF）→ `acceptQuote(quotes[], deliveryMode each/single)`。**1事業所の送信JSONは従来と同一**。`?intent=order` で発行後に申込モーダル自動オープン。1事業所処理は `createOrUpdateMitsumoriQuote` / `acceptQuoteTransaction` に関数化して両経路から呼ぶ | mitsumori.html / functions |
+| A | CRM 見積もりカード「見積もりを作る」（callable `staffCreateQuote`・`createdVia:"staff"`・任意でテキストメール `noticeMailedAt`）。「見積書を表示」＝ `admin/quote-print.html` + `quote-doc.js`（見積もりツールと同じ体裁・印刷／PDF保存のみ／PDFを保存して送付＝callable `saveQuotePdf`）。PDF未保存の版でもここから作れる。内部ヘルパー `saveQuotePdf` は `storeQuotePdfFile` に改名 | quote-admin.js / quote-doc.js / quote-print.html / functions |
+
+**検収で直したもの**
+- Codex P1: 一括申込・一括見積もりで一部失敗しても `status:"ok"` を返していた → `partial`／`error` を返し、画面は受け付けた分と失敗した事業所名を分けて表示
+- duplicate 応答の `groupId` が保存値とズレる（毎リクエスト採番していた）→ 既存版の groupId を返す
+- 申し込み済みの案件に「見積もりを作る」が出る → 非表示＋サーバで `failed-precondition`（改版は「内容を変更する」）
+- まとめ見積もりの兄弟案件が「重複の可能性」に出て統合を誘う → 同じ `quoteGroupId` は除外
+- メール本文の金額に桁区切りが無い（Functions 実行環境の `toLocaleString()` 既定ロケール）→ `toLocaleString("ja-JP")` に統一（12か所）
+- 見積書の右上ラベルが縦に折れる → `white-space:nowrap`／「お客様ご負担額」→「事業所さまご負担額（自己負担）」
+
+**通し確認（本番 Functions・プレビュー Hosting・2026-09-14 10:45〜10:55 JST）**: LP（order）→ 完了画面 → 見積もりツール引き継ぎ → 事業所2件で「メールで受け取る」（EST-0023/0024・1通にPDF2枚）→ 申込モーダル自動オープン → 一括申込（SH-0019/0020・確認メール1通）／ CRM: 一覧の「ご希望」列・詳細のバッジ・新規案件 #159 で「見積もりを作る」（EST-0025・テキストメール）→ 見積書を表示 → 「PDFを保存して事業所へ送付」（Storage＋添付メール）。すべて成功。
+
+**残っている小さな宿題**: `leadTokens.usedFor` に "order" を積んでいない（単一経路も同じ・実害なし）／LP完了画面の「2営業日以内にご連絡」が order でも出る（文言の整理）／CSV出力に `inquiryIntent` 列なし／複数事業所のPDFダウンロードは `window.print()` 一括（事業所ごとの分割保存はブラウザの印刷ダイアログで）。
+
+## 現在の状態（2026-09-14 朝・前回終了時）
 
 - LP（https://kjk.tadakayo.jp）・CRM（https://kjk-tadakayo-admin.web.app）とも本番稼働中。リポジトリ `npo-tadakayo/kjk-tadakayo`、最新 commit `ec7ee70`、admin live `2b3c7edec0168d71`、lp live `4828f4e0488c0262`。**未コミット0・stash 0・push 済み**。
 - **この2日で本番に入ったもの**（各節に詳細）: 保管場所ごとの在庫（滋賀167／沖縄47）／消費税の二重計算の是正（事業所＝税込・卸＝税別）／帳票の書式（領収証・発行元・説明行・担当＝案件の担当営業）／請求書メールの宛先自動入力と支援報告書の同封／UI改善A（メニュー再編・今日やること・1行説明）・B（出荷・請求・入金タブ・ボタン文言・§0業務の流れ）・C（次の一手・3ステップ案内）／出荷のキャンセル／firestore.rules（本人の `onboardingDismissedAt` のみ）。
@@ -244,8 +276,9 @@ Firebase Auth の認可ドメインを **15件 → 5件**にした。プレビ�
 | 5 | 認定マーク中央の「2026」の扱い | そのまま／「2026年度」／外す |
 | 6 | 認定書類3点の文言確認 | 確定後に様式を固定する |
 
-## 次回やること（優先順・2026-09-14 更新）
+## 次回やること（優先順・2026-09-14 午後 更新）
 
+0. **Issue #5 の後始末**: 機能一覧 §11 と MANUAL の見積もり節に3機能を追記（機能一覧 §3.4/§5/§6 は追記済み）。Issue #5 は「認定事業者の書類サンプル（§6 回答待ち）」「CRM操作の追加動画」が残るので open のまま
 1. **【決定待ち→着手】配布用マニュアルPDFの出し直し＋CRM動画8本の再生成**（システム最終化の条件は整った）
    - PDF: `admin/manual.html` → `00_outbox/介護情報基盤_資料一式_20260902/10_…` を新しい日付で出し直す（`release-index.py` の作法）
    - 動画: 順序 **1 → 3・8 → 4 → 2 → 6 → 5・7**。台本 `06_介護情報基盤事業/ガイドブック動画_パイプライン/台本/U1〜U8.json` の旧名称（供給管理／ダッシュボード／出荷を確定／領収書／入金記録）を直し、画面は**ダミーデータ**で撮り直す。内容の誤りは無く名称・画面の差だけ（単元4の税のセリフは今も正しい）

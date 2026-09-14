@@ -10,7 +10,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
-  referralOptions, referralLabel, NEXT_ACTION } from "/js/constants.js";
+  referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
@@ -46,6 +46,14 @@ let usersList = [];
 // ヘッダー「次の一手」2行目（お金の流れ）が同じデータ・同じ判定関数を再利用するために保持（二重購読しない）。
 let shipmentsCache = [];
 
+// 「ご希望」（inquiryIntent）を流入元の隣に表示。「正式に申込みたい」は目立つ色のバッジにする
+// （既存の badge-1 の赤系トーンを流用。色の直書きはせず既存の意味色パレットに合わせる）。
+function inquiryIntentBadge(intent) {
+  const label = INQUIRY_INTENT_LABELS[intent] || intent;
+  const cls = intent === "order" ? "badge-1" : "badge-2";
+  return `<span class="badge ${cls}">ご希望: ${escHtml(label)}</span>`;
+}
+
 function renderCaseHeader(c) {
   document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
   document.getElementById("caseNumber").textContent = `案件 #${c.caseNumber || "—"}`;
@@ -58,6 +66,7 @@ function renderCaseHeader(c) {
     c.contactPhone ? `<span class="case-meta-item"><i class="ti ti-phone" aria-hidden="true"></i>${escHtml(c.contactPhone)}</span>` : "",
     c.contactEmail ? `<span class="case-meta-item"><i class="ti ti-mail" aria-hidden="true"></i>${escHtml(c.contactEmail)}</span>` : "",
     `<span class="case-meta-item"><i class="ti ti-tag" aria-hidden="true"></i>${SOURCE_LABELS[c.source] || c.source || "—"}</span>`,
+    c.inquiryIntent ? `<span class="case-meta-item">${inquiryIntentBadge(c.inquiryIntent)}</span>` : "",
   ].filter(Boolean).join("");
 
   const statusSel = document.getElementById("statusSelect");
@@ -646,6 +655,8 @@ async function loadDuplicateCandidates() {
   return snap.docs
     .map((d) => ({ _id: d.id, ...d.data() }))
     .filter((c) => c._id !== caseId && !c.archived
+      // 同一法人のまとめ見積もり（quoteGroupId が同じ）は、意図して分けた別事業所なので重複候補にしない（2026-09-14）
+      && !(kase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === kase.quoteGroupId)
       && dupKeys(c).some((k) => myKeys.has(k))
       && !dismissed.has(pairKey(caseId, c._id)));
 }

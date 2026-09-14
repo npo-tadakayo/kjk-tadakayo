@@ -355,6 +355,10 @@ erDiagram
   partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
   shipments ||--|| receipts : "領収書の発行記録"
   cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼"
+  cases ||--o{ quotes : "見積もり（版で積む）"
+  cases ||--o{ leadTokens : "問い合わせ→見積もり→申込の継続トークン"
+  quotes ||--o| shipments : "Web申込で出荷下書きを自動作成(quoteId)"
+  locations ||--o{ shipments : "出荷元(originLocationId)"
   cases {
     int caseNumber
     string officeName
@@ -362,7 +366,15 @@ erDiagram
     string source "lp/見積/手動"
     array cardReaders
     int expectedSubsidyAmount
+    string inquiryIntent "consult/quote/order"
+    string latestQuoteId
+    string quoteGroupId "同一法人まとめ見積もり"
+    timestamp orderedAt
+    string orderedVia "web/staff"
   }
+  quotes { string estNo int version string plan array items json amounts string status string createdVia string groupId string pdfPath timestamp validUntil }
+  leadTokens { string caseId string email timestamp expiresAt array usedFor }
+  locations { string name string prefecture bool active }
   offices { string officeName string corpName string phone }
   activities { string type string subject timestamp occurredAt }
   sessions { string sessionDate string summary array photoUrls }
@@ -404,25 +416,46 @@ erDiagram
 | `purchaseOrders / shipments` | 発注（→AB Circle）・出荷（→事業所） |
 | `partners / partnerOrders` | 認定事業者の許可リスト・受注 |
 | `receipts` | 領収書の発行記録（docId=出荷ID・番号/発行日/金額/明細のスナップショット） |
+| `quotes` | 見積もり（2026-09-06〜）。1案件に v1, v2… を積む。`estNo` は案件で引き継ぎ、版だけ上げる。`items[{sku,connector,subsidyQty,extraQty}]` は**品番ベース**、`amounts` は**サーバ計算のみ**（`functions/estimate-pricing.js`＝`js/estimate-pricing.js` と同一内容・`scripts/check-pricing-sync.sh`）。`status`: issued / accepted / superseded。`createdVia`: web（見積もりツール）/ staff（CRM「見積もりを作る」・2026-09-14）。`accessToken` は事業所側の操作（PDF送付・申込）の鍵。`pdfPath/pdfUrl/mailedAt` は PDF 送付済みの印。`groupId/groupIndex/groupSize` は同一法人の複数事業所まとめ見積もり（2026-09-14）。`validUntil`=発行＋30日（期限切れは画面で判定・status は書き換えない） |
+| `leadTokens` | 継続トークン（128bit 乱数・30日）。LP問い合わせの応答で発行し `mitsumori.html?t=` で事業所情報を引き継ぐ。`get` のみ公開・`list` はスタッフ・書き込みは Functions のみ |
+| `locations` | 保管場所マスタ（2026-09-12）。`products.stockByLocation` と `shipments.originLocationId` が参照 |
+| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない） |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定 |
 | `_counters` | 案件番号・発注/出荷番号の採番 |
 
-## §C4 シーケンス：見積もり作成 → 案件登録（SEQ）
+## §C4 シーケンス：問い合わせ → 見積もり → 申し込み（SEQ・2026-09-14 更新）
+
+入口は LP の問い合わせフォームと見積もりツールの2つ。**1事業所＝1案件**を継続トークン（`leadTokens`）とメール＋事業所名の照合で守る。
+LP フォームの「ご希望」（まず相談したい／見積書がほしい／正式に申込みたい）で完了画面の導線を変え、`order` は見積もりツールで発行後すぐ申込モーダルを開く。
 
 ```mermaid
 sequenceDiagram
   participant U as 介護事業所
-  participant LP as 見積もりツール
-  participant FN as Cloud Function
-  participant DB as Firestore
+  participant LP as LP問い合わせフォーム
+  participant MT as 見積もりツール(mitsumori.html)
+  participant FN as Cloud Functions
+  participant DB as Firestore/Storage
   participant CH as Google Chat
-  U->>LP: 必須入力＋同意（成約）
-  LP->>FN: webhookMitsumori（構造化データ）
-  FN->>DB: offices / cases / activities 作成
-  FN->>CH: 成約を通知
-  FN-->>LP: 200 OK
-  Note over DB: 管理画面に案件が自動表示
+  U->>LP: 事業所情報＋ご希望(consult/quote/order)
+  LP->>FN: webhookLpInquiry
+  FN->>DB: offices/cases(inquiryIntent)/leadTokens
+  FN->>CH: 通知（ご希望を明記）
+  FN-->>LP: token
+  LP-->>U: 完了画面（quote/order は「見積書を作る」を主ボタン・order は &intent=order）
+  U->>MT: ?t=token（事業所情報は入力済み）／「同一法人の事業所を追加」
+  MT->>FN: webhookMitsumori（1事業所 or offices[]）
+  FN->>DB: quotes(v1・estNo採番・groupId)／cases.latestQuoteId
+  FN-->>MT: quoteId・quoteToken（複数は quotes[]）
+  MT->>FN: sendQuotePdf（html2pdf の base64・複数は pdfs[] を1通に添付）
+  FN->>DB: Storage quotes/{caseId}/{estNo}-v{n}.pdf・mailedAt
+  U->>MT: この内容で申し込む（お届け先: 各事業所／1か所）
+  MT->>FN: acceptQuote（1件 or quotes[]）
+  FN->>DB: quotes.accepted／cases.status=3・orderedVia=web／shipments 下書き（事業所ごと）
+  FN->>CH: 🛒 お申し込み（1通）
+  Note over DB: スタッフは CRM の見積もりカードで版・PDF・変更理由を確認。<br/>電話相談は「見積もりを作る」(staffCreateQuote) で v1 を作り、<br/>見積書は quote-print.html で PDF 化して saveQuotePdf で保存・送付
 ```
+
+見積もり後の変更は CRM「内容を変更する」（`reviseQuote`）で版を重ね、出荷が下書きのうちは出荷下書きも作り直す。確定後は供給管理の「出荷の修正」（重要な合意事項・2026-09-06）。
 
 ## §C5 認証・セキュリティ
 

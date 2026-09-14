@@ -344,6 +344,44 @@
     .qty-row input, .qty-row select { width:80px; }
     .qty-note { font-size:11px; color:var(--muted); }
 
+    /* ── 事業所ブロック（同一法人の複数事業所対応・2026-09-14） ── */
+    .office-block {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 14px 4px;
+      margin-bottom: 14px;
+      background: #fafafa;
+    }
+    .office-block-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .office-block-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .office-remove-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-height: 32px;
+    }
+    .office-remove-btn:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+
+    /* ── 複数事業所の見積書・法人合計表 ── */
+    .est-doc + .est-doc { margin-top: 24px; }
+    .corp-summary { width: 210mm; max-width: 100%; }
+
     .print-btn {
       width: 100%;
       padding: 12px;
@@ -632,6 +670,9 @@
       .app-body { height: auto; display: block; }
       .preview-panel { padding: 0; background: white; }
       .est-doc { box-shadow: none; width: 100%; padding: 0; }
+      /* 事業所が複数のとき、見積書（法人合計表を含む）は1枚ずつ改ページする */
+      .est-doc { page-break-after: always; break-after: page; margin-top: 0 !important; }
+      .est-doc:last-of-type { page-break-after: auto; break-after: auto; }
       @page { size: A4 portrait; margin: 15mm; }
     }
 
@@ -677,14 +718,10 @@
     </div>
     <div id="quoteMailNote" style="display:none;border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.6;margin-bottom:12px;" aria-live="polite"></div>
     <div class="form-sec">
-      <div class="form-sec-title">事業所さま情報（*は必須）</div>
+      <div class="form-sec-title">法人・ご担当者情報（*は必須・全事業所共通）</div>
       <div class="form-group">
         <label class="form-label" for="corpName">法人名<span class="req">*</span></label>
         <input type="text" id="corpName" placeholder="例: 社会福祉法人〇〇" required autocomplete="organization">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="officeName">事業所名<span class="req">*</span></label>
-        <input type="text" id="officeName" placeholder="例: △△苑（つなぐ手ケアマネセンター 等）" required>
       </div>
       <div class="form-group">
         <label class="form-label" for="contactName">ご担当者名<span class="req">*</span></label>
@@ -698,110 +735,24 @@
         <label class="form-label" for="contactEmail">メールアドレス<span class="req">*</span></label>
         <input type="email" id="contactEmail" placeholder="例: info@example.jp" required autocomplete="email">
       </div>
-      <div class="form-group">
-        <label class="form-label" for="contactZip">郵便番号<span class="req">*</span></label>
-        <input type="text" id="contactZip" placeholder="例: 150-0002" inputmode="numeric" maxlength="8" required autocomplete="postal-code" aria-describedby="contactZipHint">
-        <span id="contactZipHint" class="zip-hint" aria-live="polite"></span>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="contactPrefecture">都道府県<span class="req">*</span></label>
-        <select id="contactPrefecture" required autocomplete="address-level1">
-          <option value="">選択してください</option>
-              <option value="北海道">北海道</option>
-              <option value="青森県">青森県</option>
-              <option value="岩手県">岩手県</option>
-              <option value="宮城県">宮城県</option>
-              <option value="秋田県">秋田県</option>
-              <option value="山形県">山形県</option>
-              <option value="福島県">福島県</option>
-              <option value="茨城県">茨城県</option>
-              <option value="栃木県">栃木県</option>
-              <option value="群馬県">群馬県</option>
-              <option value="埼玉県">埼玉県</option>
-              <option value="千葉県">千葉県</option>
-              <option value="東京都">東京都</option>
-              <option value="神奈川県">神奈川県</option>
-              <option value="新潟県">新潟県</option>
-              <option value="富山県">富山県</option>
-              <option value="石川県">石川県</option>
-              <option value="福井県">福井県</option>
-              <option value="山梨県">山梨県</option>
-              <option value="長野県">長野県</option>
-              <option value="岐阜県">岐阜県</option>
-              <option value="静岡県">静岡県</option>
-              <option value="愛知県">愛知県</option>
-              <option value="三重県">三重県</option>
-              <option value="滋賀県">滋賀県</option>
-              <option value="京都府">京都府</option>
-              <option value="大阪府">大阪府</option>
-              <option value="兵庫県">兵庫県</option>
-              <option value="奈良県">奈良県</option>
-              <option value="和歌山県">和歌山県</option>
-              <option value="鳥取県">鳥取県</option>
-              <option value="島根県">島根県</option>
-              <option value="岡山県">岡山県</option>
-              <option value="広島県">広島県</option>
-              <option value="山口県">山口県</option>
-              <option value="徳島県">徳島県</option>
-              <option value="香川県">香川県</option>
-              <option value="愛媛県">愛媛県</option>
-              <option value="高知県">高知県</option>
-              <option value="福岡県">福岡県</option>
-              <option value="佐賀県">佐賀県</option>
-              <option value="長崎県">長崎県</option>
-              <option value="熊本県">熊本県</option>
-              <option value="大分県">大分県</option>
-              <option value="宮崎県">宮崎県</option>
-              <option value="鹿児島県">鹿児島県</option>
-              <option value="沖縄県">沖縄県</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="contactCity">市町村<span class="req">*</span></label>
-        <input type="text" id="contactCity" placeholder="例: 渋谷区" required autocomplete="address-level2">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="contactAddress">住所（丁目・番地・建物名）<span class="req">*</span></label>
-        <input type="text" id="contactAddress" placeholder="例: 渋谷1-2-3 〇〇ビル4F" required autocomplete="address-line1">
-      </div>
-      <div class="form-group">
-        <label class="form-label" for="contactWebsite">ホームページURL（任意）</label>
-        <input type="url" id="contactWebsite" placeholder="例: https://www.example.jp" autocomplete="url">
-      </div>
       <p style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:-4px;">
-        ※ 必須項目（事業所情報＋カードリーダー構成）すべて入力し、最後に同意にチェックすると<br>
+        ※ 必須項目（法人・ご担当者情報＋各事業所の情報＋カードリーダー構成）すべて入力し、最後に同意にチェックすると<br>
         　 見積もり内容が表示され、PDFをダウンロードできます。<br>
-        ※ お見積書をメールで受け取る場合の宛先になります。
+        ※ お見積書をメールで受け取る場合の宛先になります。同一法人で複数の事業所がある場合も、このメール宛にまとめてお送りします。
       </p>
     </div>
 
-    <div class="form-sec">
-      <div class="form-sec-title">補助金プラン（事業所種別）<span class="req">*</span></div>
-      <div class="radio-group" id="planGroup">
-        <label class="radio-card on" data-val="houmon">
-          <input type="radio" name="plan" value="houmon" checked>
-          <div>
-            <div class="card-name">訪問・通所・短期滞在系</div>
-            <div class="card-desc">訪問介護・通所介護・<strong>居宅介護支援・居宅療養管理指導・地域密着型通所介護</strong> 等<br>助成金上限 ¥64,000 ／ 最大3台</div>
-          </div>
-        </label>
-        <label class="radio-card" data-val="kyojyu">
-          <input type="radio" name="plan" value="kyojyu">
-          <div>
-            <div class="card-name">居住・入所系</div>
-            <div class="card-desc">グループホーム・特養・特定施設 等<br>助成金上限 ¥55,000 ／ 最大2台</div>
-          </div>
-        </label>
-        <label class="radio-card" data-val="other">
-          <input type="radio" name="plan" value="other">
-          <div>
-            <div class="card-name">その他</div>
-            <div class="card-desc">福祉用具貸与・特定福祉用具販売・住宅改修 等<br>助成金上限 ¥42,000 ／ 最大1台</div>
-          </div>
-        </label>
-      </div>
+    <div class="form-sec" id="officesSec">
+      <div class="form-sec-title">事業所情報・補助金プラン・カードリーダー構成（*は必須）</div>
+      <div id="officeBlocksContainer"></div>
+      <button type="button" class="issue-btn" id="addOfficeBtn" onclick="addOffice()" style="margin-top:4px;width:100%;justify-content:center;">
+        <i class="ti ti-building-plus" aria-hidden="true"></i>同一法人の事業所を追加
+      </button>
+      <p style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6;">
+        同一法人で複数の事業所さまがある場合は、ここから事業所を追加してください（最大10事業所）。事業所ごとに見積書を1枚作成します。
+      </p>
 
-      <!-- 対象サービス完全リスト（折りたたみ） -->
+      <!-- 対象サービス完全リスト（折りたたみ・全プラン共通） -->
       <details style="margin-top:10px;font-size:11px;color:var(--muted);">
         <summary style="cursor:pointer;color:var(--primary);font-weight:700;padding:6px 0;">
           <i class="ti ti-list-details"></i> 対象サービスの完全リストを見る（全35種類・国保中央会 交付要綱別添）
@@ -821,95 +772,6 @@
           </p>
         </div>
       </details>
-    </div>
-
-    <div class="form-sec">
-      <div class="form-sec-title">カードリーダー構成（補助対象 合計1台以上 必須）<span class="req">*</span></div>
-
-      <!-- BT -->
-      <div class="form-group">
-        <label class="form-label">
-          <strong>CIR415A</strong>（Bluetooth 無線）<span class="qty-note">¥14,500/台 税込</span>
-        </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
-            <select id="btQty" style="width:100%;">
-              <option value="0">0台</option>
-              <option value="1">1台</option>
-              <option value="2">2台</option>
-              <option value="3" selected>3台</option>
-            </select>
-          </div>
-          <div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
-            <select id="btExtraQty" style="width:100%;">
-              <option value="0" selected>0台</option>
-              <option value="1">1台</option>
-              <option value="2">2台</option>
-              <option value="3">3台</option>
-              <option value="4">4台</option>
-              <option value="5">5台</option>
-              <option value="6">6台</option>
-              <option value="7">7台</option>
-              <option value="8">8台</option>
-              <option value="9">9台</option>
-              <option value="10">10台</option>
-            </select>
-          </div>
-        </div>
-        <div class="qty-note" style="margin-top:3px;">スマホ・タブレット対応・標準採用</div>
-      </div>
-
-      <!-- USB -->
-      <div class="form-group">
-        <label class="form-label">
-          <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥6,500/台 税込</span>
-        </label>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
-            <select id="usbQty" style="width:100%;">
-              <option value="0" selected>0台</option>
-              <option value="1">1台</option>
-              <option value="2">2台</option>
-              <option value="3">3台</option>
-            </select>
-          </div>
-          <div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
-            <select id="usbExtraQty" style="width:100%;">
-              <option value="0" selected>0台</option>
-              <option value="1">1台</option>
-              <option value="2">2台</option>
-              <option value="3">3台</option>
-              <option value="4">4台</option>
-              <option value="5">5台</option>
-              <option value="6">6台</option>
-              <option value="7">7台</option>
-              <option value="8">8台</option>
-              <option value="9">9台</option>
-              <option value="10">10台</option>
-            </select>
-          </div>
-        </div>
-        <div class="qty-note" style="margin-top:3px;">PC・有線接続向け</div>
-        <div style="margin-top:8px;">
-          <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">USBの差込口の形（あとから変更できます）</div>
-          <div id="usbConnectorGroup" style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
-            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="" checked> あとで決める</label>
-            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="A"> Type-A（四角い口）</label>
-            <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector" value="C"> Type-C（小さい楕円）</label>
-          </div>
-        </div>
-      </div>
-
-      <div style="background:var(--neutral);padding:10px 12px;border-radius:6px;font-size:12px;margin-top:4px;line-height:1.8;">
-        補助対象 合計：<strong id="totalQtyDisplay" style="color:var(--primary);font-size:14px;">3</strong>台
-        ／ <span id="planMaxDisplay">最大3台</span><br>
-        補助対象外 合計：<strong id="totalExtraDisplay" style="font-size:14px;">0</strong>台（自己負担）
-      </div>
-      <p id="qtyError" style="display:none;color:var(--primary);font-size:11px;margin-top:4px;"></p>
     </div>
 
     <!-- 同意チェック（必須項目入力後にチェックすると見積もりが見える） -->
@@ -956,7 +818,7 @@
       </div>
     </div>
 
-    <button class="print-btn" onclick="downloadPDF()">
+    <button class="print-btn" onclick="issueQuote('download')">
       <i class="ti ti-download"></i>
       PDFダウンロード
     </button>
@@ -979,88 +841,23 @@
       </div>
       <ul class="preview-lock-checklist" id="lockChecklist">
         <li data-key="corpName">法人名</li>
-        <li data-key="officeName">事業所名</li>
         <li data-key="contactName">ご担当者名</li>
         <li data-key="contactTel">電話番号</li>
         <li data-key="contactEmail">メールアドレス</li>
-        <li data-key="contactZip">郵便番号</li>
-        <li data-key="contactPrefecture">都道府県</li>
-        <li data-key="contactCity">市町村</li>
-        <li data-key="contactAddress">住所（丁目・番地・建物名）</li>
-        <li data-key="readerQty">カードリーダー構成（1台以上）</li>
+        <li data-key="officesOK">各事業所の情報・カードリーダー構成（1台以上）</li>
         <li data-key="consentCheck">同意（介護事業所関係者である旨）</li>
       </ul>
     </div>
 
-    <div class="est-doc" id="estDoc">
-
-      <!-- ヘッダー -->
-      <div class="est-head">
-        <div style="flex:0 0 auto">
-          <img src="images/tadakayo_logo.png" alt="タダカヨ" class="est-logo"
-               onerror="this.outerHTML='<div class=\'est-logo-placeholder\'>特定非営利活動法人タダカヨ</div>'">
-        </div>
-        <div class="est-title-wrap">
-          <div class="est-title">見　積　書</div>
-        </div>
-        <div class="est-hanko-wrap">
-          <img src="images/hanko.png" alt="印鑑" class="est-hanko" id="hankoImg"
-               onerror="this.outerHTML='<div class=\'est-hanko-ph\'>印<br>鑑</div>'">
-        </div>
-      </div>
-
-      <!-- 宛先 + 基本情報 -->
-      <div class="est-meta">
-        <div>
-          <div class="est-to-name" id="prevClient">（法人名・事業所名を入力）</div>
-          <div class="est-to-honorific">御中</div>
-          <div id="prevContact" style="font-size:10pt;color:var(--muted);margin-top:6px;line-height:1.7;"></div>
-        </div>
-        <table class="est-info-table">
-          <tr><td class="lbl">見積番号</td><td class="val" id="prevEstNo">—</td></tr>
-          <tr><td class="lbl">見積日</td><td class="val" id="prevDate">—</td></tr>
-          <tr><td class="lbl">有効期限</td><td class="val" id="prevExpiry">—</td></tr>
-        </table>
-      </div>
-
-      <!-- 発行者情報 -->
-      <div class="est-issuer">
-        <div class="est-issuer-name">特定非営利活動法人タダカヨ</div>
-        <div style="font-size:9pt; color:var(--muted); line-height:1.9">
-          〒143-0014　東京都大田区大森中2-1-20-1001<br>
-          TEL: 050-6872-9884　／　担当: 佐藤拡史
-        </div>
-      </div>
-
-      <!-- 明細テーブル -->
-      <table class="est-table">
-        <thead>
-          <tr>
-            <th style="width:46%;text-align:left">品名・摘要</th>
-            <th style="width:9%">数量</th>
-            <th style="width:22%">単価（税込）</th>
-            <th style="width:23%">金額（税込）</th>
-          </tr>
-        </thead>
-        <tbody id="itemsBody"></tbody>
-      </table>
-
-      <!-- 合計 -->
-      <div class="est-totals-wrap">
-        <div class="est-totals" id="totalsArea"></div>
-      </div>
-
-      <!-- 備考 -->
-      <div class="est-notes" id="notesArea"></div>
-
-    </div><!-- /est-doc -->
+    <!-- 見積書は事業所ごとに1枚、JSで生成する（estDocTemplate/ensureEstDocs） -->
+    <div id="estDocsContainer"></div>
 
     <!-- お申し込み（画面だけ・印刷やPDFには出さない） -->
     <!-- 見積書の受け取り方を利用者が選ぶ（2026-09-09・藤田副理事長の改修提案 REQ-01〜03）。
          同意チェックだけでは何も送信せず、ここを押した時点で初めて記録・メール送付を行う。 -->
     <div class="issue-cta" id="issueCta" style="display:none">
       <div class="issue-cta-title">お見積書の受け取り方をお選びください</div>
-      <div class="issue-cta-note">
+      <div class="issue-cta-note" id="issueCtaNote">
         押した時点で、この内容のお見積書を発行します。<b>この操作までは、タダカヨへ送信されません。</b>
       </div>
       <div class="issue-cta-buttons">
@@ -1098,8 +895,18 @@
     <div class="modal-title">お申し込みの確認</div>
     <div class="modal-desc" id="orderSummary"></div>
 
+    <!-- 事業所が複数のときだけ表示。既定は「各事業所の住所へ」（配送先の入力は不要） -->
+    <div class="modal-field" id="deliveryModeField" style="display:none">
+      <label class="modal-label">お届け先</label>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;">
+        <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="deliveryMode" value="each" checked> 各事業所の住所へ</label>
+        <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="deliveryMode" value="single"> 1か所へまとめる</label>
+      </div>
+    </div>
+
+    <div id="deliveryFields">
     <div class="modal-field">
-      <label class="modal-label" for="odCompany">お届け先（法人名・事業所名）</label>
+      <label class="modal-label" for="odCompany" id="odCompanyLabel">お届け先（法人名・事業所名）</label>
       <input type="text" id="odCompany" placeholder="法人名">
       <input type="text" id="odOffice" placeholder="事業所名" style="margin-top:6px">
     </div>
@@ -1110,6 +917,7 @@
       <select id="odPref" style="margin-top:6px" autocomplete="address-level1"><option value="">都道府県</option></select>
       <input type="text" id="odCity" placeholder="市町村" style="margin-top:6px" autocomplete="address-level2">
       <input type="text" id="odAddress" placeholder="丁目・番地・建物名" style="margin-top:6px" autocomplete="address-line1">
+    </div>
     </div>
     <div class="modal-field">
       <label class="modal-label" for="odContact">当日のご担当者・連絡先</label>
@@ -1265,14 +1073,45 @@
   const WEBHOOK_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/webhookMitsumori';
 
   let estNo = '';
-  let webhookSent = false; // 連絡先Webhookの二重送信防止フラグ
   let leadToken = null;    // LP問い合わせから引き継いだ継続トークン（?t=）
-  let contactZipAutofill = null; // 事業所情報欄の郵便番号自動入力（引き継ぎ時に検索を抑えるために持つ）
-  let quoteInfo = null;    // サーバが返した見積もり情報 { quoteId, estNo, quoteToken, validUntil, caseNumber }
+  let contactZipAutofill = null; // 事業所1（既定事業所）の郵便番号自動入力（引き継ぎ時に検索を抑えるために持つ）
+  let quoteInfo = null;    // 事業所1件のときにサーバが返した見積もり情報 { quoteId, estNo, quoteToken, validUntil, caseNumber }（既存互換）
+  let quoteGroup = null;   // 事業所2件以上のときにサーバが返したグループ情報 { groupId, quotes: [...] }
+  const officeQuoteInfo = {}; // seq -> quoteInfo（1件のときも seq=0 に同じ内容を入れて内部処理を共通化する）
+  const localEstNoPreview = {}; // seq -> 発行前のプレビュー用の仮番号（「見積番号を更新する」ボタン用）
+  const officeZipAutofills = {}; // seq -> wireZipAutofill の戻り値
   const SEND_QUOTE_PDF_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/sendQuotePdf';
   const LEAD_TOKEN_URL = 'https://firestore.googleapis.com/v1/projects/kjk-tadakayo/databases/(default)/documents/leadTokens/';
+  const ACCEPT_QUOTE_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/acceptQuote';
 
-  // ?t=トークン があれば、問い合わせ時の入力を引き継ぐ（Firestore ルールで leadTokens は get のみ公開）
+  /* ──────── 同一法人・複数事業所（2026-09-14 改修）────────
+     ・事業所0（画面にもとから出ている「事業所1」）は既存の id をそのまま使う（officeName / contactZip /
+       contactPrefecture / contactCity / contactAddress / contactWebsite）。1事業所だけのときの送信JSON・
+       応答の扱いをこれまでと完全に同じにするため。
+     ・2つ目以降の事業所は id に連番（2,3,...）を付けて増やす（officeName2, contactZip2, ...）。
+     ・officeIdx は画面に出ている順番の配列（値は内部の通し番号 seq）。表示ラベル「事業所N」は
+       officeIdx の並び順から renumberOfficeLabels() で振り直す（削除しても番号が飛ばないように）。
+  */
+  const MAX_OFFICES = 10;
+  let officeIdx = [0];     // 現在アクティブな事業所（seq の配列・並び順＝画面の順）
+  let nextOfficeSeq = 1;   // 次に追加する事業所へ割り当てる通し番号（削除しても使い回さない＝id衝突を避ける）
+  let autoOpenOrderModal = new URLSearchParams(location.search).get('intent') === 'order';
+
+  function sfx(seq) { return seq === 0 ? '' : String(seq + 1); }
+  function val(id) { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; }
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function gtagSafe() { /* 予約: 既存の gtag('event', ...) 呼び出しが無いため、現状は何もしない */ }
+
+  const PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県',
+    '埼玉県','千葉県','東京都','神奈川県','新潟県','富山県','石川県','福井県','山梨県','長野県','岐阜県','静岡県',
+    '愛知県','三重県','滋賀県','京都府','大阪府','兵庫県','奈良県','和歌山県','鳥取県','島根県','岡山県','広島県',
+    '山口県','徳島県','香川県','愛媛県','高知県','福岡県','佐賀県','長崎県','熊本県','大分県','宮崎県','鹿児島県','沖縄県'];
+  const PREF_OPTIONS_HTML = '<option value="">選択してください</option>'
+    + PREFECTURES.map((p) => `<option value="${p}">${p}</option>`).join('');
+  const EXTRA_OPTIONS_HTML = Array.from({ length: 11 }, (_, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${i}台</option>`).join('');
+
+  // ?t=トークン があれば、問い合わせ時の入力を引き継ぐ（Firestore ルールで leadTokens は get のみ公開）。
+  // 引き継ぎ先は常に事業所1（seq=0）。LP問い合わせは1事業所分の相談として送られてくるため。
   async function loadLeadToken() {
     const t = new URLSearchParams(location.search).get('t') || '';
     if (!/^[0-9a-f]{32}$/.test(t)) return;
@@ -1311,120 +1150,180 @@
     el.textContent = text; el.style.display = text ? 'block' : 'none';
   }
 
-  /* ──────── 初期化 ──────── */
-  window.addEventListener('DOMContentLoaded', () => {
-    estNo = genEstNo();
-    initRadios('planGroup', 'plan', v => { syncPlanQty(v); render(); updateLock(); });
-    ['btQty','usbQty','btExtraQty','usbExtraQty'].forEach(id => {
-      document.getElementById(id).addEventListener('change', () => { render(); updateLock(); });
-    });
-    ['corpName','officeName','contactName','contactTel','contactEmail','contactZip','contactPrefecture','contactCity','contactAddress','contactWebsite'].forEach(id => {
-      document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
-    });
-    contactZipAutofill = wireZipAutofill(
-      document.getElementById('contactZip'),
-      document.getElementById('contactPrefecture'),
-      document.getElementById('contactCity'),
-      document.getElementById('contactAddress'),
-      document.getElementById('contactZipHint')
-    );
-    // お申し込みモーダル：都道府県の選択肢は入力フォームのものを写して作る
-    const odPref = document.getElementById('odPref');
-    [...document.getElementById('contactPrefecture').options].slice(1).forEach((o) => {
-      odPref.appendChild(new Option(o.text, o.value));
-    });
-    wireZipAutofill(
-      document.getElementById('odZip'), odPref,
-      document.getElementById('odCity'), document.getElementById('odAddress'),
-      document.getElementById('odZipHint')
-    );
-    document.getElementById('orderBtn').addEventListener('click', openOrderModal);
-    document.getElementById('orderCancel').addEventListener('click', () => document.getElementById('orderModal').classList.remove('open'));
-    document.getElementById('orderSubmit').addEventListener('click', submitOrder);
-    document.getElementById('orderModal').addEventListener('click', (e) => {
-      if (e.target === document.getElementById('orderModal')) document.getElementById('orderModal').classList.remove('open');
-    });
-    updateOrderCta();
-    document.getElementById('consentCheck').addEventListener('change', updateLock);
-    document.querySelectorAll('input[name="usbConnector"]').forEach((r) => r.addEventListener('change', () => { render(); updateLock(); }));
-    document.getElementById('prevEstNo').textContent = '（送信時に発行）';
-    setDates();
-    syncPlanQty('houmon');
-    render();
-    // 問い合わせからの引き継ぎ。入力が入ると updateLock が走るので最後に呼ぶ
-    loadLeadToken().finally(() => updateLock());
-  });
+  /* ──────── 事業所ブロックの HTML（事業所名・住所・プラン・カードリーダー構成） ──────── */
+  function officeBlockHTML(seq) {
+    const s = sfx(seq);
+    return `
+  <div class="office-block" id="officeBlock${s || '0'}" data-seq="${seq}">
+    <div class="office-block-head">
+      <span class="office-block-title" data-role="label">事業所${seq + 1}</span>
+      ${seq > 0 ? `<button type="button" class="office-remove-btn" onclick="removeOffice(${seq})"><i class="ti ti-trash" aria-hidden="true"></i>この事業所を削除</button>` : ''}
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="officeName${s}">事業所名<span class="req">*</span></label>
+      <input type="text" id="officeName${s}" placeholder="例: △△苑（つなぐ手ケアマネセンター 等）" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="officePhone${s}">事業所の電話番号（任意・未入力なら共通の電話番号を使用）</label>
+      <input type="tel" id="officePhone${s}" placeholder="例: 03-1234-5678">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="contactZip${s}">郵便番号<span class="req">*</span></label>
+      <input type="text" id="contactZip${s}" placeholder="例: 150-0002" inputmode="numeric" maxlength="8" required aria-describedby="contactZipHint${s}">
+      <span id="contactZipHint${s}" class="zip-hint" aria-live="polite"></span>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="contactPrefecture${s}">都道府県<span class="req">*</span></label>
+      <select id="contactPrefecture${s}" required>${PREF_OPTIONS_HTML}</select>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="contactCity${s}">市町村<span class="req">*</span></label>
+      <input type="text" id="contactCity${s}" placeholder="例: 渋谷区" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="contactAddress${s}">住所（丁目・番地・建物名）<span class="req">*</span></label>
+      <input type="text" id="contactAddress${s}" placeholder="例: 渋谷1-2-3 〇〇ビル4F" required>
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="contactWebsite${s}">ホームページURL（任意）</label>
+      <input type="url" id="contactWebsite${s}" placeholder="例: https://www.example.jp">
+    </div>
 
-  /* ──────── 必須項目＋同意のロック解除チェック ──────── */
-  function getLockState() {
-    const planKey = document.querySelector('input[name="plan"]:checked').value;
-    const plan = PLANS[planKey];
-    const bt       = parseInt(document.getElementById('btQty').value)       || 0;
-    const usb      = parseInt(document.getElementById('usbQty').value)      || 0;
-    const btExtra  = parseInt(document.getElementById('btExtraQty').value)  || 0;
-    const usbExtra = parseInt(document.getElementById('usbExtraQty').value) || 0;
-    const subsidyTotal = bt + usb;
-    const extraTotal   = btExtra + usbExtra;
-    const readerQtyOK = subsidyTotal >= 1 && subsidyTotal <= plan.maxQty;
+    <div class="form-sec-title" style="margin-top:14px;">補助金プラン（事業所種別）<span class="req">*</span></div>
+    <div class="radio-group" id="planGroup${s}">
+      <label class="radio-card on" data-val="houmon">
+        <input type="radio" name="plan${s}" value="houmon" checked>
+        <div>
+          <div class="card-name">訪問・通所・短期滞在系</div>
+          <div class="card-desc">訪問介護・通所介護・<strong>居宅介護支援・居宅療養管理指導・地域密着型通所介護</strong> 等<br>助成金上限 ¥64,000 ／ 最大3台</div>
+        </div>
+      </label>
+      <label class="radio-card" data-val="kyojyu">
+        <input type="radio" name="plan${s}" value="kyojyu">
+        <div>
+          <div class="card-name">居住・入所系</div>
+          <div class="card-desc">グループホーム・特養・特定施設 等<br>助成金上限 ¥55,000 ／ 最大2台</div>
+        </div>
+      </label>
+      <label class="radio-card" data-val="other">
+        <input type="radio" name="plan${s}" value="other">
+        <div>
+          <div class="card-name">その他</div>
+          <div class="card-desc">福祉用具貸与・特定福祉用具販売・住宅改修 等<br>助成金上限 ¥42,000 ／ 最大1台</div>
+        </div>
+      </label>
+    </div>
 
-    const req = {
-      corpName:     !!(document.getElementById('corpName').value || '').trim(),
-      officeName:   !!(document.getElementById('officeName').value || '').trim(),
-      contactName:  !!(document.getElementById('contactName').value || '').trim(),
-      contactTel:   !!(document.getElementById('contactTel').value || '').trim(),
-      contactEmail: !!((document.getElementById('contactEmail').value || '').trim()) &&
-                    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((document.getElementById('contactEmail').value || '').trim()),
-      contactZip:        /^\d{3}-?\d{4}$/.test((document.getElementById('contactZip').value || '').trim()),
-      contactPrefecture: !!(document.getElementById('contactPrefecture').value || '').trim(),
-      contactCity:       !!(document.getElementById('contactCity').value || '').trim(),
-      contactAddress:    !!(document.getElementById('contactAddress').value || '').trim(),
-      readerQty:    readerQtyOK,
-      consentCheck: document.getElementById('consentCheck').checked,
-    };
-    const unlocked = Object.values(req).every(Boolean);
-    return { req, unlocked, subsidyTotal, extraTotal, plan, bt, usb, btExtra, usbExtra };
+    <div class="form-sec-title" style="margin-top:14px;">カードリーダー構成（補助対象 合計1台以上 必須）<span class="req">*</span></div>
+    <div class="form-group">
+      <label class="form-label">
+        <strong>CIR415A</strong>（Bluetooth 無線）<span class="qty-note">¥14,500/台 税込</span>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
+          <select id="btQty${s}" style="width:100%;"></select>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
+          <select id="btExtraQty${s}" style="width:100%;">${EXTRA_OPTIONS_HTML}</select>
+        </div>
+      </div>
+      <div class="qty-note" style="margin-top:3px;">スマホ・タブレット対応・標準採用</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">
+        <strong>CIR315A</strong>（USB-A/C 有線）<span class="qty-note">¥6,500/台 税込</span>
+      </label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象</div>
+          <select id="usbQty${s}" style="width:100%;"></select>
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:3px;">補助対象外（自己負担）</div>
+          <select id="usbExtraQty${s}" style="width:100%;">${EXTRA_OPTIONS_HTML}</select>
+        </div>
+      </div>
+      <div class="qty-note" style="margin-top:3px;">PC・有線接続向け</div>
+      <div style="margin-top:8px;">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">USBの差込口の形（あとから変更できます）</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;">
+          <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector${s}" value="" checked> あとで決める</label>
+          <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector${s}" value="A"> Type-A（四角い口）</label>
+          <label style="display:flex;align-items:center;gap:5px;min-height:32px;cursor:pointer;"><input type="radio" name="usbConnector${s}" value="C"> Type-C（小さい楕円）</label>
+        </div>
+      </div>
+    </div>
+    <div style="background:var(--neutral);padding:10px 12px;border-radius:6px;font-size:12px;margin-top:4px;line-height:1.8;">
+      補助対象 合計：<strong id="totalQtyDisplay${s}" style="color:var(--primary);font-size:14px;">0</strong>台
+      ／ <span id="planMaxDisplay${s}">最大3台</span><br>
+      補助対象外 合計：<strong id="totalExtraDisplay${s}" style="font-size:14px;">0</strong>台（自己負担）
+    </div>
+    <p id="qtyError${s}" style="display:none;color:var(--primary);font-size:11px;margin-top:4px;"></p>
+  </div>`;
   }
-  function updateLock() {
-    const { req, unlocked, subsidyTotal, extraTotal, plan } = getLockState();
-    // チェックリストの状態更新
-    document.querySelectorAll('#lockChecklist li').forEach(li => {
-      const key = li.dataset.key;
-      li.classList.toggle('done', !!req[key]);
+
+  /* ──────── 事業所ブロックの初期化・追加・削除 ──────── */
+  function wireOfficeBlock(seq) {
+    const s = sfx(seq);
+    initRadios(`planGroup${s}`, `plan${s}`, (v) => { syncPlanQty(seq, v); render(); updateLock(); });
+    ['btQty', 'usbQty', 'btExtraQty', 'usbExtraQty'].forEach((id) => {
+      document.getElementById(id + s).addEventListener('change', () => { render(); updateLock(); });
     });
+    ['officeName', 'officePhone', 'contactZip', 'contactPrefecture', 'contactCity', 'contactAddress', 'contactWebsite'].forEach((id) => {
+      document.getElementById(id + s).addEventListener('input', () => { render(); updateLock(); });
+    });
+    document.querySelectorAll(`input[name="usbConnector${s}"]`).forEach((r) => r.addEventListener('change', () => { render(); updateLock(); }));
+    officeZipAutofills[seq] = wireZipAutofill(
+      document.getElementById('contactZip' + s), document.getElementById('contactPrefecture' + s),
+      document.getElementById('contactCity' + s), document.getElementById('contactAddress' + s),
+      document.getElementById('contactZipHint' + s)
+    );
+    syncPlanQty(seq, 'houmon');
+    // 新規の事業所ブロックは「補助対象を満額（BTのみ・houmonなら3台）」を既定値にする
+    // （既存の事業所1の静的マークアップの既定＝BT3台/USB0台と合わせるため）。
+    document.getElementById('btQty' + s).value = PLANS.houmon.maxQty;
+    document.getElementById('usbQty' + s).value = 0;
+  }
 
-    // 台数表示・エラー表示
-    document.getElementById('totalQtyDisplay').textContent = subsidyTotal;
-    document.getElementById('planMaxDisplay').textContent = `最大${plan.maxQty}台`;
-    document.getElementById('totalExtraDisplay').textContent = extraTotal;
-    const qtyErr = document.getElementById('qtyError');
-    if (subsidyTotal === 0) {
-      qtyErr.style.display = 'block';
-      qtyErr.innerHTML = '<i class="ti ti-alert-triangle"></i> 補助対象のカードリーダーを最低1台ご選択ください';
-    } else if (subsidyTotal > plan.maxQty) {
-      qtyErr.style.display = 'block';
-      qtyErr.innerHTML = `<i class="ti ti-alert-triangle"></i> ${plan.label}の補助対象は最大${plan.maxQty}台です（現在${subsidyTotal}台）`;
-    } else {
-      qtyErr.style.display = 'none';
-    }
+  function renumberOfficeLabels() {
+    officeIdx.forEach((seq, i) => {
+      const s = sfx(seq);
+      const label = document.querySelector(`#officeBlock${s || '0'} [data-role="label"]`);
+      if (label) label.textContent = `事業所${i + 1}`;
+    });
+    const addBtn = document.getElementById('addOfficeBtn');
+    if (addBtn) addBtn.style.display = officeIdx.length >= MAX_OFFICES ? 'none' : 'inline-flex';
+  }
 
-    // 同意チェックは「他の必須項目すべてOK」の時のみ意味を持つ
-    const consentBox = document.querySelector('.consent-box');
-    const otherReqOK = req.corpName && req.officeName && req.contactName && req.contactTel && req.contactEmail &&
-      req.contactZip && req.contactPrefecture && req.contactCity && req.contactAddress && req.readerQty;
-    if (consentBox) {
-      consentBox.style.opacity = otherReqOK ? '1' : '0.5';
-      consentBox.title = otherReqOK ? '' : '事業所情報とカードリーダー構成をすべてご入力ください';
-    }
+  function addOffice() {
+    if (officeIdx.length >= MAX_OFFICES) return;
+    const seq = nextOfficeSeq++;
+    officeIdx.push(seq);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = officeBlockHTML(seq);
+    document.getElementById('officeBlocksContainer').appendChild(wrap.firstElementChild);
+    wireOfficeBlock(seq);
+    renumberOfficeLabels();
+    render();
+    updateLock();
+    document.getElementById('officeBlock' + sfx(seq)).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 
-    document.getElementById('previewLock').hidden = unlocked;
-
-    // 見積もりの登録は「必須入力＋同意」が揃った時点で1回だけ自動で行う（記録とPDFメールのため）。
-    // そのあと台数などを変えた場合は、「申し込む」を押した時点で最新の構成を登録し直す（openOrderModal）。
-    // 2026-09-09: 同意チェックでは送信しない（藤田副理事長の改修提案 REQ-01/02）。
-    // 以前はここで自動的にサーバーへ登録し、見積書のメール送付まで走っていた。
-    // いまは「PDFでダウンロード」「メールで受け取る」を押したときだけ issueQuote() が動く。
-    const issue = document.getElementById('issueCta');
-    if (issue) issue.style.display = unlocked ? 'block' : 'none';
+  function removeOffice(seq) {
+    const idx = officeIdx.indexOf(seq);
+    if (idx <= 0) return; // 事業所1（最初のブロック）は削除できない
+    officeIdx.splice(idx, 1);
+    delete officeQuoteInfo[seq];
+    delete localEstNoPreview[seq];
+    delete officeZipAutofills[seq];
+    const s = sfx(seq);
+    const el = document.getElementById('officeBlock' + (s || '0'));
+    if (el) el.remove();
+    renumberOfficeLabels();
+    render();
+    updateLock();
   }
 
   /* ──────── ラジオ初期化 ──────── */
@@ -1440,12 +1339,12 @@
     });
   }
 
-  /* ──────── プラン変更時：補助対象セレクトの最大値を反映 ──────── */
-  function syncPlanQty(planKey) {
+  /* ──────── プラン変更時：補助対象セレクトの最大値を反映（事業所ごと） ──────── */
+  function syncPlanQty(seq, planKey) {
+    const s = sfx(seq);
     const plan = PLANS[planKey];
-    // 補助対象セレクトのみ最大値を反映（補助対象外は最大10台のまま）
-    ['btQty','usbQty'].forEach(id => {
-      const sel = document.getElementById(id);
+    ['btQty', 'usbQty'].forEach(id => {
+      const sel = document.getElementById(id + s);
       const cur = parseInt(sel.value) || 0;
       sel.innerHTML = '';
       for (let i = 0; i <= plan.maxQty; i++) {
@@ -1455,132 +1354,288 @@
         sel.appendChild(o);
       }
     });
-    // 合計が最大を超える場合はBT/USBを丸める（最初にBTを優先）
-    let bt  = parseInt(document.getElementById('btQty').value)  || 0;
-    let usb = parseInt(document.getElementById('usbQty').value) || 0;
+    let bt = parseInt(document.getElementById('btQty' + s).value) || 0;
+    let usb = parseInt(document.getElementById('usbQty' + s).value) || 0;
     if (bt + usb > plan.maxQty) {
       if (bt > plan.maxQty) { bt = plan.maxQty; usb = 0; }
       else { usb = plan.maxQty - bt; }
-      document.getElementById('btQty').value  = bt;
-      document.getElementById('usbQty').value = usb;
+      document.getElementById('btQty' + s).value = bt;
+      document.getElementById('usbQty' + s).value = usb;
     }
-    // 0台ならBTを1台プリセット
     if (bt + usb === 0) {
-      document.getElementById('btQty').value = Math.min(1, plan.maxQty);
-    }
-    // accompanyNote 表示を更新
-    const note = document.getElementById('accompanyNote');
-    if (note) {
-      const total = (parseInt(document.getElementById('btQty').value) || 0) +
-                    (parseInt(document.getElementById('usbQty').value) || 0);
-      const fee = ACCOMPANY_FEE[total] || ACCOMPANY_FEE[plan.maxQty];
-      note.textContent = `¥${fee.toLocaleString()}（税込・${total}台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談`;
+      document.getElementById('btQty' + s).value = Math.min(1, plan.maxQty);
     }
   }
 
   /* ──────── 日付 ──────── */
-  function setDates() {
-    const today  = new Date();
-    const expiry = new Date(today);
-    expiry.setMonth(expiry.getMonth() + 1);
-    document.getElementById('prevDate').textContent   = fmtDate(today);
-    document.getElementById('prevExpiry').textContent = fmtDate(expiry);
-  }
-  function fmtDate(d) {
-    return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-  }
-  function fmtY(d) { return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; }
+  function fmtDate(d) { return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`; }
 
-  /* ──────── 見積番号 ──────── */
+  /* ──────── 見積番号（発行前のプレビュー用プレースホルダ。実際の番号はサーバ採番） ──────── */
   function genEstNo() {
     const d = new Date();
-    const key = `estSeq_${d.toISOString().slice(0,10).replace(/-/g,'')}`;
+    const key = `estSeq_${d.toISOString().slice(0, 10).replace(/-/g, '')}`;
     let seq = parseInt(localStorage.getItem(key) || '0') + 1;
     localStorage.setItem(key, seq);
-    return `EST-${d.toISOString().slice(0,10).replace(/-/g,'')}-${String(seq).padStart(3,'0')}`;
+    return `EST-${d.toISOString().slice(0, 10).replace(/-/g, '')}-${String(seq).padStart(3, '0')}`;
   }
   function renewEstNo() {
-    estNo = genEstNo();
-    document.getElementById('prevEstNo').textContent = estNo;
+    officeIdx.forEach((seq) => { if (!officeQuoteInfo[seq]) localEstNoPreview[seq] = genEstNo(); });
+    if (officeIdx.length) estNo = localEstNoPreview[officeIdx[0]] || estNo;
+    render();
   }
 
-  /* ──────── 必須項目バリデーション ──────── */
-  function validateContact() {
-    const fields = [
-      { id: 'corpName',     label: '法人名' },
-      { id: 'officeName',   label: '事業所名' },
-      { id: 'contactName',  label: 'ご担当者名' },
-      { id: 'contactTel',   label: '電話番号' },
-      { id: 'contactEmail', label: 'メールアドレス' },
-      { id: 'contactZip',        label: '郵便番号' },
-      { id: 'contactPrefecture', label: '都道府県' },
-      { id: 'contactCity',       label: '市町村' },
-      { id: 'contactAddress',    label: '住所（丁目・番地・建物名）' },
-    ];
-    const missing = [];
-    for (const f of fields) {
-      const v = (document.getElementById(f.id).value || '').trim();
-      if (!v) missing.push(f.label);
+  /* ──────── 事業所データの取得 ──────── */
+  function getOfficeData(seq) {
+    const s = sfx(seq);
+    const planKey = document.querySelector(`input[name="plan${s}"]:checked`).value;
+    const bt = parseInt(document.getElementById('btQty' + s).value) || 0;
+    const usb = parseInt(document.getElementById('usbQty' + s).value) || 0;
+    const btExtra = parseInt(document.getElementById('btExtraQty' + s).value) || 0;
+    const usbExtra = parseInt(document.getElementById('usbExtraQty' + s).value) || 0;
+    const usbConnector = (document.querySelector(`input[name="usbConnector${s}"]:checked`) || {}).value || '';
+    return {
+      seq, s, planKey, bt, usb, btExtra, usbExtra, usbConnector,
+      officeName: val('officeName' + s),
+      officePhone: val('officePhone' + s),
+      postalCode: val('contactZip' + s),
+      prefecture: val('contactPrefecture' + s),
+      city: val('contactCity' + s),
+      addressDetail: val('contactAddress' + s),
+      website: val('contactWebsite' + s),
+      calc: computeAmounts(planKey, bt, usb, btExtra, usbExtra),
+    };
+  }
+  function getAllOfficeData() { return officeIdx.map(getOfficeData); }
+
+  /* ──────── 初期化 ──────── */
+  window.addEventListener('DOMContentLoaded', () => {
+    estNo = genEstNo();
+    // 事業所1（既存の id をそのまま使うブロック）を生成
+    const wrap0 = document.createElement('div');
+    wrap0.innerHTML = officeBlockHTML(0);
+    document.getElementById('officeBlocksContainer').appendChild(wrap0.firstElementChild);
+    wireOfficeBlock(0);
+    renumberOfficeLabels();
+
+    contactZipAutofill = officeZipAutofills[0];
+
+    ['corpName', 'contactName', 'contactTel', 'contactEmail'].forEach(id => {
+      document.getElementById(id).addEventListener('input', () => { render(); updateLock(); });
+    });
+
+    // お申し込みモーダル：都道府県の選択肢は入力フォームのものを写して作る
+    const odPref = document.getElementById('odPref');
+    PREFECTURES.forEach((p) => odPref.appendChild(new Option(p, p)));
+    wireZipAutofill(
+      document.getElementById('odZip'), odPref,
+      document.getElementById('odCity'), document.getElementById('odAddress'),
+      document.getElementById('odZipHint')
+    );
+    document.getElementById('orderBtn').addEventListener('click', () => openOrderModal(false));
+    document.getElementById('orderCancel').addEventListener('click', () => document.getElementById('orderModal').classList.remove('open'));
+    document.getElementById('orderSubmit').addEventListener('click', submitOrder);
+    document.getElementById('orderModal').addEventListener('click', (e) => {
+      if (e.target === document.getElementById('orderModal')) document.getElementById('orderModal').classList.remove('open');
+    });
+    document.querySelectorAll('input[name="deliveryMode"]').forEach((r) => r.addEventListener('change', updateDeliveryModeUI));
+    updateOrderCta();
+    document.getElementById('consentCheck').addEventListener('change', updateLock);
+    setDates();
+    render();
+    // 問い合わせからの引き継ぎ（事業所1へ）。入力が入ると updateLock が走るので最後に呼ぶ
+    loadLeadToken().finally(() => { render(); updateLock(); });
+  });
+
+  function setDates() {
+    // 見積日・有効期限は事業所ごとの見積書に個別に描画する（render() 内）ため、ここでは何もしない。
+    // （関数自体は他コードからの呼び出し互換のために残す）
+  }
+
+  /* ──────── 必須項目＋同意のロック解除チェック ──────── */
+  function getLockState() {
+    const commonReq = {
+      corpName: !!val('corpName'),
+      contactName: !!val('contactName'),
+      contactTel: !!val('contactTel'),
+      contactEmail: !!val('contactEmail') && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val('contactEmail')),
+      consentCheck: document.getElementById('consentCheck').checked,
+    };
+    const officesReq = getAllOfficeData().map((o) => {
+      const plan = PLANS[o.planKey];
+      const subsidyTotal = o.bt + o.usb;
+      const readerQtyOK = subsidyTotal >= 1 && subsidyTotal <= plan.maxQty;
+      return {
+        seq: o.seq, plan, subsidyTotal, extraTotal: o.btExtra + o.usbExtra,
+        officeName: !!o.officeName,
+        officeZip: /^\d{3}-?\d{4}$/.test(o.postalCode),
+        officePref: !!o.prefecture,
+        officeCity: !!o.city,
+        officeAddress: !!o.addressDetail,
+        readerQty: readerQtyOK,
+      };
+    });
+    const officeOK = (r) => r.officeName && r.officeZip && r.officePref && r.officeCity && r.officeAddress && r.readerQty;
+    const commonOK = Object.keys(commonReq).every((k) => commonReq[k]);
+    const officesOK = officesReq.length > 0 && officesReq.every(officeOK);
+    return { commonReq, officesReq, officeOK, unlocked: commonOK && officesOK };
+  }
+
+  function updateLock() {
+    const { commonReq, officesReq, officeOK, unlocked } = getLockState();
+
+    document.querySelectorAll('#lockChecklist li').forEach(li => {
+      const key = li.dataset.key;
+      if (key === 'officesOK') li.classList.toggle('done', officesReq.every(officeOK));
+      else li.classList.toggle('done', !!commonReq[key]);
+    });
+
+    officesReq.forEach((r) => {
+      const s = sfx(r.seq);
+      document.getElementById('totalQtyDisplay' + s).textContent = r.subsidyTotal;
+      document.getElementById('planMaxDisplay' + s).textContent = `最大${r.plan.maxQty}台`;
+      document.getElementById('totalExtraDisplay' + s).textContent = r.extraTotal;
+      const qtyErr = document.getElementById('qtyError' + s);
+      if (r.subsidyTotal === 0) {
+        qtyErr.style.display = 'block';
+        qtyErr.innerHTML = '<i class="ti ti-alert-triangle"></i> 補助対象のカードリーダーを最低1台ご選択ください';
+      } else if (r.subsidyTotal > r.plan.maxQty) {
+        qtyErr.style.display = 'block';
+        qtyErr.innerHTML = `<i class="ti ti-alert-triangle"></i> ${r.plan.label}の補助対象は最大${r.plan.maxQty}台です（現在${r.subsidyTotal}台）`;
+      } else {
+        qtyErr.style.display = 'none';
+      }
+    });
+
+    const consentBox = document.querySelector('.consent-box');
+    const otherReqOK = commonReq.corpName && commonReq.contactName && commonReq.contactTel && commonReq.contactEmail
+      && officesReq.every(officeOK);
+    if (consentBox) {
+      consentBox.style.opacity = otherReqOK ? '1' : '0.5';
+      consentBox.title = otherReqOK ? '' : '法人・ご担当者情報と各事業所の情報・カードリーダー構成をすべてご入力ください';
     }
-    // メール形式チェック
-    const emailVal = (document.getElementById('contactEmail').value || '').trim();
-    if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
-      missing.push('メールアドレス（形式が正しくありません）');
+
+    document.getElementById('previewLock').hidden = unlocked;
+
+    // 見積もりの登録は「必須入力＋同意」が揃った時点で1回だけ自動で行う…わけではない。
+    // 2026-09-09: 同意チェックでは送信しない（藤田副理事長の改修提案 REQ-01/02）。
+    // 「PDFでダウンロード」「メールで受け取る」を押したときだけ issueQuote() が動く。
+    const issue = document.getElementById('issueCta');
+    if (issue) issue.style.display = unlocked ? 'block' : 'none';
+    const issueNote = document.getElementById('issueCtaNote');
+    if (issueNote) {
+      issueNote.innerHTML = officeIdx.length > 1
+        ? `押した時点で、この内容のお見積書を事業所ごとに${officeIdx.length}枚発行します。<b>この操作までは、タダカヨへ送信されません。</b>`
+        : '押した時点で、この内容のお見積書を発行します。<b>この操作までは、タダカヨへ送信されません。</b>';
     }
-    // カードリーダー台数チェック
-    const btQ  = parseInt(document.getElementById('btQty').value)  || 0;
-    const usbQ = parseInt(document.getElementById('usbQty').value) || 0;
-    const planK = document.querySelector('input[name="plan"]:checked').value;
-    const planMax = PLANS[planK].maxQty;
-    const totalQ = btQ + usbQ;
-    if (totalQ < 1) missing.push('カードリーダー（1台以上）');
-    if (totalQ > planMax) missing.push(`カードリーダー台数を${planMax}台以下に`);
-    // 同意チェック
-    if (!document.getElementById('consentCheck').checked) {
-      missing.push('「介護事業所関係者である」同意チェック');
-    }
-    const err = document.getElementById('formError');
-    if (missing.length) {
-      err.style.display = 'block';
-      err.innerHTML = '<i class="ti ti-alert-triangle"></i> 以下にチェック／ご入力をお願いします：<br>' + missing.join(' ／ ');
-      return false;
-    }
-    err.style.display = 'none';
-    return true;
   }
 
   /* ──────── 成約通知（Cloud Function 経由）──────── */
+  // 1事業所のときは従来どおりのフラットな JSON を送り、quoteInfo に応答を保持する。
+  // 2事業所以上のときは offices[] を送り、quoteGroup と officeQuoteInfo に応答を割り当てる。
   async function notifyWebhook(payload) {
     try {
       const appCheckToken = await getAppCheckToken();
       const headers = { 'Content-Type': 'application/json' };
       if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
-      const res = await fetch(WEBHOOK_URL, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(WEBHOOK_URL, { method: 'POST', headers, body: JSON.stringify(payload) });
       if (!res.ok) { console.warn('見積もり登録エラー:', res.status); return; }
       const data = await res.json().catch(() => null);
-      if (!data || !data.quoteId) return;
-      quoteInfo = data;
-      // 見積番号・有効期限はサーバの値に差し替える（PDFにも載る）
-      estNo = data.estNo || estNo;
-      document.getElementById('prevEstNo').textContent = estNo;
-      if (data.validUntil) document.getElementById('prevExpiry').textContent = fmtDate(new Date(data.validUntil));
+      if (!data) return;
+      if (payload.offices) {
+        if (!data.quotes) return;
+        quoteGroup = { groupId: data.groupId, quotes: data.quotes };
+        officeIdx.forEach((seq, i) => {
+          const q = data.quotes[i];
+          if (q && !q.error) officeQuoteInfo[seq] = q;
+        });
+        // 一部の事業所だけ作成できなかったときは、その事業所名を画面に出す（全件成功と誤解させない）
+        const failed = data.quotes.filter((q) => q && q.error);
+        if (failed.length) {
+          const err = document.getElementById('formError');
+          err.textContent = data.message || `${failed.length}件の事業所の見積もりを作成できませんでした（${failed.map((q) => q.officeName || '事業所').join('、')}）。お手数ですが、お電話またはメールでご連絡ください。`;
+          err.style.display = 'block';
+          err.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      } else {
+        if (!data.quoteId) return;
+        quoteInfo = data;
+        if (officeIdx[0] != null) officeQuoteInfo[officeIdx[0]] = data;
+        estNo = data.estNo || estNo;
+      }
       render();
       updateOrderCta();
       // 2026-09-09: ここでの自動メール送付をやめた。メールは issueQuote('mail') からのみ送る
     } catch (e) {
-      // 登録に失敗しても画面は壊さない（呼び出し元で案内する）
       console.warn('Webhook送信に失敗しました', e);
     }
   }
 
+  // Cloud Function (webhookMitsumori) が期待する構造化データを生成。
+  // 1事業所のときは既存のフラットな形（後方互換・変更しない）。2事業所以上は offices[] を使う。
+  function buildNotifyPayload(intent) {
+    const offices = getAllOfficeData();
+    const common = { corpName: val('corpName'), contactName: val('contactName'), phone: val('contactTel'), email: val('contactEmail') };
+
+    if (offices.length <= 1) {
+      const o = offices[0];
+      const calc = o.calc;
+      return {
+        intent: intent || 'quote',
+        corpName: common.corpName,
+        officeName: o.officeName,
+        contactName: common.contactName,
+        phone: o.officePhone || common.phone,
+        email: common.email,
+        postalCode: o.postalCode,
+        prefecture: o.prefecture,
+        city: o.city,
+        addressDetail: o.addressDetail,
+        website: o.website,
+        subsidyPlan: calc.plan.label,
+        subsidyCategory: o.planKey,
+        btSubsidyQty: o.bt,
+        btExtraQty: o.btExtra,
+        usbSubsidyQty: o.usb,
+        usbExtraQty: o.usbExtra,
+        subsidyAmount: calc.grantAmt,
+        totalAmount: calc.totalIncl,
+        specialDiscount: calc.discount,
+        selfPay: calc.selfPay,
+        usbConnector: o.usbConnector || null,
+        token: leadToken || null,
+        estNo: estNo,
+      };
+    }
+
+    return {
+      intent: intent || 'quote',
+      corpName: common.corpName,
+      contactName: common.contactName,
+      phone: common.phone,
+      email: common.email,
+      token: leadToken || null,
+      offices: offices.map((o) => ({
+        officeName: o.officeName,
+        postalCode: o.postalCode,
+        prefecture: o.prefecture,
+        city: o.city,
+        addressDetail: o.addressDetail,
+        phone: o.officePhone || '',
+        website: o.website,
+        subsidyCategory: o.planKey,
+        btSubsidyQty: o.bt,
+        usbSubsidyQty: o.usb,
+        btExtraQty: o.btExtra,
+        usbExtraQty: o.usbExtra,
+        usbConnector: o.usbConnector || null,
+      })),
+    };
+  }
+
   // PDF化専用の複製。A4幅（210mm）をインラインで固定する（インラインは @media より優先されるため、
   // ブラウザの幅が狭くてもレイアウトが崩れない）。画面外に置いてキャプチャし、終わったら片付ける。
-  function quotePrintableClone() {
-    const src = document.getElementById('estDoc');
+  function quotePrintableClone(srcId) {
+    const src = document.getElementById(srcId);
     const clone = src.cloneNode(true);
     clone.style.width = '210mm';
     clone.style.maxWidth = 'none';
@@ -1593,27 +1648,31 @@
     return { clone, cleanup: () => holder.remove() };
   }
 
-  // 画面の見積書をPDFにして、事業所へメールで送る（控えが残る）。失敗してもダウンロードは使える
+  async function ensureHtml2pdfReady() {
+    for (let i = 0; i < 20 && typeof window.html2pdf !== 'function'; i++) await new Promise((r) => setTimeout(r, 250));
+    if (typeof window.html2pdf !== 'function') throw new Error('PDFライブラリの読み込みに失敗');
+  }
+
+  async function docToPdfBase64(srcId) {
+    const { clone, cleanup } = quotePrintableClone(srcId);
+    try {
+      // .est-doc 自身が 18mm の余白を持つので、PDF側の margin は 0 にする（二重にしない）
+      const opt = { margin: 0, image: { type: 'jpeg', quality: 0.95 },
+        html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css'] } };
+      const dataUri = await window.html2pdf().set(opt).from(clone).outputPdf('datauristring');
+      return String(dataUri).split(',')[1] || '';
+    } finally { cleanup(); }
+  }
+
+  // 画面の見積書をPDFにして、事業所へメールで送る（控えが残る）。失敗してもダウンロードは使える（1事業所・既存）
   async function sendQuotePdfToOffice() {
     if (!quoteInfo || !quoteInfo.quoteToken) return;
-    const to = (document.getElementById('contactEmail').value || '').trim();
+    const to = val('contactEmail');
     setQuoteMailNote('info', `お見積書（${estNo}）をPDFにして ${to} 宛にお送りしています…`);
     try {
-      // html2pdf は defer 読み込みなので、まだなら少し待つ
-      for (let i = 0; i < 20 && typeof window.html2pdf !== 'function'; i++) await new Promise((r) => setTimeout(r, 250));
-      if (typeof window.html2pdf !== 'function') throw new Error('PDFライブラリの読み込みに失敗');
-      // 画面の見積書をそのまま渡すと、狭い画面（@media max-width:820px で width:100%）の
-      // レイアウトのままPDF化され、A4に収まらず崩れる。A4幅を固定した複製を作って渡す。
-      const { clone, cleanup } = quotePrintableClone();
-      let pdfBase64 = '';
-      try {
-        // .est-doc 自身が 18mm の余白を持つので、PDF側の margin は 0 にする（二重にしない）
-        const opt = { margin: 0, image: { type: 'jpeg', quality: 0.95 },
-          html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['avoid-all', 'css'] } };
-        const dataUri = await window.html2pdf().set(opt).from(clone).outputPdf('datauristring');
-        pdfBase64 = String(dataUri).split(',')[1] || '';
-      } finally { cleanup(); }
+      await ensureHtml2pdfReady();
+      const pdfBase64 = await docToPdfBase64('estDoc0');
       if (!pdfBase64) throw new Error('PDFの生成に失敗');
       const appCheckToken = await getAppCheckToken();
       const headers = { 'Content-Type': 'application/json' };
@@ -1632,90 +1691,179 @@
     }
   }
 
-  /* ──────── お申し込み（Phase 2） ──────── */
-  const ACCEPT_QUOTE_URL = 'https://asia-northeast1-kjk-tadakayo.cloudfunctions.net/acceptQuote';
+  // 事業所2件以上のとき：全事業所ぶんのPDFを作って1回（大きすぎる場合は1枚ずつ）でまとめて送る
+  async function sendQuotePdfsToOffice() {
+    const offices = getAllOfficeData();
+    const to = val('contactEmail');
+    setQuoteMailNote('info', `お見積書（${offices.length}件）をPDFにして ${to} 宛にお送りしています…`);
+    try {
+      await ensureHtml2pdfReady();
+      const pdfs = [];
+      for (const o of offices) {
+        const q = officeQuoteInfo[o.seq];
+        if (!q || !q.quoteToken) continue;
+        const srcId = 'estDoc' + (o.s || '0');
+        const pdfBase64 = await docToPdfBase64(srcId);
+        if (pdfBase64) pdfs.push({ quoteId: q.quoteId, quoteToken: q.quoteToken, pdfBase64 });
+      }
+      if (!pdfs.length) throw new Error('PDFの生成に失敗');
+      const appCheckToken = await getAppCheckToken();
+      const headers = { 'Content-Type': 'application/json' };
+      if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
+      // base64合計がおよそ9MBを超えるときは、1通のリクエストが大きくなりすぎるので1枚ずつ送る
+      const totalLen = pdfs.reduce((a, p) => a + p.pdfBase64.length, 0);
+      let ok = true;
+      if (totalLen > 9_000_000) {
+        for (const p of pdfs) {
+          const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs: [p] }) });
+          const data = await res.json().catch(() => ({}));
+          if (!(res.ok && (data.status === 'ok' || data.status === 'already' || data.mailed))) ok = false;
+        }
+      } else {
+        const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs }) });
+        const data = await res.json().catch(() => ({}));
+        ok = res.ok && (data.status === 'ok' || data.status === 'already');
+      }
+      if (ok) {
+        setQuoteMailNote('ok', `お見積書（${offices.length}件）を ${to} 宛にメールでお送りしました。控えとしてご利用ください。台数や機種は、支援の日程調整の際に変更できます。`);
+      } else {
+        setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
+      }
+    } catch (e) {
+      console.warn('見積書PDFの送付に失敗', e);
+      setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
+    }
+  }
 
-  // 見積もりが出来てから「申し込む」を出す。作り直したら（版が変わったら）また押せる状態に戻す
+  /* ──────── お申し込み（Phase 2） ──────── */
   function updateOrderCta() {
     const cta = document.getElementById('orderCta');
     if (!cta) return;
-    const ready = !!(quoteInfo && quoteInfo.quoteId && quoteInfo.quoteToken);
+    const offices = getAllOfficeData();
+    const ready = offices.length <= 1
+      ? !!(quoteInfo && quoteInfo.quoteId && quoteInfo.quoteToken)
+      : offices.length > 0 && offices.every((o) => { const q = officeQuoteInfo[o.seq]; return q && q.quoteId && q.quoteToken; });
     cta.style.display = ready ? 'block' : 'none';
   }
 
-  async function openOrderModal() {
+  function updateDeliveryModeUI() {
+    const offices = getAllOfficeData();
+    const modeField = document.getElementById('deliveryModeField');
+    const fields = document.getElementById('deliveryFields');
+    const companyLabel = document.getElementById('odCompanyLabel');
+    if (offices.length <= 1) {
+      modeField.style.display = 'none';
+      fields.style.display = '';
+      if (companyLabel) companyLabel.textContent = 'お届け先（法人名・事業所名）';
+      return;
+    }
+    modeField.style.display = 'block';
+    const mode = (document.querySelector('input[name="deliveryMode"]:checked') || {}).value || 'each';
+    fields.style.display = mode === 'single' ? '' : 'none';
+    if (companyLabel) companyLabel.textContent = 'まとめてお届けする先（法人名・受取事業所名）';
+  }
+
+  async function openOrderModal(fromIntent) {
     const btn = document.getElementById('orderBtn');
     const orig = btn.innerHTML;
     btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i>お見積もりを確認しています...';
+    const beforeIds = officeIdx.map((seq) => (officeQuoteInfo[seq] || {}).quoteId || null);
     try {
       // いま画面に出ている構成でサーバに登録し直す。
       // 同じ内容なら既存の見積もりが返り、変えていれば新しい版が作られる。
       // これで「画面の金額」と「実際に申し込まれる見積もり」が必ず一致する。
-      const before = quoteInfo && quoteInfo.quoteId;
       await notifyWebhook(buildNotifyPayload('order'));
-      // 新しい版になったら、その版のPDFも作って控えを残す（CRMからの再送もできるようにする）
-      if (quoteInfo && quoteInfo.quoteId !== before && quoteInfo.status === 'ok') {
+      const afterIds = officeIdx.map((seq) => (officeQuoteInfo[seq] || {}).quoteId || null);
+      const changed = afterIds.some((id, i) => id && id !== beforeIds[i]);
+      if (changed) {
         btn.innerHTML = '<i class="ti ti-loader-2"></i>お見積書を作り直しています...';
-        await sendQuotePdfToOffice();
+        if (officeIdx.length <= 1) await sendQuotePdfToOffice(); else await sendQuotePdfsToOffice();
       }
     } finally {
       btn.disabled = false; btn.innerHTML = orig;
     }
-    if (!quoteInfo || !quoteInfo.quoteToken) {
+
+    const offices = getAllOfficeData();
+    const ready = offices.length <= 1
+      ? !!(quoteInfo && quoteInfo.quoteToken)
+      : offices.every((o) => { const q = officeQuoteInfo[o.seq]; return q && q.quoteToken; });
+    if (!ready) {
       alert('お見積もりの確認ができませんでした。通信の状態をご確認のうえ、もう一度お試しください。');
       return;
     }
+
     const yen = (n) => `¥${Number(n || 0).toLocaleString()}`;
-    const planKey = document.querySelector('input[name="plan"]:checked').value;
-    const c = computeAmounts(planKey,
-      parseInt(document.getElementById('btQty').value) || 0,
-      parseInt(document.getElementById('usbQty').value) || 0,
-      parseInt(document.getElementById('btExtraQty').value) || 0,
-      parseInt(document.getElementById('usbExtraQty').value) || 0);
-    // 送信前に、何をどの条件で申し込むのかを一覧で見せる（藤田副理事長の改修提案 REQ-07）
-    const planKeyM = document.querySelector('input[name="plan"]:checked').value;
-    const nBt  = (parseInt(document.getElementById('btQty').value) || 0) + (parseInt(document.getElementById('btExtraQty').value) || 0);
-    const nUsb = (parseInt(document.getElementById('usbQty').value) || 0) + (parseInt(document.getElementById('usbExtraQty').value) || 0);
-    const connM = (document.querySelector('input[name="usbConnector"]:checked') || {}).value || '';
-    const connLabel = connM === 'A' ? 'Type-A（四角い口）' : connM === 'C' ? 'Type-C（小さい楕円）' : '未定（Type-A で手配）';
-    const koseiM = [nBt ? `Bluetooth ${nBt}台` : null, nUsb ? `USB ${nUsb}台（${connLabel}）` : null]
-      .filter(Boolean).join(' ／ ') || '—';
-    const mailM = (document.getElementById('contactEmail').value || '').trim();
-    document.getElementById('orderSummary').innerHTML =
-      `<div style="background:#faf7f2;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.9">`
-      + `<div><b>お見積書</b>　${esc(estNo)}</div>`
-      + `<div><b>プラン</b>　${esc((PLANS[planKeyM] || {}).label || '')}</div>`
-      + `<div><b>カードリーダー</b>　${esc(koseiM)}</div>`
-      + `<div><b>合計（税込）</b>　${yen(c.totalIncl)}　助成金充当 ${yen(c.grantAmt)}　<b>自己負担 ${yen(c.selfPay)}</b></div>`
-      + `<div><b>ご連絡先メール</b>　${esc(mailM)}</div>`
-      + `</div>`
-      + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
-    // 事業所情報をお届け先の初期値にする（変えられる）
-    const v = (id) => (document.getElementById(id).value || '').trim();
-    const set = (id, val) => { const el = document.getElementById(id); if (!el.value) el.value = val; };
-    set('odCompany', v('corpName'));
-    set('odOffice', v('officeName'));
-    set('odZip', v('contactZip'));
-    set('odCity', v('contactCity'));
-    set('odAddress', v('contactAddress'));
-    set('odContact', v('contactName'));
-    set('odPhone', v('contactTel'));
-    const pref = document.getElementById('odPref');
-    if (!pref.value) pref.value = v('contactPrefecture');
+    let summaryHtml = '';
+    if (fromIntent) {
+      summaryHtml += `<div style="background:#eef3fb;border:1px solid #c5d5ee;color:#1f3a6e;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.8;">`
+        + `LPで「正式に申込みたい」を選ばれた方は、内容をご確認のうえ、このままお申し込みください。</div>`;
+    }
+    if (offices.length <= 1) {
+      const o = offices[0];
+      const c = o.calc;
+      const nBt = o.bt + o.btExtra, nUsb = o.usb + o.usbExtra;
+      const connLabel = o.usbConnector === 'A' ? 'Type-A（四角い口）' : o.usbConnector === 'C' ? 'Type-C（小さい楕円）' : '未定（Type-A で手配）';
+      const kosei = [nBt ? `Bluetooth ${nBt}台` : null, nUsb ? `USB ${nUsb}台（${connLabel}）` : null].filter(Boolean).join(' ／ ') || '—';
+      summaryHtml += `<div style="background:#faf7f2;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.9">`
+        + `<div><b>お見積書</b>　${esc((officeQuoteInfo[o.seq] || {}).estNo || estNo)}</div>`
+        + `<div><b>プラン</b>　${esc(PLANS[o.planKey].label)}</div>`
+        + `<div><b>カードリーダー</b>　${esc(kosei)}</div>`
+        + `<div><b>合計（税込）</b>　${yen(c.totalIncl)}　助成金充当 ${yen(c.grantAmt)}　<b>自己負担 ${yen(c.selfPay)}</b></div>`
+        + `<div><b>ご連絡先メール</b>　${esc(val('contactEmail'))}</div>`
+        + `</div>`
+        + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
+    } else {
+      let total = 0, grant = 0, self = 0;
+      const rows = offices.map((o) => {
+        const c = o.calc; total += c.totalIncl; grant += c.grantAmt; self += c.selfPay;
+        const nBt = o.bt + o.btExtra, nUsb = o.usb + o.usbExtra;
+        const kosei = [nBt ? `BT×${nBt}` : null, nUsb ? `USB×${nUsb}` : null].filter(Boolean).join(' ') || '—';
+        return `<div style="padding:4px 0;border-bottom:1px dashed var(--border)">`
+          + `<b>${esc(o.officeName || '（事業所名未入力）')}</b>（${esc((officeQuoteInfo[o.seq] || {}).estNo || '')}）　`
+          + `${esc(PLANS[o.planKey].label)}　${esc(kosei)}　${yen(c.totalIncl)}（自己負担 ${yen(c.selfPay)}）</div>`;
+      }).join('');
+      summaryHtml += `<div style="background:#faf7f2;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.7">`
+        + rows
+        + `<div style="margin-top:6px;font-weight:700;">法人合計（${offices.length}事業所）　${yen(total)}（助成金充当 ${yen(grant)}／自己負担 ${yen(self)}）</div>`
+        + `</div>`
+        + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
+    }
+    document.getElementById('orderSummary').innerHTML = summaryHtml;
+
+    updateDeliveryModeUI();
+
+    const set = (id, v2) => { const el = document.getElementById(id); if (!el.value) el.value = v2; };
+    set('odCompany', val('corpName'));
+    if (offices.length <= 1) {
+      const o = offices[0];
+      set('odOffice', o.officeName);
+      set('odZip', o.postalCode);
+      set('odCity', o.city);
+      set('odAddress', o.addressDetail);
+      const pref = document.getElementById('odPref');
+      if (!pref.value) pref.value = o.prefecture;
+    }
+    set('odContact', val('contactName'));
+    set('odPhone', val('contactTel'));
     document.getElementById('orderError').style.display = 'none';
     document.getElementById('orderModal').classList.add('open');
   }
-
-  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
   async function submitOrder() {
     const err = document.getElementById('orderError');
     const show = (m) => { err.textContent = m; err.style.display = 'block'; };
     const v = (id) => (document.getElementById(id).value || '').trim();
+    const offices = getAllOfficeData();
+    const mode = offices.length > 1 ? ((document.querySelector('input[name="deliveryMode"]:checked') || {}).value || 'each') : 'each';
+    const needsDeliveryFields = offices.length <= 1 || mode === 'single';
+
     if (!v('odName')) { show('お申し込み者のお名前をご入力ください'); return; }
-    if (!v('odOffice')) { show('お届け先の事業所名をご入力ください'); return; }
-    if (!v('odPref') || !v('odCity') || !v('odAddress')) { show('お届け先の住所（都道府県・市町村・番地）をご入力ください'); return; }
+    if (needsDeliveryFields) {
+      if (!v('odOffice')) { show('お届け先の事業所名をご入力ください'); return; }
+      if (!v('odPref') || !v('odCity') || !v('odAddress')) { show('お届け先の住所（都道府県・市町村・番地）をご入力ください'); return; }
+    }
     if (!document.getElementById('odAgree').checked) { show('個人情報保護方針と利用規約への同意にチェックをお願いします'); return; }
+
     const btn = document.getElementById('orderSubmit');
     const orig = btn.textContent;
     btn.disabled = true; btn.textContent = '送信中...';
@@ -1723,9 +1871,10 @@
       const appCheckToken = await getAppCheckToken();
       const headers = { 'Content-Type': 'application/json' };
       if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
-      const res = await fetch(ACCEPT_QUOTE_URL, {
-        method: 'POST', headers,
-        body: JSON.stringify({
+
+      let body;
+      if (offices.length <= 1) {
+        body = {
           quoteId: quoteInfo.quoteId, quoteToken: quoteInfo.quoteToken,
           agreedName: v('odName'), agreedPolicy: true, payMethod: v('odPay') || 'after',
           preferredDate: v('odDate'), note: v('odNote'),
@@ -1735,20 +1884,52 @@
             address: [v('odPref'), v('odCity'), v('odAddress')].filter(Boolean).join(''),
             contactName: v('odContact'), phone: v('odPhone'),
           },
-        }),
-      });
+        };
+      } else {
+        const quotes = officeIdx.map((seq) => officeQuoteInfo[seq]).filter(Boolean)
+          .map((q) => ({ quoteId: q.quoteId, quoteToken: q.quoteToken }));
+        body = {
+          quotes, deliveryMode: mode,
+          delivery: mode === 'single' ? {
+            company: v('odCompany'), officeName: v('odOffice'), postalCode: v('odZip'),
+            address: [v('odPref'), v('odCity'), v('odAddress')].filter(Boolean).join(''),
+            contactName: v('odContact'), phone: v('odPhone'),
+          } : {},
+          payMethod: v('odPay') || 'after', preferredDate: v('odDate'), note: v('odNote'),
+          agreedName: v('odName'), agreedPolicy: true,
+        };
+      }
+
+      const res = await fetch(ACCEPT_QUOTE_URL, { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || (data.status !== 'ok' && data.status !== 'already')) {
+      if (!res.ok || (data.status !== 'ok' && data.status !== 'already' && data.status !== 'partial')) {
         show(data.message || 'お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
         return;
       }
+      // 一部の事業所だけ受け付けられなかった（partial）: 受け付けた分は表示し、失敗した事業所名を明示する
+      const failedResults = (data.results || []).filter((r) => r.error);
+      const officeNameOfQuote = (quoteId) => ((quoteGroup && quoteGroup.quotes) || []).find((q) => q.quoteId === quoteId)?.officeName || '事業所';
       document.getElementById('orderModal').classList.remove('open');
       document.getElementById('orderBtn').disabled = true;
       document.querySelector('.order-cta-inner').style.display = 'none';
       const done = document.getElementById('orderDone');
-      done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`
-        + `確認のメールを ${esc(v('contactEmail') || document.getElementById('contactEmail').value)} 宛にお送りしました。<br>`
-        + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
+      if (offices.length <= 1) {
+        done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`
+          + `確認のメールを ${esc(val('contactEmail'))} 宛にお送りしました。<br>`
+          + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
+      } else {
+        const list = (data.results || []).filter((r) => !r.error).map((r) =>
+          `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`
+        ).join('<br>');
+        const okCount = (data.results || []).filter((r) => !r.error).length;
+        done.innerHTML = `<b>お申し込みを受け付けました。</b>（事業所 ${okCount}件${failedResults.length ? `／${failedResults.length}件は受け付けられませんでした` : ''}）<br>`
+          + (list ? list + '<br>' : '')
+          + (failedResults.length
+              ? `<span style="color:var(--primary)">受け付けられなかった事業所: ${failedResults.map((r) => esc(officeNameOfQuote(r.quoteId))).join('、')}。お手数ですが、お電話またはメールでご連絡ください。</span><br>`
+              : '')
+          + `確認のメールを ${esc(val('contactEmail'))} 宛にお送りしました。<br>`
+          + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
+      }
       done.style.display = 'block';
       done.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } catch (e) {
@@ -1758,60 +1939,9 @@
     }
   }
 
-  // Cloud Function (webhookMitsumori) が期待する構造化データを生成
-  function buildNotifyPayload(intent) {
-    const planKey     = document.querySelector('input[name="plan"]:checked').value;
-    const btQty       = parseInt(document.getElementById('btQty').value)       || 0;
-    const usbQty      = parseInt(document.getElementById('usbQty').value)      || 0;
-    const btExtra     = parseInt(document.getElementById('btExtraQty').value)  || 0;
-    const usbExtra    = parseInt(document.getElementById('usbExtraQty').value) || 0;
-    const corp        = document.getElementById('corpName').value.trim();
-    const office      = document.getElementById('officeName').value.trim();
-    const contactName = document.getElementById('contactName').value.trim();
-    const contactTel  = document.getElementById('contactTel').value.trim();
-    const contactEmail= document.getElementById('contactEmail').value.trim();
-    const contactZip  = (document.getElementById('contactZip').value || '').trim();
-    const contactPref = (document.getElementById('contactPrefecture').value || '').trim();
-    const contactCity = (document.getElementById('contactCity').value || '').trim();
-    const contactAddr = (document.getElementById('contactAddress').value || '').trim();
-    const contactWeb  = (document.getElementById('contactWebsite').value || '').trim();
-
-    const calc = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
-
-    return {
-      intent: intent || 'quote',   // download / mail / order（利用者がどの操作をしたか）
-
-      corpName:       corp,
-      officeName:     office,
-      contactName:    contactName,
-      phone:          contactTel,
-      email:          contactEmail,
-      postalCode:     contactZip,
-      prefecture:     contactPref,
-      city:           contactCity,
-      addressDetail:  contactAddr,
-      website:        contactWeb,
-      subsidyPlan:    calc.plan.label,
-      subsidyCategory: planKey,
-      btSubsidyQty:   btQty,
-      btExtraQty:     btExtra,
-      usbSubsidyQty:  usbQty,
-      usbExtraQty:    usbExtra,
-      subsidyAmount:  calc.grantAmt,
-      totalAmount:    calc.totalIncl,
-      specialDiscount: calc.discount,
-      selfPay:        calc.selfPay,
-      usbConnector:   (document.querySelector('input[name="usbConnector"]:checked') || {}).value || null,
-      token:          leadToken || null,
-      estNo:          estNo,
-    };
-  }
-
-  /* ──────── PDFダウンロード ──────── */
-  // 見積書を発行する。ここが唯一の送信トリガー（2026-09-09）。
+  /* ──────── 見積書の発行（唯一の送信トリガー） ──────── */
   //   intent='download' … 記録に残してPDFを保存（メールは送らない）
   //   intent='mail'     … 記録に残して、ご入力のメールアドレスへPDFを送る
-  // どちらも案件として記録する（後から見返せるようにするため・2026-09-09 次田さん判断）。
   let issuing = false;
   async function issueQuote(intent) {
     if (issuing) return;
@@ -1829,20 +1959,31 @@
     try {
       // まだ登録していない、または内容が変わっていれば登録し直す（同じ内容なら既存の版が返る）
       await notifyWebhook(buildNotifyPayload(intent));
+      const offices = getAllOfficeData();
+      const succeeded = offices.length <= 1
+        ? !!(quoteInfo && quoteInfo.quoteToken)
+        : offices.every((o) => { const q = officeQuoteInfo[o.seq]; return q && q.quoteToken; });
       if (intent === 'mail') {
-        if (quoteInfo && quoteInfo.quoteToken) {
-          await sendQuotePdfToOffice();
+        if (succeeded) {
+          if (offices.length <= 1) await sendQuotePdfToOffice(); else await sendQuotePdfsToOffice();
         } else {
           setQuoteMailNote('error', 'お見積書のメール送付ができませんでした。「PDFでダウンロード」からお受け取りください。');
         }
       } else {
-        setQuoteMailNote('ok', 'お見積書を発行しました。印刷の画面が開きます（PDFとして保存できます）。');
+        setQuoteMailNote('ok', officeIdx.length > 1
+          ? `お見積書（${officeIdx.length}件）を発行しました。印刷の画面が開きます（PDFとして保存できます）。`
+          : 'お見積書を発行しました。印刷の画面が開きます（PDFとして保存できます）。');
         printQuotePdf();
       }
       // スマホでは画面が長く、申し込みの案内まで届きにくい。発行できたらその場まで送る
       const cta = document.getElementById('orderCta');
       if (cta && cta.style.display !== 'none') {
         setTimeout(() => cta.scrollIntoView({ behavior: 'smooth', block: 'center' }), 400);
+      }
+      // ?intent=order（LPで「正式に申込みたい」を選んだ人）：発行できたら申込モーダルを自動で開く
+      if (autoOpenOrderModal && succeeded) {
+        autoOpenOrderModal = false;
+        setTimeout(() => openOrderModal(true), 600);
       }
     } finally {
       issuing = false;
@@ -1851,11 +1992,13 @@
   }
 
   function printQuotePdf() {
-    const corp   = document.getElementById('corpName').value.trim();
-    const office = document.getElementById('officeName').value.trim();
-    const nameForFile = [corp, office].filter(Boolean).join('_');
+    const corp = val('corpName');
+    const offices = getAllOfficeData();
+    const nameForFile = offices.length === 1
+      ? [corp, offices[0].officeName].filter(Boolean).join('_')
+      : [corp, offices.length ? `${offices.length}事業所` : ''].filter(Boolean).join('_');
     const today = new Date();
-    const dateStr = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}`;
+    const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
     const orig = document.title;
     document.title = nameForFile
       ? `見積書_介護情報基盤伴走支援_${nameForFile}_${dateStr}`
@@ -1864,74 +2007,177 @@
     setTimeout(() => { document.title = orig; }, 1500);
   }
 
+  /* ──────── 必須項目バリデーション（全事業所を確認） ──────── */
+  function validateContact() {
+    const missing = [];
+    const reqCommon = [
+      { id: 'corpName', label: '法人名' }, { id: 'contactName', label: 'ご担当者名' },
+      { id: 'contactTel', label: '電話番号' }, { id: 'contactEmail', label: 'メールアドレス' },
+    ];
+    reqCommon.forEach((f) => { if (!val(f.id)) missing.push(f.label); });
+    const emailVal = val('contactEmail');
+    if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) missing.push('メールアドレス（形式が正しくありません）');
+
+    const offices = getAllOfficeData();
+    offices.forEach((o, i) => {
+      const n = offices.length > 1 ? `事業所${i + 1}：` : '';
+      if (!o.officeName) missing.push(`${n}事業所名`);
+      if (!/^\d{3}-?\d{4}$/.test(o.postalCode)) missing.push(`${n}郵便番号`);
+      if (!o.prefecture) missing.push(`${n}都道府県`);
+      if (!o.city) missing.push(`${n}市町村`);
+      if (!o.addressDetail) missing.push(`${n}住所（丁目・番地・建物名）`);
+      const total = o.bt + o.usb;
+      const max = PLANS[o.planKey].maxQty;
+      if (total < 1) missing.push(`${n}カードリーダー（1台以上）`);
+      if (total > max) missing.push(`${n}カードリーダー台数を${max}台以下に`);
+    });
+
+    if (!document.getElementById('consentCheck').checked) missing.push('「介護事業所関係者である」同意チェック');
+
+    const err = document.getElementById('formError');
+    if (missing.length) {
+      err.style.display = 'block';
+      err.innerHTML = '<i class="ti ti-alert-triangle"></i> 以下にチェック／ご入力をお願いします：<br>' + missing.join(' ／ ');
+      return false;
+    }
+    err.style.display = 'none';
+    return true;
+  }
+
   /* ──────── 金額フォーマット ──────── */
   function yen(n) { return '¥' + n.toLocaleString('ja-JP'); }
 
-  /* ──────── 金額計算（税込ベース・金額調整の算出） ──────── */
-  /* ──────── 構成ラベル生成（例: "BT×2 + USB×1"） ──────── */
+  /* ──────── 構成ラベル生成 ──────── */
   function configLabel(btQty, usbQty) {
     const parts = [];
-    if (btQty > 0)  parts.push(`BT×${btQty}`);
+    if (btQty > 0) parts.push(`BT×${btQty}`);
     if (usbQty > 0) parts.push(`USB×${usbQty}`);
     return parts.join(' + ') || '（未選択）';
   }
   function configFullLabel(btQty, usbQty, btExtra, usbExtra) {
     const subsidy = configLabel(btQty, usbQty);
     const extras = [];
-    if (btExtra > 0)  extras.push(`BT×${btExtra}`);
+    if (btExtra > 0) extras.push(`BT×${btExtra}`);
     if (usbExtra > 0) extras.push(`USB×${usbExtra}`);
     return extras.length
       ? `補助対象 ${subsidy} ／ 補助対象外 ${extras.join(' + ')}`
       : `補助対象 ${subsidy}`;
   }
 
-  /* ──────── メインレンダリング ──────── */
-  function render() {
-    const planKey  = document.querySelector('input[name="plan"]:checked').value;
-    const btQty    = parseInt(document.getElementById('btQty').value)       || 0;
-    const usbQty   = parseInt(document.getElementById('usbQty').value)      || 0;
-    const btExtra  = parseInt(document.getElementById('btExtraQty').value)  || 0;
-    const usbExtra = parseInt(document.getElementById('usbExtraQty').value) || 0;
+  /* ──────── 見積書ドキュメントの HTML（事業所ごとに1枚） ──────── */
+  function estDocHTML(seq) {
+    const s = sfx(seq);
+    return `<div class="est-doc" id="estDoc${s || '0'}" data-seq="${seq}">
+      <div class="est-head">
+        <div style="flex:0 0 auto">
+          <img src="images/tadakayo_logo.png" alt="タダカヨ" class="est-logo"
+               onerror="this.outerHTML='&lt;div class=\\'est-logo-placeholder\\'&gt;特定非営利活動法人タダカヨ&lt;/div&gt;'">
+        </div>
+        <div class="est-title-wrap"><div class="est-title">見　積　書</div></div>
+        <div class="est-hanko-wrap">
+          <img src="images/hanko.png" alt="印鑑" class="est-hanko"
+               onerror="this.outerHTML='&lt;div class=\\'est-hanko-ph\\'&gt;印&lt;br&gt;鑑&lt;/div&gt;'">
+        </div>
+      </div>
+      <div class="est-meta">
+        <div>
+          <div class="est-to-name" id="prevClient${s}">（法人名・事業所名を入力）</div>
+          <div class="est-to-honorific">御中</div>
+          <div id="prevContact${s}" style="font-size:10pt;color:var(--muted);margin-top:6px;line-height:1.7;"></div>
+        </div>
+        <table class="est-info-table">
+          <tr><td class="lbl">見積番号</td><td class="val" id="prevEstNo${s}">—</td></tr>
+          <tr><td class="lbl">見積日</td><td class="val" id="prevDate${s}">—</td></tr>
+          <tr><td class="lbl">有効期限</td><td class="val" id="prevExpiry${s}">—</td></tr>
+        </table>
+      </div>
+      <div class="est-issuer">
+        <div class="est-issuer-name">特定非営利活動法人タダカヨ</div>
+        <div style="font-size:9pt; color:var(--muted); line-height:1.9">
+          〒143-0014　東京都大田区大森中2-1-20-1001<br>
+          TEL: 050-6872-9884　／　担当: 佐藤拡史
+        </div>
+      </div>
+      <table class="est-table">
+        <thead>
+          <tr>
+            <th style="width:46%;text-align:left">品名・摘要</th>
+            <th style="width:9%">数量</th>
+            <th style="width:22%">単価（税込）</th>
+            <th style="width:23%">金額（税込）</th>
+          </tr>
+        </thead>
+        <tbody id="itemsBody${s}"></tbody>
+      </table>
+      <div class="est-totals-wrap"><div class="est-totals" id="totalsArea${s}"></div></div>
+      <div class="est-notes" id="notesArea${s}"></div>
+    </div>`;
+  }
 
-    const corp   = (document.getElementById('corpName').value   || '').trim();
-    const office = (document.getElementById('officeName').value || '').trim();
+  // estDocsContainer の中身を officeIdx に合わせて過不足なく用意する（並び順も画面の順に揃える）
+  function ensureEstDocs() {
+    const container = document.getElementById('estDocsContainer');
+    const wanted = officeIdx.slice();
+    container.querySelectorAll('.est-doc[data-seq]').forEach((el) => {
+      const seq = Number(el.dataset.seq);
+      if (!wanted.includes(seq)) el.remove();
+    });
+    wanted.forEach((seq) => {
+      const s = sfx(seq);
+      if (!document.getElementById('estDoc' + (s || '0'))) {
+        const wrap = document.createElement('div');
+        wrap.innerHTML = estDocHTML(seq);
+        container.appendChild(wrap.firstElementChild);
+      }
+    });
+    wanted.forEach((seq) => {
+      const s = sfx(seq);
+      container.appendChild(document.getElementById('estDoc' + (s || '0')));
+    });
+    let summary = document.getElementById('corpSummary');
+    if (wanted.length > 1) {
+      if (!summary) {
+        summary = document.createElement('div');
+        summary.id = 'corpSummary';
+        summary.className = 'est-doc corp-summary';
+        container.appendChild(summary);
+      } else {
+        container.appendChild(summary); // 常に末尾（法人合計は末尾に置く）
+      }
+    } else if (summary) {
+      summary.remove();
+    }
+  }
+
+  function renderOfficeDoc(o) {
+    const s = o.s;
+    const corp = val('corpName');
+    const office = o.officeName;
     let displayName = '（法人名・事業所名を入力）';
     if (corp && office) displayName = `${corp}　${office}`;
-    else if (corp)      displayName = corp;
-    else if (office)    displayName = office;
+    else if (corp) displayName = corp;
+    else if (office) displayName = office;
+    document.getElementById('prevClient' + s).textContent = displayName;
 
-    /* 宛先 */
-    document.getElementById('prevClient').textContent = displayName;
-    const contactName = (document.getElementById('contactName').value || '').trim();
-    const contactTel  = (document.getElementById('contactTel').value || '').trim();
-    const contactEmail= (document.getElementById('contactEmail').value || '').trim();
-    const contactZip  = (document.getElementById('contactZip').value || '').trim();
-    const contactPref = (document.getElementById('contactPrefecture').value || '').trim();
-    const contactCity = (document.getElementById('contactCity').value || '').trim();
-    const contactAddr = (document.getElementById('contactAddress').value || '').trim();
-    const fullAddress = [contactPref, contactCity, contactAddr].filter(Boolean).join('');
+    const contactName = val('contactName');
+    const contactTel = o.officePhone || val('contactTel');
+    const contactEmail = val('contactEmail');
+    const fullAddress = [o.prefecture, o.city, o.addressDetail].filter(Boolean).join('');
     const contactLines = [];
-    if (contactZip) contactLines.push(`〒${contactZip}`);
+    if (o.postalCode) contactLines.push(`〒${o.postalCode}`);
     if (fullAddress) contactLines.push(fullAddress);
     if (contactName) contactLines.push(`ご担当：${contactName} 様`);
     const tellinks = [];
     if (contactTel) tellinks.push(`TEL: ${contactTel}`);
     if (contactEmail) tellinks.push(contactEmail);
     if (tellinks.length) contactLines.push(tellinks.join(' ／ '));
-    document.getElementById('prevContact').innerHTML = contactLines.join('<br>');
+    document.getElementById('prevContact' + s).innerHTML = contactLines.join('<br>');
 
-    const c = computeAmounts(planKey, btQty, usbQty, btExtra, usbExtra);
+    const c = o.calc;
+    const btQty = o.bt, usbQty = o.usb, btExtra = o.btExtra, usbExtra = o.usbExtra;
 
-    // accompanyNote 更新
-    const note = document.getElementById('accompanyNote');
-    if (note) {
-      note.textContent = `¥${c.accFeeIncl.toLocaleString()}（税込・${c.subsidyTotal}台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談`;
-    }
-
-    /* ── 明細テーブル ── */
-    const tbody = document.getElementById('itemsBody');
+    const tbody = document.getElementById('itemsBody' + s);
     tbody.innerHTML = '';
-
     if (btQty > 0) {
       tbody.innerHTML += `<tr>
         <td>${BT_LABEL}
@@ -1952,7 +2198,6 @@
         <td>${yen(c.usbSubtotal)}</td>
       </tr>`;
     }
-
     if (c.subsidyTotal > 0) {
       tbody.innerHTML += `<tr>
         <td>伴走支援費<span class="est-badge-free">申請手続きの支援を含む</span>
@@ -1963,7 +2208,6 @@
         <td>${yen(c.accFeeIncl)}</td>
       </tr>`;
     }
-
     if (c.discount > 0) {
       tbody.innerHTML += `<tr style="color:#c02828;">
         <td><strong>金額調整</strong>
@@ -1974,8 +2218,6 @@
         <td>−${yen(c.discount)}</td>
       </tr>`;
     }
-
-    // 補助対象外パート（自己負担で積算）
     if (btExtra > 0) {
       tbody.innerHTML += `<tr style="background:#fff8e1;">
         <td>${BT_LABEL}
@@ -1997,19 +2239,17 @@
       </tr>`;
     }
 
-    /* ── 合計 ── */
     const today = new Date();
     const expiry = new Date(today);
     expiry.setMonth(expiry.getMonth() + 1);
 
     const zeroBadge = c.selfPay === 0 ? `<span class="badge-zero">自己負担 ¥0</span>` : '';
-
     const extraRow = c.extraPartTotal > 0 ? `
       <div class="est-total-row sub" style="color:#b27800;">
         <span>補助対象外（自己負担）合計</span><span>${yen(c.extraPartTotal)}</span>
       </div>` : '';
 
-    document.getElementById('totalsArea').innerHTML = `
+    document.getElementById('totalsArea' + s).innerHTML = `
       <div class="est-total-row sub">
         <span>補助対象パート 機器小計（税込・定価）</span><span>${yen(c.devSubsidyIncl)}</span>
       </div>
@@ -2035,12 +2275,10 @@
       </div>
     `;
 
-    /* ── 備考 ── */
     const extraNote = c.extraPartTotal > 0
       ? `<br>・補助対象外 ${c.extraTotal}台 分（${yen(c.extraPartTotal)}）は補助金の対象外のためお客様のご負担となります。`
       : '';
-
-    document.getElementById('notesArea').innerHTML = `
+    document.getElementById('notesArea' + s).innerHTML = `
       <strong>備考・ご案内</strong><br>
       ・カードリーダー構成：<strong>${configFullLabel(btQty, usbQty, btExtra, usbExtra)}</strong><br>
       ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
@@ -2048,6 +2286,72 @@
       ・「金額調整」は、補助対象の合計金額を介護情報基盤助成金の上限額（${c.plan.label}区分・${yen(c.plan.limit)}）にぴったり合わせるための調整です。<br>
       ・助成金の支給には、事業所さまが申請の要件を満たしている必要があります。タダカヨは申請手続きの支援を行います（代行はいたしません）。${extraNote}
     `;
+
+    document.getElementById('prevEstNo' + s).textContent = (officeQuoteInfo[o.seq] || {}).estNo || localEstNoPreview[o.seq] || '（送信時に発行）';
+    document.getElementById('prevDate' + s).textContent = fmtDate(today);
+    document.getElementById('prevExpiry' + s).textContent = fmtDate(expiry);
+  }
+
+  function renderCorpSummary(offices) {
+    const summary = document.getElementById('corpSummary');
+    if (!summary) return;
+    const yenL = (n) => `¥${Number(n || 0).toLocaleString()}`;
+    let total = 0, grant = 0, self = 0;
+    const rows = offices.map((o) => {
+      total += o.calc.totalIncl; grant += o.calc.grantAmt; self += o.calc.selfPay;
+      return `<tr>
+        <td>${esc(o.officeName || '（未入力）')}</td>
+        <td>${esc(PLANS[o.planKey].label)}</td>
+        <td style="text-align:right">${yenL(o.calc.totalIncl)}</td>
+        <td style="text-align:right">${yenL(o.calc.grantAmt)}</td>
+        <td style="text-align:right">${yenL(o.calc.selfPay)}</td>
+      </tr>`;
+    }).join('');
+    summary.innerHTML = `
+      <div style="font-size:13pt;font-weight:700;margin-bottom:8px;">法人合計（${esc(val('corpName') || '（法人名未入力）')}）</div>
+      <div style="font-size:9.5pt;color:var(--muted);margin-bottom:8mm;">同一法人・${offices.length}事業所ぶんの合計です。各事業所の内訳は前ページの見積書をご覧ください。</div>
+      <table class="est-table" style="font-size:9.5pt;">
+        <thead>
+          <tr>
+            <th style="text-align:left">事業所名</th>
+            <th>プラン</th>
+            <th style="text-align:right">合計（税込）</th>
+            <th style="text-align:right">助成金充当</th>
+            <th style="text-align:right">自己負担</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr style="font-weight:700;border-top:2px solid #111;">
+            <td colspan="2">法人合計（${offices.length}事業所）</td>
+            <td style="text-align:right">${yenL(total)}</td>
+            <td style="text-align:right">${yenL(grant)}</td>
+            <td style="text-align:right">${yenL(self)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+
+  function updateAccompanyNote(offices) {
+    const note = document.getElementById('accompanyNote');
+    if (!note) return;
+    if (offices.length === 1) {
+      const o = offices[0];
+      note.textContent = `¥${o.calc.accFeeIncl.toLocaleString()}（税込・${o.calc.subsidyTotal}台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談`;
+    } else {
+      note.textContent = `事業所ごとの金額は、各事業所の見積書でご確認いただけます（導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談）。`;
+    }
+  }
+
+  /* ──────── メインレンダリング ──────── */
+  function render() {
+    ensureEstDocs();
+    const offices = getAllOfficeData();
+    offices.forEach((o) => renderOfficeDoc(o));
+    if (offices.length > 1) renderCorpSummary(offices);
+    updateAccompanyNote(offices);
+    updateOrderCta();
   }
 </script>
 </body>

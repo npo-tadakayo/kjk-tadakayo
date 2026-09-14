@@ -65,6 +65,12 @@ export const SOURCE_LABELS = {
   lp_inquiry: "LP問い合わせ", mitsumori_quote: "見積もり作成", manual: "手動登録",
 };
 
+// LP問い合わせフォームの「ご希望」（2026-09-05 MTG §6・決定事項10）。
+// SOURCE_LABELS（流入経路）とは別物。cases.inquiryIntent に入る値のラベル。
+export const INQUIRY_INTENT_LABELS = {
+  consult: "まず相談したい", quote: "見積書がほしい", order: "正式に申込みたい",
+};
+
 // 紹介元（どこ経由で来た案件か。2026-08-21 次田さん要望）。
 // ⚠️ SOURCE_LABELS（流入経路＝LP問い合わせ/見積もり作成/手動登録）とは別物。
 //    こちらは「営業上、誰の紹介で来たか」を表す。未設定は null（決め打ちしない）。
