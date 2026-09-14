@@ -196,7 +196,19 @@ sequenceDiagram
 
         <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-07-30 ／ 詳細な技術仕様はリポジトリ <code>ENGINEERING_NOTES.md</code> を参照。</p>
       </div>
-    </main>
+    
+      <section id="sec8">
+        <h2>§8 2026-09 の変更点（設計上の決まり）</h2>
+        <ul>
+          <li><strong>税基準は請求先で変わる</strong>: 事業所向け（<code>direct</code>）の明細単価は<strong>税込</strong>（見積もりの価格はすべて税込）、認定事業者向け（<code>dropship</code> / <code>partnerEmail</code> あり / 旧 <code>stock</code>）は<strong>税別</strong>。判定は <code>invoice-doc.js priceIsTaxIncluded()</code>、計算は <code>invoiceTotals()</code> に一本化。**自前の税計算を書かない**（2026-09-13 に二重課税を是正）</li>
+          <li><strong>在庫は保管場所ごと</strong>: <code>products.stock</code>（合計）＋ <code>stockByLocation[locationId]</code>。増減は必ず <code>stockPatch()</code>／履歴は <code>movement()</code>。出荷は <code>originLocationId</code>、入荷は <code>receivedLocationId</code>。保管場所マスタは <code>locations</code></li>
+          <li><strong>出荷のキャンセル</strong>: <code>status:"canceled"</code>＋<code>statusBeforeCancel</code>／<code>cancelReason</code>／<code>cancelNote</code>。在庫の戻しは shipped/invoiced かつ自社在庫のときだけ。<strong>削除は draft のみ</strong></li>
+          <li><strong>帳票</strong>: 表題「領収証」。発行元の連絡先は <code>appConfig/settings.invoiceIssuer*</code>、担当は<strong>案件の担当営業</strong>（<code>cases.assignedUserName</code>）。品名の用途説明は <code>itemPurposeNote()</code>。宛先メールは 認定事業者 → 出荷の送付先メール → 案件の担当者メール</li>
+          <li><strong>画面の導線</strong>: メニューは業務の流れ順（供給管理は「出荷・請求・入金」「在庫・発注」の2入口＝<code>supply.html?tab=</code>）。<code>?so=SH-…</code> で該当行へ。案件詳細の「次の一手」は <code>constants.js NEXT_ACTION</code>（マニュアル §0 と同じ表）。ホームの3ステップ案内の既読は <code>users/{email}.onboardingDismissedAt</code>（本人がこの1フィールドだけ書けるルール）</li>
+          <li>⚠ Hosting の cleanUrls で実パスは <code>/supply</code>（.html なし）。パス一致の判定は拡張子の有無を吸収すること</li>
+        </ul>
+      </section>
+</main>
   </div>
   <script src="/js/sidebar.js"></script>
   <script src="/js/mobilenav.js"></script>
