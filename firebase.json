@@ -18,7 +18,6 @@
         "ABサークル様資料/**",
         "admin/**",
         "functions/**",
-
         "admin-*.png",
         "*.pdf",
         "*.docx",
@@ -33,18 +32,29 @@
         "*.rules",
         "images/1.png",
         "images/2.png",
-        "images/tadakayo_logo_remove.png"
+        "images/tadakayo_logo_remove.png",
+        "images/_旧版/**"
       ],
       "cleanUrls": true,
       "trailingSlash": false,
       "headers": [
         {
           "source": "**",
-          "headers": [{ "key": "Cache-Control", "value": "no-cache, max-age=0" }]
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "no-cache, max-age=0"
+            }
+          ]
         },
         {
           "source": "**/*.@(css|js|png|jpg|jpeg|gif|webp|svg|ico|woff|woff2)",
-          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+          "headers": [
+            {
+              "key": "Cache-Control",
+              "value": "public, max-age=31536000, immutable"
+            }
+          ]
         }
       ]
     },
@@ -61,8 +71,14 @@
         {
           "source": "**",
           "headers": [
-            { "key": "Cache-Control", "value": "no-cache, max-age=0" },
-            { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" }
+            {
+              "key": "Cache-Control",
+              "value": "no-cache, max-age=0"
+            },
+            {
+              "key": "Cross-Origin-Opener-Policy",
+              "value": "same-origin-allow-popups"
+            }
           ]
         }
       ]
