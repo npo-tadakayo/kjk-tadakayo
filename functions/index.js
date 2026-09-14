@@ -1,4 +1,12 @@
 const { onRequest, onCall, HttpsError } = require("firebase-functions/v2/https");
+
+// 金額の桁区切り。Cloud Functions の実行環境では Number#toLocaleString が桁区切りを付けないことがある（2026-09-14 実測: ロケール指定でも "64000"）。
+// Intl に依存せず正規表現で付ける。
+function fmtNum(n) {
+  const v = Math.round(Number(n) || 0);
+  const sign = v < 0 ? "-" : "";
+  return sign + String(Math.abs(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
@@ -558,7 +566,7 @@ async function createOrUpdateMitsumoriQuote(input, groupMeta) {
   batch.set(db.collection("activities").doc(), {
     caseId, type: "memo", occurredAt: now, userId: "system",
     subject: `見積もりを作成（${estNo}・v${version}）`,
-    body: `プラン: ${calc.plan.label}\n構成: ${cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${usbConnector ? `（USB ${usbConnector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${calc.totalIncl.toLocaleString("ja-JP")}／自己負担: ¥${calc.selfPay.toLocaleString("ja-JP")}`,
+    body: `プラン: ${calc.plan.label}\n構成: ${cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${usbConnector ? `（USB ${usbConnector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${fmtNum(calc.totalIncl)}／自己負担: ¥${fmtNum(calc.selfPay)}`,
     attachmentUrls: [],
   });
   if (lead) batch.update(db.collection("leadTokens").doc(lead.id), { usedFor: admin.firestore.FieldValue.arrayUnion("quote") });
@@ -641,7 +649,7 @@ exports.webhookMitsumori = onRequest(
           await notifyChat(
             chatWebhook,
             `📝 見積もり作成（${created.length}事業所・${body.corpName || ""}）\n`
-            + created.map((r) => `・${r.estNo} ${r.officeName}（${r.calc.plan.label}）¥${r.calc.totalIncl.toLocaleString("ja-JP")}`).join("\n")
+            + created.map((r) => `・${r.estNo} ${r.officeName}（${r.calc.plan.label}）¥${fmtNum(r.calc.totalIncl)}`).join("\n")
           );
         }
 
@@ -692,7 +700,7 @@ exports.webhookMitsumori = onRequest(
         const chatWebhook = await getChatWebhook();
         await notifyChat(
           chatWebhook,
-          `📝 見積もり作成 ${r.estNo}（v${r.version}）${INTENT_LABEL[body.intent] || ""} [案件 #${r.caseNumber}${r.created ? "・新規" : ""}]\n事業所: ${r.officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${r.calc.plan.label}\n構成: ${r.crSummary}\n金額: ¥${r.calc.totalIncl.toLocaleString("ja-JP")}（自己負担 ¥${r.calc.selfPay.toLocaleString("ja-JP")}）`
+          `📝 見積もり作成 ${r.estNo}（v${r.version}）${INTENT_LABEL[body.intent] || ""} [案件 #${r.caseNumber}${r.created ? "・新規" : ""}]\n事業所: ${r.officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${r.calc.plan.label}\n構成: ${r.crSummary}\n金額: ¥${fmtNum(r.calc.totalIncl)}（自己負担 ¥${fmtNum(r.calc.selfPay)}）`
         );
       }
 
@@ -722,7 +730,7 @@ async function storeQuotePdfFile(caseId, filename, pdfBase64) {
   return { path, url };
 }
 function quoteMailText(q, { resend = false } = {}) {
-  const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+  const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
   const until = q.validUntil?.toDate ? q.validUntil.toDate().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "";
   const to = [q.corpName, q.officeName].filter(Boolean).join("　");
   return {
@@ -812,7 +820,7 @@ exports.sendQuotePdf = onRequest(
 
         let mailed = false, mailError = null;
         if (wantsMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-          const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+          const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           try {
             const lines = saves.map(({ q }) =>
               `・${q.estNo}（${q.officeName || ""}） 合計 ${yen(q.amounts?.totalIncl)}／自己負担 ${yen(q.amounts?.selfPay)}`).join("\n");
@@ -1070,7 +1078,7 @@ exports.acceptQuote = onRequest(
         // 事業所への確認メール・Chat通知はまとめて1通（新規に受け付けた分だけを対象にする。二重受付は対象外）
         const newly = results.filter((r) => r.ok && !r.alreadyAccepted);
         if (newly.length) {
-          const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+          const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           const first = newly[0].q;
           const to = first.contactEmail || "";
           if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
@@ -1134,7 +1142,7 @@ exports.acceptQuote = onRequest(
       }
 
       // 事業所へ確認メール
-      const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+      const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const to = q.contactEmail || "";
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
@@ -1270,8 +1278,8 @@ exports.reviseQuote = onCall(
     batch.set(db.collection("activities").doc(), {
       caseId: base.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
       subject: `見積もりを変更（${estNo} v${base.version} → v${version}）`,
-      body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${Number(base.amounts?.totalIncl || 0).toLocaleString("ja-JP")}）\n`
-        + `変更後: ${after}（¥${calc.totalIncl.toLocaleString("ja-JP")}）`
+      body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
+        + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
         + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : ""),
       attachmentUrls: [],
     });
@@ -1281,7 +1289,7 @@ exports.reviseQuote = onCall(
     let mailed = false;
     const to = base.contactEmail || "";
     if (sendMail !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+      const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const diff = calc.totalIncl - (Number(base.amounts?.totalIncl) || 0);
       try {
         await sendGmail({
@@ -1426,7 +1434,7 @@ exports.staffCreateQuote = onCall(
     batch.set(db.collection("activities").doc(), {
       caseId: kase.id, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
       subject: `見積もりを作成（${estNo}・v${version}・スタッフ）`,
-      body: `プラン: ${calc.plan.label}\n構成: ${cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${connector ? `（USB ${connector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${calc.totalIncl.toLocaleString("ja-JP")}／自己負担: ¥${calc.selfPay.toLocaleString("ja-JP")}`
+      body: `プラン: ${calc.plan.label}\n構成: ${cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${connector ? `（USB ${connector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${fmtNum(calc.totalIncl)}／自己負担: ¥${fmtNum(calc.selfPay)}`
         + (note ? `\nメモ: ${String(note).trim()}` : ""),
       attachmentUrls: [],
     });
@@ -1435,7 +1443,7 @@ exports.staffCreateQuote = onCall(
     // メールでの案内（PDFはまだ無いので、内容と有効期限をテキストで知らせる。追ってPDFを送る旨を添える）
     let mailed = false;
     if (sendMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-      const yen = (n) => `¥${Number(n || 0).toLocaleString("ja-JP")}`;
+      const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const crSummary = cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ");
       const until = daysFromNow(30).toDate().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
       try {
