@@ -1139,6 +1139,66 @@ async function deleteShipment(s){
 
 const SHIP_STATUS = { draft:"下書き", shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };
 const SHIP_STATUS_BADGE = { draft:2, shipped:7, invoiced:9, paid:3, canceled:4 };
+
+// ===== 出荷のキャンセル（2026-09-14 追加）=====
+// 「この出荷を削除」は下書きだけに絞ったので、発送済・請求済を取り消すときはこちらを使う。
+// 削除と違って記録（理由・元の状態）を残したまま status:"canceled" にする。
+// 在庫を戻す作法は deleteShipment に合わせ、stockPatch/movement 経由・逐次 updateDoc で行う。
+const CANCEL_REASONS = ["事業所の都合","重複登録","誤登録","その他"];
+let cancelTargetShip = null;
+function cancelShipUsesStock(s){ return s.status!=="draft" && shipUsedStock(s); }
+function openCancelShipModal(s){
+  cancelTargetShip = s;
+  document.getElementById("cancelShipInfo").innerHTML =
+    `<strong>${esc(s.soNumber)}</strong>（${esc(s.officeName||s.partnerName||"")}）／現在の状態: ${esc(SHIP_STATUS[s.status]||s.status)}`;
+  let stockMsg;
+  if(s.status==="draft"){
+    stockMsg = "下書きのため在庫は動きません。";
+  } else if(!shipUsedStock(s)){
+    stockMsg = "直送のため在庫は動きません。";
+  } else {
+    const lines = stockItems(s.items).map(it=>`${it.sku} × ${it.qty}`).join("・");
+    stockMsg = `${esc(locationName(shipLocationOf(s))||"自社在庫")} に ${esc(lines||"（在庫品なし）")} を戻します。`;
+  }
+  if(s.status==="invoiced"){
+    stockMsg += "<br>請求書を送っている場合は、先方への取り消し連絡は別途行ってください。";
+  }
+  document.getElementById("cancelShipStockNote").innerHTML = stockMsg;
+  const reasonSel = document.getElementById("cancelReason");
+  reasonSel.innerHTML = CANCEL_REASONS.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
+  document.getElementById("cancelNote").value = "";
+  document.getElementById("cancelShipError").style.display = "none";
+  document.getElementById("cancelShipModal").classList.add("open");
+}
+function closeCancelShipModal(){
+  document.getElementById("cancelShipModal").classList.remove("open");
+  cancelTargetShip = null;
+}
+async function doCancelShipment(){
+  const s = cancelTargetShip; if(!s) return;
+  const err = document.getElementById("cancelShipError"); err.style.display = "none";
+  const reason = document.getElementById("cancelReason").value;
+  const note = document.getElementById("cancelNote").value.trim();
+  const usesStock = cancelShipUsesStock(s);
+  const btn = document.getElementById("doCancelShipBtn"); btn.disabled = true;
+  try{
+    await updateDoc(doc(db,"shipments",s._id), {
+      status: "canceled", statusBeforeCancel: s.status,
+      canceledAt: serverTimestamp(), canceledBy: currentUser.displayName||currentUser.email,
+      cancelReason: reason, cancelNote: note,
+    });
+    if(usesStock){
+      const backTo = shipLocationOf(s);
+      for(const it of stockItems(s.items)){
+        await updateDoc(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
+        await addDoc(collection(db,"inventoryMovements"), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo));
+      }
+    }
+    closeCancelShipModal();
+    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）`);
+  }catch(e){ err.textContent = `キャンセルに失敗: ${e.message}`; err.style.display = "block"; }
+  finally{ btn.disabled = false; }
+}
 // 出荷の金額。**計算は invoice-doc.js の invoiceTotals に一本化した**（2026-09-13）。
 // 事業所向けは明細が税込・認定事業者向けは税抜と基準が違うので、ここで自前に計算しない。
 function shipFeeExcl(s){ return Number(s.shippingFee)||0; }   // 送料は常に税抜で保存（2026-07-28 統一）
@@ -1308,20 +1368,23 @@ function renderShipments(ships){
     const docLetterpack = `<a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>`;
     const editBtn = `<button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${shipIsLocked(s)?"請求済のため送付先のみ修正できます":"数量・送付先・送料を修正"}"><i class="ti ti-edit"></i>送付先・数量を直す</button>`;
     const typeBtn = `<button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>請求先を変える</button>`;
+    // 「この出荷を削除」は下書きだけ（2026-09-14）。発送済以降は取り消したい場合キャンセルへ誘導する
     const delBtn = `<button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>この出荷を削除</button>`;
+    // 「キャンセルにする」は draft/shipped/invoiced のみ（paid は返金フロー、canceled は既にキャンセル済）
+    const cancelBtn = `<button class="btn btn-secondary cancel-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="記録を残したまま在庫を戻してキャンセルにします"><i class="ti ti-ban"></i>キャンセルにする</button>`;
     if(st==="draft"){
-      // 流れの順: 発送済にする →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → この出荷を削除
+      // 流れの順: 発送済にする →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → キャンセルにする → この出荷を削除
       lifeBtns = `<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>発送済にする</button>`
         + docInvoice + docLetterpack + docShipnote + docRefund
-        + editBtn + typeBtn + delBtn;
+        + editBtn + typeBtn + cancelBtn + delBtn;
     } else if(st==="shipped"){
-      // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → この出荷を削除
+      // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → キャンセルにする
       lifeBtns = docInvoice
         + `<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`
         + editBtn + docLetterpack + docShipnote + docRefund
-        + typeBtn + delBtn;
+        + typeBtn + cancelBtn;
     } else if(st==="invoiced"){
-      // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → この出荷を削除
+      // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → キャンセルにする
       lifeBtns = `<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金を記録する</button>`
         // 同じ請求先の過入金は金額つきで、別請求先（グループ）の分しか無いときは「別請求先」と明示して出す
         + (creditBalanceForBillTo(s)>0
@@ -1334,19 +1397,21 @@ function renderShipments(ships){
         + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
         + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
         + docRefund + docLetterpack + docShipnote
-        + editBtn + typeBtn + delBtn;
+        + editBtn + typeBtn + cancelBtn;
     } else if(st==="paid"){
-      // 流れの順: 領収証 → 入金の履歴を見る →（返金明細）→ 請求書・宛名・送付状 → 送付先・数量を直す → 請求先を変える → この出荷を削除
+      // 流れの順: 領収証 → 入金の履歴を見る →（返金明細）→ 請求書・宛名・送付状 → 送付先・数量を直す → 請求先を変える
+      // 入金がある出荷はキャンセル不可（返金の手続きが先＝既存の返金フローに任せる）。削除も不可
       lifeBtns = docReceipt
         + `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴を見る</button>`
         + docRefund + docInvoice + docLetterpack + docShipnote
-        + editBtn + typeBtn + delBtn;
+        + editBtn + typeBtn;
     } else {
-      // canceled 等: 従来どおり帳票リンク＋修正・種別変更・削除のみ
-      lifeBtns = docInvoice + docRefund + docLetterpack + docShipnote + editBtn + typeBtn + delBtn;
+      // canceled: 記録として残すだけ。帳票リンク・修正系のボタンは出さず、理由を小さく表示する
+      lifeBtns = `<div style="font-size:12px;color:var(--color-ink-muted)">理由: ${esc(s.cancelReason||"-")}${s.cancelNote?`・${esc(s.cancelNote)}`:""}</div>`;
     }
     // data-so: 深いリンク（?so=SH-2026-0013）で該当行を見つけてスクロールするための目印
-    return `<tr data-so="${esc(s.soNumber)}">
+    // canceled は行全体を薄くして「終わった記録」だと分かるようにする（既存の muted 変数・opacity のみ・新規色は使わない）
+    return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
       <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}</td>
@@ -1362,6 +1427,9 @@ function renderShipments(ships){
   }).join("");
   document.querySelectorAll(".del-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) deleteShipment(s);
+  }));
+  document.querySelectorAll(".cancel-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openCancelShipModal(s);
   }));
   document.querySelectorAll(".edit-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id);
@@ -2424,6 +2492,10 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("creditSourceBody").addEventListener("input",recalcCredit);
   document.getElementById("creditSourceBody").addEventListener("change",recalcCredit);
   document.getElementById("doApplyCreditBtn").addEventListener("click",doApplyCredit);
+  // 出荷のキャンセルモーダル（2026-09-14 追加）
+  document.getElementById("closeCancelShipBtn").addEventListener("click",closeCancelShipModal);
+  document.getElementById("cancelCancelShipBtn").addEventListener("click",closeCancelShipModal);
+  document.getElementById("doCancelShipBtn").addEventListener("click",doCancelShipment);
   // 請求済にする＋経理へ報告モーダル
   document.getElementById("closeInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
   document.getElementById("cancelInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));

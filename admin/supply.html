@@ -392,6 +392,28 @@
     </div>
   </div>
 
+  <!-- 出荷のキャンセル（2026-09-14 追加）: 記録を残したまま在庫を戻す。削除は下書きだけに限定したので、
+       発送済・請求済を取り消すときはこちら -->
+  <div class="modal-overlay" id="cancelShipModal" role="dialog" aria-modal="true" aria-label="出荷のキャンセル">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h2>この出荷をキャンセルにする</h2>
+        <button class="btn btn-secondary" id="closeCancelShipBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="cancelShipInfo" style="font-size:13px;margin:0 0 10px"></p>
+        <div id="cancelShipStockNote" class="callout" style="font-size:12px;margin:0 0 12px;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)"></div>
+        <div class="form-group"><label class="form-label" for="cancelReason">理由 <span style="color:red">*</span></label>
+          <select class="form-control" id="cancelReason"></select></div>
+        <div class="form-group"><label class="form-label" for="cancelNote">一言（任意）</label>
+          <input class="form-control" id="cancelNote" type="text" maxlength="200" placeholder="補足があれば"></div>
+        <div id="cancelShipError" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelCancelShipBtn" type="button">閉じる</button>
+        <button class="btn btn-danger" id="doCancelShipBtn" type="button"><i class="ti ti-ban" aria-hidden="true"></i>キャンセルにする</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="payModal" role="dialog" aria-modal="true" aria-label="入金の記録">
     <div class="modal" style="max-width:560px">
       <div class="modal-header"><h2 id="payModalTitle">入金の記録</h2>
