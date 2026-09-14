@@ -1537,8 +1537,9 @@ function renderShipments(ships){
         + editBtn + typeBtn + cancelBtn + delBtn;
     } else if(st==="shipped"){
       // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → キャンセルにする
-      lifeBtns = docInvoice
-        + `<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`
+      // 発送済の「次の一手」は請求済にする＝赤（下書きの「発送済にする」・請求済の「入金を記録する」と同じ扱い・2026-09-14）
+      lifeBtns = `<button class="btn btn-primary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>請求済にする</button>`
+        + docInvoice
         + editBtn + docLetterpack + docShipnote + docRefund
         + typeBtn + cancelBtn;
     } else if(st==="invoiced"){
