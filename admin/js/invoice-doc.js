@@ -82,7 +82,7 @@ export function renderInvoiceHtml(s, st, opts){
   const issueDate = opts.issueDate || new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
   const items = s.items||[];
   const { taxIncluded, shipExcl, shipIncl, sub, tax, total, credit, payable } = invoiceTotals(s);
-  const shipFeeIncl = shipExcl; // 明細行を出すかの判定に使う
+  const hasShipFee = shipExcl > 0; // 送料の明細行を出すか（値は税基準に合わせて shipShown を使う）
   const shipShown = taxIncluded ? shipIncl : shipExcl;   // 明細に出す送料（列の税基準に合わせる）
   const priceUnit = taxIncluded ? "税込" : "税抜";
   // 充当元の内訳。別請求先（グループ会社）からの充当は請求先名も出す＝どこの入金を回したかが書面で追える
@@ -125,7 +125,7 @@ export function renderInvoiceHtml(s, st, opts){
       .filter(Boolean).map(x=>`<div style="font-size:11px;color:#6a5e48">${x}</div>`).join("");
     return `<tr><td>${esc(i.name)}${sub}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`;
   }).join("")
-    + (shipFeeIncl>0 ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipShown)}</td><td class="num">${yen(shipShown)}</td></tr>` : "");
+    + (hasShipFee ? `<tr><td>${esc(s.shippingLabel||"送料")}</td><td class="num">10%</td><td class="num">1</td><td class="num">${yen(shipShown)}</td><td class="num">${yen(shipShown)}</td></tr>` : "");
   return `
     <div class="inv">
       <div class="doc-head"><div></div>
