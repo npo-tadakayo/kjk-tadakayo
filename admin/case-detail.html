@@ -24,6 +24,16 @@
     .ship-next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
     .ship-next-msg { font-size: 13px; color: var(--color-ink-muted); }
     .ship-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+
+    /* 「次の一手」ガイド（案件ヘッダー最下部・タブの上。2026-09-14） */
+    .next-step { display: none; flex-direction: column; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--color-line); }
+    .next-step-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+    .next-step-row > i { font-size: 20px; color: var(--color-primary-dark); flex: 0 0 auto; }
+    .next-step-label { font-size: 13px; font-weight: 700; color: var(--color-ink-muted); white-space: nowrap; }
+    .next-step-text { font-size: 14px; color: var(--color-ink); flex: 1 1 240px; }
+    .next-step-row .btn-primary { margin-left: auto; }
+    .next-step-money { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: 13px; color: var(--color-ink-muted); }
+    .next-step-money a { font-size: 13px; color: var(--color-primary-dark); }
   </style>
 </head>
 <body>
@@ -121,6 +131,9 @@
               <i class="ti ti-trash" aria-hidden="true"></i> この案件を完全に削除
             </button>
           </div>
+
+          <!-- 次の一手（現在のステータスから決まる、次にやること。2026-09-14） -->
+          <div id="nextStep" class="next-step"></div>
         </div>
 
         <!-- 対象外バナー -->

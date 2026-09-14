@@ -2,7 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc }
+import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
@@ -66,6 +66,30 @@ function renderTodo() {
       ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "paid" && !s.receiptIssuedAt) },
   ];
   el.innerHTML = rows.map(todoRowHtml).join("");
+}
+
+// ===== はじめての方へ（3ステップ・初回のみ表示） =====
+// users/{自分のメール} の onboardingDismissedAt が無いときだけ表示する。
+// 読み取りに失敗したら表示しない（邪魔にならない側に倒す）。
+async function initOnboarding(email) {
+  const card = document.getElementById("onboardingCard");
+  if (!card) return;
+  try {
+    const snap = await getDoc(doc(db, "users", email));
+    if (snap.exists() && snap.data().onboardingDismissedAt) return;
+  } catch (e) {
+    return;
+  }
+  card.style.display = "block";
+  const dismissBtn = document.getElementById("onboardingDismissBtn");
+  dismissBtn?.addEventListener("click", async () => {
+    card.style.display = "none";
+    try {
+      await setDoc(doc(db, "users", email), { onboardingDismissedAt: serverTimestamp() }, { merge: true });
+    } catch (e) {
+      console.warn("onboardingDismissedAt の保存に失敗:", e.message);
+    }
+  });
 }
 
 let deadline = DEADLINE;
@@ -193,6 +217,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click",
     () => signOut(auth).then(() => location.href = "/index.html"));
+  initOnboarding(user.email);
   updateDeadlineBanner();
   try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 

@@ -35,9 +35,16 @@ service cloud.firestore {
     }
 
     // ユーザー（ロール）管理: 本人は自分の登録を読める／管理は管理者のみ
+    // 例外: 本人は自分の onboardingDismissedAt だけ書ける（ホームの「はじめての方へ」カードを
+    // 閉じた記録・2026-09-14追加）。role/active等それ以外のフィールドは引き続き管理者のみ。
     match /users/{email} {
       allow read: if isAuthenticated() && (request.auth.token.email == email || isAdmin());
-      allow write: if isAdmin();
+      allow write: if isAdmin()
+        || (
+          emailIsTadakayo() && request.auth.token.email == email
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["onboardingDismissedAt"])
+          && request.resource.data.onboardingDismissedAt == request.time
+        );
     }
 
     // 商品マスタ: 認証済みは閲覧可（パートナーのカタログ参照）／編集は登録スタッフ

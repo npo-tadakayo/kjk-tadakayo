@@ -10,7 +10,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
-  referralOptions, referralLabel } from "/js/constants.js";
+  referralOptions, referralLabel, NEXT_ACTION } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
@@ -42,6 +42,9 @@ let currentUser = null;
 let appSettings = {};
 // users コレクション（担当営業の候補。doc id = メールアドレス / name・role・active を持つ）
 let usersList = [];
+// 「出荷・請求・入金」タブが購読している shipments のキャッシュ。
+// ヘッダー「次の一手」2行目（お金の流れ）が同じデータ・同じ判定関数を再利用するために保持（二重購読しない）。
+let shipmentsCache = [];
 
 function renderCaseHeader(c) {
   document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
@@ -367,29 +370,40 @@ function shipStepperHtml(s) {
   }).join("") + `</div>`;
 }
 
-// 「次にやること」は状態ごとに1つだけ。supply.html?tab=shipments&so=… は別担当が実装中の契約
-// （案件詳細からは触らず、遷移先の URL 形式だけ合わせる）
-function shipNextActionHtml(s) {
+// 出荷1件の「次にやること」判定（状態ごとに1つだけ）。このタブのカード（shipCardHtml）と、
+// 案件詳細ヘッダー「次の一手」2行目（お金の流れ）が共通で使う（2026-09-14・コピーせず共通化）。
+// supply.html?tab=shipments&so=… は別担当が実装中の契約（案件詳細からは触らず、遷移先の URL 形式だけ合わせる）
+function shipNextAction(s) {
   const st = s.status || "shipped";
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
   const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
-  if (st === "draft") {
-    return `<a class="btn btn-primary" href="${soUrl}"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 発送済にする</a>`;
-  }
-  if (st === "shipped") {
-    return `<a class="btn btn-primary" href="${invUrl}" target="_blank" rel="noopener"><i class="ti ti-file-invoice" aria-hidden="true"></i> 請求書を出す</a>`;
-  }
-  if (st === "invoiced") {
-    return `<a class="btn btn-primary" href="${soUrl}"><i class="ti ti-cash" aria-hidden="true"></i> 入金を記録する</a>`;
-  }
+  if (st === "draft") return { label: "発送済にする", icon: "truck-delivery", url: soUrl, external: false };
+  if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invUrl, external: true };
+  if (st === "invoiced") return { label: "入金を記録する", icon: "cash", url: soUrl, external: false };
   if (st === "paid") {
-    if (!s.receiptIssuedAt) {
-      return `<a class="btn btn-primary" href="${receiptUrl}" target="_blank" rel="noopener"><i class="ti ti-receipt-2" aria-hidden="true"></i> 領収証を出す</a>`;
-    }
+    if (!s.receiptIssuedAt) return { label: "領収証を出す", icon: "receipt-2", url: receiptUrl, external: true };
+    return { done: true }; // お金の流れは完了
+  }
+  return null; // canceled: 主ボタンなし
+}
+
+function shipNextActionHtml(s) {
+  const a = shipNextAction(s);
+  if (!a) return ""; // canceled
+  if (a.done) {
     return `<span class="ship-next-msg"><i class="ti ti-circle-check" aria-hidden="true"></i> お金の流れは完了しています。申請情報タブへ進んでください。</span>`;
   }
-  return ""; // canceled: 主ボタンなし
+  const targetAttrs = a.external ? ` target="_blank" rel="noopener"` : "";
+  return `<a class="btn btn-primary" href="${a.url}"${targetAttrs}><i class="ti ti-${a.icon}" aria-hidden="true"></i> ${a.label}</a>`;
+}
+
+// 未完了（canceled 以外・領収証未発行）の出荷一覧
+function shipPendingList(ships) {
+  return ships.filter((s) => {
+    const a = shipNextAction(s);
+    return !!a && !a.done;
+  });
 }
 
 function shipCardHtml(s) {
@@ -449,6 +463,52 @@ function renderShippingError() {
   if (emptyEl) emptyEl.style.display = "none";
   if (listEl) listEl.innerHTML = "";
   if (errorEl) errorEl.style.display = "block";
+}
+
+// ===== 次の一手（案件ヘッダー最下部・タブの上。2026-09-14） =====
+// ステータス→次にやることは NEXT_ACTION（constants.js）が正本。マニュアル §0 表1 と同じ内容を指す。
+function renderNextStep() {
+  const wrap = document.getElementById("nextStep");
+  if (!wrap || !currentCase) return;
+  const na = NEXT_ACTION[Number(currentCase.status)];
+  if (!na) { wrap.style.display = "none"; wrap.innerHTML = ""; return; } // 13完了・4失注は非表示
+
+  // 2行目（お金の流れ）: B1「出荷・請求・入金」タブと同じデータ・同じ判定（shipNextAction）を再利用。
+  // 未完了の出荷が複数あるときは、直近に作られた出荷を代表として出す（一覧内の並び順=作成日時降順と揃える）。
+  const pending = shipPendingList(shipmentsCache)
+    .sort((a, b) => shipCreatedAtMs(b) - shipCreatedAtMs(a));
+  const moneyHtml = pending.length
+    ? (() => {
+        const s = pending[0];
+        const a = shipNextAction(s);
+        return `<div class="next-step-money">
+          <i class="ti ti-coin-yen" aria-hidden="true"></i>
+          お金の流れ：次は「${escHtml(a.label)}」（${escHtml(s.soNumber || "—")}）
+          <a href="#" id="nextStepMoneyLink">出荷・請求・入金タブへ</a>
+        </div>`;
+      })()
+    : "";
+
+  wrap.style.display = "flex";
+  wrap.innerHTML = `
+    <div class="next-step-row">
+      <i class="ti ti-arrow-big-right-line" aria-hidden="true"></i>
+      <span class="next-step-label">次の一手</span>
+      <span class="next-step-text">${escHtml(na.text)}</span>
+      <button type="button" class="btn btn-primary" id="nextStepBtn">${escHtml(na.button)}</button>
+    </div>${moneyHtml}`;
+
+  document.getElementById("nextStepBtn")?.addEventListener("click", () => {
+    if (na.tab) activateTab(na.tab);
+    if (na.focus) {
+      const el = document.getElementById(na.focus);
+      if (el) { el.focus(); el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    }
+  });
+  document.getElementById("nextStepMoneyLink")?.addEventListener("click", (e) => {
+    e.preventDefault();
+    activateTab("shipping");
+  });
 }
 
 // チェックリスト変更を即座に保存
@@ -1314,16 +1374,20 @@ async function sendMail() {
   }
 }
 
-// タブ切替
+// タブ切替（「次の一手」ボタンからの遷移と、タブクリックの両方がここを通る＝2026-09-14）
+function activateTab(tabName) {
+  document.querySelectorAll(".tab").forEach((t) => {
+    const on = t.dataset.tab === tabName;
+    t.classList.toggle("active", on);
+    t.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
+  document.getElementById(`tab-${tabName}`)?.classList.add("active");
+}
+
 function initTabs() {
   document.querySelectorAll(".tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      document.querySelectorAll(".tab").forEach((t) => { t.classList.remove("active"); t.setAttribute("aria-selected", "false"); });
-      document.querySelectorAll(".tab-content").forEach((c) => c.classList.remove("active"));
-      tab.classList.add("active");
-      tab.setAttribute("aria-selected", "true");
-      document.getElementById(`tab-${tab.dataset.tab}`).classList.add("active");
-    });
+    tab.addEventListener("click", () => activateTab(tab.dataset.tab));
   });
 }
 
@@ -1373,6 +1437,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  renderNextStep(); // 次の一手（まだ shipmentsCache が空でも1行目は出せる。2行目は購読が来てから更新）
   // 伴走支援承諾書カード（事前確認タブの先頭）。メールは既存の sendCaseEmail を流用
   initConsentCard({
     db, caseId,
@@ -1435,6 +1500,8 @@ onAuthStateChanged(auth, async (user) => {
   // ステータス変更
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
     await changeStatus(e.target.value, user.uid, user.displayName || user.email);
+    currentCase.status = Number(e.target.value);
+    renderNextStep(); // 次の一手を即座に更新
     showToast(`ステータスを「${STATUS_LABELS[e.target.value]}」に変更しました`);
   });
 
@@ -1539,7 +1606,9 @@ onAuthStateChanged(auth, async (user) => {
   // 出荷・請求・入金タブ購読（読み取り専用。orderBy は付けない＝複合インデックス不要。並びはクライアント側で createdAt 降順）
   const shipQ = query(collection(db, "shipments"), where("caseId", "==", caseId));
   onSnapshot(shipQ, (snap) => {
-    renderShippingTab(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+    shipmentsCache = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    renderShippingTab(shipmentsCache);
+    renderNextStep(); // 次の一手2行目（お金の流れ）を同じデータで更新
   }, (err) => {
     console.warn("shipments subscribe:", err.message || err);
     renderShippingError();

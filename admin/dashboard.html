@@ -8,6 +8,21 @@
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    /* はじめての方へカード（rule08準拠・crm.css未追加分のみここに置く） */
+    .onboarding-card .todo-row { align-items: flex-start; }
+    .onboarding-card .todo-label { padding-top: 10px; }
+    .onboarding-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: var(--space-3);
+      margin-top: var(--space-4);
+    }
+    .onboarding-manual-link { font-size: 13px; }
+    .onboarding-manual-link a { color: var(--color-primary-dark); }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -41,8 +56,36 @@
       </div>
 
       <div id="dashContent" style="display:none">
+        <!-- はじめての方へ（3ステップ・初回のみ／users/{自分}.onboardingDismissedAt が無いときだけ表示） -->
+        <div id="onboardingCard" class="card onboarding-card" style="display:none;margin-bottom:20px">
+          <div class="card-header"><strong>はじめての方へ — この画面の使い方は3つだけ</strong></div>
+          <div class="card-body">
+            <div class="todo-list">
+              <div class="todo-row">
+                <div class="todo-icon"><i class="ti ti-circle-number-1" aria-hidden="true"></i></div>
+                <div class="todo-label">毎朝はホームを開く — 「今日やること」を上から順に片付けます</div>
+                <a class="btn btn-secondary todo-open" href="#todoCard">今日やることへ</a>
+              </div>
+              <div class="todo-row">
+                <div class="todo-icon"><i class="ti ti-circle-number-2" aria-hidden="true"></i></div>
+                <div class="todo-label">案件は案件詳細で — 上に出る「次の一手」のとおりに進めます</div>
+                <a class="btn btn-secondary todo-open" href="/cases.html">案件一覧を開く</a>
+              </div>
+              <div class="todo-row">
+                <div class="todo-icon"><i class="ti ti-circle-number-3" aria-hidden="true"></i></div>
+                <div class="todo-label">お金は出荷・請求・入金で — 行のボタンを左から順に押します</div>
+                <a class="btn btn-secondary todo-open" href="/supply.html?tab=shipments">出荷・請求・入金を開く</a>
+              </div>
+            </div>
+            <div class="onboarding-footer">
+              <p class="onboarding-manual-link"><a href="/manual.html">くわしくはマニュアル §0 業務の流れ</a></p>
+              <button type="button" id="onboardingDismissBtn" class="btn btn-secondary">わかりました（今後表示しない）</button>
+            </div>
+          </div>
+        </div>
+
         <!-- 今日やること -->
-        <div class="card todo-card" style="margin-bottom:20px">
+        <div id="todoCard" class="card todo-card" style="margin-bottom:20px">
           <div class="card-header"><strong>今日やること</strong></div>
           <div class="card-body">
             <p class="todo-hint">上から順に片付けると業務が止まりません。</p>

@@ -42,6 +42,22 @@ export function phaseEntryStatus(phaseId) {
   return p ? p.statuses[0] : null;
 }
 
+// 案件ステータス → 次の一手（案件詳細ヘッダーのガイドとマニュアル §0 が同じ内容を指す。2026-09-14）
+export const NEXT_ACTION = {
+  1:  { text: "内容を確認し、重複がないか見ます",                 tab: "timeline",  button: "対応記録を見る" },
+  2:  { text: "電話・メールで確認し、対応記録を残します",           tab: "timeline",  button: "対応記録を追加", focus: "addActivityBtn" },
+  3:  { text: "担当営業を決めます",                                 tab: null,        button: "担当営業を選ぶ", focus: "assigneeSelect" },
+  5:  { text: "承諾書の署名依頼と、事前準備のご案内を送ります",     tab: "pre",       button: "事前確認へ" },
+  6:  { text: "訪問・オンライン支援の日程を決めます",               tab: "onsite",    button: "当日タブへ" },
+  7:  { text: "当日の工程を実施し、伴走支援を記録します",           tab: "onsite",    button: "当日タブへ" },
+  8:  { text: "申請書類をそろえます",                               tab: "documents", button: "書類チェックへ" },
+  9:  { text: "申請日を記録します",                                 tab: "subsidy",   button: "申請情報へ" },
+  10: { text: "採択の結果を待ち、届いたら記録します",               tab: "subsidy",   button: "申請情報へ" },
+  11: { text: "振込を確認し、アフターフォローへ進みます",           tab: "after",     button: "アフターへ" },
+  12: { text: "出荷側の請求・入金・領収証が済んでいるか確かめ、完了にします", tab: "shipping", button: "出荷・請求・入金へ" },
+  // 13 完了・4 失注 は表示しない
+};
+
 // パイプライン順（フェーズ1→5、失注は末尾）。サブ状態の順序も保持。
 export const STATUS_ORDER = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 4];
 
