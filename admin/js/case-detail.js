@@ -16,6 +16,8 @@ import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
+// 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
+import { invoiceTotals } from "/js/invoice-doc.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -326,6 +328,127 @@ function toggleRejectionField() {
   const status = document.getElementById("subsidyStatus").value;
   document.getElementById("rejectionGroup").style.display =
     status === "rejected" ? "block" : "none";
+}
+
+// ===== 出荷・請求・入金タブ（読み取り専用） =====
+// 金額を動かす操作は複製しない。ここは「見せる」「/supply.html・/supply-print.html へ飛ばす」だけ。
+// 状態の日本語・バッジ色は admin/js/supply.js の SHIP_STATUS / SHIP_STATUS_BADGE と同じ見た目に揃える
+// （supply.js は export していないローカル定数なので import できず、表示用にここへ複製している。
+//   計算ロジックは複製せず invoiceTotals を必ず通す）。
+const SHIP_STATUS_JA = { draft: "下書き", shipped: "発送済", invoiced: "請求済", paid: "入金済", canceled: "キャンセル" };
+const SHIP_STATUS_BADGE_NO = { draft: 2, shipped: 7, invoiced: 9, paid: 3, canceled: 4 };
+function yen(n) { return "¥" + Number(n || 0).toLocaleString("ja-JP"); }
+function shipCreatedAtMs(s) { return s.createdAt?.toMillis ? s.createdAt.toMillis() : 0; }
+
+// 4段ステッパー（発送済 → 請求書 → 入金 → 領収証）の各段の完了判定
+function shipStepsDone(s) {
+  const st = s.status || "shipped";
+  const order = ["draft", "shipped", "invoiced", "paid"];
+  const idx = order.indexOf(st);
+  return {
+    shipped: idx >= order.indexOf("shipped"),
+    invoiced: idx >= order.indexOf("invoiced"),
+    paid: st === "paid",
+    receipt: !!s.receiptIssuedAt,
+  };
+}
+
+function shipStepperHtml(s) {
+  const done = shipStepsDone(s);
+  const steps = [
+    { key: "shipped", label: "発送済" },
+    { key: "invoiced", label: "請求書" },
+    { key: "paid", label: "入金" },
+    { key: "receipt", label: "領収証" },
+  ];
+  return `<div class="ship-steps">` + steps.map((st, i) => {
+    const sep = i > 0 ? `<div class="ship-step-sep${done[st.key] && done[steps[i - 1].key] ? " done" : ""}"></div>` : "";
+    return sep + `<div class="ship-step${done[st.key] ? " done" : ""}"><i class="ti ti-${done[st.key] ? "circle-check-filled" : "circle"}" aria-hidden="true"></i> ${st.label}</div>`;
+  }).join("") + `</div>`;
+}
+
+// 「次にやること」は状態ごとに1つだけ。supply.html?tab=shipments&so=… は別担当が実装中の契約
+// （案件詳細からは触らず、遷移先の URL 形式だけ合わせる）
+function shipNextActionHtml(s) {
+  const st = s.status || "shipped";
+  const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
+  const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
+  const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
+  if (st === "draft") {
+    return `<a class="btn btn-primary" href="${soUrl}"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 発送済にする</a>`;
+  }
+  if (st === "shipped") {
+    return `<a class="btn btn-primary" href="${invUrl}" target="_blank" rel="noopener"><i class="ti ti-file-invoice" aria-hidden="true"></i> 請求書を出す</a>`;
+  }
+  if (st === "invoiced") {
+    return `<a class="btn btn-primary" href="${soUrl}"><i class="ti ti-cash" aria-hidden="true"></i> 入金を記録する</a>`;
+  }
+  if (st === "paid") {
+    if (!s.receiptIssuedAt) {
+      return `<a class="btn btn-primary" href="${receiptUrl}" target="_blank" rel="noopener"><i class="ti ti-receipt-2" aria-hidden="true"></i> 領収証を出す</a>`;
+    }
+    return `<span class="ship-next-msg"><i class="ti ti-circle-check" aria-hidden="true"></i> お金の流れは完了しています。申請情報タブへ進んでください。</span>`;
+  }
+  return ""; // canceled: 主ボタンなし
+}
+
+function shipCardHtml(s) {
+  const st = s.status || "shipped";
+  const canceled = st === "canceled";
+  const totals = invoiceTotals(s);
+  const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
+  const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
+  const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
+  const links = [`<a class="btn btn-secondary" href="${soUrl}" style="font-size:12px;padding:6px 12px"><i class="ti ti-list" aria-hidden="true"></i> 一覧で開く</a>`];
+  if (st === "invoiced" || st === "paid") {
+    links.push(`<a class="btn btn-secondary" href="${invUrl}" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-file-invoice" aria-hidden="true"></i> 請求書PDF</a>`);
+  }
+  if (st === "paid") {
+    links.push(`<a class="btn btn-secondary" href="${receiptUrl}" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-receipt-2" aria-hidden="true"></i> 領収証PDF</a>`);
+  }
+  return `
+    <div class="ship-card${canceled ? " is-canceled" : ""}">
+      <div class="ship-card-head">
+        <span class="ship-no">${escHtml(s.soNumber || "—")}</span>
+        <span class="badge badge-${SHIP_STATUS_BADGE_NO[st] || 7}">${SHIP_STATUS_JA[st] || st}</span>
+        <span class="ship-origin"><i class="ti ti-map-pin" aria-hidden="true"></i> ${escHtml(s.originLocationName || "—")}</span>
+        <span class="ship-amount">${yen(totals.payable)}（税込）</span>
+      </div>
+      ${canceled
+        ? `<p style="font-size:13px;color:var(--color-ink-muted);margin:0">この出荷はキャンセルされています。</p>`
+        : shipStepperHtml(s)
+          + `<div class="ship-next">${shipNextActionHtml(s)}</div>`
+      }
+      <div class="ship-links">${links.join("")}</div>
+    </div>`;
+}
+
+function renderShippingTab(ships) {
+  const loadingEl = document.getElementById("shippingLoading");
+  const errorEl = document.getElementById("shippingError");
+  const emptyEl = document.getElementById("shippingEmpty");
+  const listEl = document.getElementById("shippingList");
+  if (loadingEl) loadingEl.style.display = "none";
+  if (errorEl) errorEl.style.display = "none";
+  if (!ships.length) {
+    if (emptyEl) emptyEl.style.display = "block";
+    if (listEl) listEl.innerHTML = "";
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = "none";
+  const sorted = [...ships].sort((a, b) => shipCreatedAtMs(b) - shipCreatedAtMs(a));
+  if (listEl) listEl.innerHTML = sorted.map(shipCardHtml).join("");
+}
+
+function renderShippingError() {
+  const loadingEl = document.getElementById("shippingLoading");
+  const errorEl = document.getElementById("shippingError");
+  const emptyEl = document.getElementById("shippingEmpty");
+  const listEl = document.getElementById("shippingList");
+  if (loadingEl) loadingEl.style.display = "none";
+  if (emptyEl) emptyEl.style.display = "none";
+  if (listEl) listEl.innerHTML = "";
+  if (errorEl) errorEl.style.display = "block";
 }
 
 // チェックリスト変更を即座に保存
@@ -1412,6 +1535,16 @@ onAuthStateChanged(auth, async (user) => {
     if (editingSessionId) { sessionsCache = latestSessions; return; }
     renderSessions(latestSessions);
   });
+
+  // 出荷・請求・入金タブ購読（読み取り専用。orderBy は付けない＝複合インデックス不要。並びはクライアント側で createdAt 降順）
+  const shipQ = query(collection(db, "shipments"), where("caseId", "==", caseId));
+  onSnapshot(shipQ, (snap) => {
+    renderShippingTab(snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+  }, (err) => {
+    console.warn("shipments subscribe:", err.message || err);
+    renderShippingError();
+  });
+  document.getElementById("shipFromCaseBtn2")?.setAttribute("href", `/supply.html?ship=${caseId}`);
 
   // AIアシスタント
   document.querySelectorAll(".ai-btn").forEach((b) =>

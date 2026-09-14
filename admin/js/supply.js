@@ -28,6 +28,7 @@ let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
 let partnerOrdersCache = []; // 受注一覧（出荷の更新時に再描画するため保持）
+let shipDeepLinkTried = false; // ?so= の該当行スクロールは最初の描画で1回だけ試す（onSnapshotで何度も再描画されるため）
 function ordererList(){
   return (Array.isArray(appSettings.poOrderers) && appSettings.poOrderers.length)
     ? appSettings.poOrderers
@@ -766,7 +767,7 @@ let activePartners = [];
 // ===== 出荷の修正 =====
 // 登録したあとに数量・送付先・送料を直せるようにする（2026-09-01）。
 // 直すときの決めごと:
-//   ・出荷種別（＝請求先）はここでは変えない。付け替えは「種別変更」ボタン側の担当。
+//   ・出荷種別（＝請求先）はここでは変えない。付け替えは「請求先を変える」ボタン側の担当。
 //     あちらは単価を入れ直すかどうかをプレビュー付きで選ばせるので、二重に持たない
 //   ・もともと入っていた品番の単価は動かさない。修正は「直す」ためのもので、
 //     値段を作り直すためのものではない（直送発注から作った出荷は発注時の単価で入っている）
@@ -880,7 +881,7 @@ function openShip(existing){
         + `<strong>数量・送料・出荷日は変えられません</strong>（請求書に印字される内容のため）。送付先の書き間違いだけ直せます。<br>`
         + `金額を直す必要がある場合は、入金の記録を取り消して請求をやり直すか、この出荷を削除して作り直してください。`
       : `もともと入っている品番の単価は、登録したときのまま変えません（新しく足した品番だけ今の単価が入ります）。<br>`
-        + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「種別変更」</strong>から行ってください。`
+        + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「請求先を変える」</strong>から行ってください。`
         + (shipUsedStock(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。` 
                             : `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`);
   }
@@ -1216,6 +1217,21 @@ function billToEmailOf(s){
   return s.email||s.contactEmail||"";
 }
 
+// 深いリンクの契約: supply.html?tab=shipments&so=SH-2026-0013 で開いたとき、
+// 出荷一覧の該当行（soNumber一致）へスクロールし、一時的に強調する。見つからなければ何もしない（エラーを出さない）。
+// パラメータ名は "so"・値は soNumber で固定（案件詳細タブなど他画面が依存するため変えないこと）。
+function scrollToShipmentFromUrl(){
+  const so = new URLSearchParams(location.search).get("so");
+  if(!so) return;
+  let row;
+  try{ row = document.querySelector(`#shipBody tr[data-so="${CSS.escape(so)}"]`); }catch(_){ row = null; }
+  if(!row) return;
+  row.scrollIntoView({behavior:"smooth", block:"center"});
+  // 既存のCSS変数（薄い警告色）でひと目でわかるよう3秒ほど背景を付ける
+  row.style.transition = "background-color .3s";
+  row.style.backgroundColor = "var(--color-warning-soft)";
+  setTimeout(()=>{ row.style.backgroundColor = ""; }, 3000);
+}
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
@@ -1283,20 +1299,54 @@ function renderShipments(ships){
             : `<div style="font-size:12px;color:var(--color-warn,#c87a1f)">経理へ未報告</div>`);
     }
     let lifeBtns="";
-    if(st==="draft") lifeBtns=`<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>出荷を確定</button>`;
-    else if(st==="shipped") lifeBtns=`<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`;
-    else if(st==="invoiced") lifeBtns=`<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金記録</button>`
-      // 同じ請求先の過入金は金額つきで、別請求先（グループ）の分しか無いときは「別請求先」と明示して出す
-      + (creditBalanceForBillTo(s)>0
-          ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`
-          : (crossCreditBalanceFor(s)>0
-              ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（別請求先 ${yen(Math.min(crossCreditBalanceFor(s),remain))}）</button>`
-              : ""))
-      + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メール${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
-      // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
-      + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告</button>`);
-    else if(st==="paid") lifeBtns=`<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金履歴</button>`;
-    return `<tr>
+    // 帳票リンク・修正／種別変更／削除は全状態で共通（表示条件は元のまま）。
+    // 状態ごとに並び順だけ変えられるよう部品化する（2026-09-14 ボタン文言・並び順の整理）。
+    const docInvoice = `<a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>`;
+    const docReceipt = st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収証${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : "";
+    const docRefund = refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : "";
+    const docShipnote = `<a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>`;
+    const docLetterpack = `<a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>`;
+    const editBtn = `<button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${shipIsLocked(s)?"請求済のため送付先のみ修正できます":"数量・送付先・送料を修正"}"><i class="ti ti-edit"></i>送付先・数量を直す</button>`;
+    const typeBtn = `<button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>請求先を変える</button>`;
+    const delBtn = `<button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>この出荷を削除</button>`;
+    if(st==="draft"){
+      // 流れの順: 発送済にする →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → この出荷を削除
+      lifeBtns = `<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>発送済にする</button>`
+        + docInvoice + docLetterpack + docShipnote + docRefund
+        + editBtn + typeBtn + delBtn;
+    } else if(st==="shipped"){
+      // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → この出荷を削除
+      lifeBtns = docInvoice
+        + `<button class="btn btn-secondary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px">請求済にする</button>`
+        + editBtn + docLetterpack + docShipnote + docRefund
+        + typeBtn + delBtn;
+    } else if(st==="invoiced"){
+      // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → この出荷を削除
+      lifeBtns = `<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金を記録する</button>`
+        // 同じ請求先の過入金は金額つきで、別請求先（グループ）の分しか無いときは「別請求先」と明示して出す
+        + (creditBalanceForBillTo(s)>0
+            ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`
+            : (crossCreditBalanceFor(s)>0
+                ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（別請求先 ${yen(Math.min(crossCreditBalanceFor(s),remain))}）</button>`
+                : ""))
+        + docInvoice
+        // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
+        + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
+        + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
+        + docRefund + docLetterpack + docShipnote
+        + editBtn + typeBtn + delBtn;
+    } else if(st==="paid"){
+      // 流れの順: 領収証 → 入金の履歴を見る →（返金明細）→ 請求書・宛名・送付状 → 送付先・数量を直す → 請求先を変える → この出荷を削除
+      lifeBtns = docReceipt
+        + `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴を見る</button>`
+        + docRefund + docInvoice + docLetterpack + docShipnote
+        + editBtn + typeBtn + delBtn;
+    } else {
+      // canceled 等: 従来どおり帳票リンク＋修正・種別変更・削除のみ
+      lifeBtns = docInvoice + docRefund + docLetterpack + docShipnote + editBtn + typeBtn + delBtn;
+    }
+    // data-so: 深いリンク（?so=SH-2026-0013）で該当行を見つけてスクロールするための目印
+    return `<tr data-so="${esc(s.soNumber)}">
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
       <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}</td>
@@ -1306,14 +1356,6 @@ function renderShipments(ships){
              横スクロールに頼らず、収まらなければ折り返して必ず全部見えるようにする。 -->
         <div class="row-actions">
         ${lifeBtns}
-        <a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt"></i>請求書</a>
-        ${st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収証${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : ""}
-        ${refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : ""}
-        <a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>
-        <a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>
-        <button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${shipIsLocked(s)?"請求済のため送付先のみ修正できます":"数量・送付先・送料を修正"}"><i class="ti ti-edit"></i>修正</button>
-        <button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>種別変更</button>
-        <button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>削除</button>
         </div>
       </td>
     </tr>`;
@@ -1545,7 +1587,7 @@ function recordPayment(s){
           <td class="num" style="${h.kind==="refund"?"color:var(--color-danger)":""}">${h.kind==="refund"?"−":""}${yen(h.amount)}</td>
           <td class="num">${yen(run)}</td>
           <td style="font-size:12px">${esc(h.note)}</td>
-          <td style="white-space:nowrap"><button class="btn btn-danger ${h.kind==="pay"?"pay-del":"refund-del"}" data-idx="${h.idx}" style="font-size:11px;padding:2px 8px" aria-label="この記録を取り消す"><i class="ti ti-x" aria-hidden="true"></i> 取消</button></td></tr>`;
+          <td style="white-space:nowrap"><button class="btn btn-danger ${h.kind==="pay"?"pay-del":"refund-del"}" data-idx="${h.idx}" style="font-size:11px;padding:2px 8px" aria-label="この記録を取り消す"><i class="ti ti-x" aria-hidden="true"></i> ${h.kind==="pay"?"入金を取り消す":"返金を取り消す"}</button></td></tr>`;
         }).join("")
       }</tbody></table></div>`
     : `<p style="font-size:13px;color:var(--color-ink-muted);margin:0">入金・返金の記録はまだありません</p>`;
@@ -2352,6 +2394,7 @@ onAuthStateChanged(auth, async (user)=>{
     shipments=snap.docs.map(d=>({_id:d.id,...d.data()}));
     renderShipments(shipments);
     if(partnerOrdersCache.length) renderPartnerOrders(partnerOrdersCache);
+    if(!shipDeepLinkTried){ shipDeepLinkTried=true; scrollToShipmentFromUrl(); }
   });
   // 受注（認定事業者から）
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{

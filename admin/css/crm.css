@@ -340,6 +340,23 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   min-width: 240px;
 }
 
+/* 出荷一覧（#shipBody）だけの調整（2026-09-14）。
+   ボタン文言を「動詞＋結果」にして長くなった結果、ノートPCの幅（約1470px）で操作ボタンが
+   横スクロールの外へ押し出されていた。「行のボタンは左から順に押す」と案内している以上、見えている必要がある。
+   ・送付先・内容・状態バッジの列は折り返しを許す（nowrap で表が広がるのが主因）
+   ・操作ボタンは2列のグリッドにして幅を約220pxに収める */
+#shipBody td:nth-child(1),
+#shipBody td:nth-child(3),
+#shipBody td:nth-child(4) { white-space: normal; }
+#shipBody .row-actions {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 4px 6px;
+  min-width: 0;
+  align-items: stretch;
+}
+#shipBody .row-actions .btn { justify-content: flex-start; }
+
 .conn-tag {
   display: inline-block;
   font-size: 11px;

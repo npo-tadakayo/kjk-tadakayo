@@ -8,6 +8,23 @@
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    /* 「出荷・請求・入金」タブ専用（read-only。金額の操作は supply.html 側のみ・ここでは複製しない） */
+    .ship-card { border: 1px solid var(--color-line); border-radius: var(--radius-lg); padding: var(--space-4) var(--space-5); margin-bottom: var(--space-4); background: var(--color-surface); }
+    .ship-card.is-canceled { opacity: .55; }
+    .ship-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); margin-bottom: var(--space-3); }
+    .ship-card-head .ship-no { font-weight: 700; font-size: 14px; }
+    .ship-card-head .ship-amount { font-weight: 700; font-size: 15px; color: var(--color-ink); margin-left: auto; }
+    .ship-card-head .ship-origin { font-size: 12px; color: var(--color-ink-muted); }
+    .ship-steps { display: flex; align-items: center; gap: 0; margin: var(--space-3) 0; flex-wrap: wrap; }
+    .ship-step { display: flex; align-items: center; gap: var(--space-2); min-height: 44px; padding: var(--space-2) var(--space-3); border-radius: 999px; font-size: 13px; font-weight: 600; border: 1.5px solid var(--color-line); color: var(--color-ink-muted); }
+    .ship-step.done { background: var(--color-success-soft); border-color: var(--color-success); color: var(--color-success); }
+    .ship-step-sep { width: 20px; height: 2px; background: var(--color-line); flex: 0 0 auto; }
+    .ship-step-sep.done { background: var(--color-success); }
+    .ship-next { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+    .ship-next-msg { font-size: 13px; color: var(--color-ink-muted); }
+    .ship-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+  </style>
 </head>
 <body>
   <div class="layout">
@@ -95,13 +112,13 @@
               <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷を作成
             </a>
             <button class="btn btn-ghost" id="archiveBtn" type="button" style="display:none">
-              <i class="ti ti-archive" aria-hidden="true"></i> 対象外にする
+              <i class="ti ti-archive" aria-hidden="true"></i> 重複として対象外にする
             </button>
             <button class="btn btn-ghost" id="unarchiveBtn" type="button" style="display:none">
               <i class="ti ti-archive-off" aria-hidden="true"></i> 対象外を解除
             </button>
             <button class="btn btn-ghost" id="deleteBtn" type="button" style="display:none;color:var(--color-danger)">
-              <i class="ti ti-trash" aria-hidden="true"></i> 完全削除
+              <i class="ti ti-trash" aria-hidden="true"></i> この案件を完全に削除
             </button>
           </div>
         </div>
@@ -137,6 +154,9 @@
           </button>
           <button class="tab" role="tab" data-tab="documents" aria-selected="false">
             <i class="ti ti-files" aria-hidden="true"></i> 書類チェック
+          </button>
+          <button class="tab" role="tab" data-tab="shipping" aria-selected="false">
+            <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷・請求・入金
           </button>
           <button class="tab" role="tab" data-tab="subsidy" aria-selected="false">
             <i class="ti ti-coin-yen" aria-hidden="true"></i> 申請情報
@@ -179,7 +199,7 @@
               </div>
               <div style="text-align:right">
                 <button class="btn btn-primary" id="addActivityBtn" type="button">
-                  <i class="ti ti-plus" aria-hidden="true"></i>記録を追加
+                  <i class="ti ti-plus" aria-hidden="true"></i>対応記録を追加
                 </button>
               </div>
             </div>
@@ -221,7 +241,7 @@
               </div>
               <div style="text-align:right">
                 <button class="btn btn-primary" id="addSessionBtn" type="button">
-                  <i class="ti ti-plus" aria-hidden="true"></i>セッションを記録
+                  <i class="ti ti-plus" aria-hidden="true"></i>伴走支援を記録
                 </button>
               </div>
               <div id="sessionUploadProgress" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-top:8px">
@@ -356,6 +376,31 @@
           </div>
         </div>
 
+        <!-- 出荷・請求・入金タブ（読み取り専用。金額を動かす操作は「出荷・請求・入金」画面に一本化。ここは「見せる」「飛ばす」だけ） -->
+        <div class="tab-content" id="tab-shipping">
+          <p class="page-intro" style="margin:0 0 var(--space-3)">この案件に紐づいた出荷のお金の流れです。金額の操作は「出荷・請求・入金」画面で行います。</p>
+          <p style="margin:0 0 var(--space-4);font-size:12px;color:var(--color-ink-muted)">※ 手で作った古い出荷（案件に紐づいていないもの）はここには出ません。</p>
+
+          <div id="shippingLoading" class="loading">
+            <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...
+          </div>
+
+          <div id="shippingError" class="empty-state" style="display:none">
+            <i class="ti ti-alert-triangle" aria-hidden="true"></i>
+            <p>出荷の情報を取得できませんでした</p>
+          </div>
+
+          <div id="shippingEmpty" class="empty-state" style="display:none">
+            <i class="ti ti-truck-delivery" aria-hidden="true"></i>
+            <p>この案件に紐づいた出荷はまだありません。</p>
+            <a class="btn btn-primary" id="shipFromCaseBtn2" href="#" style="margin-top:var(--space-3);display:inline-flex">
+              <i class="ti ti-plus" aria-hidden="true"></i> この案件から出荷を作成
+            </a>
+          </div>
+
+          <div id="shippingList"></div>
+        </div>
+
         <!-- 申請情報タブ -->
         <div class="tab-content" id="tab-subsidy">
           <div class="card">
@@ -449,7 +494,7 @@
                 <div style="display:flex;gap:8px">
                   <input class="form-control" type="text" id="aiQuestion" placeholder="例: この事業所への次の一手は？">
                   <button class="btn btn-secondary ai-btn" data-task="assistant" type="button" style="flex:0 0 auto">
-                    <i class="ti ti-send" aria-hidden="true"></i> 質問
+                    <i class="ti ti-send" aria-hidden="true"></i> AIに質問する
                   </button>
                 </div>
               </div>
@@ -506,10 +551,10 @@
   </div>
 
   <!-- 対象外にする モーダル -->
-  <div class="modal-overlay" id="archiveModal" role="dialog" aria-modal="true" aria-label="対象外にする">
+  <div class="modal-overlay" id="archiveModal" role="dialog" aria-modal="true" aria-label="重複として対象外にする">
     <div class="modal">
       <div class="modal-header">
-        <h2>対象外にする</h2>
+        <h2>重複として対象外にする</h2>
         <button class="btn btn-secondary" id="archiveCancelBtn" type="button" aria-label="閉じる">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
@@ -536,7 +581,7 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="archiveCancelBtn2" type="button" onclick="document.getElementById('archiveModal').classList.remove('open')">キャンセル</button>
         <button class="btn btn-primary" id="archiveConfirmBtn" type="button">
-          <i class="ti ti-archive" aria-hidden="true"></i>対象外にする
+          <i class="ti ti-archive" aria-hidden="true"></i>重複として対象外にする
         </button>
       </div>
     </div>
