@@ -777,6 +777,141 @@ let activePartners = [];
 let editingShip = null;                 // 修正中の出荷（新規登録なら null）
 function shipIsLocked(s){ return s && (s.status==="invoiced" || s.status==="paid" || s.status==="canceled"); }
 
+// ===== 伴走支援費（電話・紙で受けた案件など、CRMで手作りする出荷の穴埋め・2026-09-14）=====
+// Webからのお申し込みは Cloud Functions（shipmentItemsFromQuote）が「カードリーダー」に加えて
+// 「伴走支援費」「金額調整」の明細を自動で入れるので、請求書が助成金の上限額（見積もりと同額）になる。
+// CRMで手作りする出荷（電話・紙で受けた案件）には同じ仕組みが無かったので、ここで同じ形の明細を作れるようにする。
+// 事業所へ直接請求する出荷（direct）だけが対象。認定事業者への直送（dropship）は卸なので対象外。
+function subsidyApplicableFor(s){
+  return s ? !(s.shipType==="dropship" || s.partnerEmail)
+           : document.getElementById("shipType").value!=="dropship";
+}
+function subsidyEnabled(){
+  const el=document.getElementById("shipSubsidyOn");
+  return !!(el && el.checked);
+}
+function fillSubsidyPlanSelect(){
+  const el=document.getElementById("shipSubsidyPlan"); const EP=window.EstimatePricing;
+  if(!el || !EP) return;
+  el.innerHTML = '<option value="">選択してください</option>' +
+    Object.keys(EP.PLANS).map(k=>{ const p=EP.PLANS[k];
+      return `<option value="${esc(k)}">${esc(p.label)}（上限${yen(p.limit)}・最大${p.maxQty}台）</option>`; }).join("");
+}
+// 商品欄（#shipItems）に今入っている品番別の台数。伴走支援の既定値・自己負担の計算に使う
+function subsidyProductQty(){
+  const EP=window.EstimatePricing;
+  const qtyOf=(sku)=>{ const inp=document.querySelector(`#shipItems .qty-input[data-sku="${sku}"]`); return inp?(parseInt(inp.value,10)||0):0; };
+  if(!EP) return {bt:0, usb:0};
+  return { bt: qtyOf(EP.SKU.BT), usb: qtyOf(EP.SKU.USB_A)+qtyOf(EP.SKU.USB_C) };
+}
+// 補助対象台数の既定値。Bluetoothを優先してプランの最大台数まで割り当て、残り枠をUSBに充当する
+function subsidyAutoTargets(){
+  const EP=window.EstimatePricing; if(!EP) return null;
+  const plan=EP.PLANS[document.getElementById("shipSubsidyPlan").value]; if(!plan) return null;
+  const prod=subsidyProductQty();
+  const bt=Math.min(prod.bt, plan.maxQty);
+  const usb=Math.min(prod.usb, Math.max(0, plan.maxQty-bt));
+  return {bt, usb};
+}
+// 人が手で台数を直したら data-auto="0" が立つ。以後は商品欄が変わっても勝手に上書きしない
+function refreshSubsidyAutoDefaults(){
+  if(!subsidyEnabled()) return;
+  const t=subsidyAutoTargets(); if(!t) return;
+  const btEl=document.getElementById("shipSubsidyBt"), usbEl=document.getElementById("shipSubsidyUsb");
+  if(btEl && btEl.dataset.auto!=="0") btEl.value=t.bt;
+  if(usbEl && usbEl.dataset.auto!=="0") usbEl.value=t.usb;
+}
+// 伴走支援費まわりの金額（EstimatePricing.computeAmounts の戻り値そのもの）。プラン未選択なら null
+function subsidyAmounts(){
+  const EP=window.EstimatePricing; if(!EP) return null;
+  const planKey=document.getElementById("shipSubsidyPlan").value;
+  if(!EP.PLANS[planKey]) return null;
+  const btSub=parseInt(document.getElementById("shipSubsidyBt").value,10)||0;
+  const usbSub=parseInt(document.getElementById("shipSubsidyUsb").value,10)||0;
+  const prod=subsidyProductQty();
+  const btExtra=Math.max(0, prod.bt-btSub), usbExtra=Math.max(0, prod.usb-usbSub);
+  return EP.computeAmounts(planKey, btSub, usbSub, btExtra, usbExtra);
+}
+// チェックONなら Cloud Functions の shipmentItemsFromQuote と同じ形の明細（sku/name/qty/unitPrice/nonStock）を返す
+function subsidyExtraItems(){
+  if(!subsidyEnabled()) return [];
+  const a=subsidyAmounts(); if(!a) return [];
+  const items=[];
+  if(a.accFeeIncl>0) items.push({ sku:"support-fee", name:`伴走支援費（補助対象${a.subsidyTotal}台）`, qty:1, unitPrice:a.accFeeIncl, nonStock:true });
+  if(a.discount>0) items.push({ sku:"discount", name:"金額調整", qty:1, unitPrice:-a.discount, nonStock:true });
+  return items;
+}
+// 出荷ドキュメントに保存する伴走支援費の付帯情報（修正で開いたときの復元用。明細そのものは resolveShipItems 側）
+function subsidyPatch(){
+  return subsidyEnabled()
+    ? { subsidyCategory: document.getElementById("shipSubsidyPlan").value||"",
+        subsidyQty: { bt: parseInt(document.getElementById("shipSubsidyBt").value,10)||0,
+                      usb: parseInt(document.getElementById("shipSubsidyUsb").value,10)||0 } }
+    : { subsidyCategory: "", subsidyQty: { bt:0, usb:0 } };
+}
+function subsidyPlanMissing(){
+  if(!subsidyEnabled()) return false;
+  const EP=window.EstimatePricing;
+  return !(EP && EP.PLANS[document.getElementById("shipSubsidyPlan").value]);
+}
+// モーダル内訳表示（送料は含まない・カードリーダー＋伴走支援費＋金額調整のみ）
+function updateSubsidyBody(){
+  const bd=document.getElementById("shipSubsidyBreakdown"); if(!bd) return;
+  if(!subsidyEnabled()){ bd.innerHTML=""; return; }
+  const a=subsidyAmounts();
+  if(!a){ bd.innerHTML=`<span style="color:var(--color-danger)">プランを選んでください</span>`; return; }
+  bd.innerHTML = `伴走支援費 ${yen(a.accFeeIncl)}（補助対象${a.subsidyTotal}台）<br>`
+    + (a.discount>0 ? `金額調整 −${yen(a.discount)}<br>` : "")
+    + `合計（税込） ${yen(a.totalIncl)}<br>`
+    + `助成金充当 ${yen(a.grantAmt)}　／　自己負担 ${yen(a.selfPay)}`;
+}
+// 修正モードで開いたとき、保存済みの出荷から伴走支援費の入力欄を復元する
+function restoreSubsidyFromShip(s){
+  const items=s.items||[];
+  const supportItem=items.find(i=>i.sku==="support-fee");
+  const onEl=document.getElementById("shipSubsidyOn"), planEl=document.getElementById("shipSubsidyPlan");
+  const btEl=document.getElementById("shipSubsidyBt"), usbEl=document.getElementById("shipSubsidyUsb");
+  const EP=window.EstimatePricing;
+  onEl.checked=!!supportItem;
+  document.getElementById("shipSubsidyBody").style.display = onEl.checked ? "" : "none";
+  if(!supportItem){
+    planEl.value=""; btEl.value=0; btEl.dataset.auto="1"; usbEl.value=0; usbEl.dataset.auto="1";
+    return;
+  }
+  planEl.value = (s.subsidyCategory && EP && EP.PLANS[s.subsidyCategory]) ? s.subsidyCategory : "";
+  if(s.subsidyQty && (Number.isFinite(Number(s.subsidyQty.bt)) || Number.isFinite(Number(s.subsidyQty.usb)))){
+    btEl.value=Number(s.subsidyQty.bt)||0; btEl.dataset.auto="0";
+    usbEl.value=Number(s.subsidyQty.usb)||0; usbEl.dataset.auto="0";
+  }else{
+    // 保存値が無い古い出荷: 「伴走支援費（補助対象N台）」の N から逆引き。プランは未選択のまま人に選ばせる
+    const m=/補助対象(\d+)台/.exec(supportItem.name||"");
+    btEl.value=m?parseInt(m[1],10):0; btEl.dataset.auto="0";
+    usbEl.value=0; usbEl.dataset.auto="0";
+  }
+  // Web申込で作られた出荷（subsidyCategory 未保存）は、紐づく見積もり（quotes）→ 案件（cases）の順にプランと補助対象台数を補う。
+  // 非同期なので開いた直後は「プランを選んでください」が一瞬出るが、取れれば自動で埋まり内訳が更新される（2026-09-14）
+  if(!planEl.value && (s.quoteId || s.caseId)) inferSubsidyFromLinks(s).catch(()=>{});
+}
+async function inferSubsidyFromLinks(s){
+  const EP=window.EstimatePricing; if(!EP) return;
+  const planEl=document.getElementById("shipSubsidyPlan"), btEl=document.getElementById("shipSubsidyBt"), usbEl=document.getElementById("shipSubsidyUsb");
+  let plan=null, bt=null, usb=null;
+  if(s.quoteId){
+    const q=await getDoc(doc(db,"quotes",s.quoteId));
+    if(q.exists()){ const d=q.data(); plan=d.plan||null;
+      bt=(d.items||[]).filter(i=>i.sku===EP.SKU.BT).reduce((a,i)=>a+(Number(i.subsidyQty)||0),0);
+      usb=(d.items||[]).filter(i=>i.sku!==EP.SKU.BT).reduce((a,i)=>a+(Number(i.subsidyQty)||0),0); }
+  }
+  if(!plan && s.caseId){
+    const c=await getDoc(doc(db,"cases",s.caseId));
+    if(c.exists()) plan=c.data().subsidyCategory||null;
+  }
+  if(editingShip!==s) return;           // 別の出荷を開き直していたら触らない
+  if(!planEl.value && plan && EP.PLANS[plan]) planEl.value=plan;
+  if(bt!==null && (bt||usb)){ btEl.value=bt; usbEl.value=usb; btEl.dataset.auto="0"; usbEl.dataset.auto="0"; }
+  updateShipTotal();
+}
+
 // 数量欄・送料から、実際に保存される明細（単価つき）を組み立てる。合計表示と保存で同じものを使う
 function resolveShipItems(){
   // 修正時に「新しく足した品番」へ入れる単価の基準。
@@ -788,7 +923,7 @@ function resolveShipItems(){
     : document.getElementById("shipType").value;
   const orig = {};
   (editingShip?.items||[]).forEach(i=>{ orig[i.sku] = i; });
-  return collectItems("shipItems").map(it=>{
+  const productItems = collectItems("shipItems").map(it=>{
     const p = products.find(x=>x.id===it.sku) || {};
     const was = orig[it.sku];
     // 修正時、もともと入っていた品番は当時の単価を保つ。新しく足した品番だけ今の基準で入れる
@@ -797,11 +932,15 @@ function resolveShipItems(){
       : (shipType==="dropship" ? partnerPriceFor(p, it.qty) : (p.listPrice||0));
     return {...it, unitPrice};
   });
+  // 伴走支援費・金額調整（チェックONのときだけ・Webからのお申し込みと同じ形の明細を末尾に足す）
+  return productItems.concat(subsidyExtraItems());
 }
 
 // 保存前に金額が見えるようにする（今までモーダルに合計が無く、保存して一覧で初めて分かる状態だった）
 function updateShipTotal(){
   const el=document.getElementById("shipTotalLine"); if(!el) return;
+  refreshSubsidyAutoDefaults(); // 商品欄の台数が変わったら伴走支援の既定値も出し直す（手で直した欄は上書きしない）
+  updateSubsidyBody();
   const items=resolveShipItems();
   const fee=Number(document.getElementById("shipFee").value)||0;
   // 税基準は請求先で変わる。修正中はその出荷、新規は画面の出荷種別から見る
@@ -829,6 +968,7 @@ function openShip(existing){
   document.getElementById("shipPartner").innerHTML = '<option value="">選択してください</option>'+
     activePartners.map(p=>`<option value="${esc(p._id)}">${esc(p.partnerName||p._id)}</option>`).join("");
   initShipFeeControls();
+  fillSubsidyPlanSelect();
 
   const title=document.getElementById("shipModalTitle");
   const label=document.getElementById("saveShipLabel");
@@ -845,6 +985,12 @@ function openShip(existing){
     typeSel.value="direct"; typeSel.disabled=false;
     document.getElementById("shipPartner").disabled=false; // 修正モードで止めたままにしない
     document.getElementById("shipPartnerWrap").style.display="none";
+    // 伴走支援費ブロックをまっさらに戻す
+    document.getElementById("shipSubsidyOn").checked=false;
+    document.getElementById("shipSubsidyBody").style.display="none";
+    document.getElementById("shipSubsidyPlan").value="";
+    const btEl0=document.getElementById("shipSubsidyBt"), usbEl0=document.getElementById("shipSubsidyUsb");
+    btEl0.value=0; btEl0.dataset.auto="1"; usbEl0.value=0; usbEl0.dataset.auto="1";
   }else{
     title.textContent=`出荷の修正（${s.soNumber||""}）`;
     label.textContent="修正を保存";
@@ -868,6 +1014,8 @@ function openShip(existing){
       const inp=document.querySelector(`#shipItems .qty-input[data-sku="${i.sku}"]`);
       if(inp) inp.value=Number(i.qty)||0;
     });
+    // 伴走支援費の入力欄も保存済みの出荷から復元する
+    restoreSubsidyFromShip(s);
     // 送料まわり（initShipFeeControls が空にした後に入れ直す）
     document.getElementById("shipMethod").value=s.shippingMethod&&s.shippingMethod!=="manual"?s.shippingMethod:"";
     document.getElementById("shipFee").value=Number(s.shippingFee)||0;
@@ -886,8 +1034,12 @@ function openShip(existing){
                             : `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`);
   }
 
-  // 金額に関わる欄のロック
-  const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion","shipDate"];
+  // 伴走支援費ブロックは事業所へ直接請求する出荷（direct）だけ表示。認定事業者への直送（卸）は対象外
+  document.getElementById("shipSubsidyWrap").style.display = subsidyApplicableFor(s) ? "" : "none";
+
+  // 金額に関わる欄のロック（伴走支援費も金額に関わるのでロック対象に含める）
+  const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion","shipDate",
+    "shipSubsidyOn","shipSubsidyPlan","shipSubsidyBt","shipSubsidyUsb"];
   moneyIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=locked; });
   document.querySelectorAll("#shipItems .qty-input").forEach(i=>{ i.disabled=locked; });
 
@@ -940,6 +1092,7 @@ async function saveShip(){
   const partnerEmail = shipType==="dropship" ? document.getElementById("shipPartner").value : "";
   if(shipType==="dropship" && !partnerEmail){ alert("直送の場合は請求先（認定事業者）を選択してください"); return; }
   const partnerName = (activePartners.find(p=>p._id===partnerEmail)||{}).partnerName||"";
+  if(subsidyPlanMissing()){ alert("伴走支援費を含める場合はプランを選んでください"); return; }
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
   const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
@@ -966,6 +1119,7 @@ async function saveShip(){
       phone:document.getElementById("shipPhone").value.trim(),
       email:document.getElementById("shipEmail").value.trim(),
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
+      ...subsidyPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(originLocationId,-it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,originLocationId)); }
@@ -998,6 +1152,7 @@ async function saveShipEdit(){
 
   let items=null, delta={};
   if(!locked){
+    if(subsidyPlanMissing()){ alert("伴走支援費を含める場合はプランを選んでください"); return; }
     patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
@@ -1024,6 +1179,7 @@ async function saveShipEdit(){
       shippingFee:Number(document.getElementById("shipFee").value)||0,
       shippingLabel:document.getElementById("shipFeeLabel").value.trim()
         ||((Number(document.getElementById("shipFee").value)||0)>0?"送料":""),
+      ...subsidyPatch(),
     });
   }
 
@@ -1318,6 +1474,8 @@ function renderShipments(ships){
   body.innerHTML = ships.map(s=>{
     // 品番だけでは USB か Bluetooth か、端子が A か C か分からないので接続方式を併記する
     const summary=(s.items||[]).map(i=>{
+      // 伴走支援費・金額調整は品番ではなく品名（i.name）で出す（"support-fee" では意味が伝わらない）
+      if(i.nonStock) return `<div style="margin-bottom:2px"><strong>${esc(i.name||i.sku)}</strong> ${i.unitPrice<0?"−":""}${yen(Math.abs(i.unitPrice||0))}</div>`;
       const conn=itemConnection(i, products);
       return `<div style="margin-bottom:2px"><strong>${esc(i.sku)}</strong> × ${Number(i.qty)||0}`
         + (conn?`<div class="conn-tag">${esc(conn)}</div>`:"")+`</div>`;
@@ -2423,7 +2581,23 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("shipFee").addEventListener("input",updateShipTotal);
   document.getElementById("shipType").addEventListener("change",(e)=>{
     document.getElementById("shipPartnerWrap").style.display = e.target.value==="dropship"?"":"none";
+    // 伴走支援費は事業所へ直接請求する出荷（direct）だけ。直送（dropship）へ切り替えたら畳んでチェックも外す
+    const isDrop = e.target.value==="dropship";
+    document.getElementById("shipSubsidyWrap").style.display = isDrop ? "none" : "";
+    if(isDrop){
+      document.getElementById("shipSubsidyOn").checked=false;
+      document.getElementById("shipSubsidyBody").style.display="none";
+    }
+    updateShipTotal();
   });
+  document.getElementById("shipSubsidyOn").addEventListener("change",(e)=>{
+    document.getElementById("shipSubsidyBody").style.display = e.target.checked ? "" : "none";
+    if(e.target.checked) refreshSubsidyAutoDefaults();
+    updateShipTotal();
+  });
+  document.getElementById("shipSubsidyPlan").addEventListener("change",()=>{ refreshSubsidyAutoDefaults(); updateShipTotal(); });
+  ["shipSubsidyBt","shipSubsidyUsb"].forEach(id=>document.getElementById(id)
+    .addEventListener("input",(e)=>{ e.target.dataset.auto="0"; updateShipTotal(); }));
   ["shipMethod","shipYuSize","shipYuRegion"].forEach(id=>document.getElementById(id).addEventListener("change",recalcShipFee));
   // 送料欄（税抜）に税込の実費が打たれていないか、手入力のときだけ確認する
   document.getElementById("shipFee").addEventListener("input",checkShipFeeTaxIncl);

@@ -982,6 +982,12 @@ async function acceptQuoteTransaction({ quoteId, quoteToken, delivery, payKey, p
       postal: d.postalCode || "", address: d.address || "",
       contactName: d.contactName || q.contactName || "", phone: d.phone || "",
       items, shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
+      // CRM「送付先・数量を直す」の伴走支援費ブロックが復元に使う（2026-09-14）
+      subsidyCategory: q.plan || null,
+      subsidyQty: {
+        bt: (q.items || []).filter((i) => i.sku === Pricing.SKU.BT).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0),
+        usb: (q.items || []).filter((i) => i.sku !== Pricing.SKU.BT).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0),
+      },
       shipDate: todayJst(), preferredDate: preferredDate || "", payMethod: payKey,
       orderNote: String(note || "").slice(0, 1000),
       createdAt: now, createdBy: "web（事業所のお申し込み）",
