@@ -1,0 +1,13 @@
+{
+  "corpName": "社会福祉法人 さくら福祉会（サンプル）",
+  "corpHonorific": "御中",
+  "issuedAt": "2026-09-18",
+  "validUntil": "2026-10-18",
+  "staff": "佐藤拡史",
+  "offices": [
+    { "name": "さくらホームヘルプサービス", "service": "訪問介護", "plan": "houmon", "bt": 3, "usb": 0, "btExtra": 0, "usbExtra": 0, "estNo": "EST-2026-0101", "version": 1 },
+    { "name": "特別養護老人ホーム さくらの丘", "service": "介護老人福祉施設", "plan": "kyojyu", "bt": 2, "usb": 0, "btExtra": 1, "usbExtra": 0, "estNo": "EST-2026-0102", "version": 1 },
+    { "name": "さくら居宅介護支援事業所", "service": "居宅介護支援", "plan": "houmon", "bt": 2, "usb": 1, "btExtra": 0, "usbExtra": 0, "estNo": "EST-2026-0103", "version": 1 },
+    { "name": "さくらデイサービスセンター", "service": "通所介護", "plan": "houmon", "bt": 0, "usb": 3, "btExtra": 0, "usbExtra": 0, "estNo": "EST-2026-0104", "version": 1 }
+  ]
+}
