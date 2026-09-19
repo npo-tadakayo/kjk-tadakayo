@@ -27,6 +27,8 @@ const BRAND = path.join(os.homedir(), "Projects", "tadakayo", "_ブランド素�
 const dataUri = (p) => `data:image/png;base64,${fs.readFileSync(p).toString("base64")}`;
 const LOGO  = dataUri(path.join(BRAND, "ロゴ", "tadakayo_logo_remove.png"));
 const CHARA = (n) => dataUri(path.join(BRAND, "多田佳代ちゃん", `chara_${n}.png`));
+// 角印は CRM の帳票（見積書・請求書・領収証）と同じ印影ファイルを使う
+const SEAL = dataUri(path.join(repo, "admin", "images", "seal-tadakayo.png"));
 
 // ---- 計算 ----
 const yen = (n) => "¥" + Math.round(Number(n) || 0).toLocaleString("en-US");
@@ -113,8 +115,9 @@ tr.total td.red{color:var(--red)}
 .cover .to{font-size:20pt;font-weight:700;border-bottom:2px solid #fff;display:inline-block;padding-bottom:1.5mm;margin-bottom:5mm}
 .cover .meta{font-size:11pt;line-height:1.9;opacity:.95}
 .cover .meta b{display:inline-block;min-width:24mm;font-weight:500;opacity:.85}
-.cover .issuer{position:absolute;right:18mm;bottom:12mm;text-align:right;font-size:10pt;line-height:1.7}
-.cover .issuer .nm{font-size:14pt;font-weight:700}
+.cover .issuer{position:absolute;right:18mm;bottom:11mm;background:#fff;color:var(--ink);border-radius:10px;padding:4mm 5mm;display:flex;align-items:center;gap:4mm;text-align:right;font-size:9.5pt;line-height:1.7}
+.cover .issuer .nm{font-size:13pt;font-weight:700}
+.seal{width:20mm;height:20mm;object-fit:contain;flex:0 0 auto;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .spk{position:absolute;background:#fff;border:2px solid var(--red);border-radius:12px;padding:3mm 4mm;font-size:9.8pt;line-height:1.5;max-width:62mm}
 .spk::after{content:"";position:absolute;left:-7px;top:40%;border:7px solid transparent;border-right-color:var(--red);border-left:0}
 .hd{display:flex;align-items:baseline;gap:4mm}
@@ -153,8 +156,11 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
       <div><b>対象</b>${n}事業所　／　カードリーダー 計${T.units}台　／　添付の見積書 ${n}通</div>
     </div>
     <div class="issuer">
-      <div class="nm">特定非営利活動法人タダカヨ</div>
-      〒143-0014 東京都大田区大森中2-1-20-1001<br>TEL 050-6872-9884　担当: ${esc(input.staff || "佐藤拡史")}<br>https://kjk.tadakayo.jp
+      <div>
+        <div class="nm">特定非営利活動法人タダカヨ</div>
+        〒143-0014 東京都大田区大森中2-1-20-1001<br>TEL 050-6872-9884　担当: ${esc(input.staff || "佐藤拡史")}<br>https://kjk.tadakayo.jp
+      </div>
+      <img class="seal" src="${SEAL}" alt="タダカヨの角印">
     </div>
   </div>
 </section>
