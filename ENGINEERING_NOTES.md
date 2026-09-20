@@ -285,6 +285,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 # CRM（管理画面）システム — エンジニアノート
 
 > 2026-06-05 統合。LP・見積もりツールからの問い合わせを「案件」として受け、伴走支援・助成金申請・カードリーダーの発注/在庫/出荷/請求までを一元管理する管理画面（CRM）の技術仕様。アプリ内 `admin/engineering.html` と同一内容を SSOT として本書に集約。
+| 2026-09-16〜18 | **チラシ再差し替え**（`9fbbf41`・`images/tadakayo_kjk_flyer_20260916.pdf/.jpg`／旧版は `images/_旧版/`。画像・PDF は `cache-control: immutable` なので**同名上書きはしない・版を付けて改名**する）／**出荷一覧の赤ボタン**（`0dfc987`・発送済の行の「次の一手」は請求済にする。請求書メールの送付は `invoiceMailedAt` を書くだけで status は変えない）／**合計お見積もりのご案内**（`0ef70db`・`6f4a79d`・`scripts/quote-cover/`）: CRM の見積書（事業所ごと）の前に付ける A4横8ページの決裁用資料。金額は `functions/estimate-pricing.js` の `computeAmounts` で計算し手計算を持ち込まない。`build.mjs 入力.json 出力.html` → `CHROME_EXE=… python3 topdf.py 出力.html 出力.pdf`。ブランド素材（ロゴ・多田佳代ちゃん・角印）は data URI で埋め込むので HTML 単体で完結する |
 
 ## §C0 何のシステムか
 
