@@ -160,6 +160,18 @@ function createQuoteBtn(prominent) {
       </button>`;
 }
 
+// 同一法人の複数事業所を「まとめて」見積もった案件では、法人あての合計見積書を開くボタンを出す。
+// 所属は案件（quoteGroupId）で判定し、無ければ見積もり側の groupId（Web作成時に焼き込まれる）
+function groupDocBtn(latest) {
+  const gid = ctx?.getCase?.()?.quoteGroupId || latest?.groupId || "";
+  if (!gid) return "";
+  const caseParam = ctx?.caseId ? `&case=${encodeURIComponent(ctx.caseId)}` : "";
+  return `<a class="btn btn-secondary" href="/quote-group-print.html?group=${encodeURIComponent(gid)}${caseParam}" target="_blank" rel="noopener"
+             title="同じ法人の事業所ぶんをまとめた合計見積書を開きます">
+    <i class="ti ti-building-community" aria-hidden="true"></i> 合計見積書（法人まとめ）
+  </a>`;
+}
+
 function render() {
   const host = document.getElementById("quoteCard");
   if (!host) return;
@@ -174,7 +186,8 @@ function render() {
       <div class="card-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <span style="font-weight:600;font-size:14px">見積もり</span>
         ${latest ? statusBadge(latest.status) : ""}
-        <span style="margin-left:auto;display:flex;gap:8px;align-items:center">
+        <span style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${quotes.length ? groupDocBtn(latest) : ""}
           ${quotes.length && latest?.status !== "accepted" ? createQuoteBtn(false) : ""}
         </span>
       </div>

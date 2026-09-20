@@ -286,6 +286,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 
 > 2026-06-05 統合。LP・見積もりツールからの問い合わせを「案件」として受け、伴走支援・助成金申請・カードリーダーの発注/在庫/出荷/請求までを一元管理する管理画面（CRM）の技術仕様。アプリ内 `admin/engineering.html` と同一内容を SSOT として本書に集約。
 | 2026-09-16〜18 | **チラシ再差し替え**（`9fbbf41`・`images/tadakayo_kjk_flyer_20260916.pdf/.jpg`／旧版は `images/_旧版/`。画像・PDF は `cache-control: immutable` なので**同名上書きはしない・版を付けて改名**する）／**出荷一覧の赤ボタン**（`0dfc987`・発送済の行の「次の一手」は請求済にする。請求書メールの送付は `invoiceMailedAt` を書くだけで status は変えない）／**合計お見積もりのご案内**（`0ef70db`・`6f4a79d`・`scripts/quote-cover/`）: CRM の見積書（事業所ごと）の前に付ける A4横8ページの決裁用資料。金額は `functions/estimate-pricing.js` の `computeAmounts` で計算し手計算を持ち込まない。`build.mjs 入力.json 出力.html` → `CHROME_EXE=… python3 topdf.py 出力.html 出力.pdf`。ブランド素材（ロゴ・多田佳代ちゃん・角印）は data URI で埋め込むので HTML 単体で完結する |
+| 2026-09-20 | **合計見積書（法人まとめ）**: `admin/quote-group-print.html?group=<quoteGroupId>&case=<caseId>` ＋ `admin/js/quote-group-doc.js`。所属は `cases.quoteGroupId`（正）で決め、各事業所の最新版は `cases.latestQuoteId`（無ければ `quotes.groupId` の superseded 以外の最大 version）。スタッフの改版（`reviseQuote`/`staffCreateQuote`）は `groupId/groupIndex` を持たないため、所属を quotes 側で判定すると改版後に漏れる＝案件側で判定する設計。並び順は同じ案件の Web 作成分から `groupIndex` を引き継ぐ。金額は `quotes.amounts` の合算のみ・見積番号は子の範囲表示・通し番号なし・Storage 保存とメール送付なし（次田さん判断待ち）。入口: 見積もりカード（`quote-admin.js groupDocBtn`）と `quote-print.html` のツールバー。検証: 本番に【削除予定テスト】3事業所（BT3／BT2+追加1／BT2+USB1）を `webhookMitsumori offices[]` で作り、プレビュー `b31ffe66ac9623bf` で合計 ¥197,500→改版後 ¥183,000 を目視・手計算一致、印刷メディアの表示も確認、テストデータは削除済み |
 
 ## §C0 何のシステムか
 

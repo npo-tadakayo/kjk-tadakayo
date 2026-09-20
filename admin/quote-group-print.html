@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>合計見積書（法人まとめ） — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+  <style>
+    :root{--color-ink-muted:#6a5e48;--color-border:#E8E4DC;--color-bg:#FAFAF8;}
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--color-bg);color:#2C2416;font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;font-size:13px;line-height:1.7;}
+    .toolbar{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 20px;background:#fff;border-bottom:1px solid var(--color-border);z-index:5;}
+    .btn{border:none;border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;white-space:nowrap;min-height:44px;}
+    .btn-print{background:#c02828;color:#fff;}
+    .btn-secondary{background:#fff;border:1px solid var(--color-border);color:#2C2416;}
+    .toolbar-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+    .loading{text-align:center;padding:60px;color:var(--color-ink-muted);}
+    .info{max-width:210mm;margin:14px auto 0;font-size:12.5px;color:var(--color-ink-muted);padding:0 6px;}
+    .doc-wrap{padding:20px 0 60px;}
+    @media print{
+      .toolbar,.info{display:none !important;}
+      body{background:#fff;}
+      .doc-wrap{padding:0;}
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a class="btn btn-secondary" href="#" id="backBtn"><i class="ti ti-arrow-left" aria-hidden="true"></i> 案件詳細へ</a>
+    <div class="toolbar-actions">
+      <button class="btn btn-print" id="printBtn" type="button"><i class="ti ti-printer" aria-hidden="true"></i> 印刷／PDF保存</button>
+    </div>
+  </div>
+  <div class="info" id="infoLine"></div>
+  <div class="doc-wrap">
+    <div class="loading" id="loadingEl"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div>
+    <div id="docHost" style="display:none"></div>
+  </div>
+
+  <script src="/js/firebase-config.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { gateRole } from "/js/role.js";
+    import { QUOTE_DOC_STYLE } from "/js/quote-doc.js";
+    import { QUOTE_GROUP_DOC_STYLE, loadQuoteGroupData, renderQuoteGroupDocHtml } from "/js/quote-group-doc.js";
+
+    // 体裁は見積書（quote-doc.js）の CSS を土台にし、合計見積書ぶんだけ足す
+    const styleEl = document.createElement("style");
+    styleEl.textContent = QUOTE_DOC_STYLE + QUOTE_GROUP_DOC_STYLE;
+    document.head.appendChild(styleEl);
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const params = new URLSearchParams(location.search);
+    const groupId = params.get("group");
+    const fromCase = params.get("case");
+
+    function setInfo(msg) { document.getElementById("infoLine").textContent = msg || ""; }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user || !user.email?.endsWith("@tadakayo.jp")) { location.href = "/index.html"; return; }
+      if (!(await gateRole(db, user))) return;
+
+      if (!groupId) {
+        document.getElementById("loadingEl").textContent = "パラメータが不正です（まとめ見積もりのIDがありません）";
+        return;
+      }
+      let data = null;
+      try {
+        data = await loadQuoteGroupData(db, groupId);
+      } catch (e) {
+        document.getElementById("loadingEl").textContent = `読み込みに失敗しました: ${e.message || e}`;
+        return;
+      }
+      if (!data || !data.rows?.length) {
+        document.getElementById("loadingEl").textContent = "まとめ見積もりが見つかりません";
+        return;
+      }
+
+      const backBtn = document.getElementById("backBtn");
+      const backCase = fromCase || data.rows[0]?.kase?._id;
+      if (backCase) backBtn.href = `/case-detail.html?id=${encodeURIComponent(backCase)}`;
+      else backBtn.style.display = "none";
+
+      document.getElementById("loadingEl").style.display = "none";
+      const host = document.getElementById("docHost");
+      host.style.display = "block";
+      host.innerHTML = renderQuoteGroupDocHtml(data);
+      document.title = `合計見積書 ${data.corpName || ""} — タダカヨ CRM`;
+
+      document.getElementById("printBtn").addEventListener("click", () => window.print());
+      setInfo(`${data.rows.length}事業所の最新版をまとめています。各事業所の見積書はそれぞれの案件の見積もりカードから開けます。`);
+    });
+  </script>
+</body>
+</html>

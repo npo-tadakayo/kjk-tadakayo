@@ -32,6 +32,7 @@
   <div class="toolbar">
     <a class="btn btn-secondary" href="#" id="backBtn"><i class="ti ti-arrow-left" aria-hidden="true"></i> 案件詳細へ</a>
     <div class="toolbar-actions">
+      <a class="btn btn-secondary" id="groupBtn" href="#" target="_blank" rel="noopener" style="display:none"><i class="ti ti-building-community" aria-hidden="true"></i> 合計見積書（法人まとめ）</a>
       <button class="btn btn-secondary" id="printBtn" type="button"><i class="ti ti-printer" aria-hidden="true"></i> 印刷／PDF保存</button>
       <button class="btn btn-secondary" id="saveOnlyBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i> PDFを保存のみ</button>
       <button class="btn btn-print" id="sendBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i> PDFを保存して事業所へ送付</button>
@@ -145,6 +146,14 @@
       const host = document.getElementById("docHost");
       host.style.display = "block";
       host.innerHTML = renderQuoteDocHtml(data);
+
+      // 法人まとめの一部なら、合計見積書へのリンクを出す（所属は案件の quoteGroupId が正・無ければ見積もりの groupId）
+      const gid = data.kase?.quoteGroupId || data.quote.groupId || "";
+      if (gid) {
+        const gb = document.getElementById("groupBtn");
+        gb.href = `/quote-group-print.html?group=${encodeURIComponent(gid)}${data.quote.caseId ? `&case=${encodeURIComponent(data.quote.caseId)}` : ""}`;
+        gb.style.display = "";
+      }
 
       document.getElementById("printBtn").addEventListener("click", () => window.print());
       document.getElementById("saveOnlyBtn").addEventListener("click", () => saveOrSend(false));
