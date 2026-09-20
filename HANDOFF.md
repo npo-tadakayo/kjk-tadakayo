@@ -9,7 +9,7 @@
 |---|---|---|
 | 出荷一覧の赤ボタン（09-14 夜） | 請求書メールを送っても状態は発送済のまま（`invoiceMailedAt` のみ記録）。発送済の行の「請求済にする」を赤（次の一手）に | ✅ admin live `73b1925418babcc3`・commit `0dfc987` |
 | チラシ再差し替え（**09-16 朝**） | 次田さんから新版（同名末尾スペース付き・08:00 版・md5 `16ede467…`）。`images/tadakayo_kjk_flyer_20260916.pdf/.jpg` に版付け直し、`_202609` は `images/_旧版/` へ。index.html の参照3か所を置換。サムネイルは `pdftoppm -r 110`（910×1287） | ✅ lp live `723fafe2f8f9c496`・commit `9fbbf41`（push 済） |
-| **合計お見積もりのご案内（09-18）** | 次田さん依頼「見積書の前に付ける、法人内で決裁に出せる横長の資料（申込→助成金申請の流れ入り）」。`scripts/quote-cover/build.mjs 入力.json 出力.html` → `CHROME_EXE=… python3 scripts/quote-cover/topdf.py 出力.html 出力.pdf`（A4横・8p）。金額は `functions/estimate-pricing.js` で計算（手計算なし）。入力例 `sample.json`。サンプルPDF: `_アウトボックス/20260918_介護情報基盤_合計見積もりのご案内_サンプル/`。⚠ Python Playwright は 1223 のブラウザを要求するが未導入 → `CHROME_EXE` で `chromium_headless_shell-1243` を指す。フォントは Google Fonts をローカル描画時のみ読み込む（配布物には埋め込まれた文字だけ） | ✅ 手動生成。CRMからの自動生成は未着手（次田さんの確認後に検討） ／ 表紙の発行元を白パネルにして**法人名の横に角印**（CRM帳票と同じ `admin/images/seal-tadakayo.png`・`6f4a79d`）。⚠ 次田さんの質問は「角印のデータはどこにあるか」であり押印の指示ではなかった（不要なら戻す） |
+| **合計お見積もりのご案内（09-18）** | 次田さん依頼「見積書の前に付ける、法人内で決裁に出せる横長の資料（申込→助成金申請の流れ入り）」。`scripts/quote-cover/build.mjs 入力.json 出力.html` → `CHROME_EXE=… python3 scripts/quote-cover/topdf.py 出力.html 出力.pdf`（A4横・8p）。金額は `functions/estimate-pricing.js` で計算（手計算なし）。入力例 `sample.json`。サンプルPDF: `_アウトボックス/20260918_介護情報基盤_合計見積もりのご案内_サンプル/`。⚠ Python Playwright は 1223 のブラウザを要求するが未導入 → `CHROME_EXE` で `chromium_headless_shell-1243` を指す。フォントは Google Fonts をローカル描画時のみ読み込む（配布物には埋め込まれた文字だけ） | ✅ 手動生成。CRMからの自動生成は未着手（次田さんの確認後に検討） ／ ⚠ **表紙に角印は押さない**（2026-09-20 次田さん指示・`6f4a79d` で一度押したが `736c3d2` で撤去）。「角印はどこにありますか？」は**データの所在の確認**であって押印の指示ではなかった |
 
 ## 現在の状態（2026-09-14 午後・Issue #5 実装後）
 
