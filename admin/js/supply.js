@@ -1262,7 +1262,19 @@ async function prefillShipFromCase(caseId){
       const sku = r.type==="BT" ? "cir415a-01" : r.type==="USB" ? "cir315a-02" : null;
       if(sku && qty>0){ const inp=document.querySelector(`#shipItems .qty-input[data-sku="${sku}"]`); if(inp) inp.value=qty; }
     });
-    toast("案件情報を取り込みました。数量・住所・USB品番をご確認ください");
+    // 案件に助成区分が入っていれば「伴走支援費を含める」を最初からオンにする（2026-09-22）。
+    // TAKE4 の3件（SH-2026-0029〜0031）が、チェックを入れ忘れてカードリーダー代だけの請求書になったため。
+    // 区分は案件の subsidyCategory、補助対象台数は上で入れた数量から自動（refreshSubsidyAutoDefaults）。
+    const EP=window.EstimatePricing;
+    if(EP && c.subsidyCategory && EP.PLANS[c.subsidyCategory]
+       && document.getElementById("shipSubsidyWrap").style.display!=="none"){
+      document.getElementById("shipSubsidyOn").checked=true;
+      document.getElementById("shipSubsidyBody").style.display="";
+      document.getElementById("shipSubsidyPlan").value=c.subsidyCategory;
+      refreshSubsidyAutoDefaults();
+    }
+    updateShipTotal();
+    toast("案件情報を取り込みました。数量・住所・USB品番と、伴走支援費の内訳をご確認ください");
   }catch(e){ alert(`取り込み失敗: ${e.message}`); }
 }
 
@@ -2593,7 +2605,13 @@ onAuthStateChanged(auth, async (user)=>{
   });
   document.getElementById("shipSubsidyOn").addEventListener("change",(e)=>{
     document.getElementById("shipSubsidyBody").style.display = e.target.checked ? "" : "none";
-    if(e.target.checked) refreshSubsidyAutoDefaults();
+    if(e.target.checked){
+      refreshSubsidyAutoDefaults();
+      // 既存の出荷でチェックを入れ直したとき、区分が空なら紐づく見積もり／案件から引く（2026-09-22）。
+      // restoreSubsidyFromShip は伴走支援費の行が無い出荷では早期 return するため、ここで補う。
+      const planEl=document.getElementById("shipSubsidyPlan");
+      if(!planEl.value && editingShip && (editingShip.quoteId || editingShip.caseId)) inferSubsidyFromLinks(editingShip).catch(()=>{});
+    }
     updateShipTotal();
   });
   document.getElementById("shipSubsidyPlan").addEventListener("change",()=>{ refreshSubsidyAutoDefaults(); updateShipTotal(); });
