@@ -24,6 +24,7 @@ const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
 
 let products = [];
 let locations = [];          // 保管場所マスタ（2026-09-12 追加）
+let transfers = [];          // 保管場所間の移動（2026-09-30 追加）
 let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
@@ -125,16 +126,32 @@ function fillLocationSelect(el, selected){
   const want = (selected && list.some(l=>l._id===selected)) ? selected : defaultLocationId();
   el.value = want;
 }
-// 合計と内訳の差＝どの場所に置いたか決まっていない在庫。移行前のぶんがここに出る
+// 保管場所間の移動で「発送済・未到着」の台数（2026-09-30）。合計 stock には含まれ、どの場所の内訳にも入っていない
+function transitOf(p){ return Number((p||{}).stockInTransit)||0; }
+// 合計と内訳の差＝どの場所に置いたか決まっていない在庫。移行前のぶんがここに出る（移動中は差し引く）
 function unassignedStock(p){
   const by=p.stockByLocation||{};
   const assigned=locations.reduce((a,l)=>a+(Number(by[l._id])||0),0);
-  return (Number(p.stock)||0) - assigned;
+  return (Number(p.stock)||0) - assigned - transitOf(p);
+}
+// 保管場所の届け先（発注書の「送付先」・移動の送り先）。住所が無ければ空
+function locationShipToText(l){
+  if(!l || !(l.address||"").trim()) return "";
+  return [ l.postal?`〒${l.postal}`:"", `${l.address||""}　${l.recipient||l.name||""}`.trim(), l.phone?`TEL ${l.phone}`:"" ]
+    .filter(Boolean).join("\n");
+}
+// 保管場所の指定が無い古い発注の入荷先を、届け先の文字に含まれる都道府県から推定する（一意に決まるときだけ）
+function guessLocationFromText(text){
+  const t=String(text||""); if(!t) return "";
+  const hit=activeLocations().filter(l=>l.pref && t.includes(l.pref));
+  return hit.length===1 ? hit[0]._id : "";
 }
 function locationBreakdownHtml(p){
   const by=p.stockByLocation||{};
   const rows=locations.filter(l=>(Number(by[l._id])||0)!==0)
     .map(l=>`${esc(l.name)} <strong>${Number(by[l._id])||0}</strong>`);
+  const tr=transitOf(p);
+  if(tr!==0) rows.push(`<span style="color:#3a6e9e">移動中 <strong>${tr}</strong></span>`);
   const un=unassignedStock(p);
   if(un!==0) rows.push(`<span style="color:var(--color-danger)">未割当 <strong>${un}</strong></span>`);
   return rows.length?rows.join("<br>"):'<span style="color:var(--color-ink-muted)">—</span>';
@@ -148,6 +165,7 @@ function renderLocations(){
     return `<tr>
       <td><strong>${esc(l.name)}</strong>${l.isDefault?' <span style="font-size:11px;color:var(--color-ink-muted)">（既定）</span>':""}</td>
       <td>${esc(l.pref||"—")}</td>
+      <td style="font-size:12px;line-height:1.6;white-space:pre-line">${l.address?esc(locationShipToText(l)):'<span style="color:var(--color-ink-muted)">未登録（編集から入れられます）</span>'}</td>
       <td class="num">${total} 台</td>
       <td>${l.active===false?'<span style="color:var(--color-ink-muted)">使っていない</span>':"使用中"}</td>
       <td><button class="btn btn-secondary loc-edit" data-id="${esc(l._id)}" style="font-size:12px;padding:4px 10px"><i class="ti ti-pencil" aria-hidden="true"></i> 編集</button></td>
@@ -165,6 +183,7 @@ function openLocationModal(existing){
   document.getElementById("locName").value = existing?(existing.name||""):"";
   pref.value = existing?(existing.pref||""):"";
   document.getElementById("locActive").checked = existing? existing.active!==false : true;
+  ["Postal","Address","Recipient","Phone"].forEach(k=>{ document.getElementById("loc"+k).value = existing?(existing[k.toLowerCase()]||""):""; });
   document.getElementById("locNameErr").textContent="";
   document.getElementById("locationModal").classList.add("open");
   document.getElementById("locName").focus();
@@ -173,16 +192,18 @@ async function saveLocation(){
   const name=document.getElementById("locName").value.trim();
   const pref=document.getElementById("locPref").value;
   const active=document.getElementById("locActive").checked;
+  const addr={ postal:document.getElementById("locPostal").value.trim(), address:document.getElementById("locAddress").value.trim(),
+    recipient:document.getElementById("locRecipient").value.trim(), phone:document.getElementById("locPhone").value.trim() };
   const err=document.getElementById("locNameErr");
   if(!name){ err.textContent="保管場所の名前を入力してください"; return; }
   if(!pref){ err.textContent="都道府県を選んでください（ゆうパックの送料が発地で変わるため）"; return; }
   const btn=document.getElementById("saveLocationBtn"); btn.disabled=true;
   try{
     if(editingLoc){
-      await updateDoc(doc(db,"locations",editingLoc._id),{name,pref,active,updatedAt:serverTimestamp()});
+      await updateDoc(doc(db,"locations",editingLoc._id),{name,pref,active,...addr,updatedAt:serverTimestamp()});
       toast(`保管場所「${name}」を更新しました`);
     }else{
-      await addDoc(collection(db,"locations"),{name,pref,active,
+      await addDoc(collection(db,"locations"),{name,pref,active,...addr,
         isDefault: locations.length===0,   // 最初の1件を既定にする
         sort: locations.length, createdAt:serverTimestamp(),
         createdBy: currentUser.displayName||currentUser.email});
@@ -384,6 +405,8 @@ function fillOrderShipTo(){
   const sel=document.getElementById("orderPartnerSelect");
   const p=activePartners.find(x=>x._id===sel.value);
   if(!p) return; // 「手入力」選択時は既存の入力を保持
+  // 認定事業者の住所を入れる＝保管場所への納品ではない（2026-09-30）
+  const dl=document.getElementById("orderDeliverLoc"); if(dl) dl.value="";
   const name=p.corpName ? `${p.corpName}　${p.partnerName||""}`.trim() : (p.partnerName||"");
   const lines=[ p.postal?`〒${p.postal}`:"", `${p.address||""}　${name}`.trim() ].filter(Boolean);
   document.getElementById("orderShipTo").value=lines.join("\n");
@@ -407,12 +430,32 @@ function openOrder(o){
   clearOrderShipWarn();
   document.getElementById("orderShipTo").value = (o&&o.shipTo) || "";
   document.getElementById("orderTotal").textContent="";
+  // 納品先の保管場所（2026-09-30）。新規は既定の保管場所、住所が登録されていれば届け先に入れる
+  const dlSel=document.getElementById("orderDeliverLoc");
+  // 保存済みの納品先が「使っていない」に変わっていても消さずに残す（黙って別の場所に書き換わらないように・Codex P2）
+  const dlList=[...activeLocations()];
+  const savedLoc=o&&o.deliverLocationId ? locations.find(l=>l._id===o.deliverLocationId) : null;
+  if(savedLoc && !dlList.some(l=>l._id===savedLoc._id)) dlList.push(savedLoc);
+  dlSel.innerHTML='<option value="">保管場所以外（認定事業者への直送・手入力）</option>'+
+    dlList.map(l=>`<option value="${esc(l._id)}">${esc(l.name)}${l.pref?`（${esc(l.pref)}）`:""}${l.active===false?"［使っていない］":""}</option>`).join("");
+  if(o && o.deliverLocationId && !savedLoc){
+    // 保管場所そのものが消えている: 名前だけの選択肢で保持する
+    dlSel.insertAdjacentHTML("beforeend", `<option value="${esc(o.deliverLocationId)}">${esc(o.deliverLocationName||"（削除された保管場所）")}</option>`);
+  }
+  dlSel.value = o ? (o.deliverLocationId||"") : defaultLocationId();
+  dlSel.onchange=()=>{ const t=locationShipToText(locations.find(l=>l._id===dlSel.value)); if(t) document.getElementById("orderShipTo").value=t; };
+  if(!o){ const t=locationShipToText(locations.find(l=>l._id===dlSel.value)); if(t && !document.getElementById("orderShipTo").value) document.getElementById("orderShipTo").value=t; }
   // 直送チェック（確定時に出荷下書きを自動作成）
   const dchk=document.getElementById("orderDropship");
   const dreq=document.getElementById("dropshipReq");
   dchk.checked = !!(o&&o.dropship);
   if(dreq) dreq.style.display = dchk.checked?"":"none";
-  dchk.onchange=()=>{ if(dreq) dreq.style.display = dchk.checked?"":"none"; };
+  const dlWrap=document.getElementById("orderDeliverLocWrap");
+  if(dlWrap) dlWrap.style.display = dchk.checked?"none":"";
+  dchk.onchange=()=>{ if(dreq) dreq.style.display = dchk.checked?"":"none";
+    // 直送は在庫を経由しない＝保管場所への納品ではない
+    if(dlWrap) dlWrap.style.display = dchk.checked?"none":"";
+    if(dchk.checked) document.getElementById("orderDeliverLoc").value=""; };
   // 認定事業者セレクト（直送時は請求先。選ぶと届け先住所を自動入力・手入力修正も可）
   const sel=document.getElementById("orderPartnerSelect");
   sel.innerHTML = '<option value="">（手入力 / 自社で受け取り）</option>'+
@@ -454,6 +497,9 @@ async function saveOrder(){
       shippingFee:Number(document.getElementById("orderShipFee").value)||0,
       shipTo:document.getElementById("orderShipTo").value.trim(),
       dropship:document.getElementById("orderDropship").checked,
+      deliverLocationId: document.getElementById("orderDropship").checked ? "" : (document.getElementById("orderDeliverLoc").value||""),
+      deliverLocationName: document.getElementById("orderDropship").checked ? "" : (locationName(document.getElementById("orderDeliverLoc").value||"")
+        || (document.getElementById("orderDeliverLoc").selectedOptions[0]?.textContent||"").replace(/^保管場所以外.*$/,"")),
       dropshipPartnerEmail:(activePartners.find(p=>p._id===document.getElementById("orderPartnerSelect").value)||{})._id||"",
       dropshipPartnerName:(activePartners.find(p=>p._id===document.getElementById("orderPartnerSelect").value)||{}).partnerName||"",
       note:document.getElementById("orderNote").value.trim(),
@@ -484,13 +530,15 @@ function renderOrders(orders){
     const isDraft = o.status==="draft";
     const sentInfo = o.emailedAt ? `<div style="font-size:12px;color:var(--color-success)">メール送付済</div>` : "";
     // 直送は仕入先から届け先へ直行＝自社在庫を経由しないので「入荷登録」は出さない（在庫の誤加算を防ぐ）
+    const deliverLoc = !o.dropship && (o.deliverLocationId || o.receivedLocationId);
+    const deliverInfo = deliverLoc ? `<div style="font-size:12px;color:var(--color-ink-muted)">${o.status==="received"?"入荷先":"納品先"} ${esc(locationName(o.receivedLocationId||o.deliverLocationId)||o.receivedLocationName||o.deliverLocationName||"")}</div>` : "";
     const dropInfo = o.dropship ? `<div style="font-size:12px;color:var(--color-ink-muted)">直送（入荷なし）${o.dropshipPartnerName?`／請求先 ${esc(o.dropshipPartnerName)}`:""}</div>` : "";
     return `<tr>
       <td><strong>${esc(o.poNumber)}</strong></td>
       <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td class="num">${yen(o.total)}</td>
-      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}${dropInfo}</td>
+      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}${dropInfo}${deliverInfo}</td>
       <td style="white-space:nowrap">
         <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
         ${isDraft?`<button class="btn btn-secondary edit-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
@@ -518,7 +566,19 @@ async function receiveOrder(id, orders){
   const lines=(o.items||[]).map(it=>`${esc(it.sku)} × ${Number(it.qty)||0}台`).join("・");
   document.getElementById("receiveSummary").innerHTML =
     `発注 <strong>${esc(o.poNumber||"")}</strong> を入荷登録します。<br>${lines||"（明細がありません）"}`;
-  fillLocationSelect(document.getElementById("receiveLocation"), null);
+  // 入荷先の初期値: 発注時に選んだ納品先 → 届け先の都道府県から推定 → 既定（2026-09-30）
+  const guessed = o.deliverLocationId || guessLocationFromText(o.shipTo);
+  const recvSel=document.getElementById("receiveLocation");
+  fillLocationSelect(recvSel, guessed || null);
+  const hint=document.getElementById("receiveHint");
+  if(hint){
+    const chosen=recvSel.value;
+    let msg="", warn=false;
+    if(o.deliverLocationId && chosen===o.deliverLocationId){ msg=`「${locationName(chosen)}」を選んでいます（発注のときに選んだ納品先です）`; }
+    else if(o.deliverLocationId){ msg=`発注のときの納品先「${o.deliverLocationName||locationName(o.deliverLocationId)||"不明"}」は、いま使っていない保管場所のため選べません。入荷先を確かめて選んでください`; warn=true; }
+    else if(guessed && chosen===guessed){ msg=`「${locationName(chosen)}」を選んでいます（発注の届け先の都道府県から選びました。違っていれば変えてください）`; warn=true; }
+    hint.textContent=msg; hint.style.color = warn ? "#c87a1f" : "var(--color-ink-muted)"; hint.style.display = msg ? "" : "none";
+  }
   document.getElementById("receiveErr").textContent="";
   document.getElementById("receiveModal").classList.add("open");
 }
@@ -541,6 +601,163 @@ async function doReceive(){
   }catch(e){ err.textContent=`入荷登録に失敗しました: ${e.message}`; }
   finally{ btn.disabled=false; }
 }
+// ===== 保管場所間の移動（2026-09-30 追加） =====
+// 例: 滋賀のロジスティックセンター → 沖縄のスマイルプラス。
+//   発送  : 移動元 stockByLocation を減らし、products.stockInTransit を増やす（合計 stock は変えない）
+//   到着  : stockInTransit を減らし、移動先 stockByLocation を増やす
+//   取消  : 未到着のときだけ。stockInTransit を減らし、移動元へ戻す
+// 在庫の書き込みは stockPatch() を通さない（合計を動かさないため）。代わりに1つのトランザクションで
+// 商品・移動の記録（stockTransfers）・在庫の履歴（inventoryMovements）を一緒に書く。
+const TR_METHOD_LABEL = { yupack:"ゆうパック", letterpack:"レターパック", carry:"手渡し・持参", other:"その他" };
+const TR_STATUS = { in_transit:{label:"移動中",badge:7}, arrived:{label:"到着済",badge:3}, canceled:{label:"取り消し",badge:1} };
+function transferItemsLine(t){ return (t.items||[]).map(i=>`${esc(i.sku)} × ${Number(i.qty)||0}台`).join("・"); }
+function renderTransfers(){
+  const body=document.getElementById("transfersBody"); if(!body) return;
+  // 移動中を上に、そのあと新しい順（直近20件）
+  const list=[...transfers].sort((a,b)=>{
+    const ai=a.status==="in_transit"?0:1, bi=b.status==="in_transit"?0:1; if(ai!==bi) return ai-bi;
+    return String(b.transferNumber||"").localeCompare(String(a.transferNumber||""));
+  }).slice(0,20);
+  body.innerHTML = list.map(t=>{
+    const st=TR_STATUS[t.status]||{label:t.status,badge:1};
+    const sub=[ t.method?TR_METHOD_LABEL[t.method]||t.method:"", Number(t.shippingFee)>0?`送料 ${yen(t.shippingFee)}`:"", t.tracking?`追跡 ${esc(t.tracking)}`:"" ].filter(Boolean).join("／");
+    const arrived = t.status==="arrived" ? `<div style="font-size:12px;color:var(--color-ink-muted)">到着 ${esc(t.arrivedDate||"")}</div>` : "";
+    return `<tr>
+      <td><strong>${esc(t.transferNumber||"")}</strong></td>
+      <td>${esc(t.shippedDate||"")}</td>
+      <td>${esc(t.fromLocationName||locationName(t.fromLocationId))} <i class="ti ti-arrow-right" aria-hidden="true"></i> ${esc(t.toLocationName||locationName(t.toLocationId))}</td>
+      <td style="font-size:12px">${transferItemsLine(t)}${sub?`<div style="color:var(--color-ink-muted)">${sub}</div>`:""}${t.memo?`<div style="color:var(--color-ink-muted)">${esc(t.memo)}</div>`:""}</td>
+      <td><span class="badge badge-${st.badge}">${esc(st.label)}</span>${arrived}</td>
+      <td style="white-space:nowrap">${t.status==="in_transit"?`
+        <button class="btn btn-primary tr-arrive" data-id="${esc(t._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import" aria-hidden="true"></i>到着を登録</button>
+        <button class="btn btn-secondary tr-cancel" data-id="${esc(t._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up" aria-hidden="true"></i>取り消す</button>`:""}</td>
+    </tr>`;
+  }).join("");
+  const empty=document.getElementById("transfersEmpty"); if(empty) empty.style.display=list.length?"none":"";
+  body.querySelectorAll(".tr-arrive").forEach(b=>b.addEventListener("click",()=>openArriveModal(transfers.find(x=>x._id===b.dataset.id))));
+  body.querySelectorAll(".tr-cancel").forEach(b=>b.addEventListener("click",()=>cancelTransfer(transfers.find(x=>x._id===b.dataset.id))));
+}
+function closeTransferModal(){ document.getElementById("transferModal").classList.remove("open"); }
+function renderTransferItemRows(){
+  const from=document.getElementById("trFrom").value;
+  // 移動元に在庫がある品番だけ並べる（0台の品番まで出すと入力欄が増えて見づらい）
+  const list=products.filter(p=>stockAt(p, from)>0);
+  if(!list.length){ document.getElementById("trItems").innerHTML=`<p style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px">${esc(locationName(from))} には在庫がありません。</p>`; return; }
+  document.getElementById("trItems").innerHTML = list.map(p=>{
+    const have=stockAt(p, from);
+    return `<div class="form-row" style="align-items:center">
+      <div class="form-group" style="flex:2"><div style="font-size:13px"><strong>${esc(p.id)}</strong>　${esc(p.name||"")}</div>
+        <div style="font-size:12px;color:var(--color-ink-muted)">移動元の在庫 ${have} 台</div></div>
+      <div class="form-group" style="flex:1"><label class="form-label" for="trQty-${esc(p.id)}">台数</label>
+        <input class="form-control tr-qty" type="number" min="0" max="${have}" step="1" id="trQty-${esc(p.id)}" data-sku="${esc(p.id)}" value="0" ${have>0?"":"disabled"}></div>
+    </div>`;
+  }).join("");
+}
+function showTransferToAddr(){
+  const l=locations.find(x=>x._id===document.getElementById("trTo").value);
+  const t=locationShipToText(l);
+  document.getElementById("trToAddr").textContent = t ? `送り先: ${t}` : (l ? "送り先の住所が未登録です（保管場所の「編集」で登録できます）" : "");
+}
+function openTransferModal(){
+  const act=activeLocations();
+  if(act.length<2){ alert("保管場所が2つ以上必要です（在庫タブの「保管場所を追加」から登録してください）"); return; }
+  const from=document.getElementById("trFrom"), to=document.getElementById("trTo");
+  fillLocationSelect(from, null);
+  fillLocationSelect(to, (act.find(l=>l._id!==from.value)||{})._id);
+  document.getElementById("trDate").value=today();
+  document.getElementById("trMethod").value="yupack";
+  ["trFee","trTracking","trMemo"].forEach(id=>document.getElementById(id).value="");
+  document.getElementById("trErr").textContent="";
+  from.onchange=renderTransferItemRows; to.onchange=showTransferToAddr;
+  renderTransferItemRows(); showTransferToAddr();
+  document.getElementById("transferModal").classList.add("open");
+}
+async function saveTransfer(){
+  const from=document.getElementById("trFrom").value, to=document.getElementById("trTo").value;
+  const err=document.getElementById("trErr"); err.textContent="";
+  if(!from||!to){ err.textContent="移動元と移動先を選んでください"; return; }
+  if(from===to){ err.textContent="移動元と移動先が同じです"; return; }
+  const items=[...document.querySelectorAll("#trItems .tr-qty")]
+    .map(i=>({sku:i.dataset.sku, qty:Math.floor(Number(i.value)||0)})).filter(i=>i.qty>0);
+  if(!items.length){ err.textContent="移動する台数を入力してください"; return; }
+  for(const it of items){
+    const p=products.find(x=>x.id===it.sku);
+    if(stockAt(p,from)<it.qty){ err.textContent=`在庫が足りません: ${it.sku}（${locationName(from)} ${stockAt(p,from)} 台 / 移動 ${it.qty} 台）`; return; }
+  }
+  const btn=document.getElementById("saveTransferBtn"); btn.disabled=true;
+  try{
+    const transferNumber=seqFmt("TR", await nextSeq("stockTransfers"));
+    const trRef=doc(collection(db,"stockTransfers"));
+    const who=currentUser.displayName||currentUser.email;
+    await runTransaction(db, async (tx)=>{
+      // 画面を開いたあとに別の出荷で減っていないか、書く直前の在庫で確かめ直す
+      const snaps=[];
+      for(const it of items){ snaps.push([it, await tx.get(doc(db,"products",it.sku))]); }
+      for(const [it,snap] of snaps){
+        const have=Number(((snap.data()||{}).stockByLocation||{})[from])||0;
+        if(have<it.qty) throw new Error(`在庫が足りません: ${it.sku}（${locationName(from)} ${have} 台 / 移動 ${it.qty} 台）`);
+      }
+      for(const [it,snap] of snaps){
+        tx.update(snap.ref, { [`stockByLocation.${from}`]: increment(-it.qty), stockInTransit: increment(it.qty) });
+        tx.set(doc(collection(db,"inventoryMovements")), movement(it.sku, -it.qty, "transfer_out", transferNumber, from));
+      }
+      tx.set(trRef, {
+        transferNumber, status:"in_transit",
+        fromLocationId:from, fromLocationName:locationName(from), toLocationId:to, toLocationName:locationName(to),
+        toShipTo: locationShipToText(locations.find(l=>l._id===to)),
+        items, shippedDate:document.getElementById("trDate").value||today(),
+        method:document.getElementById("trMethod").value, shippingFee:Number(document.getElementById("trFee").value)||0,
+        tracking:document.getElementById("trTracking").value.trim(), memo:document.getElementById("trMemo").value.trim(),
+        createdAt:serverTimestamp(), createdBy:who });
+    });
+    toast(`${transferNumber}：${locationName(from)} → ${locationName(to)} の発送を登録しました（到着したら「到着を登録」）`);
+    closeTransferModal();
+  }catch(e){ err.textContent=`登録できませんでした: ${e.message}`; }
+  finally{ btn.disabled=false; }
+}
+let arrivingTransfer=null;
+function closeArriveModal(){ document.getElementById("arriveModal").classList.remove("open"); arrivingTransfer=null; }
+function openArriveModal(t){
+  if(!t) return; arrivingTransfer=t;
+  document.getElementById("arriveSummary").innerHTML =
+    `<strong>${esc(t.transferNumber)}</strong>　${esc(t.fromLocationName)} → <strong>${esc(t.toLocationName)}</strong><br>${transferItemsLine(t)}<br>移動先の在庫に加算します。`;
+  document.getElementById("arriveDate").value=today();
+  document.getElementById("arriveErr").textContent="";
+  document.getElementById("arriveModal").classList.add("open");
+}
+// 到着・取り消しの共通処理。移動中から出して、to（到着）か from（取り消し）に入れる
+async function settleTransfer(t, mode){
+  const trRef=doc(db,"stockTransfers",t._id);
+  const intoLoc = mode==="arrive" ? t.toLocationId : t.fromLocationId;
+  const who=currentUser.displayName||currentUser.email;
+  await runTransaction(db, async (tx)=>{
+    const cur=await tx.get(trRef);
+    if(!cur.exists()) throw new Error("この移動の記録が見つかりません");
+    if(cur.data().status!=="in_transit") throw new Error("すでに到着済み・取り消し済みです（画面を更新してください）");
+    for(const it of (cur.data().items||[])){
+      const q=Number(it.qty)||0; if(!q) continue;
+      tx.update(doc(db,"products",it.sku), { stockInTransit: increment(-q), [`stockByLocation.${intoLoc}`]: increment(q) });
+      tx.set(doc(collection(db,"inventoryMovements")), movement(it.sku, q, mode==="arrive"?"transfer_in":"transfer_canceled", t.transferNumber, intoLoc));
+    }
+    tx.update(trRef, mode==="arrive"
+      ? { status:"arrived", arrivedDate:document.getElementById("arriveDate").value||today(), arrivedAt:serverTimestamp(), arrivedBy:who }
+      : { status:"canceled", canceledAt:serverTimestamp(), canceledBy:who });
+  });
+}
+async function doArrive(){
+  const t=arrivingTransfer; if(!t) return;
+  const btn=document.getElementById("doArriveBtn"); btn.disabled=true;
+  try{ await settleTransfer(t,"arrive"); toast(`${t.transferNumber} の到着を登録しました（${t.toLocationName} の在庫に入りました）`); closeArriveModal(); }
+  catch(e){ document.getElementById("arriveErr").textContent=`登録できませんでした: ${e.message}`; }
+  finally{ btn.disabled=false; }
+}
+async function cancelTransfer(t){
+  if(!t) return;
+  if(!confirm(`${t.transferNumber}（${t.fromLocationName} → ${t.toLocationName}）を取り消します。\n移動中の ${transferItemsLine(t).replace(/<[^>]+>/g,"")} を ${t.fromLocationName} の在庫に戻します。よろしいですか？`)) return;
+  try{ await settleTransfer(t,"cancel"); toast(`${t.transferNumber} を取り消しました（${t.fromLocationName} に戻しました）`); }
+  catch(e){ alert(`取り消せませんでした: ${e.message}`); }
+}
+
 // 発注済(sent) → 下書き(draft) に戻す（発注を取り消して内容を直すとき）
 // 入荷済(received)は在庫が動いているため対象外＝ボタンを出していない
 async function revertOrderToDraft(o){
@@ -2644,8 +2861,13 @@ onAuthStateChanged(auth, async (user)=>{
   onSnapshot(query(collection(db,"locations")),(snap)=>{
     locations=snap.docs.map(d=>({_id:d.id,...d.data()}))
       .sort((a,b)=>(Number(a.sort)||0)-(Number(b.sort)||0)||String(a.name||"").localeCompare(String(b.name||"")));
-    renderLocations(); renderProducts();
+    renderLocations(); renderProducts(); renderTransfers();
   });
+  // 保管場所間の移動（2026-09-30）
+  onSnapshot(query(collection(db,"stockTransfers")),(snap)=>{
+    transfers=snap.docs.map(d=>({_id:d.id,...d.data()}));
+    renderTransfers();
+  }, (e)=>console.warn("stockTransfers:", e.message));
   // 発注一覧
   onSnapshot(query(collection(db,"purchaseOrders"),orderBy("createdAt","desc")),(snap)=>{
     renderOrders(snap.docs.map(d=>({_id:d.id,...d.data()})));
@@ -2668,6 +2890,14 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeLocationBtn").addEventListener("click",closeLocationModal);
   document.getElementById("cancelLocationBtn").addEventListener("click",closeLocationModal);
   document.getElementById("doReceiveBtn").addEventListener("click",doReceive);
+  // 保管場所間の移動
+  document.getElementById("newTransferBtn").addEventListener("click",openTransferModal);
+  document.getElementById("saveTransferBtn").addEventListener("click",saveTransfer);
+  document.getElementById("closeTransferBtn").addEventListener("click",closeTransferModal);
+  document.getElementById("cancelTransferBtn").addEventListener("click",closeTransferModal);
+  document.getElementById("doArriveBtn").addEventListener("click",doArrive);
+  document.getElementById("closeArriveBtn").addEventListener("click",closeArriveModal);
+  document.getElementById("cancelArriveBtn").addEventListener("click",closeArriveModal);
   document.getElementById("closeReceiveBtn").addEventListener("click",closeReceiveModal);
   document.getElementById("cancelReceiveBtn").addEventListener("click",closeReceiveModal);
   document.getElementById("shipOrigin").addEventListener("change",updateShipOriginHint);

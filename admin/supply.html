@@ -52,9 +52,20 @@
           <button class="btn btn-secondary" id="newLocationBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>保管場所を追加</button>
         </div>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>保管場所</th><th>都道府県</th><th class="num">在庫合計</th><th>状態</th><th></th></tr></thead>
+          <table><thead><tr><th>保管場所</th><th>都道府県</th><th>届け先（発注・移動の納品先）</th><th class="num">在庫合計</th><th>状態</th><th></th></tr></thead>
           <tbody id="locationsBody"></tbody></table>
           <div id="locationsEmpty" class="empty-state" style="display:none"><i class="ti ti-building-warehouse" aria-hidden="true"></i><p>保管場所が登録されていません</p></div>
+        </div></div>
+
+        <!-- 保管場所間の移動（2026-09-30 追加）。発送で元の場所から減らして「移動中」、到着で移動先に入れる -->
+        <div class="page-header" style="margin:20px 0 8px">
+          <span style="font-size:13px;color:var(--color-ink-muted)">保管場所間の移動（例: 滋賀 → 沖縄）。発送した時点で元の場所から減り、到着を登録すると移動先に入ります</span>
+          <button class="btn btn-secondary" id="newTransferBtn" type="button"><i class="ti ti-truck-delivery" aria-hidden="true"></i>保管場所間の移動</button>
+        </div>
+        <div class="card"><div class="table-wrap">
+          <table><thead><tr><th>移動番号</th><th>発送日</th><th>移動元 → 移動先</th><th>内容</th><th>状態</th><th></th></tr></thead>
+          <tbody id="transfersBody"></tbody></table>
+          <div id="transfersEmpty" class="empty-state" style="display:none"><i class="ti ti-truck-delivery" aria-hidden="true"></i><p>移動の記録はまだありません</p></div>
         </div></div>
       </div>
 
@@ -151,6 +162,9 @@
         <div class="form-group"><label class="form-label" for="orderPartnerSelect">請求先の認定事業者<span id="dropshipReq" style="color:red;display:none"> *</span></label>
           <select class="form-control" id="orderPartnerSelect"><option value="">（手入力 / 自社で受け取り）</option></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">直送時はここが請求先になります。選ぶと下の届け先に住所を自動入力します（エンド事業所へ送る場合は手入力で上書き）。</p></div>
+        <div class="form-group" id="orderDeliverLocWrap"><label class="form-label" for="orderDeliverLoc">納品先の保管場所</label>
+          <select class="form-control" id="orderDeliverLoc"></select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">選ぶと下の届け先に保管場所の住所が入り、入荷登録のときもこの場所が最初から選ばれます（滋賀以外へ直接納品するとき）。</p></div>
         <div class="form-group"><label class="form-label" for="orderShipTo">届け先（AB Circleからの納品先）</label><textarea class="form-control" id="orderShipTo" rows="2" placeholder="〒000-0000&#10;住所　事業所名"></textarea></div>
         <div class="form-group"><label class="form-label" for="orderNote">備考（未入力時は「※100台未満〜」を表示）</label><textarea class="form-control" id="orderNote" rows="2"></textarea></div>
         <p id="orderTotal" style="text-align:right;font-weight:700"></p>
@@ -590,6 +604,13 @@
           <select class="form-control" id="locPref"></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ゆうパックの送料は<strong>発地</strong>で変わります。ここで選んだ都道府県を発送元として扱います。</p>
         </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="locPostal">郵便番号</label><input class="form-control" id="locPostal" type="text" inputmode="numeric" placeholder="520-0013" maxlength="8"></div>
+          <div class="form-group"><label class="form-label" for="locPhone">電話</label><input class="form-control" id="locPhone" type="tel" placeholder="077-000-0000"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="locAddress">住所</label><input class="form-control" id="locAddress" type="text" placeholder="滋賀県大津市…"></div>
+        <div class="form-group"><label class="form-label" for="locRecipient">宛名（受け取る方・事業所名）</label><input class="form-control" id="locRecipient" type="text" placeholder="NPO法人タダカヨ ロジスティックセンター 藤田様">
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">発注の届け先と、保管場所間の移動の送り先に使います。</p></div>
         <div class="form-group">
           <label class="form-label" style="display:flex;gap:8px;align-items:center;cursor:pointer">
             <input type="checkbox" id="locActive" checked style="width:18px;height:18px">
@@ -616,12 +637,65 @@
           <label class="form-label" for="receiveLocation">入荷先の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="receiveLocation"></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この場所の在庫に加算します。</p>
+          <p id="receiveHint" style="font-size:12px;margin-top:4px;display:none"></p>
         </div>
         <div class="field-error" id="receiveErr" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelReceiveBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="doReceiveBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>入荷を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 保管場所間の移動（2026-09-30 追加） -->
+  <div class="modal-overlay" id="transferModal" role="dialog" aria-modal="true" aria-label="保管場所間の移動">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h2>保管場所間の移動</h2>
+        <button class="btn btn-secondary" id="closeTransferBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="trFrom">移動元 <span style="color:red">*</span></label><select class="form-control" id="trFrom"></select></div>
+          <div class="form-group"><label class="form-label" for="trTo">移動先 <span style="color:red">*</span></label><select class="form-control" id="trTo"></select></div>
+        </div>
+        <p id="trToAddr" style="font-size:12px;color:var(--color-ink-muted);margin:-4px 0 12px;white-space:pre-line"></p>
+        <div id="trItems"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="trDate">発送日</label><input class="form-control" type="date" id="trDate"></div>
+          <div class="form-group"><label class="form-label" for="trMethod">送り方</label>
+            <select class="form-control" id="trMethod">
+              <option value="yupack">ゆうパック</option><option value="letterpack">レターパック</option>
+              <option value="carry">手渡し・持参</option><option value="other">その他</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="trFee">送料（円・税込の実費・任意）</label><input class="form-control" type="number" min="0" id="trFee" placeholder="0"></div>
+          <div class="form-group"><label class="form-label" for="trTracking">追跡番号（任意）</label><input class="form-control" type="text" id="trTracking"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="trMemo">メモ（任意）</label><input class="form-control" type="text" id="trMemo" placeholder="例: 沖縄の案件分を先に送る"></div>
+        <div class="callout" style="font-size:12px;margin:0;padding:10px 12px;border-left:3px solid #3a6e9e;background:var(--color-bg-subtle,#faf7f2)">
+          登録すると、移動元の在庫から減って「移動中」になります。全体の在庫台数は変わりません。届いたら一覧の「到着を登録」を押すと、移動先の在庫に入ります。
+        </div>
+        <div class="field-error" id="trErr" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelTransferBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="saveTransferBtn" type="button"><i class="ti ti-truck-delivery" aria-hidden="true"></i>発送を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="arriveModal" role="dialog" aria-modal="true" aria-label="移動の到着登録">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header"><h2>到着を登録</h2>
+        <button class="btn btn-secondary" id="closeArriveBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="arriveSummary" style="font-size:13px;margin:0 0 12px;line-height:1.8"></p>
+        <div class="form-group"><label class="form-label" for="arriveDate">到着日</label><input class="form-control" type="date" id="arriveDate"></div>
+        <div class="field-error" id="arriveErr" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelArriveBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="doArriveBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>到着を登録</button>
       </div>
     </div>
   </div>
