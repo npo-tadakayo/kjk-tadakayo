@@ -603,7 +603,7 @@ function buildReportPdf(caseId){
   });
 }
 
-// 助成金申請の手順（A4）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
+// 助成金申請の手順（A4・8ページ）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
 function subsidyGuideData(d){
   const yenNum = (id) => Number(String(document.getElementById(id)?.textContent || "").replace(/[−–]/g, "-").replace(/[^\d-]/g, "")) || 0;
   const aRows = [...document.querySelectorAll("#rcptItems tr")].filter(tr => (tr.querySelector(".ri-kind")?.value || "A") === "A");
@@ -648,7 +648,7 @@ function setupMailDoc(kind, d, st){
     const gPrev=document.getElementById("mailDocGuidePreview");
     if(gPrev) gPrev.onclick = (ev)=>{ ev.preventDefault();
       const w=window.open("", "_blank"); if(!w) return;
-      w.document.write(`<!doctype html><meta charset="utf-8"><title>助成金申請の手順</title><style>body{margin:0;background:#666;padding:16px}${SUBSIDY_GUIDE_STYLE}.sg{margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.4)}</style><base href="${location.origin}/">${renderSubsidyGuideHtml(subsidyGuideData(d))}`);
+      w.document.write(`<!doctype html><meta charset="utf-8"><title>助成金申請の手順</title><style>body{margin:0;background:#666;padding:16px}${SUBSIDY_GUIDE_STYLE}.sg{margin:0 auto}.sgp{margin:0 0 14px;box-shadow:0 2px 10px rgba(0,0,0,.4)}</style><base href="${location.origin}/">${renderSubsidyGuideHtml(subsidyGuideData(d))}`);
       w.document.close(); };
     document.getElementById("mailDocError").style.display = "none";
     modal.style.display = "flex";
