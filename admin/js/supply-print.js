@@ -6,6 +6,7 @@ import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
 import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote } from "/js/invoice-doc.js";
+import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -26,7 +27,7 @@ const type = params.get("type"); // po | ship
 const id = params.get("id");
 
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
-function yen(n){return "¥"+Number(n||0).toLocaleString("ja-JP");}
+function yen(n){ const v=Number(n||0); return (v<0?"−":"")+"¥"+Math.abs(v).toLocaleString("ja-JP"); }
 // 発行日は必ず日本時間で数える（toISOString はUTCなので、午前9時前に発行すると前日日付になる）
 function todayJst(){ return new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}); }
 const today = new Date().toLocaleDateString("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"long",day:"numeric"});
@@ -263,16 +264,16 @@ function renderReceipt(s, st, saved, contactName){
       <div style="display:flex;gap:20px;align-items:flex-start">
         <table class="po-sum rcpt-sum" style="flex:1"><thead><tr><th>区分</th><th class="num">税抜</th><th class="num">消費税(10%)</th><th class="num">税込</th></tr></thead>
         <tbody>
-          <tr><td class="lbl">カードリーダー費（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
-          <tr><td class="lbl">接続サポート等経費（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
-          <!-- 助成金の申請対象額。印刷物（領収証そのもの）の見た目は変えないので画面だけに出す -->
-          <tr class="rcpt-noprint"><td class="lbl">助成金の申請対象額（A＋B・税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="abIncl">¥0</strong></td></tr>
+          <tr><td class="lbl">カードリーダー費の合計（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
+          <tr><td class="lbl">伴走支援費・接続サポート等経費の合計（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
+          <!-- 助成金の申請対象額。事業所が申請書に書き写す額なので、書面（印刷・メール添付）にも出す（2026-09-30 次田さん指示） -->
+          <tr><td class="lbl">助成金の申請対象額（A＋B・税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="abIncl">¥0</strong></td></tr>
           <tr id="xRow" style="display:none"><td class="lbl">対象外（送料等）</td><td class="num" id="xExcl">¥0</td><td class="num" id="xTax">¥0</td><td class="num" id="xIncl">¥0</td></tr>
           <tr class="grand"><td class="lbl">明細合計（税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="rcptGrand">¥0</strong></td></tr>
         </tbody></table>
         <div id="rcptStamp" style="display:none;border:1px solid var(--muted);width:120px;height:80px;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted)">収入印紙<br>（5万円以上を紙で<br>発行する場合に貼付）</div>
       </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">※ 助成金の申請額は「カードリーダー費（対象A・税込）」＋「接続サポート等経費（対象B・税込）」です（対象外の送料等は申請対象に含みません）。カードリーダーはマイナ資格確認アプリ対応品です。</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">※ 助成金の申請額は「カードリーダー費の合計（対象A・税込）」＋「伴走支援費・接続サポート等経費の合計（対象B・税込）」です（対象外の送料等は申請対象に含みません）。カードリーダーはマイナ資格確認アプリ対応品です。</p>
       <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
     </div>`;
 }
@@ -449,7 +450,8 @@ function wireReceiptEditor(){
 // 出荷側にも発行日を書き戻す（誰にいつ何を発行したか後から確認でき、再発行も同じ内容で出せる）
 function collectReceiptSnapshot(){
   const tbody=document.getElementById("rcptItems");
-  const num=(t)=>Number(String(t||"").replace(/[^0-9-]/g,""))||0;
+  // 表示の「−¥29,500」（全角のマイナス記号）も負の数として読む（Codex P1・2026-09-30）
+  const num=(t)=>Number(String(t||"").replace(/[−–]/g,"-").replace(/[^0-9-]/g,""))||0;
   const items=[...(tbody?tbody.querySelectorAll("tr"):[])].map(tr=>({
     usage: tr.querySelector(".ri-kind")?.value||"A",
     name: tr.querySelector(".ri-name")?.value||"",
@@ -541,14 +543,21 @@ export function printableClone(){
   dstIn.forEach((el, i) => {
     const o = srcIn[i];
     const span = document.createElement("span");
-    span.textContent = !o ? "" : (o.tagName === "SELECT" ? (o.options[o.selectedIndex]?.text || "") : o.value);
-    if (el.classList.contains("num")) span.className = "num";
+    let text = !o ? "" : (o.tagName === "SELECT" ? (o.options[o.selectedIndex]?.text || "") : o.value);
+    // 単価は金額表記、数量は3桁区切り（生の数字「14500」「-29500」のまま出さない・2026-09-30）
+    if (el.classList.contains("ri-price")) text = yen(Number(text) || 0);
+    else if (el.classList.contains("ri-qty")) text = (Number(text) || 0).toLocaleString("ja-JP");
+    span.textContent = text;
+    if (el.classList.contains("num")) { span.className = "num"; span.style.display = "block"; span.style.textAlign = "right"; }
     el.replaceWith(span);
   });
   clone.querySelectorAll(".rcpt-noprint").forEach((n) => n.remove());
   // html2canvas は描画済みのDOMが要るので、画面外に置いて渡す
+  // A4 の本文幅（210mm − 左右8mm）より少し狭く固定する。画面の幅で描くと右端（角印・枠・表）が切れていた（2026-09-30）
+  clone.style.width = "190mm";
+  clone.style.boxSizing = "border-box";
   const holder = document.createElement("div");
-  holder.style.cssText = `position:fixed;left:-10000px;top:0;width:${src.offsetWidth}px;background:#fff`;
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:190mm;background:#fff";
   holder.appendChild(clone);
   document.body.appendChild(holder);
   return { clone, cleanup: () => holder.remove() };
@@ -594,6 +603,16 @@ function buildReportPdf(caseId){
   });
 }
 
+// 助成金申請の手順（A4）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
+function subsidyGuideData(d){
+  const yenNum = (id) => Number(String(document.getElementById(id)?.textContent || "").replace(/[−–]/g, "-").replace(/[^\d-]/g, "")) || 0;
+  const aRows = [...document.querySelectorAll("#rcptItems tr")].filter(tr => (tr.querySelector(".ri-kind")?.value || "A") === "A");
+  const units = aRows.reduce((n, tr) => n + (Number(tr.querySelector(".ri-qty")?.value) || 0), 0);
+  const readerName = aRows.map(tr => tr.querySelector(".ri-name")?.value || "").filter(Boolean).join("／");
+  return { corpName: d.company || "", officeName: d.officeName || "", rcptNo: d.receiptNo || ("RCPT-" + (d.soNumber || "")),
+           aIncl: yenNum("aIncl"), bIncl: yenNum("bIncl"), units, readerName };
+}
+
 function setupMailDoc(kind, d, st){
   const btn = document.getElementById("mailDocBtn");
   if(!btn) return;
@@ -621,6 +640,16 @@ function setupMailDoc(kind, d, st){
     const rChk=document.getElementById("mailDocReport");
     if(rWrap) rWrap.style.display = (kind === "invoice" && d.caseId) ? "" : "none";
     if(rChk) rChk.checked = false;
+    // 領収証のときは助成金申請の手順を同封できる。事業所へ直接請求した出荷（認定事業者向けでない）は最初からオン
+    const gWrap=document.getElementById("mailDocGuideWrap");
+    const gChk=document.getElementById("mailDocGuide");
+    if(gWrap) gWrap.style.display = kind === "receipt" ? "" : "none";
+    if(gChk) gChk.checked = kind === "receipt" && !d.partnerEmail;
+    const gPrev=document.getElementById("mailDocGuidePreview");
+    if(gPrev) gPrev.onclick = (ev)=>{ ev.preventDefault();
+      const w=window.open("", "_blank"); if(!w) return;
+      w.document.write(`<!doctype html><meta charset="utf-8"><title>助成金申請の手順</title><style>body{margin:0;background:#666;padding:16px}${SUBSIDY_GUIDE_STYLE}.sg{margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.4)}</style><base href="${location.origin}/">${renderSubsidyGuideHtml(subsidyGuideData(d))}`);
+      w.document.close(); };
     document.getElementById("mailDocError").style.display = "none";
     modal.style.display = "flex";
   };
@@ -662,6 +691,13 @@ function setupMailDoc(kind, d, st){
         // 添付名は英数字にする（日本語はメール側で _ に置き換わるため）
         extraAttachments.push({ filename: `support-report-${d.soNumber || id}.pdf`, contentBase64: reportB64 });
       }
+      if(kind === "receipt" && document.getElementById("mailDocGuide")?.checked){
+        sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 助成金申請の手順を作成中...';
+        const guideB64 = await buildSubsidyGuidePdf(subsidyGuideData(d));
+        if(!guideB64) throw new Error("助成金申請の手順のPDFを作れませんでした");
+        // 添付名は英数字にする（日本語はメール側で _ に置き換わるため）
+        extraAttachments.push({ filename: `subsidy-application-guide-${d.soNumber || id}.pdf`, contentBase64: guideB64 });
+      }
       sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
       await sendPartnerMailFn({ to, cc: cc || undefined, subject, body, shipmentId: id, kind, pdfBase64, filename,
         extraAttachments: extraAttachments.length ? extraAttachments : undefined });
@@ -669,7 +705,9 @@ function setupMailDoc(kind, d, st){
       if(kind === "invoice"){ d.invoiceMailedAt = todayJst(); d.invoiceMailedTo = to; }
       else { d.receiptMailedAt = todayJst(); d.receiptMailedTo = to; }
       document.getElementById("mailDocModal").style.display = "none";
-      alert(`${MAIL_DOC_LABEL[kind]}${document.getElementById("mailDocReport")?.checked ? "と支援報告書" : ""}を ${to} へ送付しました`);
+      const encl = [document.getElementById("mailDocReport")?.checked && kind==="invoice" ? "支援報告書" : "",
+                    document.getElementById("mailDocGuide")?.checked && kind==="receipt" ? "助成金申請の手順" : ""].filter(Boolean);
+      alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`);
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;
       err.style.display = "block";

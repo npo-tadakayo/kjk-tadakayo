@@ -132,7 +132,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
       <div class="qdoc-head">
         <div style="flex:0 0 auto">
           <img src="/images/tadakayo_logo.png" alt="タダカヨ" class="qdoc-logo"
-               onerror="this.outerHTML='&lt;div class=&quot;qdoc-logo-ph&quot;&gt;特定非営利活動法人タダカヨ&lt;/div&gt;'">
+               onerror="this.outerHTML='&lt;div class=&quot;qdoc-logo-ph&quot;&gt;NPO法人タダカヨ&lt;/div&gt;'">
         </div>
         <div class="qdoc-title-wrap"><div class="qdoc-title">見　積　書</div></div>
         <div class="qdoc-hanko-wrap" aria-hidden="true"></div>
@@ -153,7 +153,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
       <div class="qdoc-issuer">
         <div class="qdoc-issuer-text">
-          <div class="qdoc-issuer-name">特定非営利活動法人タダカヨ</div>
+          <div class="qdoc-issuer-name">NPO法人タダカヨ</div>
           <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
             〒143-0014　東京都大田区大森中2-1-20-1001<br>
             TEL: 050-6872-9884　／　担当: 佐藤拡史
@@ -208,7 +208,35 @@ export function quoteDocPrintableClone(hostId) {
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:230mm;background:#fff;z-index:-1";
   holder.appendChild(clone);
   document.body.appendChild(holder);
+  fitCloneToA4(clone, holder);
   return { clone, cleanup: () => holder.remove() };
+}
+
+// ── 1ページに収める（2026-09-30・mitsumori.html と同じ考え方）──
+const PX_PER_MM = 96 / 25.4;
+// PDF（html2pdf）: 複製の幅を広げて描き、A4幅に縮めて貼られる性質を使って高さを 295mm 以内にする
+export function fitCloneToA4(clone, holder) {
+  const MAX_H = 295;
+  let w = 210;
+  for (let i = 0; i < 4; i++) {
+    const eff = (clone.getBoundingClientRect().height / PX_PER_MM) * 210 / w;
+    if (eff <= MAX_H) break;
+    w = w * (eff / MAX_H) * 1.01;
+    clone.style.width = w + "mm";
+    if (holder) holder.style.width = (w + 20) + "mm";
+  }
+}
+// 印刷: 直前に .qdoc の本文の高さを測り、A4 − 上下15mm に収まる分だけ縮める。印刷ボタンのあるページで1回呼ぶ
+export function installPrintFit(selector = ".qdoc") {
+  const fit = () => document.querySelectorAll(selector).forEach((el) => {
+    el.style.zoom = "";
+    const cs = getComputedStyle(el);
+    const h = (el.getBoundingClientRect().height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / PX_PER_MM;
+    const sc = Math.min(1, (267 - 8) / h);   // 画面と印刷で行の折り返しが少し違うぶんの余裕
+    if (sc < 1) el.style.zoom = String(Math.floor(sc * 1000) / 1000);
+  });
+  window.addEventListener("beforeprint", fit);
+  window.addEventListener("afterprint", () => document.querySelectorAll(selector).forEach((el) => { el.style.zoom = ""; }));
 }
 
 // 見積書のCSS（mitsumori.html の .est-doc と見た目を一致させる。プレフィックスは .qdoc）
@@ -255,7 +283,7 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-notes strong{color:#111;}
 .qdoc-meta-line{margin-top:6px;color:#9a8e78;}
 @media print{
-  .qdoc{box-shadow:none;}
+  .qdoc{box-shadow:none;width:auto;padding:0;}
   @page{size:A4 portrait;margin:15mm;}
 }
 @media (max-width:820px){ .qdoc{width:100%;} }

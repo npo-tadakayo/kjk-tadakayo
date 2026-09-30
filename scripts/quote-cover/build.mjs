@@ -121,7 +121,7 @@ tr.total td.red{color:var(--red)}
 .hd .n{font-family:"Noto Sans JP";font-size:26pt;font-weight:900;color:var(--red);line-height:1}
 `;
 
-const footer = (i) => `<div class="footer"><span>特定非営利活動法人タダカヨ　介護情報基盤 伴走支援事業　｜　${esc(input.corpName)} 様　合計お見積もりのご案内（${ymdJp(input.issuedAt)}）</span><span class="pn">${i} / 8</span></div>`;
+const footer = (i) => `<div class="footer"><span>NPO法人タダカヨ　介護情報基盤 伴走支援事業　｜　${esc(input.corpName)} 様　合計お見積もりのご案内（${ymdJp(input.issuedAt)}）</span><span class="pn">${i} / 8</span></div>`;
 
 const officeRows = rows.map((r, i) => `
   <tr>
@@ -153,7 +153,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
       <div><b>対象</b>${n}事業所　／　カードリーダー 計${T.units}台　／　添付の見積書 ${n}通</div>
     </div>
     <div class="issuer">
-      <div class="nm">特定非営利活動法人タダカヨ</div>
+      <div class="nm">NPO法人タダカヨ</div>
       〒143-0014 東京都大田区大森中2-1-20-1001<br>TEL 050-6872-9884　担当: ${esc(input.staff || "佐藤拡史")}<br>https://kjk.tadakayo.jp
     </div>
   </div>
@@ -295,7 +295,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
         </tbody></table>
         <p class="note" style="margin-top:2mm">本資料のあとに、事業所ごとの見積書 ${n}通が続きます。</p>
       </div>
-      <div class="card"><h3 style="color:#333">お問い合わせ</h3><p style="font-size:10pt;line-height:1.8">特定非営利活動法人タダカヨ　介護情報基盤 伴走支援事業<br>担当: ${esc(input.staff || "佐藤拡史")}<br>TEL 050-6872-9884　／　kjk@tadakayo.jp<br>https://kjk.tadakayo.jp</p></div>
+      <div class="card"><h3 style="color:#333">お問い合わせ</h3><p style="font-size:10pt;line-height:1.8">NPO法人タダカヨ　介護情報基盤 伴走支援事業<br>担当: ${esc(input.staff || "佐藤拡史")}<br>TEL 050-6872-9884　／　kjk@tadakayo.jp<br>https://kjk.tadakayo.jp</p></div>
     </div>
   </div>
   ${footer(7)}

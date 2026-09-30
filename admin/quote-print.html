@@ -52,7 +52,8 @@
     import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
     import { gateRole } from "/js/role.js";
-    import { QUOTE_DOC_STYLE, renderQuoteDocHtml, loadQuoteDocData, quoteDocPrintableClone } from "/js/quote-doc.js";
+    import { QUOTE_DOC_STYLE, renderQuoteDocHtml, loadQuoteDocData, quoteDocPrintableClone, installPrintFit } from "/js/quote-doc.js";
+    installPrintFit(".qdoc");
 
     // このページのCSSは quote-doc.js の QUOTE_DOC_STYLE を注入する（.est-doc と同じ体裁を作る側の唯一の正本）
     const styleEl = document.createElement("style");

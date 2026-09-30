@@ -46,7 +46,8 @@
     import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
     import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
     import { gateRole } from "/js/role.js";
-    import { QUOTE_DOC_STYLE } from "/js/quote-doc.js";
+    import { QUOTE_DOC_STYLE, installPrintFit } from "/js/quote-doc.js";
+    installPrintFit(".qdoc");
     import { QUOTE_GROUP_DOC_STYLE, loadQuoteGroupData, renderQuoteGroupDocHtml } from "/js/quote-group-doc.js";
 
     // 体裁は見積書（quote-doc.js）の CSS を土台にし、合計見積書ぶんだけ足す

@@ -2,7 +2,7 @@
 // po-doc.js と同じ役割・同じ作法。CSS は supply-print.html の <style> 内 .inv-* と内容を一致させること
 // （あちらは送付状・領収書等と同居のため別管理。こちらは .inv 配下で完結する自己完結版）。
 function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
-function yen(n){ return "¥"+Number(n||0).toLocaleString("ja-JP"); }
+function yen(n){ const v=Number(n||0); return (v<0?"−":"")+"¥"+Math.abs(v).toLocaleString("ja-JP"); }
 
 // 請求書番号（出荷番号 SH… → INV…）。Chatの報告本文・PDFファイル名でも同じ番号を使う
 export function invoiceNoOf(s){ return String((s&&s.soNumber)||"").replace(/^SH/,"INV"); }

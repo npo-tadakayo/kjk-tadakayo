@@ -196,7 +196,7 @@ export function renderQuoteGroupDocHtml(data) {
       <div class="qdoc-head">
         <div style="flex:0 0 auto">
           <img src="/images/tadakayo_logo.png" alt="タダカヨ" class="qdoc-logo"
-               onerror="this.outerHTML='&lt;div class=&quot;qdoc-logo-ph&quot;&gt;特定非営利活動法人タダカヨ&lt;/div&gt;'">
+               onerror="this.outerHTML='&lt;div class=&quot;qdoc-logo-ph&quot;&gt;NPO法人タダカヨ&lt;/div&gt;'">
         </div>
         <div class="qdoc-title-wrap"><div class="qdoc-title">合計見積書</div><div class="qgdoc-subtitle">法人まとめ（${n}事業所）</div></div>
         <div class="qdoc-hanko-wrap" aria-hidden="true"></div>
@@ -217,7 +217,7 @@ export function renderQuoteGroupDocHtml(data) {
 
       <div class="qdoc-issuer">
         <div class="qdoc-issuer-text">
-          <div class="qdoc-issuer-name">特定非営利活動法人タダカヨ</div>
+          <div class="qdoc-issuer-name">NPO法人タダカヨ</div>
           <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
             〒143-0014　東京都大田区大森中2-1-20-1001<br>
             TEL: 050-6872-9884　／　担当: 佐藤拡史
