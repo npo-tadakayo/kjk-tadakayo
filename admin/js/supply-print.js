@@ -640,11 +640,11 @@ function setupMailDoc(kind, d, st){
     const rChk=document.getElementById("mailDocReport");
     if(rWrap) rWrap.style.display = (kind === "invoice" && d.caseId) ? "" : "none";
     if(rChk) rChk.checked = false;
-    // 領収証のときは助成金申請の手順を同封できる。事業所へ直接請求した出荷（認定事業者向けでない）は最初からオン
+    // 領収証のときは助成金申請の手順を同封する。既定はオン（2026-09-30 次田さん「付けるがデフォルト、付けないもできる」）
     const gWrap=document.getElementById("mailDocGuideWrap");
     const gChk=document.getElementById("mailDocGuide");
     if(gWrap) gWrap.style.display = kind === "receipt" ? "" : "none";
-    if(gChk) gChk.checked = kind === "receipt" && !d.partnerEmail;
+    if(gChk) gChk.checked = kind === "receipt";
     const gPrev=document.getElementById("mailDocGuidePreview");
     if(gPrev) gPrev.onclick = (ev)=>{ ev.preventDefault();
       const w=window.open("", "_blank"); if(!w) return;
