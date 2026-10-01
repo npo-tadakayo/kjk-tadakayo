@@ -5,7 +5,7 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serv
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf } from "/js/invoice-doc.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 
 const app = initializeApp(firebaseConfig);
@@ -672,10 +672,8 @@ function setupMailDoc(kind, d, st){
       const { clone, cleanup } = printableClone();
       let dataUri;
       try{
-        const opt = { margin:[10,8,10,8], image:{type:"jpeg",quality:0.95},
-          html2canvas:{scale:2, useCORS:true}, jsPDF:{unit:"mm", format:"a4", orientation:"portrait"},
-          pagebreak:{mode:["avoid-all","css"]} };
-        dataUri = await window.html2pdf().set(opt).from(clone).outputPdf("datauristring");
+        // A4 1枚に収める（フッターだけが2ページ目に出ていた・2026-10-01）
+        dataUri = await buildOnePagePdf(clone);
       }finally{ cleanup(); }
       const pdfBase64 = String(dataUri||"").split(",")[1] || "";
       if(!pdfBase64) throw new Error("PDFの生成に失敗しました");

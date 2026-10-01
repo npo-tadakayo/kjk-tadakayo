@@ -7,7 +7,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, 
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
-import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf,
+import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOnePagePdf,
   DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals } from "/js/invoice-doc.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
@@ -2419,9 +2419,12 @@ async function doInvoiceReport(){
       if(!el) throw new Error("請求書プレビューが見つかりません");
       const invNo = invoiceNoOf(s);
       const filename = `${invNo}.pdf`;
-      const opt = { margin:[10,8,10,8], filename, image:{type:"jpeg",quality:0.95},
-        html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"} };
-      const dataUri = await window.html2pdf().set(opt).from(el).outputPdf("datauristring");
+      // プレビュー枠（高さ360px・スクロール）のまま描くと右端が切れ、フッターが2ページ目に出ていた（2026-10-01）。
+      // 画面外に複製して A4 1枚に収めてから PDF にする
+      const { clone: pdfEl, cleanup: pdfCleanup } = offscreenClone(el);
+      let dataUri;
+      try { dataUri = await buildOnePagePdf(pdfEl); }
+      finally { pdfCleanup(); }
       const pdfBase64 = String(dataUri).split(",")[1] || "";
       btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 経理へ報告中...';
       const res = await reportInvoiceFn({

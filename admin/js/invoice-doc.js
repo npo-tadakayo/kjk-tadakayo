@@ -162,6 +162,41 @@ export function renderInvoiceHtml(s, st, opts){
 
 // 経理報告のプレビュー（supply.html）で .inv 要素単体に請求書スタイルを完結させるCSS（PDF生成対象）。
 // supply-print.html の同名クラスと見た目を一致させること。
+// 帳票を PDF の A4 1枚に収める（2026-10-01 次田さん「1ページに収めてほしい」）。
+// 以前は html2pdf にそのまま渡していたため、本文が印字範囲の高さをわずかに超えると
+// フッターだけが2ページ目に押し出されていた。
+// いまは「いつもの幅で1枚の画像に描く → A4 の印字範囲に縦横とも収まるよう縮めて中央に貼る」。
+// 幅を広げて縮ませる方式は、html2pdf の描画枠が印字幅に固定されるため右端が切れたので使わない。
+export async function buildOnePagePdf(el, { margin = [10, 8, 10, 8], quality = 0.95, scale = 2 } = {}) {
+  // 余白0で描く（描画枠＝210mm。本文 190mm が枠に収まり、切れない）
+  const worker = window.html2pdf().set({ margin: 0, html2canvas: { scale, useCORS: true, backgroundColor: "#ffffff" },
+    jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).from(el);
+  const canvas = await worker.toCanvas().get("canvas");
+  // html2pdf が作った PDF を器として使い、中身のページを全部消してから1ページだけ貼り直す
+  const pdf = await worker.toPdf().get("pdf");
+  for (let i = pdf.internal.getNumberOfPages(); i >= 1; i--) pdf.deletePage(i);
+  pdf.addPage("a4", "portrait");
+  const maxW = 210 - margin[1] - margin[3], maxH = 297 - margin[0] - margin[2];
+  const ratio = canvas.height / canvas.width;
+  let w = maxW, h = maxW * ratio;
+  if (h > maxH) { h = maxH; w = maxH / ratio; }
+  pdf.addImage(canvas.toDataURL("image/jpeg", quality), "JPEG", (210 - w) / 2, margin[0], w, h);
+  return pdf.output("datauristring");
+}
+
+// 画面上の請求書（.inv）を画面外に複製して渡す（プレビュー枠のスクロールや幅に左右されない）
+export function offscreenClone(srcEl, widthMm = 190) {
+  const clone = srcEl.cloneNode(true);
+  clone.style.boxSizing = "border-box";
+  clone.style.maxWidth = "none";
+  clone.style.width = widthMm + "mm";
+  const holder = document.createElement("div");
+  holder.style.cssText = `position:fixed;left:-10000px;top:0;width:${widthMm}mm;background:#fff`;
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+  return { clone, cleanup: () => holder.remove() };
+}
+
 export const INVOICE_STYLE = `
 .inv{background:#fff;color:#2C2416;font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;font-size:13px;line-height:1.7;padding:32px 36px;width:720px;}
 .inv *{box-sizing:border-box;}
