@@ -605,6 +605,19 @@ function buildReportPdf(caseId){
 
 // 助成金申請の手順（A4・8ページ）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
 function subsidyGuideData(d){
+  // 請求書から送るとき（領収証の明細欄が無い）は、出荷の明細から A・B を出す（領収証と同じ振り分け: 2026-10-01）
+  if(!document.querySelector("#rcptItems tr")){
+    const incl = priceIsTaxIncluded(d);
+    // 税抜の出荷は、区分ごとの小計に1回だけ税を掛ける（領収証画面の sub.A / sub.B と同じ計算）
+    const line = (i) => (Number(i.qty)||0)*(Number(i.unitPrice)||0);
+    const withTax = (sub) => incl ? sub : sub + Math.floor(sub*0.1);
+    const items = d.items || [];
+    const isB = (i) => i.sku==="support-fee" || i.sku==="discount";
+    const aItems = items.filter(i => !isB(i) && !i.nonStock);
+    return { corpName: d.company || "", officeName: d.officeName || "", rcptNo: "RCPT-" + String(d.soNumber || "").replace(/^SH-/, ""),
+             aIncl: withTax(aItems.reduce((n,i)=>n+line(i),0)), bIncl: withTax(items.filter(isB).reduce((n,i)=>n+line(i),0)),
+             units: aItems.reduce((n,i)=>n+(Number(i.qty)||0),0), readerName: [...new Set(aItems.map(i=>i.sku).filter(Boolean))].join("／"), fromInvoice: true };
+  }
   const yenNum = (id) => Number(String(document.getElementById(id)?.textContent || "").replace(/[−–]/g, "-").replace(/[^\d-]/g, "")) || 0;
   const aRows = [...document.querySelectorAll("#rcptItems tr")].filter(tr => (tr.querySelector(".ri-kind")?.value || "A") === "A");
   const units = aRows.reduce((n, tr) => n + (Number(tr.querySelector(".ri-qty")?.value) || 0), 0);
@@ -640,11 +653,13 @@ function setupMailDoc(kind, d, st){
     const rChk=document.getElementById("mailDocReport");
     if(rWrap) rWrap.style.display = (kind === "invoice" && d.caseId) ? "" : "none";
     if(rChk) rChk.checked = false;
-    // 領収証のときは助成金申請の手順を同封する。既定はオン（2026-09-30 次田さん「付けるがデフォルト、付けないもできる」）
+    // 請求書・領収証とも助成金申請の手順を同封できる。既定はオン（2026-09-30 次田さん「付けるがデフォルト、付けないもできる」、
+    // 2026-10-01 請求書にも同封する運用に）
     const gWrap=document.getElementById("mailDocGuideWrap");
     const gChk=document.getElementById("mailDocGuide");
-    if(gWrap) gWrap.style.display = kind === "receipt" ? "" : "none";
-    if(gChk) gChk.checked = kind === "receipt";
+    const guideOk = kind === "receipt" || kind === "invoice";
+    if(gWrap) gWrap.style.display = guideOk ? "" : "none";
+    if(gChk) gChk.checked = guideOk;
     const gPrev=document.getElementById("mailDocGuidePreview");
     if(gPrev) gPrev.onclick = (ev)=>{ ev.preventDefault();
       const w=window.open("", "_blank"); if(!w) return;
@@ -689,7 +704,7 @@ function setupMailDoc(kind, d, st){
         // 添付名は英数字にする（日本語はメール側で _ に置き換わるため）
         extraAttachments.push({ filename: `support-report-${d.soNumber || id}.pdf`, contentBase64: reportB64 });
       }
-      if(kind === "receipt" && document.getElementById("mailDocGuide")?.checked){
+      if((kind === "receipt" || kind === "invoice") && document.getElementById("mailDocGuide")?.checked){
         sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 助成金申請の手順を作成中...';
         const guideB64 = await buildSubsidyGuidePdf(subsidyGuideData(d));
         if(!guideB64) throw new Error("助成金申請の手順のPDFを作れませんでした");
@@ -704,7 +719,7 @@ function setupMailDoc(kind, d, st){
       else { d.receiptMailedAt = todayJst(); d.receiptMailedTo = to; }
       document.getElementById("mailDocModal").style.display = "none";
       const encl = [document.getElementById("mailDocReport")?.checked && kind==="invoice" ? "支援報告書" : "",
-                    document.getElementById("mailDocGuide")?.checked && kind==="receipt" ? "助成金申請の手順" : ""].filter(Boolean);
+                    document.getElementById("mailDocGuide")?.checked && (kind==="receipt" || kind==="invoice") ? "助成金申請の手順" : ""].filter(Boolean);
       alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`);
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;

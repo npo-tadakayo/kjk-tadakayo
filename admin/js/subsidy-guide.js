@@ -1,4 +1,4 @@
-// 助成金申請の手順（A4・8ページ）— 領収証メールに任意で同封する
+// 助成金申請の手順（A4・8ページ）— 請求書・領収証メールに任意で同封する
 //   2026-09-30 1枚版を作成 → 同日「実際の画面を入れて、枚数が増えてもよい」（次田さん）で8ページに拡張
 //
 // 正本: 国民健康保険中央会「助成金申請の手引き（令和8年度）」令和8年7月版
@@ -36,6 +36,8 @@ export function renderSubsidyGuideHtml(g) {
   const units = esc(g.units ?? "");
   const reader = esc(g.readerName || "マイナ資格確認アプリ対応のカードリーダー");
   const to = `${esc(g.corpName || "")}${g.officeName ? `　${esc(g.officeName)}` : ""}`;
+  // 請求書に同封するときは領収証がまだ無い（入金確認後に送る）。文言を出し分ける（2026-10-01）
+  const RC = g.fromInvoice ? "入金確認後にお送りする領収証" : "同封の領収証";
 
   const p1 = `
   <section class="sgp">
@@ -46,8 +48,8 @@ export function renderSubsidyGuideHtml(g) {
         <div class="sg-sub">カードリーダーの購入費・接続サポート等経費（介護事業所向け・令和8年度）</div>
       </div>
     </div>
-    <div class="sg-to">${to} 様　／　同封の領収証 ${esc(g.rcptNo || "")}</div>
-    <p class="sg-lead">導入おつかれさまでした。この冊子は、同封の領収証を使って<strong>介護情報基盤ポータルから助成金を申請する手順</strong>を、実際の画面で説明したものです。上から順に進めれば、1回で申請が終わるように作っています。</p>
+    <div class="sg-to">${to} 様　／　${g.fromInvoice ? `領収証 ${esc(g.rcptNo || "")}（入金確認後にお送りします）` : `同封の領収証 ${esc(g.rcptNo || "")}`}</div>
+    <p class="sg-lead">導入おつかれさまでした。この冊子は、${RC}を使って<strong>介護情報基盤ポータルから助成金を申請する手順</strong>を、実際の画面で説明したものです。上から順に進めれば、1回で申請が終わるように作っています。</p>
 
     <div class="sg-keys">
       <div><b>申請期間</b>令和8年5月7日〜令和9年3月12日（予定）</div>
@@ -64,7 +66,7 @@ export function renderSubsidyGuideHtml(g) {
       <div><span>4</span>翌月 審査<br>翌々月末 振込<small>P.8</small></div>
     </div>
 
-    <h2 class="sg-h">あなたの申請で入力する数字（同封の領収証と同じです）</h2>
+    <h2 class="sg-h">あなたの申請で入力する数字（${RC}と同じです）</h2>
     <table class="sg-t sg-amt">
       <thead><tr><th>申請画面の欄</th><th>入れる内容</th><th>領収証のどこか</th><th>頁</th></tr></thead>
       <tr><td>カードリーダー購入費用（税込の総額）</td><td class="v">${yen(a)}</td><td>カードリーダー費の合計（対象A）</td><td class="c">P.5</td></tr>
@@ -78,7 +80,7 @@ export function renderSubsidyGuideHtml(g) {
     <div class="sg-docs">
       <label>□ ① 通帳の写し<small>P.2</small></label>
       <label>□ ② サービス種類が分かる書類（指定通知書など）<small>P.2</small></label>
-      <label>□ ③ 領収書の写し ＝ <strong>同封の領収証 PDF</strong><small>P.3</small></label>
+      <label>□ ③ 領収書の写し ＝ <strong>${RC} PDF</strong><small>P.3</small></label>
       <label>□ ④ 介護WEBサービスの「管理メニュー」の画面コピー<small>P.3</small></label>
     </div>
     <div class="sg-toc">
@@ -111,8 +113,8 @@ export function renderSubsidyGuideHtml(g) {
   const p3 = `
   <section class="sgp">
     ${head(3, "書類の準備②")}
-    <h2 class="sg-h">③ 領収書の写し — <span class="sg-red">同封の領収証（PDF）をそのまま使えます</span></h2>
-    <p>手引きでは、カードリーダーの<strong>型名（または商品名）・購入台数・金額内訳</strong>と、「接続サポート等経費」などの<strong>用途</strong>が書かれていることが求められています。同封の領収証は、この形で作っています。「〇〇一式」のような書き方は交付されない場合があります。</p>
+    <h2 class="sg-h">③ 領収書の写し — <span class="sg-red">${RC}（PDF）をそのまま使えます</span></h2>
+    <p>手引きでは、カードリーダーの<strong>型名（または商品名）・購入台数・金額内訳</strong>と、「接続サポート等経費」などの<strong>用途</strong>が書かれていることが求められています。${RC}は、この形で作っています。「〇〇一式」のような書き方は交付されない場合があります。</p>
     ${fig("p12_ryoshusho.jpg", 12, 184, "領収書の書き方の例")}
     <div class="sg-two">
       ${fig("p14_web_menu.jpg", 14, 108, "介護WEBサービスの管理メニュー画面")}
@@ -218,7 +220,7 @@ export function renderSubsidyGuideHtml(g) {
       ${fig("p22_tenpu2.jpg", 22, 112, "領収書と画面コピーの添付、確認、申請")}
       <div>
         <ol class="sg-ol">
-          <li><b>領収書等</b>に、<strong>同封の領収証（PDF）</strong>を添付します（P.3 の③）</li>
+          <li><b>領収書等</b>に、<strong>${RC}（PDF）</strong>を添付します（P.3 の③）</li>
           <li><b>介護WEBサービスの画面コピー</b>に、P.3 の④で保存した画面を添付します</li>
           <li>途中で止めるときは「一時保存する」</li>
           <li>「<strong>確認画面へ進む</strong>」を押し、内容を確かめます</li>
@@ -233,9 +235,9 @@ export function renderSubsidyGuideHtml(g) {
         </div>
       </div>
     </div>
-    <h2 class="sg-h">同封の領収証 PDF の保存のしかた</h2>
+    <h2 class="sg-h">${RC} PDF の保存のしかた</h2>
     <ol class="sg-ol">
-      <li>このメールに添付されている<strong>領収証の PDF（RCPT-で始まる名前）</strong>を、パソコンに保存します（添付ファイルを開き、ダウンロードまたは「名前を付けて保存」）</li>
+      <li>${g.fromInvoice ? "入金確認後にお送りするメール" : "このメール"}に添付されている<strong>領収証の PDF（RCPT-で始まる名前）</strong>を、パソコンに保存します（添付ファイルを開き、ダウンロードまたは「名前を付けて保存」）</li>
       <li>申請画面の「領収書等」で「ファイルを選択する」を押し、保存した PDF を選びます</li>
     </ol>
     <p class="sg-note">この冊子（助成金申請の手順）は添付しなくて構いません。</p>
