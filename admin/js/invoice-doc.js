@@ -6,6 +6,9 @@ function yen(n){ const v=Number(n||0); return (v<0?"−":"")+"¥"+Math.abs(v).to
 
 // 請求書番号（出荷番号 SH… → INV…）。Chatの報告本文・PDFファイル名でも同じ番号を使う
 export function invoiceNoOf(s){ return String((s&&s.soNumber)||"").replace(/^SH/,"INV"); }
+// 振込のときにご依頼人名の前へ付けていただく番号（請求書番号の末尾4桁・2026-10-03 次田さん決定）
+// 似た法人名からの入金を、どの請求書の分か取り違えないため
+export function payerCodeOf(s){ const m=String((s&&s.soNumber)||"").match(/(\d{4})$/); return m?m[1]:""; }
 
 // 🔴 明細の単価が「税込」か「税抜」かは、請求先で変わる（2026-09-13 是正）。
 //   ・事業所へ直接販売（direct）＝ 見積もりの定価をそのまま入れている。
@@ -105,7 +108,7 @@ export function renderInvoiceHtml(s, st, opts){
   const bankName=st.billingBankName||"", branch=st.billingBranchName||"", acctType=st.billingAccountType||"普通", acctNo=st.billingAccountNumber||"", acctHolder=st.billingAccountHolder||"";
   const hasBank = bankName && acctNo;
   const payInner = hasBank
-    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div><div style="font-size:12px;color:#6a5e48;margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
+    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div>${payerCodeOf(s)?`<div style="margin-top:6px;padding:6px 10px;background:#FFE4EC;border-radius:6px;font-size:12.5px;line-height:1.6">お振込の際は、<strong>ご依頼人名の前に「${esc(payerCodeOf(s))}」</strong>を付けてください（例：<strong>${esc(payerCodeOf(s))} ユ）○○○○</strong>）。どちらからのお振込みかを確実に確かめるためです。</div>`:""}<div style="font-size:12px;color:#6a5e48;margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
     : `<div style="font-size:12px;color:#6a5e48">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
   // 適格請求書: 各明細に適用税率を表示
   // 品名だけでは USB か Bluetooth か（USBなら端子が A か C か）分からないので、明細に併記する。

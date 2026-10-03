@@ -192,6 +192,15 @@
               <button type="button" id="mailDocGuidePreview" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:4px"><i class="ti ti-eye"></i> 中身を見る</button></span>
           </label>
         </div>
+        <!-- お振込方法のご案内（A4・1枚）の同封（請求書のときだけ出す・2026-10-03 追加） -->
+        <div id="mailDocFurikomiWrap" style="display:none;border-top:1px solid var(--line);padding-top:12px">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.7;cursor:pointer">
+            <input type="checkbox" id="mailDocFurikomi" style="width:18px;height:18px;margin-top:2px;flex:none">
+            <span><strong>お振込方法のご案内（A4・1枚）も同封する</strong><br>
+              <span style="color:var(--muted);font-size:12px">ご依頼人名の前に請求書番号の4桁を付けていただくお願いと、ネットバンキング・ATM・窓口・ゆうちょ銀行での書き方です。PDFがもう1つ添付されます。最初からオンです。付けないときはチェックを外してください。</span>
+              <button type="button" id="mailDocFurikomiPreview" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-top:4px"><i class="ti ti-eye"></i> 中身を見る</button></span>
+          </label>
+        </div>
         <div id="mailDocError" style="display:none;font-size:13px;color:#b84a4a;font-weight:600"></div>
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--line)">

@@ -5,8 +5,9 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serv
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf } from "/js/invoice-doc.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
+import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -520,7 +521,9 @@ function mailDocTemplate(kind, s, st){
   const lines = kind === "invoice"
     ? `平素より大変お世話になっております。\n` +
       `出荷（${s.soNumber || ""}）の請求書をPDFにてお送りいたします。\n` +
-      `お支払期限・お振込先はPDFに記載しております。ご確認のほどよろしくお願い申し上げます。`
+      `お支払期限・お振込先はPDFに記載しております。ご確認のほどよろしくお願い申し上げます。\n\n` +
+      (payerCodeOf(s) ? `【お振込のときのお願い】\nご依頼人名の前に「${payerCodeOf(s)}」を付けてください（例：${payerCodeOf(s)} ユ）○○○○）。\n` +
+      `似たお名前の法人さまが多いため、どの請求書へのお振込みかを確かめるためのお願いです。` : "")
     : `平素より大変お世話になっております。\n` +
       `ご入金を確認いたしましたので、領収証（出荷 ${s.soNumber || ""}）をPDFにてお送りいたします。\n` +
       `助成金の申請書類としてもご利用いただけます。`;
@@ -660,6 +663,16 @@ function setupMailDoc(kind, d, st){
     const guideOk = kind === "receipt" || kind === "invoice";
     if(gWrap) gWrap.style.display = guideOk ? "" : "none";
     if(gChk) gChk.checked = guideOk;
+    // お振込方法のご案内は請求書のときだけ。既定はオン（2026-10-03）
+    const fWrap=document.getElementById("mailDocFurikomiWrap");
+    const fChk=document.getElementById("mailDocFurikomi");
+    if(fWrap) fWrap.style.display = kind === "invoice" ? "" : "none";
+    if(fChk) fChk.checked = kind === "invoice";
+    const fPrev=document.getElementById("mailDocFurikomiPreview");
+    if(fPrev) fPrev.onclick = (ev)=>{ ev.preventDefault();
+      const w=window.open("", "_blank"); if(!w) return;
+      w.document.write(`<!doctype html><meta charset="utf-8"><title>お振込方法のご案内</title><style>body{margin:0;background:#666;padding:16px}${FURIKOMI_STYLE}.fg{margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.4)}</style>${renderFurikomiGuideHtml(d, st)}`);
+      w.document.close(); };
     const gPrev=document.getElementById("mailDocGuidePreview");
     if(gPrev) gPrev.onclick = (ev)=>{ ev.preventDefault();
       const w=window.open("", "_blank"); if(!w) return;
@@ -704,6 +717,12 @@ function setupMailDoc(kind, d, st){
         // 添付名は英数字にする（日本語はメール側で _ に置き換わるため）
         extraAttachments.push({ filename: `support-report-${d.soNumber || id}.pdf`, contentBase64: reportB64 });
       }
+      if(kind === "invoice" && document.getElementById("mailDocFurikomi")?.checked){
+        sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> お振込方法のご案内を作成中...';
+        const fB64 = await buildFurikomiGuidePdf(d, st);
+        if(!fB64) throw new Error("お振込方法のご案内のPDFを作れませんでした");
+        extraAttachments.push({ filename: `payment-instructions-${d.soNumber || id}.pdf`, contentBase64: fB64 });
+      }
       if((kind === "receipt" || kind === "invoice") && document.getElementById("mailDocGuide")?.checked){
         sendBtn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 助成金申請の手順を作成中...';
         const guideB64 = await buildSubsidyGuidePdf(subsidyGuideData(d));
@@ -719,7 +738,8 @@ function setupMailDoc(kind, d, st){
       else { d.receiptMailedAt = todayJst(); d.receiptMailedTo = to; }
       document.getElementById("mailDocModal").style.display = "none";
       const encl = [document.getElementById("mailDocReport")?.checked && kind==="invoice" ? "支援報告書" : "",
-                    document.getElementById("mailDocGuide")?.checked && (kind==="receipt" || kind==="invoice") ? "助成金申請の手順" : ""].filter(Boolean);
+                    document.getElementById("mailDocGuide")?.checked && (kind==="receipt" || kind==="invoice") ? "助成金申請の手順" : "",
+                    document.getElementById("mailDocFurikomi")?.checked && kind==="invoice" ? "お振込方法のご案内" : ""].filter(Boolean);
       alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`);
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;
