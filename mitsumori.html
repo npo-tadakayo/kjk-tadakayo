@@ -1679,13 +1679,28 @@
     }
   }
   // 印刷: 印刷の直前に各見積書の本文の高さを測り、1ページ（A4 − 上下15mm）に収まる分だけ縮める
+  // 2026-10-04: 画面の幅のまま測ると、印刷（本文幅180mm）より行の折り返しが少なく低く出て、
+  // 縮め方が足りず2ページになっていた（実測 0.958、必要なのは 0.92 前後）。
+  // 印刷と同じ幅・同じ余白なしの複製を画面外に置いて測る。
   function fitDocsForPrint() {
-    const PAGE_H = 267 - 8;   // 画面と印刷で行の折り返しが少し違うぶんの余裕
+    const PAGE_H = 267 - 6;   // A4 297mm − 上下15mm、ブラウザごとの字幅の差の余裕
     document.querySelectorAll('.est-doc').forEach((el) => {
       el.style.zoom = '';
-      const cs = getComputedStyle(el);
-      const h = (el.getBoundingClientRect().height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)) / PX_PER_MM;
-      const sc = Math.min(1, PAGE_H / h);
+      const probe = el.cloneNode(true);
+      probe.removeAttribute('id');
+      probe.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+      probe.style.cssText += ';position:absolute;left:-10000px;top:0;padding:0;margin:0;box-shadow:none;zoom:1;';
+      document.body.appendChild(probe);
+      // 縮めると1行に入る字数が増えて行が減るので、縮めた幅で測り直し、
+      // 「収まる中でいちばん大きい縮小率」を二分探索で求める（縮めすぎて文字が小さくならないように）
+      const printedH = (s) => { probe.style.width = (180 / s) + 'mm'; return probe.getBoundingClientRect().height / PX_PER_MM * s; };
+      let sc = 1;
+      if (printedH(1) > PAGE_H) {
+        let lo = 0.5, hi = 1;
+        for (let i = 0; i < 8; i++) { const mid = (lo + hi) / 2; if (printedH(mid) <= PAGE_H) lo = mid; else hi = mid; }
+        sc = lo;
+      }
+      probe.remove();
       if (sc < 1) el.style.zoom = String(Math.floor(sc * 1000) / 1000);
     });
   }
