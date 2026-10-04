@@ -1651,33 +1651,22 @@
   function quotePrintableClone(srcId) {
     const src = document.getElementById(srcId);
     const clone = src.cloneNode(true);
+    clone.style.boxSizing = 'border-box';   // 余白を含めて210mm（描画枠からはみ出さない）
+    clone.style.padding = '12mm 10mm';      // 本文幅190mm（印刷は約95%に縮めて実質190mm幅で並ぶので見た目をそろえる。18mmだと174mmで折り返しが増える）
     clone.style.width = '210mm';
     clone.style.maxWidth = 'none';
     clone.style.boxShadow = 'none';
     clone.style.margin = '0';
     const holder = document.createElement('div');
-    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:230mm;background:#fff;z-index:-1';
+    holder.style.cssText = 'position:fixed;left:-10000px;top:0;width:210mm;background:#fff;z-index:-1';
     holder.appendChild(clone);
     document.body.appendChild(holder);
-    fitCloneToA4(clone, holder);
     return { clone, cleanup: () => holder.remove() };
   }
 
   // ── 1ページに収める（2026-09-30・藤田さん指摘「余白デフォルトで2ページにまたがる。92%なら収まる」）──
   // 明細が多い見積書は A4 の高さを超える。固定の縮小率だと小さくしすぎるか足りないので、その都度測って縮める。
   const PX_PER_MM = 96 / 25.4;
-  // PDF（html2pdf）: 複製の幅を広げて描き、A4幅に合わせて縮めて貼られる性質を使って高さを収める
-  function fitCloneToA4(clone, holder) {
-    const MAX_H = 295;   // A4 297mm から少し余裕
-    let w = 210;
-    for (let i = 0; i < 4; i++) {
-      const eff = (clone.getBoundingClientRect().height / PX_PER_MM) * 210 / w;   // A4幅に縮めたときの高さ
-      if (eff <= MAX_H) break;
-      w = w * (eff / MAX_H) * 1.01;
-      clone.style.width = w + 'mm';
-      holder.style.width = (w + 20) + 'mm';
-    }
-  }
   // 印刷: 印刷の直前に各見積書の本文の高さを測り、1ページ（A4 − 上下15mm）に収まる分だけ縮める
   // 2026-10-04: 画面の幅のまま測ると、印刷（本文幅180mm）より行の折り返しが少なく低く出て、
   // 縮め方が足りず2ページになっていた（実測 0.958、必要なのは 0.92 前後）。
@@ -1715,12 +1704,21 @@
   async function docToPdfBase64(srcId) {
     const { clone, cleanup } = quotePrintableClone(srcId);
     try {
-      // .est-doc 自身が 18mm の余白を持つので、PDF側の margin は 0 にする（二重にしない）
-      const opt = { margin: 0, image: { type: 'jpeg', quality: 0.95 },
-        html2canvas: { scale: 2, useCORS: true }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css'] } };
-      const dataUri = await window.html2pdf().set(opt).from(clone).outputPdf('datauristring');
-      return String(dataUri).split(',')[1] || '';
+      // 2026-10-04: 以前は「複製の幅を広げて描き、A4幅に縮めて貼る」方式だったが、html2pdf の描画枠は
+      // 210mm 固定のため広げた分の右端が切れ、はみ出した下端で白紙の2ページ目ができていた（メール添付が2ページ）。
+      // CRM の請求書（admin/js/invoice-doc.js buildOnePagePdf）と同じく、A4幅のまま画像に描き、
+      // 1ページに収まる大きさに縮めて貼り直す。複製自身が余白を持つので PDF 側の余白は 0。
+      const worker = window.html2pdf().set({ margin: 0, html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } }).from(clone);
+      const canvas = await worker.toCanvas().get('canvas');
+      const pdf = await worker.toPdf().get('pdf');
+      for (let i = pdf.internal.getNumberOfPages(); i >= 1; i--) pdf.deletePage(i);
+      pdf.addPage('a4', 'portrait');
+      const ratio = canvas.height / canvas.width;
+      let w = 210, h = 210 * ratio;
+      if (h > 297) { h = 297; w = 297 / ratio; }
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.95), 'JPEG', (210 - w) / 2, 0, w, h);
+      return String(pdf.output('datauristring')).split(',')[1] || '';
     } finally { cleanup(); }
   }
 
