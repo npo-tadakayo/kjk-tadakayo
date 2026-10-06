@@ -71,6 +71,12 @@ label{font-weight:700;display:block;margin:14px 0 4px}input,textarea,select{widt
 <label for="doc">使いたい資料・動画（必須）</label><input id="doc" required placeholder="例：ケアプランデータ連携システム 導入・活用ガイドブック（導入編）">
 <label for="use">使い方（必須）</label><select id="use" required><option value="">選んでください</option><option>研修・説明会での配布や投影</option><option>ほかのサイト・SNSへの掲載</option><option>内容の改変・ほかの資料への組み込み</option><option>営利目的での利用</option><option>その他</option></select>
 <label for="detail">目的・範囲（必須）</label><textarea id="detail" rows="5" required placeholder="例：〇〇市の事業所向け研修（11月・約50名）で印刷して配布したい"></textarea>
+<div style="margin-top:18px;padding:14px 16px;background:var(--bg2);border-radius:10px">
+<label for="agree" style="display:flex;align-items:flex-start;gap:10px;margin:0;font-weight:700;cursor:pointer;min-height:44px">
+<input id="agree" type="checkbox" required style="width:22px;height:22px;min-height:0;margin-top:4px;flex:0 0 auto">
+<span><a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針（プライバシーポリシー）</a>に同意して送信します（必須）</span></label>
+<p class="meta" style="margin:6px 0 0">いただいた情報は、活用許可のご連絡への対応にだけ使います。</p>
+</div>
 <p id="pf-err" role="alert" style="color:#b84a4a;font-weight:700"></p>
 <div class="btns" style="margin-top:12px"><button class="btn btn-p" type="submit"><i class="ti ti-send" aria-hidden="true"></i>メールで送る</button></div>
 <p class="meta" style="margin-top:10px">ボタンを押すと、お使いのメールソフトが開きます（宛先：kjk@tadakayo.jp）。開かない場合は、上の内容を kjk@tadakayo.jp までお送りください。</p>
@@ -78,8 +84,8 @@ label{font-weight:700;display:block;margin:14px 0 4px}input,textarea,select{widt
 <script>
 document.getElementById('pf').addEventListener('submit',function(e){e.preventDefault();
 var v=function(i){return document.getElementById(i).value.trim()};var need=['org','nm','em','doc','use','detail'].filter(function(i){return !v(i)});
-var err=document.getElementById('pf-err');if(need.length){err.textContent='必須の項目をご入力ください。';document.getElementById(need[0]).focus();return}err.textContent='';
-var body='【活用許可のご連絡】\n団体名・法人名：'+v('org')+'\nご担当者名：'+v('nm')+'\nメール：'+v('em')+'\n電話：'+v('tel')+'\n使いたい資料・動画：'+v('doc')+'\n使い方：'+v('use')+'\n目的・範囲：\n'+v('detail');
+var err=document.getElementById('pf-err');if(need.length){err.textContent='必須の項目をご入力ください。';document.getElementById(need[0]).focus();return}if(!document.getElementById('agree').checked){err.textContent='個人情報保護方針への同意にチェックを入れてください。';document.getElementById('agree').focus();return}err.textContent='';
+var body='【活用許可のご連絡】\n団体名・法人名：'+v('org')+'\nご担当者名：'+v('nm')+'\nメール：'+v('em')+'\n電話：'+v('tel')+'\n使いたい資料・動画：'+v('doc')+'\n使い方：'+v('use')+'\n目的・範囲：\n'+v('detail')+'\n\n個人情報保護方針：同意済み';
 location.href='mailto:kjk@tadakayo.jp?subject='+encodeURIComponent('【活用許可のご連絡】'+v('org'))+'&body='+encodeURIComponent(body);});
 </script>
 </main>
