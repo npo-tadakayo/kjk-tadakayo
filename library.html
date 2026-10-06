@@ -49,20 +49,29 @@ h1{font-size:28px;line-height:1.4;margin:32px 0 8px}h2{font-size:21px;border-lef
 .btn{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 18px;border-radius:10px;text-decoration:none;font-weight:700;border:2px solid var(--red-d)}
 .btn-p{background:var(--red-d);color:#fff}.btn-o{background:#fff;color:var(--red-d)}
 .note{background:var(--pink);border-radius:12px;padding:16px 20px;margin:24px 0}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(280px,100%),1fr));gap:16px}
+.yt{position:relative;display:block;width:100%;padding:0;border:0;border-radius:12px;overflow:hidden;cursor:pointer;background:#000;aspect-ratio:16/9}.yt img{width:100%;height:100%;object-fit:cover;display:block}.yt-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:76px;height:76px;border-radius:50%;background:rgba(192,40,40,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:36px;box-shadow:0 4px 16px rgba(0,0,0,.3)}.yt:hover .yt-play,.yt:focus-visible .yt-play{background:#E33535}.yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .video{position:relative;padding-top:56.25%;border-radius:12px;overflow:hidden;background:#000}.video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 table{border-collapse:collapse;width:100%;margin:8px 0 16px}th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}th{background:var(--pink);width:32%}
 footer{margin-top:56px;border-top:1px solid var(--line);background:var(--bg2);padding:24px 0;font-size:14px;color:var(--muted)}footer a{margin-right:14px}
 label{font-weight:700;display:block;margin:14px 0 4px}input,textarea,select{width:100%;font:inherit;padding:10px 12px;border:1px solid #bbb;border-radius:8px;min-height:44px}
-@media(max-width:640px){h1{font-size:23px}header .wrap{flex-wrap:wrap;gap:0;padding-top:6px}.brand{font-size:15px}.brand img{height:30px}nav{width:100%;display:flex;gap:16px;overflow-x:auto}nav a{margin-left:0;font-size:14px;white-space:nowrap;padding:8px 0}}
+.lib-hero{display:flex;align-items:flex-end;gap:20px;margin:28px 0 8px;padding:24px 28px 0;background:linear-gradient(135deg,#FFE4EC 0%,#fff 75%);border:2px solid var(--red);border-radius:20px;overflow:hidden}.lib-hero h1{margin:10px 0 8px;color:var(--red-d)}.lib-hero p{margin:0 0 14px}.lib-hero-body{flex:1;padding-bottom:24px}.lib-hero-chara{width:130px;height:auto;flex:0 0 auto}.lib-chip{display:inline-flex;align-items:center;gap:6px;background:var(--red-d);color:#fff;font-weight:700;font-size:14px;padding:4px 14px;border-radius:100px}
+@media(max-width:640px){.lib-hero{display:block;position:relative;padding:18px 18px 4px}.lib-hero-body{padding-bottom:12px}.lib-hero-chara{position:absolute;right:12px;top:10px;width:58px}.lib-hero h1{padding-right:56px}h1{font-size:23px}header .wrap{flex-wrap:wrap;gap:0;padding-top:6px}.brand{font-size:15px}.brand img{height:30px}nav{width:100%;display:flex;gap:16px;overflow-x:auto}nav a{margin-left:0;font-size:14px;white-space:nowrap;padding:8px 0}}
 </style>
 </head>
 <body>
 <header><div class="wrap"><a class="brand" href="/"><img src="/images/tadakayo_logo.png" alt="タダカヨ" width="378" height="378">介護情報基盤伴走支援</a>
 <nav aria-label="サイト内リンク"><a href="/library">資料・動画</a><a href="/terms">ご利用条件</a><a href="/#contact">相談する</a></nav></div></header>
 <main class="wrap">
-<h1>資料・動画ライブラリ</h1>
-<p class="lead">介護事業所のみなさまが、ご自身で導入を進められるように、NPO法人タダカヨが全国の伴走支援で使ってきた資料と動画を公開しています。<br>わからないところがあれば、タダカヨの<a href="/#contact">伴走支援</a>がお手伝いします。</p>
+<div class="lib-hero">
+  <div class="lib-hero-body">
+    <span class="lib-chip"><i class="ti ti-file-text" aria-hidden="true"></i> 無料公開</span>
+    <h1>資料・動画ライブラリ</h1>
+    <p>介護事業所のみなさまが、ご自身で導入を進められるように、NPO法人タダカヨが全国の伴走支援で使ってきた資料と動画を公開しています。わからないところがあれば、タダカヨの<a href="/#contact">伴走支援</a>がお手伝いします。</p>
+    <div class="btns"><a class="btn btn-p" href="#careplan"><i class="ti ti-file-text" aria-hidden="true"></i>ガイドブック</a><a class="btn btn-o" href="#video"><i class="ti ti-player-play" aria-hidden="true"></i>動画</a></div>
+  </div>
+  <img class="lib-hero-chara" src="/images/chara_9.webp" alt="" width="197" height="315">
+</div>
 
 <h2 id="careplan">ケアプランデータ連携システム</h2>
 <div class="card">
@@ -79,14 +88,28 @@ label{font-weight:700;display:block;margin:14px 0 4px}input,textarea,select{widt
 </div>
 
 <h2 id="video">動画</h2>
+<p class="meta">サムネイルを押すと、このページの中で再生します（再生するときに YouTube〈Google〉に接続します）。</p>
 <div class="grid">
   <div class="card"><h3>KJパスワードの更新のしかた</h3><p class="meta">ケアプランデータ連携システム・電子請求受付システム</p>
-  <div class="video"><iframe src="https://www.youtube-nocookie.com/embed/d_IyTcDL0Hc" title="KJパスワードの更新のしかた" loading="lazy" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe></div></div>
+    <button class="yt" type="button" data-id="d_IyTcDL0Hc" aria-label="動画「KJパスワードの更新のしかた」を再生">
+      <img src="/library/thumbs/kj_password_v1.jpg" alt="" width="1280" height="720" loading="lazy"><span class="yt-play" aria-hidden="true"><i class="ti ti-player-play-filled"></i></span>
+    </button>
+    <p class="meta" style="margin-top:8px"><a href="https://youtu.be/d_IyTcDL0Hc" target="_blank" rel="noopener">YouTubeで見る <i class="ti ti-external-link" aria-hidden="true"></i></a></p>
+  </div>
 </div>
 
 <div class="note">
   <p style="margin:0"><b>ご利用について</b>：介護事業所のみなさまは、ご自身の事業所の中で自由にお使いいただけます。それ以外の方（自治体・団体・事業者など）が、研修での配布・ほかのサイトへの掲載・改変・営利目的で使う場合は、<a href="/permission">事前にご連絡</a>をお願いします。くわしくは<a href="/terms">ご利用条件</a>をご覧ください。</p>
 </div>
+<script>
+document.querySelectorAll('.yt').forEach(function(b){b.addEventListener('click',function(){
+  var f=document.createElement('iframe');
+  f.src='https://www.youtube-nocookie.com/embed/'+b.dataset.id+'?autoplay=1&rel=0';
+  f.title=b.getAttribute('aria-label').replace('を再生','');
+  f.allow='autoplay; encrypted-media; picture-in-picture'; f.allowFullscreen=true;
+  var w=document.createElement('div'); w.className='yt'; w.appendChild(f); b.replaceWith(w);
+},{once:true});});
+</script>
 </main>
 <footer><div class="wrap">
 <p><a href="/">トップ</a><a href="/library">資料・動画</a><a href="/terms">ご利用条件</a><a href="/permission">活用許可のご連絡</a><a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a></p>
