@@ -1155,7 +1155,32 @@
           <span class="lib-banner-btn">資料・動画を見る <i class="ti ti-chevron-down" aria-hidden="true" style="transform:rotate(-90deg)"></i></span>
         </div>
       </a>
+      <div class="lib-video">
+        <p class="lib-video-label"><i class="ti ti-player-play" aria-hidden="true"></i> 紹介動画（約1分）</p>
+        <button class="yt" type="button" data-id="Hyupn0EGmP8" aria-label="紹介動画「ケアプランデータ連携システム 導入・活用ガイドブック」を再生">
+          <img src="library/thumbs/pr_guidebook_v1.jpg" alt="" width="1280" height="720" loading="lazy"><span class="yt-play" aria-hidden="true"><i class="ti ti-player-play-filled"></i></span>
+        </button>
+        <p class="lib-video-note">押すと、ここで再生します（再生するときに YouTube〈Google〉に接続します）。<a href="https://youtu.be/Hyupn0EGmP8" target="_blank" rel="noopener">YouTubeで見る <i class="ti ti-external-link" aria-hidden="true"></i></a></p>
+      </div>
     </div>
+    <script>
+      document.querySelectorAll('.lib-video .yt').forEach(function(b){b.addEventListener('click',function(){
+        var f=document.createElement('iframe'); f.src='https://www.youtube-nocookie.com/embed/'+b.dataset.id+'?autoplay=1&rel=0';
+        f.title=b.getAttribute('aria-label').replace('を再生',''); f.allow='autoplay; encrypted-media; picture-in-picture'; f.allowFullscreen=true;
+        var w=document.createElement('div'); w.className='yt'; w.appendChild(f); b.replaceWith(w);
+      },{once:true});});
+    </script>
+    <style>
+      .lib-video{max-width:760px;margin:22px auto 0}
+      .lib-video-label{font-weight:700;color:#c02828;margin:0 0 8px;display:flex;align-items:center;gap:6px}
+      .lib-video .yt{position:relative;display:block;width:100%;padding:0;border:0;border-radius:16px;overflow:hidden;cursor:pointer;background:#000;aspect-ratio:16/9;box-shadow:0 8px 28px rgba(0,0,0,.12)}
+      .lib-video .yt img{width:100%;height:100%;object-fit:cover;display:block}
+      .lib-video .yt iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+      .lib-video .yt-play{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:84px;height:84px;border-radius:50%;background:rgba(192,40,40,.92);color:#fff;display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
+      .lib-video .yt:hover .yt-play,.lib-video .yt:focus-visible .yt-play{background:#E33535}
+      .lib-video-note{font-size:13px;color:#555;margin:8px 0 0}
+      .lib-video-note a{margin-left:8px}
+    </style>
     <style>
       .lib-banner-wrap{padding:28px 0 8px}
       .lib-banner{display:flex;align-items:flex-end;gap:24px;text-decoration:none;color:var(--color-text);background:linear-gradient(135deg,#FFE4EC 0%,#fff 70%);border:2px solid #E33535;border-radius:20px;padding:22px 28px 0 20px;box-shadow:0 8px 28px rgba(227,53,53,.14);transition:transform .18s,box-shadow .18s;overflow:hidden}
