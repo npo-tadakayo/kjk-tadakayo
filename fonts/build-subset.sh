@@ -18,7 +18,7 @@ USED="${TMPDIR:-/tmp}/tadakayo-used.txt"
 python3 - "$USED" <<'PY'
 import sys
 chars=set()
-for f in ["index.html","mitsumori.html"]:
+for f in ["index.html","mitsumori.html","library.html","terms.html","permission.html"]:
     chars |= set(open(f, encoding="utf-8").read())
 for c in ("\n","\r"): chars.discard(c)
 open(sys.argv[1],"w",encoding="utf-8").write("".join(sorted(chars)))

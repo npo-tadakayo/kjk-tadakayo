@@ -33,7 +33,13 @@
         "images/1.png",
         "images/2.png",
         "images/tadakayo_logo_remove.png",
-        "images/_旧版/**"
+        "images/_旧版/**",
+        "**/*.md",
+        "docs/**",
+        ".agents/**",
+        ".codex/**",
+        "**/*.log",
+        ".github/**"
       ],
       "cleanUrls": true,
       "trailingSlash": false,
