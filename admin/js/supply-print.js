@@ -103,7 +103,9 @@ function renderLetterpack(s, sender, variant){
 }
 
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
-function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: today, products, contactName }); }
+// 発行日は「請求済にした日（invoicedAt）」。作り直した日にしない（再送で日付が変わらないように・2026-10-09）
+function jpDateOf(ymd){ const m = String(ymd||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[1]}年${+m[2]}月${+m[3]}日` : ""; }
+function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: jpDateOf(s.invoicedAt) || today, products, contactName }); }
 
 // 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。

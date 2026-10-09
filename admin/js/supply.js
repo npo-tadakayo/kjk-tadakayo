@@ -2307,6 +2307,7 @@ async function sendDunning(){
 // Google Chat の Webhook はファイルを添付できない仕様のため、PDFはメールに添付し Chat にはリンクを載せる。
 // 「経理へ報告する」を外せば報告なしで請求済にできる（再発行のときはこちら）。
 let invReportShip = null;
+let invReportCtx = null; // { id, st, salesRepName, invoicedAt } 開いた請求書の描画材料
 let invReportOnly = false; // true = すでに請求済のものを後から報告する（ステータスは変えない）
 async function openInvoiceReport(s, opts){
   invReportShip = s;
@@ -2374,6 +2375,8 @@ async function openInvoiceReport(s, opts){
   if(s.caseId){
     try{ const cs = await getDoc(doc(db,"cases",s.caseId)); if(cs.exists()) salesRepName = cs.data().assignedUserName || ""; }catch(_){}
   }
+  // PDF はこの文脈からその場で作り直す（プレビュー枠の中身を使うと、更新前に押したとき前の案件の請求書が入る・2026-10-09）
+  invReportCtx = { id: s._id, st, salesRepName, invoicedAt };
   document.getElementById("invReportPreview").innerHTML =
     `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt }, st, { products, contactName: salesRepName });
   document.getElementById("invReportError").style.display="none";
@@ -2415,9 +2418,17 @@ async function doInvoiceReport(){
     let warn = [];
     if(send){
       btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 請求書PDFを作成中...';
-      const el = document.querySelector("#invReportPreview .inv");
-      if(!el) throw new Error("請求書プレビューが見つかりません");
       const invNo = invoiceNoOf(s);
+      // プレビュー枠ではなく、この出荷のデータから請求書を作り直す。別の案件の請求書が混ざらないよう番号も照合する
+      if(!invReportCtx || invReportCtx.id !== s._id) throw new Error("請求書の準備が終わっていません。いったん閉じて開き直してください");
+      if(!document.getElementById("invoice-pdf-style")){
+        const stEl = document.createElement("style"); stEl.id = "invoice-pdf-style"; stEl.textContent = INVOICE_STYLE; document.head.appendChild(stEl);
+      }
+      const freshHost = document.createElement("div");
+      freshHost.innerHTML = renderInvoiceHtml({ ...s, invoicedAt: cur.invoicedAt || invReportCtx.invoicedAt }, invReportCtx.st, { products, contactName: invReportCtx.salesRepName });
+      const el = freshHost.querySelector(".inv");
+      if(!el) throw new Error("請求書を作れませんでした");
+      if(!el.textContent.includes(invNo)) throw new Error(`請求書の番号が一致しません（${invNo}）。いったん閉じて開き直してください`);
       const filename = `${invNo}.pdf`;
       // プレビュー枠（高さ360px・スクロール）のまま描くと右端が切れ、フッターが2ページ目に出ていた（2026-10-01）。
       // 画面外に複製して A4 1枚に収めてから PDF にする
