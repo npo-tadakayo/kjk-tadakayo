@@ -170,7 +170,15 @@ export function renderInvoiceHtml(s, st, opts){
 // フッターだけが2ページ目に押し出されていた。
 // いまは「いつもの幅で1枚の画像に描く → A4 の印字範囲に縦横とも収まるよう縮めて中央に貼る」。
 // 幅を広げて縮ませる方式は、html2pdf の描画枠が印字幅に固定されるため右端が切れたので使わない。
-export async function buildOnePagePdf(el, { margin = [10, 8, 10, 8], quality = 0.95, scale = 2 } = {}) {
+export async function buildOnePagePdf(el, opts = {}) {
+  // 画面を下へスクロールしたまま作ると、画面外の複製が画面位置に引っ張られて白紙・途中からの PDF になる
+  // （2026-10-09 次田さん「領収書がずれる・表紙が途中から」）。作る間だけ先頭へ戻し、終わったら戻す
+  const sx = window.scrollX, sy = window.scrollY;
+  window.scrollTo(0, 0);
+  try { return await buildOnePagePdfAtTop(el, opts); }
+  finally { window.scrollTo(sx, sy); }
+}
+async function buildOnePagePdfAtTop(el, { margin = [10, 8, 10, 8], quality = 0.95, scale = 2 } = {}) {
   // 余白0で描く（描画枠＝210mm。本文 190mm が枠に収まり、切れない）
   const worker = window.html2pdf().set({ margin: 0, html2canvas: { scale, useCORS: true, backgroundColor: "#ffffff" },
     jsPDF: { unit: "mm", format: "a4", orientation: "portrait" } }).from(el);

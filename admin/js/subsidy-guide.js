@@ -340,6 +340,14 @@ async function waitImages(root) {
 
 // A4・8ページの PDF（base64）を作る。window.html2pdf が読み込まれている前提（supply-print.html）
 export async function buildSubsidyGuidePdf(g) {
+  // 画面をスクロールしたまま作ると、画面外に置いたページが画面位置に引っ張られ、白紙・途中からの PDF になる
+  // （2026-10-09 次田さん「表紙の最初のページが途中からしか始まっていない」）。作る間だけ先頭へ戻し、終わったら戻す
+  const sx = window.scrollX, sy = window.scrollY;
+  window.scrollTo(0, 0);
+  try { return await buildSubsidyGuidePdfAtTop(g); }
+  finally { window.scrollTo(sx, sy); }
+}
+async function buildSubsidyGuidePdfAtTop(g) {
   const holder = document.createElement("div");
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:210mm;background:#fff";
   const st = document.createElement("style"); st.textContent = SUBSIDY_GUIDE_STYLE;
