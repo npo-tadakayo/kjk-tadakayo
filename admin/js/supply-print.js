@@ -204,8 +204,8 @@ function renderReceipt(s, st, saved, contactName){
   const regLine = regNo
     ? `登録番号: <strong>${esc(regNo)}</strong>`
     : `<span style="color:#b84a4a">登録番号: 未登録（設定で登録してください）</span>`;
-  // 発行日: 記録済みならその発行日（再発行しても同じ日付）→ 入金日 → 今日
-  const issueDate = saved?.issuedAt ? esc(saved.issuedAt) : (s.paidAt ? esc(s.paidAt) : today);
+  // 発行日＝入金日（2026-10-15〜）。記録済みならその発行日（再発行しても同じ日付）→ 最後の入金日 → 今日
+  const issueDate = saved?.issuedAt ? esc(saved.issuedAt) : esc(receiptDateOf(s) || today);
   // 領収金額（2026-08-12 変更）: 明細合計の従属値ではなく「実際に受け取った額」を初期値にする。
   // 純入金（入金−返金）と請求額（充当後）の小さい方＝過入金は領収額に含めない・一部入金はその額で内金として出す。
   const net = netPaidOf(s), billable = billableInclOf(s);
@@ -355,6 +355,13 @@ function payListOf(s){
   if(Number(s.paymentAmount)>0) return [{ amount:Number(s.paymentAmount), date:s.paidAt||"" }];
   return [];
 }
+// 領収証の発行日＝入金日（2026-10-15 次田さん決定）。入金が複数あるときは最後の入金日。
+// 入金の記録が無い出荷は null（呼び出し側で今日にする）
+function receiptDateOf(s){
+  const ds = payListOf(s).map(p=>String(p.date||"")).filter(d=>/^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if(ds.length) return ds[ds.length-1];
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s.paidAt||"")) ? String(s.paidAt) : null;
+}
 function netPaidOf(s){
   const paid=payListOf(s).reduce((a,p)=>a+(Number(p.amount)||0),0);
   const ref=(Array.isArray(s.refunds)?s.refunds:[]).reduce((a,r)=>a+(Number(r.amount)||0),0);
@@ -482,7 +489,7 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
   const snap=collectReceiptSnapshot();
   if(!(snap.amountIncl>0)){ info.textContent="金額が0円です（明細を入力してください）"; return; }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
-  const issuedAt=todayJst();
+  const issuedAt=receiptDateOf(s)||todayJst();   // 発行日＝入金日
   btn.disabled=true;
   try{
     await setDoc(doc(db,"receipts",shipmentId),{
