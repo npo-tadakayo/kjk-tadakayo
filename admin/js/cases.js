@@ -12,6 +12,7 @@ import {
   referralOptions, referralLabel, INQUIRY_INTENT_LABELS,
 } from "/js/constants.js";
 import { areaOf, REGIONS } from "/js/area.js";
+import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -219,9 +220,30 @@ function populateAreaFilters() {
   fill(city, cities, "すべての市町村", "住所が未登録");
 }
 
+// 初期連絡（申込から3営業日以内）の超過。「新規受信」(status 1) のまま・対象外でない案件だけが対象。
+// 申込日は receivedAt（一覧の「受付日」と同じ。無ければ createdAt）。画面表示のみで通知は作らない。
+let firstContactOnly = false; // 「超過のみ」の絞り込み（URL・保存はしない）
+function firstContactOver(c, now = new Date()) {
+  if (Number(c.status) !== 1 || c.archived) return 0;
+  return countBusinessDaysOver(c.receivedAt || c.createdAt, now);
+}
+function updateFirstContactBanner(overCount) {
+  const el = document.getElementById("firstContactBanner");
+  if (!el) return;
+  el.style.display = overCount > 0 || firstContactOnly ? "flex" : "none";
+  document.getElementById("firstContactText").textContent = `初期連絡の超過: ${overCount}件`;
+  const btn = document.getElementById("firstContactToggle");
+  btn.textContent = firstContactOnly ? "すべて表示に戻す" : "超過のみ表示";
+  btn.setAttribute("aria-pressed", firstContactOnly ? "true" : "false");
+}
+
 function renderCases() {
   const f = currentFilters();
-  const filtered = sortCases(allCases.filter((c) => matchFilters(c, f) && matchAssignedNone(c)));
+  const now = new Date();
+  // 件数は他の絞り込み条件に関わらず、全案件のうちの超過数（見落とし防止）
+  updateFirstContactBanner(allCases.filter((c) => firstContactOver(c, now) > 0).length);
+  const filtered = sortCases(allCases.filter((c) => matchFilters(c, f) && matchAssignedNone(c)
+    && (!firstContactOnly || firstContactOver(c, now) > 0)));
 
   const tbody = document.getElementById("casesBody");
   const table = document.getElementById("casesTable");
@@ -234,7 +256,7 @@ function renderCases() {
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
     const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.intentFilter || f.referralFilter
-      || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone);
+      || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone || firstContactOnly);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
       ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
@@ -245,8 +267,11 @@ function renderCases() {
   table.style.display = "table";
   empty.style.display = "none";
 
-  tbody.innerHTML = filtered.map((c) => `
-    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く"${c.archived ? ' style="opacity:.55"' : ""}>
+  tbody.innerHTML = filtered.map((c) => {
+    const over = firstContactOver(c, now);
+    const rowStyle = c.archived ? "opacity:.55" : (over > 0 ? "background:#FFF4F6;box-shadow:inset 4px 0 0 #c02828" : "");
+    return `
+    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く${over > 0 ? `（初期連絡 超過${over}日）` : ""}"${rowStyle ? ` style="${rowStyle}"` : ""}>
       <td><strong>#${c.caseNumber || "—"}</strong></td>
       <td class="col-office">
         <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
@@ -258,12 +283,12 @@ function renderCases() {
       <td>${escHtml(c._area?.city || "") || areaBlank()}</td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}${intentBadge(c)}</td>
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
-      <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span></td>
+      <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span>${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
       <td>${formatDate(c.receivedAt)}</td>
       <td>${formatDate(c.updatedAt)}</td>
     </tr>
-  `).join("");
+  `; }).join("");
 }
 
 // 住所が事業所に登録されていないと空になる。「—」だけだと項目自体が無いように見えるので、
@@ -510,6 +535,9 @@ onAuthStateChanged(auth, async (user) => {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
   document.getElementById("searchInput").addEventListener("input", renderCases);
+  document.getElementById("firstContactToggle")?.addEventListener("click", () => {
+    firstContactOnly = !firstContactOnly; renderCases();
+  });
   document.getElementById("statusFilter").addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
   document.getElementById("quoteFilter")?.addEventListener("change", renderCases);

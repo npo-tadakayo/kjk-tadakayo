@@ -56,6 +56,13 @@
         </button>
       </div>
 
+      <!-- 初期連絡の超過（申込から3営業日を過ぎた「新規受信」。画面表示のみ） -->
+      <div id="firstContactBanner" class="deadline-banner danger" style="display:none" role="status">
+        <i class="ti ti-alarm" aria-hidden="true"></i>
+        <span id="firstContactText" style="flex:1"></span>
+        <button class="btn btn-ghost" id="firstContactToggle" type="button" aria-pressed="false" style="white-space:nowrap">超過のみ表示</button>
+      </div>
+
       <!-- フィルタ -->
       <div class="filter-bar">
         <input type="search" id="searchInput" placeholder="事業所名・担当者名で検索..." style="flex:1; min-width:200px;">
