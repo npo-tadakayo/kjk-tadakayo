@@ -38,6 +38,7 @@ let isAdmin = false;
 // 完全削除＝管理者のみ／統合＝管理者＋スタッフ（データは消えず対象外になるだけなので削除より1段ゆるい）。
 let canMerge = false;
 let currentUser = null;
+let supportChecklist = null; // initSupportChecklist の戻り値（refreshPeople）
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
 let appSettings = {};
 // users コレクション（担当営業の候補。doc id = メールアドレス / name・role・active を持つ）
@@ -1421,7 +1422,12 @@ onAuthStateChanged(auth, async (user) => {
   initTabs();
 
   // 伴走チェックリスト（事前/当日/アフター・ケアプラン連携統合）をタブに描画・購読
-  initSupportChecklist(db, caseId, storage);
+  // 実施の記録（誰が実施したか）用に、案件の担当営業と users を渡す（どちらも後で読み込まれる）
+  supportChecklist = initSupportChecklist(db, caseId, storage, {
+    getCase: () => currentCase,
+    getUsers: () => usersList,
+    getActor: () => currentUser?.displayName || currentUser?.email || "",
+  });
 
   // 案件データ読み込み
   const caseSnap = await getDoc(doc(db, "cases", caseId));
@@ -1445,6 +1451,7 @@ onAuthStateChanged(auth, async (user) => {
     usersList = us.docs.map((d) => ({ _id: d.id, ...d.data() }));
   } catch (_) { usersList = []; }
 
+  if (supportChecklist) supportChecklist.refreshPeople(); // 実施者・トレーナーの選択肢
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);

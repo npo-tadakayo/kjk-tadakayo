@@ -8,11 +8,15 @@
 //   - スケルトンは初回1回だけ描画し、値は populate() で流し込む（フォーカス中の要素は上書きしない＝カーソル飛び防止）
 //   - 変更は change イベントで該当セクションを merge 保存
 //   - 個人情報（パスワード・暗証番号・口座番号）はここに記録しない方針（Pマーク準拠）
+//   - 「実施の記録」（誰が・いつ・どの区分で実施したか）は当日タブの先頭。`performance` フィールドに
+//     保存ボタンで一括保存（トレーナー必須などの検証があるため、他の項目のような change 即保存にはしない）
 
 import { doc, setDoc, onSnapshot, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -251,8 +255,56 @@ function cardCpEvidence() {
     </div>`;
 }
 
+// ===== 実施の記録（誰が・いつ・どの区分で） =====
+// CRMの営業担当＝伴走支援者。トレーナー立会いの OJT を経て「伴走支援者バッジ」を付与する運用。
+function cardPerformance() {
+  const modes = MODES.map((m) => `
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="radio" name="sc-perf-mode" value="${m.v}"> <span>${m.t}</span>
+        </label>`).join("");
+  return `
+    <div class="card" style="margin-bottom:var(--space-4)">
+      <div class="card-header">
+        <span style="font-weight:600;font-size:14px">実施の記録（誰が実施したか）</span>
+        <span id="sc-perf-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label" for="sc-perf-date">実施日</label>
+            <input class="form-control" type="date" id="sc-perf-date">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="sc-perf-performer">実施者（既定は担当営業）</label>
+            <select class="form-control" id="sc-perf-performer"></select>
+          </div>
+        </div>
+        <div class="form-group">
+          <span class="form-label">区分</span>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">${modes}
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sc-perf-trainer">トレーナー（区分が「トレーニング」のとき必須。見学の案内役は任意）</label>
+          <select class="form-control" id="sc-perf-trainer" style="max-width:340px"></select>
+        </div>
+        <div class="form-group" id="sc-perf-companions-wrap">
+          <label class="form-label" for="sc-perf-companions">同行者（受講者・見学者の名前。複数はカンマ区切り）</label>
+          <input class="form-control" type="text" id="sc-perf-companions" placeholder="例: 佐藤, 田中">
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:4px 0 0">スタッフ・研修生・見学者の名前のみ。利用者（被保険者）や事業所の個人情報は書かないでください。</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sc-perf-note">メモ</label>
+          <input class="form-control" type="text" id="sc-perf-note" maxlength="200">
+        </div>
+        <button type="button" class="btn btn-primary" id="sc-perf-save" style="min-height:44px">実施の記録を保存</button>
+        <span id="sc-perf-error" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-left:10px"></span>
+      </div>
+    </div>`;
+}
+
 function renderOnsite() {
-  return `${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}`;
+  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}`;
 }
 
 // ===== アフタータブ =====
@@ -364,11 +416,14 @@ function getByPath(obj, path) {
   return path.split(".").reduce((cur, k) => (cur == null ? undefined : cur[k]), obj);
 }
 
-export function initSupportChecklist(db, caseId, storage) {
+// opts.getCase()  : 案件（assignedUserId / assignedUserName）／ opts.getUsers() : users の一覧
+// opts.getActor() : 記録者の表示名。案件・users は init の後で読み込まれるので、
+// 戻り値の refreshPeople() を読み込み後に呼ぶ（実施者・トレーナーの選択肢を作る）。
+export function initSupportChecklist(db, caseId, storage, opts = {}) {
   const elPre = document.getElementById("tab-pre");
   const elOnsite = document.getElementById("tab-onsite");
   const elAfter = document.getElementById("tab-after");
-  if (!elPre || !elOnsite || !elAfter) return; // タブが無ければ何もしない
+  if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {} }; // タブが無ければ何もしない
 
   // スケルトンを1回だけ描画（ケアプラン連携は各フェーズに統合）
   elPre.innerHTML = renderPre();
@@ -408,6 +463,92 @@ export function initSupportChecklist(db, caseId, storage) {
         </button>
       </div>`).join("");
   }
+
+  // ----- 実施の記録 -----
+  let perf = null; // 保存済みの performance
+  const $ = (id) => document.getElementById(id);
+
+  function peopleOptions(selectedId, withBlank) {
+    const users = (opts.getUsers ? opts.getUsers() : []) || [];
+    const name = (u) => u.name || u._id;
+    const actives = users.filter((u) => u.active !== false)
+      .slice().sort((a, b) => name(a).localeCompare(name(b), "ja"));
+    let html = withBlank ? `<option value="">—</option>` : `<option value="">選んでください</option>`;
+    html += actives.map((u) => `<option value="${escapeHtml(u._id)}">${escapeHtml(name(u))}</option>`).join("");
+    // 無効化・削除済みの人が記録済みでも、別の人に化けないよう選択肢に残す
+    if (selectedId && !actives.some((u) => u._id === selectedId)) {
+      const known = users.find((u) => u._id === selectedId);
+      html += `<option value="${escapeHtml(selectedId)}">${escapeHtml(known ? name(known) : selectedId)}（無効）</option>`;
+    }
+    return html;
+  }
+
+  function renderPerfSummary() {
+    const el = $("sc-perf-summary");
+    if (!el) return;
+    const line = summaryLine(perf);
+    el.textContent = line;
+    el.style.display = line ? "block" : "none";
+  }
+
+  function syncPerfMode() {
+    const mode = (document.querySelector('input[name="sc-perf-mode"]:checked') || {}).value || "";
+    const wrap = $("sc-perf-companions-wrap");
+    if (wrap) wrap.style.display = mode === "solo" ? "none" : "";
+  }
+
+  // 実施者の既定＝担当営業。保存済みの記録があればそれを優先
+  function fillPerfForm() {
+    const c = (opts.getCase ? opts.getCase() : null) || {};
+    const perfId = (perf && perf.performerId) || c.assignedUserId || "";
+    const trainerId = (perf && perf.trainerId) || "";
+    $("sc-perf-performer").innerHTML = peopleOptions(perfId, false);
+    $("sc-perf-trainer").innerHTML = peopleOptions(trainerId, true);
+    $("sc-perf-performer").value = perfId;
+    $("sc-perf-trainer").value = trainerId;
+    $("sc-perf-date").value = (perf && perf.date) || "";
+    $("sc-perf-companions").value = (perf && perf.companions) || "";
+    $("sc-perf-note").value = (perf && perf.note) || "";
+    const radio = document.querySelector(`input[name="sc-perf-mode"][value="${(perf && perf.mode) || ""}"]`);
+    if (radio) radio.checked = true;
+    syncPerfMode();
+  }
+
+  async function savePerformance() {
+    const errEl = $("sc-perf-error");
+    const checked = document.querySelector('input[name="sc-perf-mode"]:checked');
+    const r = buildPerformance({
+      date: $("sc-perf-date").value,
+      performerId: $("sc-perf-performer").value,
+      mode: checked ? checked.value : "",
+      trainerId: $("sc-perf-trainer").value,
+      companions: $("sc-perf-companions").value,
+      note: $("sc-perf-note").value,
+    }, (opts.getUsers ? opts.getUsers() : []) || [], opts.getActor ? opts.getActor() : "", Date.now());
+    if (r.error) {
+      errEl.textContent = r.error;
+      errEl.style.display = "inline";
+      return; // 保存しない
+    }
+    errEl.style.display = "none";
+    const sv = $("sc-perf-saved");
+    try {
+      // 既存の pre/onsite/cp/after を壊さないよう merge で書く
+      await setDoc(ref, { performance: r.performance, updatedAt: serverTimestamp() }, { merge: true });
+      perf = r.performance;
+      renderPerfSummary();
+      if (sv) sv.textContent = `保存しました ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
+    } catch (e) {
+      if (sv) sv.textContent = "保存に失敗しました（時間をおいて再試行）";
+      console.error("[supportChecklist] performance save failed", e);
+    }
+  }
+
+  elOnsite.addEventListener("change", (e) => {
+    if (e.target && e.target.name === "sc-perf-mode") syncPerfMode();
+  });
+  const perfSaveBtn = $("sc-perf-save");
+  if (perfSaveBtn) perfSaveBtn.addEventListener("click", savePerformance);
 
   function markSaved(sec) {
     const el = document.getElementById(`sc-saved-${sec}`);
@@ -512,5 +653,11 @@ export function initSupportChecklist(db, caseId, storage) {
     if (!state.cp.steps) state.cp.steps = {};
     if (!Array.isArray(state.cp.evidencePhotos)) state.cp.evidencePhotos = [];
     populate();
+    // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
+    perf = data.performance || null;
+    renderPerfSummary();
+    if (!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
+
+  return { refreshPeople: fillPerfForm };
 }
