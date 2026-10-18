@@ -23,6 +23,7 @@
     { title: "管理", items: [
       ["/settings.html", "ti-settings", "設定"],
       ["/users.html", "ti-users", "ユーザー管理"],
+      ["/badges.html", "ti-award", "伴走支援者バッジ"],
     ]},
   ];
   var HELP = [

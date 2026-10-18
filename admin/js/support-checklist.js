@@ -10,13 +10,18 @@
 //   - 個人情報（パスワード・暗証番号・口座番号）はここに記録しない方針（Pマーク準拠）
 //   - 「実施の記録」（誰が・いつ・どの区分で実施したか）は当日タブの先頭。`performance` フィールドに
 //     保存ボタンで一括保存（トレーナー必須などの検証があるため、他の項目のような change 即保存にはしない）
+//   - 区分＝トレーニングのときは、その下に「トレーニング評価」（8観点・OJT合否・総合判定）を出し
+//     supportEvaluations に保存。独り立ち可ならトレーナーがバッジを付与（supportBadges）。
+//     判定・検証の純粋関数は support-evaluation.js（scripts/test-support-evaluation.mjs）
 
-import { doc, setDoc, onSnapshot, serverTimestamp }
+import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
+import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvaluation, evaluationId, evaluationEligible,
+  buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -303,8 +308,52 @@ function cardPerformance() {
     </div>`;
 }
 
+// ===== トレーニング評価（区分＝トレーニングの実施の記録に対して） =====
+// 評価シート（組織体制_素案/トレーニング評価シート_案.md）の8観点。◎ひとりでできる／○助言があればできる／△要練習／×未実施
+function cardEvaluation() {
+  const gradeOpts = `<option value="">—</option>` + GRADES.map((g) => `<option value="${g}">${g}</option>`).join("");
+  const rows = ITEMS.map((i) => `
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <label class="form-label" for="sc-eval-${i.n}" style="flex:1;margin:0">${i.n} ${i.label}${i.n === 4 ? "（◎が必要）" : ""}</label>
+          <select class="form-control" id="sc-eval-${i.n}" data-eval-item="${i.n}" style="max-width:90px">${gradeOpts}</select>
+        </div>`).join("");
+  const judge = `<option value="">選んでください</option>` + JUDGEMENTS.map((j) => `<option value="${j.v}">${j.t}</option>`).join("");
+  return `
+    <div class="card" id="sc-eval-card" style="margin-bottom:var(--space-4);display:none">
+      <div class="card-header">
+        <span style="font-weight:600;font-size:14px">トレーニング評価（トレーナーが記入）</span>
+        <span id="sc-eval-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
+      </div>
+      <div class="card-body">
+        <p id="sc-eval-who" style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">◎ひとりでできる ／ ○助言があればできる ／ △要練習 ／ ×未実施。独り立ち可の基準は「④が◎、ほかが全て○以上、OJTで1回でも合格（OK）」。</p>
+        ${rows}
+        <div class="form-group">
+          <span class="form-label">このOJTの合否</span>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="sc-eval-ojt" value="ok"> <span>合格（OK）</span></label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="sc-eval-ojt" value="ng"> <span>まだ</span></label>
+          </div>
+        </div>
+        <p id="sc-eval-suggest" aria-live="polite" style="font-size:13px;font-weight:600;margin:0 0 8px"></p>
+        <div class="form-group">
+          <label class="form-label" for="sc-eval-judgement">総合判定（トレーナーが最終決定。上の提案と違ってもよい）</label>
+          <select class="form-control" id="sc-eval-judgement" style="max-width:340px">${judge}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="sc-eval-note">所見・次回の課題</label>
+          <textarea class="form-control" id="sc-eval-note" rows="2" maxlength="500"></textarea>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:4px 0 0">利用者（被保険者）の個人情報は書かないでください。</p>
+        </div>
+        <button type="button" class="btn btn-primary" id="sc-eval-save" style="min-height:44px">評価を保存</button>
+        <span id="sc-eval-error" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-left:10px"></span>
+        <div id="sc-eval-badge" style="margin-top:12px;font-size:13px"></div>
+      </div>
+    </div>`;
+}
+
 function renderOnsite() {
-  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}`;
+  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div><div id="sc-perf-warn" role="status" style="display:none;font-size:13px;color:var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardEvaluation()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}`;
 }
 
 // ===== アフタータブ =====
@@ -537,6 +586,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       await setDoc(ref, { performance: r.performance, updatedAt: serverTimestamp() }, { merge: true });
       perf = r.performance;
       renderPerfSummary();
+      renderPerfWarn();
+      await loadPriorOk();
+      renderEval();
       if (sv) sv.textContent = `保存しました ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (e) {
       if (sv) sv.textContent = "保存に失敗しました（時間をおいて再試行）";
@@ -549,6 +601,139 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   });
   const perfSaveBtn = $("sc-perf-save");
   if (perfSaveBtn) perfSaveBtn.addEventListener("click", savePerformance);
+
+  // ----- トレーニング評価・バッジ -----
+  let grants = [];      // supportBadges 全件（付与履歴）
+  let caseEvals = [];   // この案件の評価（supportEvaluations・caseId 一致）
+  let rosterIds = null; // appConfig/supportTrainers.ids（任意）。無ければ初期トレーナー4名を名前で照合
+  getDoc(doc(db, "appConfig", "supportTrainers")).then((d) => { if (d.exists()) rosterIds = d.data().ids || null; renderEval(); }).catch(() => {});
+  const users = () => (opts.getUsers ? opts.getUsers() : []) || [];
+  const actorId = () => (opts.getActorId ? opts.getActorId() : "");
+  const myEvalId = () => (evaluationEligible(perf) ? evaluationId(caseId, perf.date, perf.performerId) : "");
+
+  function renderPerfWarn() {
+    const el = $("sc-perf-warn");
+    if (!el) return;
+    const w = soloWarning(perf, grants); // 単独でバッジ未付与の人。ブロックはしない
+    el.textContent = w;
+    el.style.display = w ? "block" : "none";
+  }
+
+  function evalScoresFromForm() {
+    const scores = {};
+    document.querySelectorAll("#sc-eval-card [data-eval-item]").forEach((el) => { if (el.value) scores[el.dataset.evalItem] = el.value; });
+    return scores;
+  }
+  const ojtFromForm = () => ((document.querySelector('input[name="sc-eval-ojt"]:checked') || {}).value || "");
+
+  // この受講者の「他の評価」でOJT合格があるか（1回でも合格があれば可）
+  let priorOk = false;
+  async function loadPriorOk() {
+    if (!evaluationEligible(perf)) { priorOk = false; return; }
+    try {
+      const snap = await getDocs(query(collection(db, "supportEvaluations"), where("traineeId", "==", perf.performerId)));
+      priorOk = snap.docs.some((d) => d.id !== myEvalId() && d.data().ojtResult === "ok");
+    } catch (_) { priorOk = false; }
+  }
+
+  function updateSuggest() {
+    const el = $("sc-eval-suggest");
+    if (!el) return;
+    const sg = suggestJudgement(evalScoresFromForm(), ojtFromForm() === "ok" || priorOk);
+    el.textContent = sg === "incomplete" ? "自動判定：8観点がそろうと提案します"
+      : `自動判定の提案：${judgementLabel(sg)}${priorOk && ojtFromForm() !== "ok" ? "（過去のOJTで合格あり）" : ""}`;
+    return sg;
+  }
+
+  function renderBadgeBox() {
+    const el = $("sc-eval-badge");
+    if (!el) return;
+    if (!evaluationEligible(perf)) { el.innerHTML = ""; return; }
+    const holder = grants.find((g) => g.userId === perf.performerId);
+    const ev = caseEvals.find((e) => e._id === myEvalId());
+    if (holder) {
+      el.innerHTML = `<strong>伴走支援者バッジ：付与済み</strong>（${escapeHtml(holder.grantedDate)}／認定：${escapeHtml(holder.grantedByName)}／${holder.basis === "discretion" ? "特別裁量" : "評価シート"}）`;
+    } else if (ev && ev.judgement === "independent") {
+      el.innerHTML = isTrainer(actorId(), users(), rosterIds)
+        ? `<button type="button" class="btn btn-secondary" id="sc-badge-grant" style="min-height:44px"><i class="ti ti-award" aria-hidden="true"></i> ${escapeHtml(ev.traineeName)}さんにバッジを付与する（認定：あなた）</button> <span id="sc-badge-msg" role="alert" style="font-size:13px;color:var(--color-danger)"></span>`
+        : `<span style="color:var(--color-ink-muted)">この評価は「独り立ち可」です。バッジの付与はトレーナーが行います。</span>`;
+    } else {
+      el.innerHTML = `<span style="color:var(--color-ink-muted)">バッジ：未付与（総合判定が「独り立ち可」で評価を保存すると、トレーナーが付与できます）</span>`;
+    }
+  }
+
+  function renderEval() {
+    const card = $("sc-eval-card");
+    if (!card) return;
+    if (!evaluationEligible(perf)) { card.style.display = "none"; return; } // トレーナーなし・見学・単独は対象外
+    card.style.display = "";
+    $("sc-eval-who").textContent = `受講者：${perf.performerName}／トレーナー：${perf.trainerName}／実施日：${perf.date}`;
+    const busy = document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-");
+    const ev = caseEvals.find((e) => e._id === myEvalId());
+    if (!busy) {
+      ITEMS.forEach((i) => { $(`sc-eval-${i.n}`).value = (ev && ev.scores && ev.scores[i.n]) || ""; });
+      const r = document.querySelector(`input[name="sc-eval-ojt"][value="${(ev && ev.ojtResult) || ""}"]`);
+      document.querySelectorAll('input[name="sc-eval-ojt"]').forEach((x) => { x.checked = false; });
+      if (r) r.checked = true;
+      $("sc-eval-judgement").value = (ev && ev.judgement) || "";
+      $("sc-eval-note").value = (ev && ev.note) || "";
+    }
+    const canSave = isTrainer(actorId(), users(), rosterIds);
+    $("sc-eval-save").disabled = !canSave;
+    $("sc-eval-save").title = canSave ? "" : "評価を保存できるのはトレーナーのみです";
+    $("sc-eval-saved").textContent = ev ? `保存済み（${judgementLabel(ev.judgement)}）` : (canSave ? "" : "評価の保存はトレーナーのみ");
+    updateSuggest();
+    renderBadgeBox();
+  }
+
+  async function saveEvaluation() {
+    const errEl = $("sc-eval-error");
+    if (!isTrainer(actorId(), users(), rosterIds)) { errEl.textContent = "評価を保存できるのはトレーナーだけです。"; errEl.style.display = "inline"; return; }
+    await loadPriorOk();
+    const r = buildEvaluation({
+      scores: evalScoresFromForm(), ojtResult: ojtFromForm(),
+      judgement: $("sc-eval-judgement").value, note: $("sc-eval-note").value,
+    }, perf, { caseId, now: Date.now(), actor: opts.getActor ? opts.getActor() : "", priorOk });
+    if (r.error) { errEl.textContent = r.error; errEl.style.display = "inline"; return; }
+    errEl.style.display = "none";
+    try {
+      // 同じ案件・日付・受講者の評価は上書き（OJT 1回＝シート1枚）
+      await setDoc(doc(db, "supportEvaluations", myEvalId()), { ...r.evaluation, updatedAt: serverTimestamp() });
+      $("sc-eval-saved").textContent = `保存しました ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
+    } catch (e) {
+      errEl.textContent = "保存に失敗しました（時間をおいて再試行）"; errEl.style.display = "inline";
+      console.error("[supportChecklist] evaluation save failed", e);
+    }
+  }
+
+  async function grantBadge() {
+    const msg = $("sc-badge-msg");
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10); // JST の今日
+    const r = buildGrant({ userId: perf.performerId, date: today, basis: "evaluation", evaluationId: myEvalId() },
+      { users: users(), rosterIds, grants, evaluations: caseEvals, actorId: actorId(), actor: opts.getActor ? opts.getActor() : "", now: Date.now() });
+    if (r.error) { if (msg) msg.textContent = r.error; return; }
+    if (!confirm(`${r.grant.userName}さんに伴走支援者バッジを付与します（認定：${r.grant.grantedByName}）。よろしいですか？`)) return;
+    try {
+      await addDoc(collection(db, "supportBadges"), { ...r.grant, createdAt: serverTimestamp() });
+    } catch (e) {
+      if (msg) msg.textContent = "付与に失敗しました（時間をおいて再試行）";
+      console.error("[supportChecklist] badge grant failed", e);
+    }
+  }
+
+  elOnsite.addEventListener("change", (e) => {
+    const t = e.target;
+    if (t && t.closest && t.closest("#sc-eval-card")) updateSuggest();
+  });
+  const evalSaveBtn = $("sc-eval-save");
+  if (evalSaveBtn) evalSaveBtn.addEventListener("click", saveEvaluation);
+  elOnsite.addEventListener("click", (e) => {
+    if (e.target.closest && e.target.closest("#sc-badge-grant")) grantBadge();
+  });
+
+  onSnapshot(collection(db, "supportBadges"), (snap) => { grants = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderPerfWarn(); renderBadgeBox(); }, () => {});
+  onSnapshot(query(collection(db, "supportEvaluations"), where("caseId", "==", caseId)),
+    (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderEval(); }, () => {});
 
   function markSaved(sec) {
     const el = document.getElementById(`sc-saved-${sec}`);
@@ -656,8 +841,10 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
     perf = data.performance || null;
     renderPerfSummary();
+    renderPerfWarn();
+    loadPriorOk().then(renderEval);
     if (!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople: fillPerfForm };
+  return { refreshPeople() { fillPerfForm(); renderEval(); renderPerfWarn(); } };
 }

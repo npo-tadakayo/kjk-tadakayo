@@ -110,6 +110,21 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // 伴走支援者バッジの付与履歴・トレーニング評価（2026-10-18）。
+    // 履歴なので、登録スタッフは追加（create）だけ。訂正・削除は管理者のみ。
+    // 「付与はトレーナーのみ」は画面側の制限（名簿は users の氏名照合のためルールでは見ない）。
+    match /supportBadges/{id} {
+      allow read: if isRegistered();
+      allow create: if isEditor();
+      allow update, delete: if isAdmin();
+    }
+    // 評価は同じ案件・日付・受講者のIDで上書き保存するため、create/update は登録スタッフ、削除は管理者のみ
+    match /supportEvaluations/{id} {
+      allow read: if isRegistered();
+      allow create, update: if isEditor();
+      allow delete: if isAdmin();
+    }
+
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     match /{document=**} {
       allow read: if isRegistered();

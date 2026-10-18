@@ -1427,6 +1427,7 @@ onAuthStateChanged(auth, async (user) => {
     getCase: () => currentCase,
     getUsers: () => usersList,
     getActor: () => currentUser?.displayName || currentUser?.email || "",
+    getActorId: () => currentUser?.email || "",
   });
 
   // 案件データ読み込み

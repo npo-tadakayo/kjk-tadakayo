@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>伴走支援者バッジ台帳 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">伴走支援者バッジ台帳</h1>
+        <button class="btn btn-secondary" id="csvBtn" type="button"><i class="ti ti-download" aria-hidden="true"></i>CSVで出力</button>
+      </div>
+      <p class="page-intro">伴走支援者バッジの付与履歴です。バッジはトレーナーのOJT（立会い）を経て、トレーナーのうち1名が付与します。トレーナーなしのOJTによる認定は認めません。</p>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+      <div id="main" style="display:none">
+        <div class="card" style="margin-bottom:var(--space-4)">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">トレーナー</span></div>
+          <div class="card-body" id="trainers" style="font-size:13px"></div>
+        </div>
+        <div class="card" style="margin-bottom:var(--space-4)">
+          <div class="table-wrap">
+            <table><thead><tr><th>付与日</th><th>対象</th><th>認定したトレーナー</th><th>根拠</th><th>根拠・理由</th></tr></thead>
+            <tbody id="badgeBody"></tbody></table>
+            <div id="badgeEmpty" class="empty-state" style="display:none"><i class="ti ti-award" aria-hidden="true"></i><p>付与の記録はまだありません</p></div>
+          </div>
+        </div>
+        <div class="card" id="grantCard">
+          <div class="card-header"><span style="font-weight:600;font-size:14px">バッジを付与する（トレーナーのみ）</span></div>
+          <div class="card-body">
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">評価シートで「独り立ち可」になった人は、案件の「伴走支援」タブ（当日）からも付与できます。ここでは付与日を指定した登録と、<strong>特別裁量</strong>での進呈ができます。特別裁量は理由が必須で、先例にはしません（トレーニングなしで伴走支援を行っていた方への例外です）。</p>
+            <div class="form-row">
+              <div class="form-group"><label class="form-label" for="gUser">対象</label><select class="form-control" id="gUser"></select></div>
+              <div class="form-group"><label class="form-label" for="gDate">付与日</label><input class="form-control" type="date" id="gDate"></div>
+            </div>
+            <div class="form-group"><label class="form-label" for="gBasis">根拠</label>
+              <select class="form-control" id="gBasis" style="max-width:340px"></select></div>
+            <div class="form-group"><label class="form-label" for="gReason">理由・メモ（特別裁量は必須）</label>
+              <input class="form-control" type="text" id="gReason" maxlength="300"></div>
+            <button class="btn btn-primary" id="grantBtn" type="button" style="min-height:44px"><i class="ti ti-award" aria-hidden="true"></i>付与する（認定：あなた）</button>
+            <span id="gError" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-left:10px"></span>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/badges.js" type="module"></script>
+</body>
+</html>
