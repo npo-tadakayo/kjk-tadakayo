@@ -90,6 +90,22 @@
           <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
         </div>
+        <div class="filter-bar" style="margin-bottom:12px">
+          <select id="shipAssigneeFilter" aria-label="元の案件の担当営業で絞り込み">
+            <option value="">担当：全員</option>
+            <option value="__me">担当：自分</option>
+            <option value="__none">担当：未割当</option>
+          </select>
+          <select id="shipSortSelect" aria-label="出荷の一覧の並び替え">
+            <option value="createdDesc">並び：登録が新しい順</option>
+            <option value="shipDateDesc">並び：出荷日が新しい順</option>
+            <option value="shipDateAsc">並び：出荷日が古い順</option>
+            <option value="dueAsc">並び：支払期限が近い順</option>
+            <option value="remainDesc">並び：未集金の多い順</option>
+            <option value="billTo">並び：請求先の名前順</option>
+          </select>
+          <span style="font-size:12px;color:var(--color-ink-muted)">担当は、出荷の元になった案件の担当営業です（案件につながらない卸の出荷は「未割当」）。下の件数・金額も絞り込みに合わせて変わります。</span>
+        </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
         <h3 style="font-size:14px;margin:16px 0 8px">未集金（請求先ごと）</h3>
         <div id="arSummary" style="margin-bottom:16px"></div>

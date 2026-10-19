@@ -66,6 +66,24 @@
       <!-- フィルタ -->
       <div class="filter-bar">
         <input type="search" id="searchInput" placeholder="事業所名・担当者名で検索..." style="flex:1; min-width:200px;">
+        <select id="assigneeFilter" aria-label="担当営業で絞り込み">
+          <option value="">担当：全員</option>
+          <option value="__me">担当：自分</option>
+          <option value="__none">担当：未割当</option>
+        </select>
+        <select id="sortSelect" aria-label="並び替え">
+          <option value="receivedAt:desc">並び：受信日が新しい順</option>
+          <option value="receivedAt:asc">並び：受信日が古い順</option>
+          <option value="updatedAt:asc">並び：止まっている順（更新が古い順）</option>
+          <option value="updatedAt:desc">並び：更新が新しい順</option>
+          <option value="caseNumber:desc">並び：案件番号の大きい順</option>
+          <option value="officeName:asc">並び：事業所名順</option>
+          <option value="status:asc">並び：ステータス順</option>
+          <option value="assignedUserName:asc">並び：担当営業順</option>
+          <option value="visitDate:asc">並び：訪問予定日順</option>
+          <option value="prefecture:asc">並び：都道府県順</option>
+          <option value="custom" hidden>並び：表の見出しで指定中</option>
+        </select>
         <select id="statusFilter" aria-label="ステータスで絞り込み">
           <option value="">すべてのステータス</option>
         </select>

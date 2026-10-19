@@ -7,6 +7,7 @@ import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/fi
 import { gateRole } from "/js/role.js";
 import { STATUS_LABELS, LOST, lostReasonLabel, ARCHIVE_REASONS } from "/js/constants.js";
 import { areaOf, parseAddress, PREFECTURES } from "/js/area.js";
+import { matchAnyAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -18,6 +19,19 @@ function ms(ts) { return !ts ? 0 : ts.toMillis ? ts.toMillis() : (ts.seconds ? t
 function ymd(t) { return t ? new Date(t).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" }) : "—"; }
 
 let offices = null, cases = null; // どちらも届いてから描画
+let myEmail = "";
+
+// 並び順。同じ値のときは事業所名順
+const byName = (a, b) => String(a.officeName).localeCompare(String(b.officeName), "ja");
+const prefIdx = (p) => { const i = PREFECTURES.indexOf(p); return i < 0 ? 99 : i; };
+const SORTS = {
+  updatedDesc: (a, b) => b.updated - a.updated,
+  updatedAsc: (a, b) => a.updated - b.updated,
+  office: () => 0,
+  corp: (a, b) => String(a.corpName || "").localeCompare(String(b.corpName || ""), "ja"),
+  pref: (a, b) => prefIdx(a.pref) - prefIdx(b.pref),
+  count: (a, b) => b.cases.length - a.cases.length,
+};
 const open = new Set();            // 開いている行のキー
 
 // 事業所単位にまとめる
@@ -83,11 +97,16 @@ function render() {
     + (groups.some((g) => !g.pref) ? `<option value="__none__">住所が未登録</option>` : "");
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
 
+  // 担当は「その事業所の案件のどれかの担当営業」で見る（未割当＝どの案件にも担当がいない）
+  fillAssigneeSelect($("assigneeFilter"), cases, myEmail);
+  const asg = $("assigneeFilter").value;
+  const cmp = SORTS[$("sortSelect").value] || SORTS.updatedDesc;
   const q = $("searchInput").value.trim().toLowerCase(), pf = sel.value;
   const rows = groups.filter((g) => {
     if (pf && (pf === "__none__" ? g.pref : g.pref !== pf)) return false;
+    if (!matchAnyAssignee(g.cases.map((c) => c.assignedUserId), asg, myEmail)) return false;
     return !q || [g.officeName, g.corpName, g.address].some((v) => String(v || "").toLowerCase().includes(q));
-  }).sort((a, b) => b.updated - a.updated || String(a.officeName).localeCompare(String(b.officeName), "ja"));
+  }).sort((a, b) => cmp(a, b) || byName(a, b));
 
   $("countLabel").textContent = `${rows.length}事業所`;
   $("emptyEl").style.display = rows.length ? "none" : "block";
@@ -120,6 +139,9 @@ onAuthStateChanged(auth, async (user) => {
   $("gate").style.display = "none"; $("main").style.display = "block";
   $("searchInput").addEventListener("input", render);
   $("prefFilter").addEventListener("change", render);
+  myEmail = user.email;
+  bindPrefSelect($("assigneeFilter"), "offices.assignee", render);
+  bindPrefSelect($("sortSelect"), "offices.sort", render);
   $("officesBody").addEventListener("click", (e) => { if (e.target.closest("a")) return; const tr = e.target.closest("tr[data-key]"); if (tr) toggleRow(tr); });
   $("officesBody").addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;

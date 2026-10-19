@@ -27,6 +27,19 @@
         <div class="filter-bar">
           <input type="search" id="searchInput" placeholder="事業所名・法人名・住所で検索..." style="flex:1; min-width:200px;" aria-label="事業所名・法人名・住所で検索">
           <select id="prefFilter" aria-label="都道府県で絞り込み"><option value="">すべての都道府県</option></select>
+          <select id="assigneeFilter" aria-label="担当営業で絞り込み（その事業所の案件の担当）">
+            <option value="">担当：全員</option>
+            <option value="__me">担当：自分</option>
+            <option value="__none">担当：未割当</option>
+          </select>
+          <select id="sortSelect" aria-label="並び替え">
+            <option value="updatedDesc">並び：更新が新しい順</option>
+            <option value="updatedAsc">並び：更新が古い順</option>
+            <option value="office">並び：事業所名順</option>
+            <option value="corp">並び：法人名順</option>
+            <option value="pref">並び：都道府県順</option>
+            <option value="count">並び：案件数の多い順</option>
+          </select>
           <span id="countLabel" style="font-size:13px;color:var(--color-ink-muted);white-space:nowrap"></span>
         </div>
         <div class="card">

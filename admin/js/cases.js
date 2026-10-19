@@ -12,6 +12,7 @@ import {
   referralOptions, referralLabel, INQUIRY_INTENT_LABELS,
   LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
+import { matchAssignee, fillAssigneeSelect, bindPrefSelect, savePref, loadPref } from "/js/assignee-filter.js";
 import { areaOf, REGIONS } from "/js/area.js";
 import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
 
@@ -87,6 +88,7 @@ function updateDeadlineBanner() {
 
 let allCases = [];
 let sortState = { field: "receivedAt", dir: "desc" };
+let myEmail = ""; // 「担当：自分」の照合に使う（ログイン中の人のアドレス）
 
 // URLパラメータでの初期絞り込み（ダッシュボード「今日やること」からの遷移用）。
 // ?status=N は既存の statusFilter セレクトへそのまま反映（init 内）。
@@ -150,6 +152,7 @@ function currentFilters() {
     regionFilter: document.getElementById("regionFilter")?.value || "",
     prefFilter: document.getElementById("prefFilter")?.value || "",
     cityFilter: document.getElementById("cityFilter")?.value || "",
+    assigneeFilter: document.getElementById("assigneeFilter")?.value || "",
   };
 }
 
@@ -175,7 +178,7 @@ function intentMatch(c, selected) {
   return selected === INTENT_NONE ? !c.inquiryIntent : c.inquiryIntent === selected;
 }
 function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, intentFilter, referralFilter, lostFilter, showArchived,
-                          regionFilter, prefFilter, cityFilter }) {
+                          regionFilter, prefFilter, cityFilter, assigneeFilter }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
   const matchSearch = !search ||
@@ -195,7 +198,8 @@ function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, inte
     && areaMatch(a.prefecture, prefFilter)
     && areaMatch(a.city, cityFilter);
   return matchSearch && matchStatus && matchSource && quoteMatch(c, quoteFilter)
-    && intentMatch(c, intentFilter) && matchReferral && matchLost && matchArea;
+    && intentMatch(c, intentFilter) && matchReferral && matchLost && matchArea
+    && matchAssignee(c.assignedUserId, assigneeFilter, myEmail);
 }
 
 // 地域→都道府県→市町村の順に絞り込む。上位を選ぶと、下位の選択肢は
@@ -574,9 +578,39 @@ onAuthStateChanged(auth, async (user) => {
     const f = th.dataset.sort;
     if (sortState.field === f) sortState.dir = sortState.dir === "asc" ? "desc" : "asc";
     else sortState = { field: f, dir: DATE_FIELDS.includes(f) || NUMERIC_FIELDS.includes(f) ? "desc" : "asc" };
+    syncSortSelect();
     updateSortIndicators();
     renderCases();
   }));
+  // 並び替えのボタン（見出しを押すのと同じ。見出しで並べると「見出しで指定中」になる）
+  const sortSel = document.getElementById("sortSelect");
+  const syncSortSelect = () => {
+    const v = `${sortState.field}:${sortState.dir}`;
+    sortSel.value = [...sortSel.options].some((o) => o.value === v && !o.hidden) ? v : "custom";
+    savePref("cases.sort", v);
+  };
+  {
+    const saved = loadPref("cases.sort", "");
+    const [f, d] = saved.split(":");
+    if (f && (d === "asc" || d === "desc")) sortState = { field: f, dir: d };
+    syncSortSelect();
+  }
+  sortSel.addEventListener("change", () => {
+    if (sortSel.value === "custom") return;
+    const [f, d] = sortSel.value.split(":");
+    sortState = { field: f, dir: d };
+    syncSortSelect();
+    updateSortIndicators();
+    renderCases();
+  });
+  // 担当の絞り込み。ホームの「担当営業が決まっていない案件」など URL で来たときは、
+  // 覚えている「自分」と重なって0件にならないよう、その回だけ「全員」で開く（覚え直さない）
+  myEmail = user.email;
+  const assigneeSel = document.getElementById("assigneeFilter");
+  bindPrefSelect(assigneeSel, "cases.assignee", renderCases);
+  // ホームを「自分の分」で見ていたときは ?assignee=me が付いてくる
+  const urlAssignee = urlParams.get("assignee") === "me" ? "__me" : "";
+  if (urlAssignee || urlParams.get("assignee") === "all" || urlAssignedNone || urlStatus) { assigneeSel.value = urlAssignee; assigneeSel.dataset.pref = urlAssignee; }
   updateSortIndicators();
   updateDeadlineBanner();
   populateReferralFilter();
@@ -605,6 +639,7 @@ onAuthStateChanged(auth, async (user) => {
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
     allCases = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    fillAssigneeSelect(assigneeSel, allCases, myEmail);
     applyAreas();
     populateAreaFilters();
     renderCases();

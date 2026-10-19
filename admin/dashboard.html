@@ -88,7 +88,13 @@
 
         <!-- 今日やること -->
         <div id="todoCard" class="card todo-card" style="margin-bottom:20px">
-          <div class="card-header"><strong>今日やること</strong></div>
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <strong>今日やること</strong>
+            <select id="assigneeFilter" aria-label="誰の分を表示するか">
+              <option value="">担当：全員の分</option>
+              <option value="__me">担当：自分の分</option>
+            </select>
+          </div>
           <div class="card-body">
             <p class="todo-hint">上から順に片付けると業務が止まりません。</p>
             <div id="todoList" class="todo-list"></div>

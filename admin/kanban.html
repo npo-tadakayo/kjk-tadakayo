@@ -51,6 +51,19 @@
           <option value="mitsumori_quote">見積もり作成</option>
           <option value="manual">手動登録</option>
         </select>
+        <select id="assigneeFilter" aria-label="担当営業で絞り込み">
+          <option value="">担当：全員</option>
+          <option value="__me">担当：自分</option>
+          <option value="__none">担当：未割当</option>
+        </select>
+        <select id="sortSelect" aria-label="列の中の並び順">
+          <option value="default">並び：ステータス順</option>
+          <option value="stale">並び：止まっている順（更新が古い順）</option>
+          <option value="updatedDesc">並び：更新が新しい順</option>
+          <option value="receivedDesc">並び：受付が新しい順</option>
+          <option value="receivedAsc">並び：受付が古い順</option>
+          <option value="office">並び：事業所名順</option>
+        </select>
       </div>
 
       <div id="loadingEl" class="loading">

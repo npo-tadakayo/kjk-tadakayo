@@ -12,6 +12,7 @@ import {
   referralLabel, LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
 import { askLostReason } from "/js/case-detail-util.js";
+import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -64,11 +65,19 @@ function isStale(c) {
   return d !== null && d >= STALE_DAYS;
 }
 
+// 担当の絞り込み（自分・未割当・人）。上の件数（停滞・未申請）もこれに合わせる。
+// 「未割当の新規案件」は担当で絞ると意味が無くなるので、常に全体の件数を出す。
+function assigneeCases() {
+  const v = document.getElementById("assigneeFilter").value;
+  return allCases.filter((c) => matchAssignee(c.assignedUserId, v, currentUser?.email));
+}
+
 function renderAlerts() {
+  const mine = assigneeCases();
   const unassigned = allCases.filter((c) => c.status === 1 && !c.assignedUserId).length;
-  const stale = allCases.filter(isStale).length;
+  const stale = mine.filter(isStale).length;
   const deadlineNear = daysUntilDeadline(deadline) <= 30
-    ? allCases.filter((c) => ACTIVE_PRE_APPLY.includes(c.status)).length : 0;
+    ? mine.filter((c) => ACTIVE_PRE_APPLY.includes(c.status)).length : 0;
   const chips = [
     { cls: unassigned > 0 ? "warn" : "info", icon: "ti-user-question", num: unassigned, label: "未割当の新規案件" },
     { cls: deadlineNear > 0 ? "danger" : "info", icon: "ti-clock-exclamation", num: deadlineNear, label: "未申請（期限対応が必要）" },
@@ -82,7 +91,7 @@ function renderAlerts() {
 function filteredCases() {
   const search = document.getElementById("searchInput").value.toLowerCase();
   const sourceFilter = document.getElementById("sourceFilter").value;
-  return allCases.filter((c) => {
+  return assigneeCases().filter((c) => {
     const ms = !search || (c.officeName || "").toLowerCase().includes(search)
       || (c.corpName || "").toLowerCase().includes(search)
       || (c.contactName || "").toLowerCase().includes(search);
@@ -125,12 +134,23 @@ function cardHtml(c, col) {
     </div>`;
 }
 
+// 列の中の並び順。同じ値のときは案件番号の新しい順（下の renderBoard で足す）
+const SORTS = {
+  default: (a, b) => a.status - b.status,
+  stale: (a, b) => toMs(a.updatedAt) - toMs(b.updatedAt),
+  updatedDesc: (a, b) => toMs(b.updatedAt) - toMs(a.updatedAt),
+  receivedDesc: (a, b) => toMs(b.receivedAt || b.createdAt) - toMs(a.receivedAt || a.createdAt),
+  receivedAsc: (a, b) => toMs(a.receivedAt || a.createdAt) - toMs(b.receivedAt || b.createdAt),
+  office: (a, b) => String(a.officeName || "").localeCompare(String(b.officeName || ""), "ja"),
+};
+
 function renderBoard() {
   const cases = filteredCases();
   const byCol = {};
   COLUMNS.forEach((col) => { byCol[col.key] = []; });
   cases.forEach((c) => { const k = columnOf(c.status); if (k && byCol[k]) byCol[k].push(c); });
-  COLUMNS.forEach((col) => byCol[col.key].sort((a, b) => (a.status - b.status) || ((b.caseNumber || 0) - (a.caseNumber || 0))));
+  const cmp = SORTS[document.getElementById("sortSelect").value] || SORTS.default;
+  COLUMNS.forEach((col) => byCol[col.key].sort((a, b) => cmp(a, b) || ((b.caseNumber || 0) - (a.caseNumber || 0))));
 
   const board = document.getElementById("kanbanBoard");
   board.classList.add("phase-view");
@@ -224,6 +244,8 @@ onAuthStateChanged(auth, async (user) => {
     () => signOut(auth).then(() => location.href = "/index.html"));
   document.getElementById("searchInput").addEventListener("input", renderBoard);
   document.getElementById("sourceFilter").addEventListener("change", renderBoard);
+  bindPrefSelect(document.getElementById("assigneeFilter"), "kanban.assignee", () => { renderAlerts(); renderBoard(); });
+  bindPrefSelect(document.getElementById("sortSelect"), "kanban.sort", renderBoard);
   updateDeadlineBanner();
   try {
     const ss = await getDoc(doc(db, "appConfig", "settings"));
@@ -235,6 +257,7 @@ onAuthStateChanged(auth, async (user) => {
     allCases = snap.docs.map((d) => ({ _id: d.id, ...d.data() })).filter((c) => !c.archived);
     document.getElementById("loadingEl").style.display = "none";
     document.getElementById("kanbanBoard").style.display = "flex";
+    fillAssigneeSelect(document.getElementById("assigneeFilter"), allCases, user.email);
     renderAlerts();
     renderBoard();
   });

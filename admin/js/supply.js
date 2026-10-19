@@ -15,6 +15,7 @@ import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPA
 import { parseOrderFile } from "/js/partner-order-import.js";
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
 import { PREFECTURES } from "/js/area.js";
+import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -1912,6 +1913,41 @@ async function saveTrackNumber(){
   }catch(e){ err.textContent = `保存に失敗しました: ${e.message}`; err.style.display = "block"; }
 }
 
+// ===== 出荷の一覧の担当絞り込み・並び替え（2026-10-20） =====
+// 出荷そのものは担当を持たないので、元の案件（caseId）の担当営業で見る。
+// 受注タブの入金状況は全件の shipments を使うので、ここでは表示用に絞った配列だけを作る。
+let caseOwners = {};   // caseId → assignedUserId
+let casesForOwners = []; // 担当の選択肢を作るための案件（担当の id と氏名だけ使う）
+let ownersState = "loading"; // 担当情報（案件）の読み込み状態: loading / ok / error
+const SHIP_SORTS = {
+  createdDesc: null, // Firestore の並び（createdAt の新しい順）のまま
+  shipDateDesc: (a,b)=>String(b.shipDate||"").localeCompare(String(a.shipDate||"")),
+  shipDateAsc: (a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")),
+  // 期限の無いもの（未請求など）は後ろへ
+  dueAsc: (a,b)=>String(dueDateOf(a)||"9999").localeCompare(String(dueDateOf(b)||"9999")),
+  // キャンセル・下書き・未請求は未集金ではない（上の未集金の集計と同じ isUnpaid で判定）
+  remainDesc: (a,b)=>(isUnpaid(b)?payRemain(b):0)-(isUnpaid(a)?payRemain(a):0),
+  billTo: (a,b)=>String(billToOf(a)).localeCompare(String(billToOf(b)),"ja"),
+};
+function renderShipmentsView(){
+  const asg=document.getElementById("shipAssigneeFilter")?.value||"";
+  const cmp=SHIP_SORTS[document.getElementById("shipSortSelect")?.value||""];
+  // 担当で絞っているのに担当が判定できないときは、0件と誤って見せずにその旨を出す
+  if(asg && ownersState!=="ok"){
+    const msg = ownersState==="error"
+      ? "担当の情報（案件）を取得できませんでした。「担当：全員」に切り替えるか、画面を開き直してください。"
+      : "担当の情報を読み込んでいます…";
+    document.getElementById("shipSummary").innerHTML=`<div class="alert-chip ${ownersState==="error"?"danger":"info"}"><i class="ti ti-${ownersState==="error"?"alert-triangle":"loader-2"}" aria-hidden="true"></i><div><div class="alert-label">${msg}</div></div></div>`;
+    const ar=document.getElementById("arSummary"); if(ar) ar.innerHTML="";
+    document.getElementById("shipBody").innerHTML="";
+    document.getElementById("shipEmpty").style.display="none";
+    return;
+  }
+  let list=shipments.filter(s=>matchAssignee(caseOwners[s.caseId], asg, currentUser?.email));
+  if(cmp) list=[...list].sort(cmp);
+  renderShipments(list);
+}
+
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
@@ -3194,10 +3230,27 @@ onAuthStateChanged(auth, async (user)=>{
   // 出荷一覧（受注タブの入金状況にも使うので保持して再描画する）
   onSnapshot(query(collection(db,"shipments"),orderBy("createdAt","desc")),(snap)=>{
     shipments=snap.docs.map(d=>({_id:d.id,...d.data()}));
-    renderShipments(shipments);
+    renderShipmentsView();
     if(partnerOrdersCache.length) renderPartnerOrders(partnerOrdersCache);
     if(!shipDeepLinkTried){ shipDeepLinkTried=true; scrollToShipmentFromUrl(); }
   });
+  // 出荷の担当＝元の案件の担当営業（絞り込み用）
+  {
+    const asgSel=document.getElementById("shipAssigneeFilter");
+    bindPrefSelect(asgSel, "supply.ship.assignee", renderShipmentsView);
+    bindPrefSelect(document.getElementById("shipSortSelect"), "supply.ship.sort", renderShipmentsView);
+    // ホームから来たときはホームで見ていた範囲（自分／全員）、特定の出荷（?so=）を開きに来たときは全員で開く（覚え直さない）
+    const sp=new URLSearchParams(location.search);
+    if(sp.get("assignee")==="me"){ asgSel.value="__me"; asgSel.dataset.pref="__me"; }
+    else if(sp.get("assignee")==="all" || sp.get("so")){ asgSel.value=""; asgSel.dataset.pref=""; }
+    onSnapshot(collection(db,"cases"),(snap)=>{
+      casesForOwners=snap.docs.map(d=>({_id:d.id,assignedUserId:d.data().assignedUserId||null,assignedUserName:d.data().assignedUserName||null}));
+      caseOwners=Object.fromEntries(casesForOwners.map(c=>[c._id,c.assignedUserId]));
+      ownersState="ok";
+      fillAssigneeSelect(asgSel, casesForOwners, currentUser?.email);
+      renderShipmentsView();
+    }, (e)=>{ console.warn("cases (担当の絞り込み):", e.message); ownersState="error"; renderShipmentsView(); });
+  }
   // 受注（認定事業者から）
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
     partnerOrdersCache=snap.docs.map(d=>({_id:d.id,...d.data()}));

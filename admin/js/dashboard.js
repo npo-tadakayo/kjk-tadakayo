@@ -6,6 +6,7 @@ import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, setD
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
+import { matchAssignee, bindPrefSelect, ASSIGNEE_ME } from "/js/assignee-filter.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -24,6 +25,20 @@ let todoCases = null;      // null=読み込み中 / 配列=取得済み
 let todoCasesError = false;
 let todoShipments = null;
 let todoShipmentsError = false;
+let myEmail = "";
+let allCasesCache = []; // 担当の切替で集計し直すために持っておく（対象外を除く）
+let caseOwners = {};    // caseId → 担当。出荷の担当照合用なので対象外の案件も含める（出荷画面と同じ範囲）
+
+// 「担当：自分の分」のとき、案件は担当営業が自分のもの、出荷は元の案件の担当営業が自分のものだけを数える。
+// 「新しく届いた問い合わせ」「担当営業が決まっていない案件」はまだ誰の担当でもないので、常に全員分を数える。
+function mineOnly() { return document.getElementById("assigneeFilter")?.value === ASSIGNEE_ME; }
+function myCases(cases) {
+  return mineOnly() ? cases.filter((c) => matchAssignee(c.assignedUserId, ASSIGNEE_ME, myEmail)) : cases;
+}
+function myShipments(ships) {
+  if (!mineOnly() || !ships) return ships;
+  return ships.filter((s) => matchAssignee(caseOwners[s.caseId], ASSIGNEE_ME, myEmail));
+}
 
 function countRow(data, error, fn) {
   if (error) return { state: "error" };
@@ -49,23 +64,35 @@ function todoRowHtml({ icon, label, href, state, count }) {
 function renderTodo() {
   const el = document.getElementById("todoList");
   if (!el) return;
+  const allTodo = todoCases;
+  const todoCasesV = todoCases ? myCases(todoCases) : todoCases;
+  const todoShipmentsV = myShipments(todoShipments);
+  // 「自分の分」の出荷は案件の担当で判定するので、案件が届くまでは集計中・取れなければ取得失敗にする（0件と誤表示しない）
+  const shipPending = mineOnly() && !todoCases && !todoCasesError;
+  const shipError = todoShipmentsError || (mineOnly() && todoCasesError);
+  // 遷移先が覚えている担当（別の人など）より、ホームで見ている範囲を優先させるため、全員分でも明示する
+  const me = mineOnly() ? "assignee=me" : "assignee=all";
+  const withMe = (href) => href + (href.includes("?") ? "&" : "?") + me;
   const rows = [
     { icon: "ti-inbox", label: "新しく届いた問い合わせ", href: "/cases.html?status=1",
-      ...countRow(todoCases, todoCasesError, (c) => c.status === 1) },
+      ...countRow(allTodo, todoCasesError, (c) => c.status === 1) },
     { icon: "ti-user-question", label: "担当営業が決まっていない案件", href: "/cases.html?assigned=none",
-      ...countRow(todoCases, todoCasesError, (c) => ENGAGED.includes(c.status) && !c.assignedUserId) },
+      ...countRow(allTodo, todoCasesError, (c) => ENGAGED.includes(c.status) && !c.assignedUserId) },
     { icon: "ti-users", label: "伴走支援待ち", href: "/cases.html?status=7",
-      ...countRow(todoCases, todoCasesError, (c) => c.status === 7) },
+      ...countRow(todoCasesV, todoCasesError, (c) => c.status === 7) },
     { icon: "ti-truck-delivery", label: "出荷の下書き（確定が必要）", href: "/supply.html?tab=shipments",
-      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "draft") },
+      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "draft") },
     { icon: "ti-receipt", label: "発送済で請求書を出していない", href: "/supply.html?tab=shipments",
-      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "shipped") },
+      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "shipped") },
     { icon: "ti-cash", label: "請求済で入金待ち", href: "/supply.html?tab=shipments",
-      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "invoiced") },
+      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "invoiced") },
     { icon: "ti-receipt-2", label: "入金済で領収証を出していない", href: "/supply.html?tab=shipments",
-      ...countRow(todoShipments, todoShipmentsError, (s) => s.status === "paid" && !s.receiptIssuedAt) },
+      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "paid" && !s.receiptIssuedAt) },
   ];
-  el.innerHTML = rows.map(todoRowHtml).join("");
+  // 新しく届いた問い合わせ・担当が決まっていない案件は、まだ誰の担当でもないので全員分のまま
+  const shared = (href) => href.includes("assigned=none") || href.includes("status=1");
+  el.innerHTML = rows.map((r) => ({ ...r, href: shared(r.href) ? r.href : withMe(r.href) }))
+    .map(todoRowHtml).join("");
 }
 
 // ===== はじめての方へ（3ステップ・初回のみ表示） =====
@@ -218,15 +245,24 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("logoutBtn").addEventListener("click",
     () => signOut(auth).then(() => location.href = "/index.html"));
   initOnboarding(user.email);
+  myEmail = user.email;
+  // 統計とファネルも「自分の分」に合わせる（担当営業が決まっていない案件の行だけは全員分）
+  bindPrefSelect(document.getElementById("assigneeFilter"), "home.assignee", () => {
+    if (todoCases) render(myCases(allCasesCache));
+    renderTodo();
+  });
   updateDeadlineBanner();
   try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
-    const cases = snap.docs.map((d) => ({ _id: d.id, ...d.data() })).filter((c) => !c.archived);
+    const everyCase = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    caseOwners = Object.fromEntries(everyCase.map((c) => [c._id, c.assignedUserId]));
+    const cases = everyCase.filter((c) => !c.archived);
     document.getElementById("loadingEl").style.display = "none";
     document.getElementById("dashContent").style.display = "block";
-    render(cases);
+    allCasesCache = cases;
+    render(myCases(cases));
     todoCases = cases;
     todoCasesError = false;
     renderTodo();
