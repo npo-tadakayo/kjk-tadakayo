@@ -75,7 +75,11 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
   const contactTel = kase?.contactPhone || office?.phone || "";
   const addr = office ? [office.prefecture, office.city, office.addressDetail].filter(Boolean).join("") : "";
   const postal = office?.postalCode || "";
-  const displayName = [q.corpName || kase?.corpName, q.officeName || kase?.officeName].filter(Boolean).join("　") || "（法人名・事業所名未登録）";
+  // 宛先は「法人名（1行目・小さめ）」と「事業所名＋御中（2行目・大きく）」に分ける。
+  // 1つの見出しにつなげると、幅いっぱいで言葉の途中から折り返していた（例「…栄 / 寿園」・2026-10-20）
+  const toCorp = q.corpName || kase?.corpName || "";
+  const toOffice = q.officeName || kase?.officeName || "";
+  const displayName = [toCorp, toOffice].filter(Boolean).join("　") || "（法人名・事業所名未登録）";
 
   const contactLines = [];
   if (postal) contactLines.push(`〒${esc(postal)}`);
@@ -140,8 +144,8 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
       <div class="qdoc-meta">
         <div>
-          <div class="qdoc-to-name">${esc(displayName)}</div>
-          <div class="qdoc-to-honorific">御中</div>
+          ${toCorp && toOffice ? `<div class="qdoc-to-corp">${esc(toCorp)}</div>` : ""}
+          <div class="qdoc-to-name">${esc(toCorp && toOffice ? toOffice : displayName)}<span class="qdoc-to-honorific">御中</span></div>
           <div class="qdoc-contact">${contactLines.join("<br>")}</div>
         </div>
         <table class="qdoc-info-table">
@@ -252,8 +256,9 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-hanko{width:72px;height:72px;object-fit:contain;}
 .qdoc-hanko-ph{width:72px;height:72px;border:2px solid #c02828;display:flex;align-items:center;justify-content:center;color:#c02828;font-size:11px;text-align:center;line-height:1.5;}
 .qdoc-meta{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6mm;}
-.qdoc-to-name{font-size:15pt;font-weight:700;border-bottom:1.5px solid #111;padding-bottom:3px;margin-bottom:3px;min-width:180px;}
-.qdoc-to-honorific{font-size:10pt;color:#6a5e48;}
+.qdoc-to-corp{font-size:11pt;font-weight:600;color:#333;margin-bottom:2px;word-break:keep-all;overflow-wrap:anywhere;}
+.qdoc-to-name{font-size:15pt;font-weight:700;border-bottom:1.5px solid #111;padding-bottom:3px;margin-bottom:3px;min-width:180px;max-width:105mm;word-break:keep-all;overflow-wrap:anywhere;line-height:1.4;}
+.qdoc-to-honorific{font-size:11pt;font-weight:600;color:#111;margin-left:.6em;white-space:nowrap;}
 .qdoc-contact{font-size:10pt;color:#6a5e48;margin-top:6px;line-height:1.7;}
 .qdoc-info-table{font-size:9.5pt;line-height:1.9;text-align:right;}
 .qdoc-info-table td{padding:0 0 0 12px;}
