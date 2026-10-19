@@ -183,7 +183,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
       <div class="qdoc-meta">
         <div>
           ${toCorp && toOffice ? `<div class="qdoc-to-corp">${esc(toCorp)}</div>` : ""}
-          <div class="qdoc-to-name">${esc(toCorp && toOffice ? toOffice : displayName)}<span class="qdoc-to-honorific">御中</span></div>
+          <div class="qdoc-to-name${(toCorp && toOffice ? toOffice : displayName).length > 15 ? " qdoc-to-name--long" : ""}">${esc(toCorp && toOffice ? toOffice : displayName)}<span class="qdoc-to-honorific">御中</span></div>
           <div class="qdoc-contact">${contactLines.join("<br>")}</div>
         </div>
         <table class="qdoc-info-table">
@@ -301,6 +301,7 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-badge-free{display:inline-block;background:#1f7a4d;color:#fff;font-size:8.5pt;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:1px;}
 .qdoc-to-corp{font-size:11pt;font-weight:600;color:#333;margin-bottom:2px;word-break:keep-all;overflow-wrap:anywhere;}
 .qdoc-to-name{font-size:15pt;font-weight:700;border-bottom:1.5px solid #111;padding-bottom:3px;margin-bottom:3px;min-width:180px;max-width:105mm;word-break:keep-all;overflow-wrap:anywhere;line-height:1.4;}
+.qdoc-to-name--long{font-size:12.5pt;max-width:none;white-space:nowrap;}
 .qdoc-to-honorific{font-size:11pt;font-weight:600;color:#111;margin-left:.6em;white-space:nowrap;}
 .qdoc-contact{font-size:10pt;color:#6a5e48;margin-top:6px;line-height:1.7;}
 .qdoc-info-table{font-size:9.5pt;line-height:1.9;text-align:right;}
