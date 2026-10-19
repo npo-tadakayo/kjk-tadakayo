@@ -445,6 +445,13 @@
               <option value="plus">レターパックプラス（赤）</option>
             </select></div>
         </div>
+        <div class="form-group" id="shipDoneNoNoticeWrap" style="margin-bottom:10px">
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
+            <input type="checkbox" id="shipDoneNoNotice" style="margin-top:3px">
+            <span>出荷指示を送らない（記録だけ残す）<br><span style="font-size:11.5px;color:var(--color-ink-muted)">すでに届いている・手渡し済みなど、出荷のスペースに指示を出すと二重に送ってしまうときに使います</span></span>
+          </label>
+          <div id="shipDoneNoNoticeHint" style="display:none;font-size:11.5px;color:#b27800;margin-top:4px"></div>
+        </div>
         <div class="form-group" id="shipDoneOriginWrap">
           <label class="form-label" for="shipDoneOrigin">出荷元の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="shipDoneOrigin"></select>

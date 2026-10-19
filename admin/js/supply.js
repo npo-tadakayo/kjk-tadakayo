@@ -881,6 +881,23 @@ async function postShipNotice(shipmentId, opts){
     return `出荷指示を投稿できませんでした（${e.message||e}）。出荷の行の「出荷指示を再送」でやり直せます`;
   }
 }
+// 「出荷指示を送らない（記録のみ）」を選んだときに出荷へ書く印。再送ボタンからは後で送れる
+function noNoticePatch(){
+  return { shipNotifyStatus: "skipped", shipNotifySkippedBy: currentUser.displayName||currentUser.email,
+    shipNotifySkippedAt: serverTimestamp() };
+}
+const NO_NOTICE_MSG = "出荷指示は送っていません（記録のみ）";
+// 案件のステータスが「伴走支援実施済」(8) 以降なら、すでにカードリーダーが届いている可能性が高い
+async function deliveredHint(s){
+  if(!s.caseId) return null;
+  try{
+    const cs = await getDoc(doc(db,"cases",s.caseId));
+    const st = cs.exists() ? Number(cs.data().status) : 0;
+    if(st >= 8 && st !== 4) return "この案件はすでに伴走支援が済んでいます。カードリーダーが届いていれば、出荷指示は送らないでください（二重に送るのを防ぐため、チェックを入れてあります）";
+  }catch(_){}
+  return null;
+}
+
 // 出荷指示の再送（明示の操作なので投稿済みでも送る。必ず確認を出す）
 async function resendShipNotice(s){
   const msg = s.shipNotifiedAt
@@ -893,7 +910,7 @@ async function resendShipNotice(s){
 
 // 発送済にする前の確認ダイアログ。OK なら {shipDate, originLocationId, letterPackType}、やめたら null
 let shipDoneCtx = null; // { resolve, items, usesStock }
-function askShipDetails({ title, summaryHtml, usesStock, locId, date, letterPackType, items }){
+function askShipDetails({ title, summaryHtml, usesStock, locId, date, letterPackType, items, noNotice, noNoticeHint }){
   return new Promise((resolve)=>{
     if(shipDoneCtx && shipDoneCtx.resolve) shipDoneCtx.resolve(null);
     shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock };
@@ -906,6 +923,10 @@ function askShipDetails({ title, summaryHtml, usesStock, locId, date, letterPack
     if(needLoc) fillLocationSelect(document.getElementById("shipDoneOrigin"), locId);
     document.getElementById("shipDoneStockNote").textContent = usesStock ? "" : "直送のため、自社在庫は動きません。";
     document.getElementById("shipDoneError").style.display = "none";
+    // 出荷指示を送らない（記録のみ）。伴走支援が済んだ案件など、すでに届いている出荷は既定でチェック（2026-10-20）
+    document.getElementById("shipDoneNoNotice").checked = !!noNotice;
+    const nh = document.getElementById("shipDoneNoNoticeHint");
+    nh.textContent = noNoticeHint || ""; nh.style.display = noNoticeHint ? "block" : "none";
     updateShipDoneHint();
     document.getElementById("shipDoneModal").classList.add("open");
   });
@@ -940,7 +961,8 @@ function doShipDone(){
         return fail(`在庫が足りません: ${p.name||it.sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${it.qty}）。入荷を登録するか、別の保管場所を選んでください。`);
     }
   }
-  closeShipDone({ shipDate, originLocationId, letterPackType: document.getElementById("shipDoneLp").value || "" });
+  closeShipDone({ shipDate, originLocationId, letterPackType: document.getElementById("shipDoneLp").value || "",
+    noNotice: document.getElementById("shipDoneNoNotice").checked });
 }
 
 // 出荷の下書き(draft) → 発送済(shipped)に確定。
@@ -948,7 +970,8 @@ function doShipDone(){
 // 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
 async function confirmDraftShipment(s){
   const usesStock = shipUsedStock(s);
-  const ans = await askShipDetails({
+  const hint = await deliveredHint(s);
+  const ans = await askShipDetails({ noNotice: !!hint, noNoticeHint: hint || "",
     title: `発送済にする（${s.soNumber||""}）`,
     summaryHtml: `<div><strong>${esc(s.company||s.partnerName||"")}</strong> ${esc(s.officeName||"")}</div>`
       + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([s.postal?`〒${s.postal}`:"", s.address||""].filter(Boolean).join(" "))}</div>`,
@@ -961,7 +984,7 @@ async function confirmDraftShipment(s){
     await updateDoc(doc(db,"shipments",s._id),{
       status:"shipped", shipDate:ans.shipDate, confirmedAt:serverTimestamp(),
       ...(its.length ? { originLocationId: locId, originLocationName: locationName(locId) } : {}),
-      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch() });
+      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(), ...(ans.noNotice ? noNoticePatch() : {}) });
     for(const it of its){
       await updateDoc(doc(db,"products",it.sku), stockPatch(locId, -it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku, -it.qty, "shipment", s.soNumber, locId));
@@ -969,6 +992,7 @@ async function confirmDraftShipment(s){
   }
   catch(e){ alert(`確定失敗: ${e.message}`); return; }
   const head = usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`;
+  if(ans.noNotice){ toast(`${head}。${NO_NOTICE_MSG}`); return; }
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(s._id)}`);
 }
@@ -1813,6 +1837,7 @@ function shipNotifyShown(s){
 function shipNotifyHtml(s){
   if(!shipNotifyShown(s)) return "";
   if(s.shipNotifiedAt) return `<div style="font-size:12px;color:var(--color-ink-muted)">出荷指示：投稿済 ${esc(fmtDT(s.shipNotifiedAt))}</div>`;
+  if(s.shipNotifyStatus==="skipped") return `<div style="font-size:12px;color:var(--color-ink-muted)">出荷指示：送らない（記録のみ${s.shipNotifySkippedBy?`・${esc(s.shipNotifySkippedBy)}`:""}）</div>`;
   const why = ({ unset:"投稿先が未設定", disabled:"投稿先が停止中", error:"投稿に失敗" })[s.shipNotifyStatus] || "";
   return `<div style="font-size:12px;color:var(--color-danger);font-weight:600">出荷指示：未投稿${why?`（${esc(why)}）`:""}</div>`;
 }
@@ -2950,7 +2975,7 @@ async function shipFromOrder(o){
       shipDate:ans.shipDate, postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       ...(o.desiredDeliveryDate ? { desiredDeliveryDate:o.desiredDeliveryDate } : {}),
-      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(),
+      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(), ...(ans.noNotice ? noNoticePatch() : {}),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     newShipId = newRef.id;
     for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(fromLoc,-it.qty));
@@ -2958,6 +2983,7 @@ async function shipFromOrder(o){
     await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
   }catch(e){ alert(`出荷登録失敗: ${e.message}`); return; }
   const head = `受注を出荷登録しました（${soNumber}）`;
+  if(ans.noNotice){ toast(`${head}。${NO_NOTICE_MSG}`); return; }
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(newShipId)}`);
 }
