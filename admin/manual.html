@@ -8,24 +8,7 @@
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
-  <style>
-    .doc{max-width:860px;}
-    .doc h2{font-family:"Noto Serif JP",serif;font-size:20px;margin:32px 0 12px;padding-left:10px;border-left:4px solid var(--color-success);}
-    .doc h3{font-size:15px;margin:18px 0 6px;}
-    .doc p,.doc li{font-size:13px;line-height:1.85;}
-    .doc ol li{margin-bottom:6px;}
-    .step{background:#fff;border:1px solid var(--color-line);border-radius:8px;padding:14px 16px;margin:10px 0;}
-    .step .n{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--color-success);color:#fff;font-size:12px;font-weight:700;align-items:center;justify-content:center;margin-right:8px;}
-    .faq{border-bottom:1px solid var(--color-line);padding:10px 0;}
-    .faq .q{font-weight:600;font-size:13px;}
-    .callout{border-radius:8px;padding:12px 14px;margin:12px 0;font-size:13px;}
-    .callout.tip{background:#e8f5ec;border-left:4px solid #5a8a3a;}
-    .callout.warn{background:#fef3e6;border-left:4px solid #c87a1f;}
-    .doc table.flow{width:100%;border-collapse:collapse;margin:10px 0 18px;}
-    .doc table.flow th,.doc table.flow td{border:1px solid var(--color-line);padding:8px 10px;font-size:13px;line-height:1.7;text-align:left;vertical-align:top;white-space:normal;}
-    .doc table.flow th{background:var(--color-bg);font-weight:600;}
-    .doc table.flow td.lost{color:var(--color-ink-muted);}
-  </style>
+  <link rel="stylesheet" href="/css/manual.css">
 </head>
 <body>
   <div class="layout">
@@ -39,17 +22,26 @@
       <div class="page-header"><h1 class="page-title">マニュアル</h1></div>
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
 
-      <div class="doc" id="doc" style="display:none">
-        <h2>§0 業務の流れ（まずここを読む）</h2>
+      <div class="doc mn" id="doc" style="display:none">
+        <div class="mn-wrap">
+          <nav class="mn-toc" id="mnToc" aria-label="マニュアルの目次">
+            <div class="mn-search"><i class="ti ti-search" aria-hidden="true"></i>
+              <input type="search" id="mnSearch" placeholder="マニュアルを検索（例: 宛名、期限）" aria-label="マニュアルを検索" autocomplete="off"></div>
+            <div class="mn-count" id="mnCount" role="status" aria-live="polite"></div>
+          </nav>
+          <div class="mn-body">
+<aside class="mn-news" id="mnNews"><h2><i class="ti ti-sparkles" aria-hidden="true"></i>2026-10-19 の更新</h2><p class="lead">PM打ち合わせの決定を反映して、次の10点が変わりました。タイトルを押すと、その説明に移動します。</p><ol><li><a href="#s-first">初期連絡の期限は5営業日</a><span>土日・祝日・年末年始（12/29〜1/3）は数えません</span></li><li><a href="#s-chat">Google Chat の投稿先が4つに</a><span>CRM通知・PM・出荷指示・経理。有効／停止とテスト送信つき</span></li><li><a href="#s-region">通知に地域が付く</a><span>【都道府県 市区町村】</span></li><li><a href="#s-shipnotice">「発送済にする」で出荷指示を投稿</a><span>宛名・住所・電話・品目つき。未投稿のときは「出荷指示を再送」</span></li><li><a href="#s-atena">レターパックの宛名をA4で印刷</a><span>ライト＝青／プラス＝赤</span></li><li><a href="#s-tracking">追跡番号を写真で記録</a><span>発送済以降の出荷から</span></li><li><a href="#s-invoice-date">請求書は発行日を入れて発行</a><span>出荷とは別の操作。支払期限は発行日から14日（これからの発送分）</span></li><li><a href="#s-lost">失注の理由を選ぶ</a><span>他社紹介・辞退・当日キャンセル・その他</span></li><li><a href="#s-visit">訪問予定日</a><span>案件詳細で入力。一覧とカンバンに表示</span></li><li><a href="#s-offices">事業所の一覧（サイドバー「事業所」）</a><span>過去の案件も事業所から探せます</span></li></ol></aside>
+<section class="chap" id="ch-flow"><header class="chap-h"><span class="ico"><i class="ti ti-route" aria-hidden="true"></i></span><div><h2>業務の流れ（まずここを読む）</h2><div class="sub">1件の案件が進む順番と、お金の流れ</div></div></header><div class="chap-b">
+<div class="sec" id="s-flow">
         <p>1件の案件は次の順で進みます。迷ったらこの表に戻ってください。</p>
         <div class="table-wrap">
-        <table class="flow">
+        <table class="flow wide">
           <thead><tr><th>段階</th><th>案件のステータス</th><th>この段階でやること</th><th>使う画面（メニュー名）</th><th>押すボタン</th><th>出る書類・通知</th></tr></thead>
           <tbody>
             <tr>
               <td>①受付・受注</td>
               <td>1 新規受信 → 2 確認中 → 3 受注確定</td>
-              <td>問い合わせ内容を確認し、対応記録を残す。担当営業と紹介元を決めて受注を確定する</td>
+              <td>問い合わせ内容を確認し、<strong>申込から5営業日以内に初期連絡</strong>をして、対応記録を残す。担当営業と紹介元を決めて受注を確定する（<a href="#s-first">初期連絡の期限</a>）</td>
               <td>ホーム（今日やること）／案件一覧／カンバン</td>
               <td>ステータスを変更／担当営業を選ぶ／紹介元を選ぶ／対応記録を追加</td>
               <td>問い合わせ時にGoogle Chatへ自動通知</td>
@@ -89,24 +81,27 @@
             <tr>
               <td class="lost">（途中でなくなった場合）</td>
               <td class="lost">4 失注</td>
-              <td class="lost">どの段階からでも「失注」に変更できる。理由などは対応記録に残す</td>
+              <td class="lost">どの段階からでも「失注」に変更できる。変更するときに<strong>理由</strong>（他社紹介・辞退・当日キャンセル・その他）を選ぶ（<a href="#s-lost">失注の理由</a>）</td>
               <td class="lost">案件詳細</td>
-              <td class="lost">ステータスを「失注」に変更</td>
+              <td class="lost">ステータスを「失注」に変更→理由を選ぶ</td>
               <td class="lost">—</td>
             </tr>
           </tbody>
         </table>
         </div>
 
-        <p><strong>表2: お金の流れ</strong></p>
+        
+</div>
+<div class="sec" id="s-money">
+<p><strong>表2: お金の流れ</strong></p>
         <div class="table-wrap">
-        <table class="flow">
-          <thead><tr><th>①発送済にする</th><th>②請求書を出す</th><th>③請求済にする</th><th>④入金を記録する</th><th>⑤領収証を出す</th><th>⑥助成金申請へ</th></tr></thead>
+        <table class="flow wide">
+          <thead><tr><th>①発送済にする（出荷指示がChatに届く）</th><th>②請求書を確認する</th><th>③請求済にする（発行日を入れる）</th><th>④入金を記録する</th><th>⑤領収証を出す</th><th>⑥助成金申請へ</th></tr></thead>
           <tbody>
             <tr>
-              <td>出荷・請求・入金の一覧の行、または案件詳細「出荷・請求・入金」タブの主ボタン</td>
+              <td>出荷・請求・入金の一覧の行、または案件詳細「出荷・請求・入金」タブの主ボタン（<a href="#s-shipnotice">くわしく</a>）</td>
               <td>帳票画面（請求書を開いて「請求書をメールで送付」）</td>
-              <td>出荷・請求・入金の一覧の行</td>
+              <td>出荷・請求・入金の一覧の行。<strong>請求書は出荷とは別の操作</strong>で、発行日を入れる（<a href="#s-invoice-date">くわしく</a>）</td>
               <td>出荷・請求・入金の一覧の行</td>
               <td>帳票画面（領収証を開いて「領収証をメールで送付」）</td>
               <td>案件詳細の「申請情報」タブ</td>
@@ -115,63 +110,125 @@
         </table>
         </div>
         <div class="callout tip">毎朝は<strong>ホーム（今日やること）</strong>を開き、上から順に片付けると流れが止まりません。</div>
-
-        <h2>§1 このシステムでできること</h2>
+</div>
+</div></section>
+<section class="chap" id="ch-about"><header class="chap-h"><span class="ico"><i class="ti ti-layout-dashboard" aria-hidden="true"></i></span><div><h2>このシステムでできること・画面の見かた</h2><div class="sub">左メニューにある画面の役割</div></div></header><div class="chap-b">
+<div class="sec" id="s-can">
         <p>介護情報基盤の伴走支援に関する<strong>問い合わせ・見積もり・伴走支援・助成金申請・カードリーダーの発注/在庫/出荷</strong>を一つの画面で管理できます。問い合わせは自動で「案件」として取り込まれます。</p>
 
         <div class="callout tip"><strong><i class="ti ti-video" aria-hidden="true"></i> 動画でも見られます。</strong> 各手順の「動画で見る」ボタンを押すと、この画面の上で 3〜6分の解説動画が再生されます（字幕付き）。一覧は左メニューの <a href="/videos.html">動画マニュアル</a> へ。 <button data-video="U1"></button></div>
         <div class="callout">動画の中のボタン名は撮影時のもので、いまの画面と一部ちがいます（例:「出荷を確定」→「発送済にする」）。手順は同じです。</div>
-        <h2>§2 画面の見かた</h2>
+</div>
+<div class="sec" id="s-screens" data-toc="画面の見かた"><h3>画面の見かた</h3>
         <ul>
           <li><strong>ホーム（今日やること）</strong>: 件数・補助金額・進捗の全体像と<strong>月次の新規案件グラフ</strong>（直近6か月）</li>
-          <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み（ステータス・流入元・<strong>紹介元</strong>・<strong>地域／都道府県／市町村</strong>）・並び替え・CSV出力</li>
-          <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）</li>
+          <li><strong>案件一覧</strong>: すべての案件。検索・絞り込み（ステータス・流入元・<strong>紹介元</strong>・<strong>地域／都道府県／市町村</strong>）・並び替え・CSV出力。<strong>訪問予定日</strong>の列と、<strong>初期連絡の超過</strong>の赤い帯もここ</li>
+          <li><strong>事業所</strong>: 事業所ごとに案件をまとめて見る（読み取り専用）。過去の案件を探すときに使う</li>
+          <li><strong>カンバン</strong>: 案件をステータス別のカードで管理（ドラッグで移動）。訪問予定日があるカードには「訪問 月/日」が出る</li>
           <li><strong>出荷・請求・入金</strong>: 発送・請求書・入金の記録、認定事業者からの受注</li>
           <li><strong>在庫・発注</strong>: 在庫の確認・AB Circleへの発注・入荷登録</li>
           <li><strong>売上シミュレーター</strong>: 件数を入れて年間の売上・利益を試算</li>
           <li><strong>認定事業者</strong>: 認定事業者の一覧・登録、協定書/説明資料の作成</li>
           <li><strong>料金・送料</strong>: 認定事業者への卸価格・レターパック/ゆうパック送料の設定</li>
+          <li><strong>伴走支援者バッジ</strong>: 伴走支援のトレーニング評価とバッジの管理</li>
           <li><strong>動画マニュアル</strong>: CRM操作説明の動画 8本（単元ごと 3〜6分・字幕付き）</li>
-          <li><strong>設定</strong>: 通知先(Chat)・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>などの変更</li>
+          <li><strong>設定</strong>: <strong>Google Chat の投稿先（4つ）</strong>・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>などの変更</li>
         </ul>
-
-        <h2>§3 使い方（基本操作）</h2>
-        <h3>案件を進める</h3>
+</div>
+</div></section>
+<section class="chap" id="ch-case"><header class="chap-h"><span class="ico"><i class="ti ti-folders" aria-hidden="true"></i></span><div><h2>案件を進める</h2><div class="sub">ステータス・担当・紹介元・初期連絡・失注・訪問予定</div></div></header><div class="chap-b">
+<div class="sec" id="s-case" data-toc="案件を進める（基本操作）"><h3>案件を進める（基本操作）</h3>
         <p><button data-video="U2"></button></p>
-        <div class="step"><span class="n">1</span>案件一覧またはカンバンから案件を開く</div>
-        <div class="step"><span class="n">2</span>「ステータス」を現在の状況に変更（履歴に自動記録）</div>
-        <div class="step"><span class="n">3</span>「<strong>担当営業</strong>」でその案件を進める人を選ぶ</div>
-        <div class="step"><span class="n">4</span>「<strong>紹介元</strong>」でどこからの紹介で来た案件かを選ぶ</div>
-        <div class="step"><span class="n">5</span>「対応記録」タブに電話・メール・訪問などを記録</div>
-        <div class="step"><span class="n">6</span>「伴走支援」タブで訪問日・メモ・写真を残す</div>
-        <div class="step"><span class="n">7</span>「申請情報」タブで助成金の申請状況を管理</div>
+        <div class="step"><span class="n">1</span><div>案件一覧またはカンバンから案件を開く</div></div>
+        <div class="step"><span class="n">2</span><div>「ステータス」を現在の状況に変更（履歴に自動記録）</div></div>
+        <div class="step"><span class="n">3</span><div>「<strong>担当営業</strong>」でその案件を進める人を選ぶ</div></div>
+        <div class="step"><span class="n">4</span><div>「<strong>紹介元</strong>」でどこからの紹介で来た案件かを選ぶ</div></div>
+        <div class="step"><span class="n">5</span><div>「対応記録」タブに電話・メール・訪問などを記録</div></div>
+        <div class="step"><span class="n">6</span><div>「伴走支援」タブで訪問日・メモ・写真を残す</div></div>
+        <div class="step"><span class="n">7</span><div>「申請情報」タブで助成金の申請状況を管理</div></div>
         <p>案件詳細には「<strong>出荷・請求・入金</strong>」タブもあり、この案件の出荷・お金の流れと次にやることがそこで見えます。金額の操作（発送済にする・請求済にする・入金を記録する等）は「<strong>出荷・請求・入金</strong>」画面（左メニュー）で行います。</p>
         <div class="callout tip"><strong>次の一手（2026-09-14）</strong>: 案件詳細のヘッダー直下に、今のステータスから「次に何をすればよいか」が1行と、そこへ飛ぶボタンが1つ出ます。未完了の出荷があれば「お金の流れ：次は…」も2行目に出ます（完了・失注では出ません）。迷ったらまずここを見てください。</div>
         <div class="callout"><strong>はじめての方へ（ホーム画面）</strong>: 初めてログインした人には、ホームの「今日やること」の上に3ステップの案内カードが出ます。「わかりました（今後表示しない）」を押すと次回から出なくなります（自分のアカウントに保存されるので端末を変えても再表示しません）。</div>
+</div>
+<div class="sec" id="s-first" data-toc="初期連絡の期限（申込から5営業日）"><h3>初期連絡の期限（申込から5営業日） <span class="chip new">10/19 追加</span></h3>
 
-        <h3>伴走支援承諾書をもらう（支援を始める前に）</h3>
-        <div class="step"><span class="n">1</span>案件詳細 → 事前確認タブの「伴走支援承諾書」カード（上から2番目）で「<strong>署名を依頼する</strong>」を押す</div>
-        <div class="step"><span class="n">2</span>渡し方は3つ：<strong>メールで依頼</strong>／<strong>二次元バーコード</strong>（当日・リモートで事業所のスマホに読ませる）／<strong>URLコピー</strong></div>
-        <div class="step"><span class="n">3</span>事業所が名前を入れて署名すると、カードが「<strong>署名済み</strong>」に変わる（確認者・署名日・条文の版が残る）</div>
-        <div class="step"><span class="n">4</span>紙でもらった場合は「紙で取得済みを記録」。原本は事業所へお渡しする</div>
+<p>問い合わせが入ったら、<strong>申込から5営業日以内</strong>に初期連絡（最初のご連絡）を入れるのが目安です。過ぎた案件は案件一覧で見つけられます。</p>
+<ul>
+  <li><strong>数え方</strong>: 申込日の<strong>翌営業日を1営業日目</strong>とします。<strong>土日・祝日・年末年始（12/29〜1/3）は数えません</strong></li>
+  <li>5営業日目までは超過なし。<strong>6営業日目から「超過」</strong>で、超過日数＝営業日目−5 です</li>
+  <li>例（祝日のない週）: 金曜に申込 → 翌月曜が1営業日目、<strong>翌週の金曜が5営業日目（まだ期限内）</strong>、その次の月曜が6営業日目＝<strong>超過1日</strong></li>
+  <li>対象は、ステータスが「<strong>1 新規受信</strong>」のままの案件（アーカイブ済みは除く）です</li>
+</ul>
+<div class="step"><span class="n">1</span><div><kbd>案件一覧</kbd> を開く。超過がある日は、上部に赤い帯「<strong>初期連絡の超過: ○件</strong>」が出ます</div></div>
+<div class="step"><span class="n">2</span><div>帯の <kbd>超過のみ表示</kbd> を押すと、超過している案件だけに絞れます（もう一度押す <kbd>すべて表示に戻す</kbd> で元に戻る）</div></div>
+<div class="step"><span class="n">3</span><div>該当する案件の行には「<strong>初期連絡 超過N日</strong>」と超過日数が出ます。古い順に連絡しましょう</div></div>
+<div class="step"><span class="n">4</span><div>ご連絡したら、案件を開いてステータスを「<strong>2 確認中</strong>」以降に進め、対応記録を残す。ステータスが進んだ案件は超過の対象から外れます</div></div>
+<div class="callout tip">帯の件数は、ほかの絞り込み条件（ステータス・地域など）に関わらず<strong>全案件のうちの超過数</strong>です（見落とし防止）。表示だけで、<strong>通知は飛びません</strong>。</div>
+<figure class="shot"><img src="/images/manual/first-contact-banner.png" alt="案件一覧の上部：初期連絡の超過の赤い帯と、超過日数の出た行" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>案件一覧の上部：初期連絡の超過の赤い帯と、超過日数の出た行</figcaption></figure>
+
+</div>
+<div class="sec" id="s-lost" data-toc="失注の理由を記録する"><h3>失注の理由を記録する <span class="chip new">10/19 追加</span></h3>
+
+<p>案件を「失注」にするときは、<strong>理由</strong>を選びます。あとから「なぜ失注したか」を集計・確認できるようにするためです。</p>
+<div class="step"><span class="n">1</span><div>案件詳細で、ステータスを「<strong>4 失注</strong>」に変える</div></div>
+<div class="step"><span class="n">2</span><div>理由を選ぶ小さな画面が開く。<strong>他社紹介（認定パートナーへ）／辞退／当日キャンセル／その他</strong> から選び、必要なら一言メモを書く</div></div>
+<div class="step"><span class="n">3</span><div>確定すると、ステータスの横に「<strong>理由: ○○</strong>」が出て、<strong>対応記録</strong>にも「失注の理由: ○○」が残る</div></div>
+<ul>
+  <li>案件一覧のステータス表示にも理由が付きます。<strong>CSV出力</strong>には「失注の理由」の列が入ります</li>
+  <li>失注から別のステータスに戻すと、理由は消えます</li>
+  <li>この機能ができる前から失注の案件は、理由が「<strong>未記入</strong>」と出ます</li>
+</ul>
+<figure class="shot"><img src="/images/manual/lost-reason-dialog.png" alt="ステータスを失注にしたときに出る、理由を選ぶ画面" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>ステータスを失注にしたときに出る、理由を選ぶ画面</figcaption></figure>
+
+</div>
+<div class="sec" id="s-visit" data-toc="訪問予定日を入れる"><h3>訪問予定日を入れる <span class="chip new">10/19 追加</span></h3>
+
+<p>伴走支援で事業所へ訪問する日が決まったら、案件に<strong>訪問予定日</strong>を入れておくと、一覧とカンバンで予定が見えます。</p>
+<div class="step"><span class="n">1</span><div>案件詳細の「<strong>訪問予定日</strong>」の日付欄で、日付を選ぶ（<strong>選んだ時点で保存</strong>されます。保存ボタンはありません）</div></div>
+<div class="step"><span class="n">2</span><div>画面に「訪問予定日を ○○ にしました」と出る。<strong>誰がいつ変えたか</strong>は対応記録に残る（変更前の日付も一緒に記録）</div></div>
+<div class="step"><span class="n">3</span><div>日付を消して空にすると「未設定」に戻る</div></div>
+<ul>
+  <li><strong>案件一覧</strong>に「訪問予定日」の列が出ます（CSV出力にも入ります）</li>
+  <li><strong>カンバン</strong>のカードには「訪問 月/日」が出ます</li>
+</ul>
+<figure class="shot"><img src="/images/manual/case-visit-date.png" alt="案件詳細の訪問予定日の欄と、カンバンのカードに出る「訪問 月/日」" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>案件詳細の訪問予定日の欄と、カンバンのカードに出る「訪問 月/日」</figcaption></figure>
+
+</div>
+<div class="sec" id="s-offices" data-toc="事業所ごとに案件を探す（サイドバー「事業所」）"><h3>事業所ごとに案件を探す（サイドバー「事業所」） <span class="chip new">10/19 追加</span></h3>
+
+<p>左メニューの <kbd>事業所</kbd> では、<strong>事業所ごとに案件をまとめて</strong>見られます。<strong>読み取り専用</strong>で、ここから内容を書き換えることはありません。</p>
+<div class="step"><span class="n">1</span><div>左メニューの <kbd>事業所</kbd> を開く。上の検索欄で<strong>事業所名・法人名・住所</strong>を入れる、または<strong>都道府県</strong>で絞る</div></div>
+<div class="step"><span class="n">2</span><div>一覧の行（法人名・事業所名・都道府県・市区町村・案件数・最新の案件のステータス・最終更新日）を押すと、その事業所の案件を見られる</div></div>
+<ul>
+  <li><strong>アーカイブ済み・失注・完了の案件も含みます</strong>。「前に同じ事業所とどんなやり取りをしたか」を探すときに使います</li>
+  <li>事業所マスターに登録がない案件は「<strong>（マスター未登録）</strong>」として、事業所名でまとめて表示されます</li>
+</ul>
+<figure class="shot"><img src="/images/manual/offices-list.png" alt="事業所の一覧（検索欄と都道府県の絞り込み）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>事業所の一覧（検索欄と都道府県の絞り込み）</figcaption></figure>
+
+</div>
+<div class="sec" id="s-consent" data-toc="伴走支援承諾書"><h3>伴走支援承諾書をもらう</h3>
+        <div class="step"><span class="n">1</span><div>案件詳細 → 事前確認タブの「伴走支援承諾書」カード（上から2番目）で「<strong>署名を依頼する</strong>」を押す</div></div>
+        <div class="step"><span class="n">2</span><div>渡し方は3つ：<strong>メールで依頼</strong>／<strong>二次元バーコード</strong>（当日・リモートで事業所のスマホに読ませる）／<strong>URLコピー</strong></div></div>
+        <div class="step"><span class="n">3</span><div>事業所が名前を入れて署名すると、カードが「<strong>署名済み</strong>」に変わる（確認者・署名日・条文の版が残る）</div></div>
+        <div class="step"><span class="n">4</span><div>紙でもらった場合は「紙で取得済みを記録」。原本は事業所へお渡しする</div></div>
         <p style="font-size:12.5px;color:var(--color-ink-muted)">署名ページは同じURLでいつでも開けます（事業所の控えも同じURL・印刷ボタンつき）。条文は発行時の版で固定されます。</p>
         <div class="callout tip"><strong>条文は現在 v1.1（2026-09-01 改訂）で7条項です。</strong> 利用規約・プライバシーポリシーと突き合わせて「<strong>2．支援を受ける前のご準備</strong>」（バックアップの取得・利用環境の準備・訪問時の立入手続）を新設し、保存場所（日本国内）・保存期間（5年）・タダカヨの連絡先を明記しました。すでに署名済みのものは v1.0 の文面のまま残ります。</div>
-
-        <h3>支援の前に資料を送る（事前準備のご案内）</h3>
-        <div class="step"><span class="n">1</span>案件詳細 → 事前確認タブの<strong>いちばん上</strong>「資料の事前送付（準備のご案内）」で「<strong>準備のご案内を送る</strong>」を押す</div>
-        <div class="step"><span class="n">2</span>宛先・件名・本文が入った状態で開く。本文には下の事前確認と<strong>同じ8項目</strong>が事業所向けの言い方で並ぶ</div>
-        <div class="step"><span class="n">3</span>文面を直して「送信する」。タイムラインにも残り、カードが「<strong>送付済み＋日付</strong>」に変わる</div>
+</div>
+<div class="sec" id="s-pre" data-toc="事前準備のご案内"><h3>支援の前に資料を送る</h3>
+        <div class="step"><span class="n">1</span><div>案件詳細 → 事前確認タブの<strong>いちばん上</strong>「資料の事前送付（準備のご案内）」で「<strong>準備のご案内を送る</strong>」を押す</div></div>
+        <div class="step"><span class="n">2</span><div>宛先・件名・本文が入った状態で開く。本文には下の事前確認と<strong>同じ8項目</strong>が事業所向けの言い方で並ぶ</div></div>
+        <div class="step"><span class="n">3</span><div>文面を直して「送信する」。タイムラインにも残り、カードが「<strong>送付済み＋日付</strong>」に変わる</div></div>
         <div class="callout tip">電子証明書は発行までに1か月ほどかかることがあります。<strong>早めに送っておくほど当日がスムーズです。</strong></div>
-
-        <h3>伴走支援の記録を直す</h3>
+</div>
+<div class="sec" id="s-support-edit" data-toc="伴走支援の記録を直す"><h3>伴走支援の記録を直す</h3>
         <p><button data-video="U7"></button></p>
-        <div class="step"><span class="n">1</span>「伴走支援」タブで、直したい記録の右上の「<strong>編集</strong>」を押す</div>
-        <div class="step"><span class="n">2</span>実施日・メモを直す。<strong>写真の追加</strong>と、いまある写真を<strong>×で外す</strong>こともできる</div>
-        <div class="step"><span class="n">3</span>「変更を保存」。記録の下に「<strong>編集済み ＋ 日時（編集した人）</strong>」が出る</div>
-        <div class="step"><span class="n">4</span>記録ごと消すときは、編集中の「<strong>この記録を削除</strong>」から（写真も一緒に消えます・元に戻せません）</div>
+        <div class="step"><span class="n">1</span><div>「伴走支援」タブで、直したい記録の右上の「<strong>編集</strong>」を押す</div></div>
+        <div class="step"><span class="n">2</span><div>実施日・メモを直す。<strong>写真の追加</strong>と、いまある写真を<strong>×で外す</strong>こともできる</div></div>
+        <div class="step"><span class="n">3</span><div>「変更を保存」。記録の下に「<strong>編集済み ＋ 日時（編集した人）</strong>」が出る</div></div>
+        <div class="step"><span class="n">4</span><div>記録ごと消すときは、編集中の「<strong>この記録を削除</strong>」から（写真も一緒に消えます・元に戻せません）</div></div>
         <div class="callout tip">編集も削除も、<strong>誰がいつ何をしたかは「対応記録」タブに残ります。</strong>支援の記録なので、黙って書き換わることはありません。</div>
-
-        <h3>案件を地域で絞り込む</h3>
+</div>
+<div class="sec" id="s-area" data-toc="案件を地域で絞り込む"><h3>案件を地域で絞り込む</h3>
         <p>案件一覧に「<strong>担当者</strong>」「<strong>地域</strong>」「<strong>都道府県</strong>」「<strong>市町村</strong>」の列があります。地域は全国8区分（北海道／東北／関東／中部／近畿／中国／四国／九州・沖縄）です。</p>
         <ul>
           <li>絞り込みは<strong>地域 → 都道府県 → 市町村</strong>の順に連動します。上を選ぶと下の選択肢が減ります</li>
@@ -179,11 +236,11 @@
           <li>列の見出しを押すと並び替わります。CSV出力にも入ります</li>
         </ul>
         <div class="callout warn">住所は<strong>事業所に住所が登録されている案件だけ</strong>表示されます。<strong>2026年9月6日から、問い合わせフォーム・見積もりフォームとも郵便番号・都道府県・市町村・住所を必須</strong>にしました（郵便番号を入れると都道府県・市町村が自動で入ります）。それ以降に届いた案件は「未登録」になりません。<strong>それより前に届いた案件</strong>は住所欄が任意（または無し）だったため、引き続き「未登録」と出ることがあります。</div>
-
-        <h3>メニューを畳んで画面を広く使う</h3>
+</div>
+<div class="sec" id="s-collapse" data-toc="メニューを畳んで画面を広く使う"><h3>メニューを畳んで画面を広く使う</h3>
         <p>左メニューの上のボタンで、メニューを<strong>アイコンだけの細い形</strong>に畳めます。案件一覧のように列が多い画面で見やすくなります。畳んだ状態はそのブラウザに記憶され、画面を移っても保たれます。スマートフォン・タブレット（縦）では従来どおりです。</p>
-
-        <h3>担当営業を割り当てる</h3>
+</div>
+<div class="sec" id="s-assign" data-toc="担当営業を割り当てる"><h3>担当営業を割り当てる</h3>
         <p>その案件を進める営業担当が決まったら、案件詳細の上部、ステータスの右にある「<strong>担当営業</strong>」から選びます。<strong>選んだ時点ですぐ保存されます</strong>（保存ボタンはありません）。</p>
         <ul>
           <li>候補に出るのは「ユーザー管理」に登録されている人です</li>
@@ -193,8 +250,8 @@
           <li>停止したスタッフが担当のまま残っている案件では、その人が「（無効）」付きで選択肢に出ます。勝手に別の人や「未割当」に変わることはないので、引き継ぐときは新しい担当者を選び直してください</li>
         </ul>
         <div class="callout tip">これまでは担当営業を選ぶ場所そのものがなく、すべての案件が「未割当」のままでした（2026-08-26 に追加した機能です）。カンバン上部の「未割当の新規案件」の件数も、割り当てれば減っていきます。</div>
-
-        <h3>紹介元を記録する</h3>
+</div>
+<div class="sec" id="s-referral" data-toc="紹介元を記録する"><h3>紹介元を記録する</h3>
         <p>案件詳細の上部、担当営業の右にある「<strong>紹介元</strong>」から選びます。こちらも選んだ時点で保存されます。</p>
         <ul>
           <li>はじめは「<strong>タダカヨ</strong>」「<strong>直接（飛び込み）</strong>」の2つです。種類は設定画面で増やせます（次項）</li>
@@ -203,20 +260,20 @@
           <li>紹介元の変更は対応記録には残りません（担当営業の変更とは違う点です）</li>
         </ul>
         <div class="callout warn"><strong>「紹介元」と「流入元」は別物です。</strong> 流入元（LP問い合わせ／見積もり作成／手動登録）は<strong>どの入口から入ってきたか</strong>をシステムが自動で付けるもので、ダッシュボードやレポートの集計に使っています。紹介元は<strong>誰の紹介で来たか</strong>を人が選んで記録するものです。案件一覧では隣り合って並ぶので、見間違えないようご注意ください。</div>
-
-        <h3>紹介元の種類を増やす・変える（管理者のみ）</h3>
+</div>
+<div class="sec" id="s-referral-set" data-toc="紹介元の種類（管理者）"><h3>紹介元の種類を増やす・変える（管理者のみ）</h3>
         <p>設定画面の「<strong>紹介元の種類</strong>」で、追加・表示名の変更・並び替え・有効／無効の切り替えができます。</p>
-        <div class="step"><span class="n">1</span>「紹介元を追加」で行を足し、表示名を入れる（IDは空欄なら自動で付きます）</div>
-        <div class="step"><span class="n">2</span>上下の矢印で並び順を変える（上にあるものほど選択肢の先頭に出ます）</div>
-        <div class="step"><span class="n">3</span>「保存」を押す</div>
+        <div class="step"><span class="n">1</span><div>「紹介元を追加」で行を足し、表示名を入れる（IDは空欄なら自動で付きます）</div></div>
+        <div class="step"><span class="n">2</span><div>上下の矢印で並び順を変える（上にあるものほど選択肢の先頭に出ます）</div></div>
+        <div class="step"><span class="n">3</span><div>「保存」を押す</div></div>
         <div class="callout warn"><strong>IDは一度決めたら変えられません。</strong> 登録済みの案件はIDで紐づいているため、呼び名を変えたいときは「表示名」だけを直してください（過去の案件の表示も新しい名前になります）。<br><strong>使わなくなった紹介元は削除できません。</strong> 「有効」のチェックを外すと、新しく選ぶときの選択肢から外れます。過去の案件の表示はそのまま残ります（その紹介元が入っている案件では「（無効）」付きで出ます）。</div>
-
-        <h3>重複した案件をまとめる（統合）</h3>
+</div>
+<div class="sec" id="s-merge" data-toc="重複した案件をまとめる（統合）"><h3>重複した案件をまとめる（統合）</h3>
         <p>同じ事業所から二重に問い合わせが入ったときなど、<strong>メール・電話・事業所名のいずれかが一致する案件</strong>があると、案件詳細に「重複の可能性がある案件」のカードが出ます。</p>
-        <div class="step"><span class="n">1</span><strong>残したい案件のほうを開く</strong>（開いている案件が残る側になります）</div>
-        <div class="step"><span class="n">2</span>カードの中から相手の案件を選び、「この案件に統合」を押す</div>
-        <div class="step"><span class="n">3</span>内容が食い違う項目があれば、どちらを残すかを選ぶ画面が開く</div>
-        <div class="step"><span class="n">4</span>「この内容で統合する」を押す</div>
+        <div class="step"><span class="n">1</span><div><strong>残したい案件のほうを開く</strong>（開いている案件が残る側になります）</div></div>
+        <div class="step"><span class="n">2</span><div>カードの中から相手の案件を選び、「この案件に統合」を押す</div></div>
+        <div class="step"><span class="n">3</span><div>内容が食い違う項目があれば、どちらを残すかを選ぶ画面が開く</div></div>
+        <div class="step"><span class="n">4</span><div>「この内容で統合する」を押す</div></div>
         <ul>
           <li>選ぶのは、<strong>両方に値が入っていて内容が違う項目だけ</strong>です。対象は<strong>担当営業・紹介元・担当者名・メール・電話・法人名</strong>の6項目で、はじめは残る案件の値が選ばれています</li>
           <li><strong>片方にしか値がない項目は、これまでどおり自動で引き継がれます</strong>（選ぶ必要はありません。画面の下に「空欄のため自動で補完する項目」として一覧が出ます）</li>
@@ -224,27 +281,29 @@
           <li>統合すると、消える側の対応記録・伴走支援の記録は残る案件に移り、消える側は「対象外（重複）」になります。どちらを採用したか・何を自動で補完したかは、残る案件の対応記録に残ります</li>
         </ul>
         <div class="callout warn"><strong>残るのは必ず「いま開いている案件」です。</strong> 画面上で残る側と消える側を入れ替えることはできません。<strong>残したい案件を開いてから</strong>相手を統合してください。<strong>統合したあとに元へ戻すことはできません。</strong></div>
-
-        <h3>AIアシスタントを使う（案件詳細→AIアシスタント）</h3>
+</div>
+<div class="sec" id="s-ai" data-toc="AIアシスタントを使う"><h3>AIアシスタントを使う</h3>
         <ul>
           <li><strong>返信メール下書き</strong>: 問い合わせ内容から返信文案を作成</li>
           <li><strong>要約・分類</strong>: 案件のポイントを自動整理</li>
           <li><strong>伴走報告文</strong>: 伴走メモから報告文を作成</li>
           <li>下書きは「送信欄へ転記」→ そのまま<strong>メール送信</strong>できます</li>
         </ul>
-
-        <h3>報告書を出す</h3>
-        <div class="step"><span class="n">1</span>案件詳細の右上「報告書PDF」をクリック</div>
-        <div class="step"><span class="n">2</span>開いたページで「印刷 / PDF保存」</div>
-
-        <h3>Webからの申し込みと、見積もりの作り直し</h3>
+</div>
+<div class="sec" id="s-report" data-toc="報告書を出す"><h3>報告書を出す</h3>
+        <div class="step"><span class="n">1</span><div>案件詳細の右上「報告書PDF」をクリック</div></div>
+        <div class="step"><span class="n">2</span><div>開いたページで「印刷 / PDF保存」</div></div>
+</div>
+</div></section>
+<section class="chap" id="ch-quote"><header class="chap-h"><span class="ico"><i class="ti ti-file-description" aria-hidden="true"></i></span><div><h2>Web申込・見積もり</h2><div class="sub">LPの申し込みから見積書・注文まで</div></div></header><div class="chap-b">
+<div class="sec" id="s-web" data-toc="Webからの申し込みと、見積もりの作り直し"><h3>Webからの申し込みと、見積もりの作り直し</h3>
         <p><button data-video="U8"></button></p>
         <div class="callout tip"><strong>2026-09-06 の改修です。</strong> 問い合わせ・見積もり・注文がひとつながりになりました。事業所は同じことを二度書かなくてよくなります。</div>
         <p><strong>事業所から見た流れ</strong></p>
-        <div class="step"><span class="n">1</span>LP の問い合わせフォームを送信する</div>
-        <div class="step"><span class="n">2</span>送信後の画面の「<strong>今すぐ見積書を作る</strong>」を押すと、見積もりツールに<strong>入力済みの内容が引き継がれた状態</strong>で開く</div>
-        <div class="step"><span class="n">3</span>台数・接続タイプを選んで、そのまま「<strong>注文する</strong>」へ進める</div>
-        <div class="step"><span class="n">4</span>注文が入ると、出荷・請求・入金の出荷タブに<strong>下書きが自動でできる</strong></div>
+        <div class="step"><span class="n">1</span><div>LP の問い合わせフォームを送信する</div></div>
+        <div class="step"><span class="n">2</span><div>送信後の画面の「<strong>今すぐ見積書を作る</strong>」を押すと、見積もりツールに<strong>入力済みの内容が引き継がれた状態</strong>で開く</div></div>
+        <div class="step"><span class="n">3</span><div>台数・接続タイプを選んで、そのまま「<strong>注文する</strong>」へ進める</div></div>
+        <div class="step"><span class="n">4</span><div>注文が入ると、出荷・請求・入金の出荷タブに<strong>下書きが自動でできる</strong></div></div>
         <p><strong>スタッフがすること</strong></p>
         <ul>
           <li><strong>注文が入ったら</strong>: 出荷タブの「下書き」を確かめて「<strong>発送済にする</strong>」。合計は<strong>見積もりの金額とかならず一致</strong>するので、入れ直す必要はありません</li>
@@ -256,27 +315,29 @@
         </ul>
         <div class="callout tip">「内容を変更する」で版を上げたとき、事業所には<strong>金額と変更点がメールで届きます</strong>（この時点ではPDFは付きません）。PDFで渡したいときは、続けて同じカードの「<strong>事業所へ送付</strong>」を押してください。</div>
         <div class="callout warn"><strong>古い版の見積書は無効になります。</strong> 版を上げると、それ以前の版は「差し替え済み」になり、事業所が古いリンクから注文することはできません。作り直したら、必ず新しい見積書を送ってください。</div>
-
-        <h3>電話で受けた相談から、スタッフが見積もりを作る（2026-09-14）</h3>
-        <div class="step"><span class="n">1</span>案件詳細の対応記録タブ、見積もりカードの「<strong>見積もりを作る</strong>」を押す（見積もりが無い案件では主ボタンになります）</div>
-        <div class="step"><span class="n">2</span>プラン・台数・USB接続口・メモを入力。事業所へ知らせたいときは「メールを送る」にチェック（この時点ではPDFは付きません）</div>
-        <div class="step"><span class="n">3</span>「この内容で見積もりを作る」で発行。金額はサーバー側で計算され、見積番号が付きます</div>
+</div>
+<div class="sec" id="s-quote-phone" data-toc="スタッフが見積もりを作る"><h3>電話で受けた相談から、スタッフが見積もりを作る</h3>
+        <div class="step"><span class="n">1</span><div>案件詳細の対応記録タブ、見積もりカードの「<strong>見積もりを作る</strong>」を押す（見積もりが無い案件では主ボタンになります）</div></div>
+        <div class="step"><span class="n">2</span><div>プラン・台数・USB接続口・メモを入力。事業所へ知らせたいときは「メールを送る」にチェック（この時点ではPDFは付きません）</div></div>
+        <div class="step"><span class="n">3</span><div>「この内容で見積もりを作る」で発行。金額はサーバー側で計算され、見積番号が付きます</div></div>
         <div class="callout warn">申し込み済みの版がある案件では出ません。内容を変えたいときは同じカードの「<strong>内容を変更する</strong>」を使ってください。</div>
-
-        <h3>見積書を表示・印刷・PDFで送る（2026-09-14）</h3>
+</div>
+<div class="sec" id="s-quote-view" data-toc="見積書を表示・印刷・PDFで送る"><h3>見積書を表示・印刷・PDFで送る</h3>
         <p>見積もりカードの各版の「<strong>見積書を表示</strong>」（別タブ）で、見積もりツールと同じ見た目の見積書がCRM内で見られます。「<strong>印刷／PDF保存</strong>」「<strong>PDFを保存のみ</strong>」「<strong>PDFを保存して事業所へ送付</strong>」の3ボタンがあります。スタッフが作ってPDF未保存の版も、ここからPDFを作れます。期限切れの版には帯が出ます。</p>
-
-        <h3>同一法人で複数の事業所をまとめて見積もる（2026-09-14）</h3>
-        <div class="step"><span class="n">1</span>見積もりツールで法人名・担当者・電話・メールなど<strong>共通情報</strong>を入力する</div>
-        <div class="step"><span class="n">2</span>「<strong>＋同一法人の事業所を追加</strong>」で事業所ごとの入力欄を増やす（最大10事業所）</div>
-        <div class="step"><span class="n">3</span>発行すると<strong>事業所ごとに1枚の見積書＋法人合計の表</strong>ができる。メールは<strong>1通にすべてのPDFがまとまって</strong>届く</div>
-        <div class="step"><span class="n">4</span>申し込みはお届け先「<strong>各事業所の住所へ</strong>」（既定）／「<strong>1か所へまとめる</strong>」から選べる</div>
+</div>
+<div class="sec" id="s-quote-group" data-toc="複数事業所をまとめて見積もる"><h3>同一法人で複数の事業所をまとめて見積もる</h3>
+        <div class="step"><span class="n">1</span><div>見積もりツールで法人名・担当者・電話・メールなど<strong>共通情報</strong>を入力する</div></div>
+        <div class="step"><span class="n">2</span><div>「<strong>＋同一法人の事業所を追加</strong>」で事業所ごとの入力欄を増やす（最大10事業所）</div></div>
+        <div class="step"><span class="n">3</span><div>発行すると<strong>事業所ごとに1枚の見積書＋法人合計の表</strong>ができる。メールは<strong>1通にすべてのPDFがまとまって</strong>届く</div></div>
+        <div class="step"><span class="n">4</span><div>申し込みはお届け先「<strong>各事業所の住所へ</strong>」（既定）／「<strong>1か所へまとめる</strong>」から選べる</div></div>
         <div class="callout">案件・見積書は事業所ごとに別々にできますが、同じグループなので<strong>まとめた事業所どうしは「重複の可能性がある案件」に出ません</strong>。一部だけ失敗したときは、失敗した事業所名が画面に個別表示されます。</div>
-
-        <h3>「ご希望」でLPの問い合わせを見分ける（2026-09-14）</h3>
+</div>
+<div class="sec" id="s-intent" data-toc="「ご希望」でLPの問い合わせを見分ける"><h3>「ご希望」でLPの問い合わせを見分ける</h3>
         <p>LPの問い合わせフォームの必須項目「<strong>ご希望</strong>」（まず相談したい／見積書がほしい／正式に申込みたい）が案件一覧の絞り込み・案件詳細ヘッダーのバッジに出ます。<strong>「正式に申込みたい」</strong>は見積もりツールへ案内され発行後すぐ申込画面が開くため、優先して対応してください。</p>
-
-        <h3>カードリーダーの発注（在庫・発注）・出荷（出荷・請求・入金）</h3>
+</div>
+</div></section>
+<section class="chap" id="ch-ship"><header class="chap-h"><span class="ico"><i class="ti ti-truck-delivery" aria-hidden="true"></i></span><div><h2>発注・出荷</h2><div class="sub">カードリーダーの発注・出荷・出荷指示・宛名・追跡番号</div></div></header><div class="chap-b">
+<div class="sec" id="s-ship" data-toc="発注・出荷の基本"><h3>カードリーダーの発注（在庫・発注）・出荷（出荷・請求・入金）</h3>
         <p><button data-video="U3"></button></p>
         <div class="callout tip"><strong>保管場所ごとの在庫管理（2026-09-12）</strong>: 「在庫・発注」タブの「保管場所を追加」で名前と都道府県を登録すると、出荷・入荷のたびにどの場所から出す／入れるかを選べます。保管場所を作る前からの在庫は「<strong>未割当</strong>」と赤字で出るので、在庫調整の「<strong>この場所に割り当て</strong>」で合計を変えずに振り分けてください。配送方法に「<strong>郵送なし（手渡し・持参）</strong>」も追加しました（送料0円）。</div>
         <ul>
@@ -296,21 +357,81 @@
           <li><strong>領収証の発行を記録する</strong>: 領収証画面の「<strong>この内容で発行済にする</strong>」を押すと、領収証番号・発行日・金額・但し書き・明細が保存されます。出荷一覧のボタンが「領収証（発行済 7/30）」になり、<strong>誰にいつ何を発行したかが後から分かります</strong>。もう一度開くと保存した内容で表示されるので、同じ領収証をそのまま再発行できます（内容を直したら「記録を更新」）</li>
           <li><strong>領収金額は実際の入金額が自動で入ります</strong>（2026-08-12 変更）: これまでは明細の合計がそのまま領収金額だったため、一部入金や過入金のときに明細を手で直す必要がありました。今は<strong>純入金（入金−返金）と請求額の小さい方</strong>が自動で入り、入力欄で直せます（「実入金に戻す」「明細合計に合わせる」ボタンつき）。<strong>一部入金</strong>なら但し書きが「〜の<strong>内金として</strong>」に自動で変わり、書面に「今回のご入金分を内金として領収いたしました（残額 ¥○○）」と入ります。<strong>過入金</strong>の超過分は領収金額に含めません。<strong>過入金を充当した請求</strong>では「上記明細のうち ¥○○ は、過入金のお預かり分を充当させていただきました」と書面に入ります。画面上部に入金合計・返金・純入金・請求額（充当後）が出るので根拠がその場で分かります</li>
         </ul>
+</div>
+<div class="sec" id="s-shipnotice" data-toc="「発送済にする」と出荷指示（Chat）"><h3>「発送済にする」と出荷指示（Chat） <span class="chip new">10/19 追加</span></h3>
 
-        <h3>請求書・領収証を事業所へメールで送る</h3>
-        <div class="step"><span class="n">1</span>出荷の行から「<strong>請求書</strong>」または「<strong>領収証</strong>」を押して帳票を開く</div>
-        <div class="step"><span class="n">2</span>内容を画面で確かめる（領収証は但し書き・明細をここで直せます）</div>
-        <div class="step"><span class="n">3</span>上の「<strong>請求書をメールで送付</strong>」／「<strong>領収証をメールで送付</strong>」を押す。宛先は「<strong>認定事業者のメール → 出荷の送付先メール → 案件の担当者メール</strong>」の順で自動で入ります（2026-09-12・あとから直せます）</div>
-        <div class="step"><span class="n">4</span><strong>案件が紐づいた出荷の請求書</strong>では「<strong>支援報告書も同封する</strong>」チェックが出ます（2026-09-13）。チェックすると事業所向けの支援報告書（社内の対応履歴は載りません）がもう1つPDFで添付されます</div>
-        <div class="step"><span class="n">5</span>「PDFを添付して送信」。<strong>いま画面に出ている帳票がそのままPDF</strong>になって添付されます</div>
-        <p style="font-size:12.5px;color:var(--color-ink-muted)">送ったあとは出荷一覧に「請求書をメール送付済み 09/01」と出ます。再送しようとすると注意が出ます。</p>
-        <div class="callout warn"><strong>経理への報告</strong>（Chat投稿＋経理宛メール）と、この<strong>事業所への送付</strong>は別のものです。経理への報告は社内の記録用、こちらは請求先へ届けるためのものです。</div>
+<p>出荷を<kbd class="pri">発送済にする</kbd>と、<strong>出荷のスペース（Google Chat）に出荷指示が自動で投稿</strong>されます。出荷担当の人は、その投稿を見て発送します。</p>
+<div class="step"><span class="n">1</span><div><kbd>出荷・請求・入金</kbd> 画面の出荷（下書き）の行、または案件詳細の「出荷・請求・入金」タブの主ボタン <kbd>発送済にする</kbd> を押す。新規出荷をそのまま「発送済」で登録するときも同じ確認が出ます</div></div>
+<div class="step"><span class="n">2</span><div>確認画面で、<strong>出荷日</strong>・<strong>出荷元の保管場所</strong>（自社在庫から出すとき）・<strong>レターパックの種類</strong>（ライト＝青／プラス＝赤）を確認して進める</div></div>
+<div class="step"><span class="n">3</span><div>出荷のスペースに、<strong>宛名・住所・電話・品目</strong>と、<strong>宛名印刷のリンク</strong>が入った出荷指示が投稿される</div></div>
+<div class="step"><span class="n">4</span><div>投稿の結果が画面の通知に出て、出荷の行にも「<strong>出荷指示：投稿済 日時</strong>」と残る</div></div>
+<figure class="shot"><img src="/images/manual/shipment-confirm.png" alt="「発送済にする」の確認画面（出荷日・出荷元・レターパックの種類）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>「発送済にする」の確認画面（出荷日・出荷元・レターパックの種類）</figcaption></figure>
+<figure class="shot"><img src="/images/manual/chat-ship-instruction.png" alt="出荷のスペースに届く出荷指示（宛名・住所・電話・品目・宛名印刷のリンク）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>出荷のスペースに届く出荷指示（宛名・住所・電話・品目・宛名印刷のリンク）</figcaption></figure>
+<h4 style="font-size:14px;margin:14px 0 4px">投稿されなかったとき</h4>
+<ul>
+  <li>出荷指示の投稿先が<strong>未設定・停止中・投稿に失敗</strong>のときも、<strong>発送済の操作そのものは止まりません</strong>（画面の通知で知らせます）</li>
+  <li>出荷の行に赤字で「<strong>出荷指示：未投稿（理由）</strong>」と出ます。投稿先を直したあと、行の <kbd>出荷指示を再送</kbd> を押します</li>
+  <li>再送を押すと確認が出ます。すでに投稿済みの出荷に再送すると<strong>同じ指示が2回届きます</strong>（意図して送り直すときだけ使う）</li>
+</ul>
+<div class="callout tip">同じ出荷の指示が<strong>二重に投稿されない</strong>ようになっています（3つの発送済の操作のどれから押しても同じ）。再送だけが、確認つきで意図的に送り直す操作です。</div>
+<div class="callout warn">出荷指示の投稿先は設定画面の「Google Chat の投稿先」（<a href="#s-chat">くわしく</a>）で登録します。<strong>初めは空欄</strong>なので、登録するまで出荷指示は投稿されません。</div>
+<figure class="shot"><img src="/images/manual/shipment-row-notice.png" alt="出荷の行：出荷指示の投稿状況と「出荷指示を再送」ボタン" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>出荷の行：出荷指示の投稿状況と「出荷指示を再送」ボタン</figcaption></figure>
 
-        <h3>請求書を発行したら経理へ報告する</h3>
+</div>
+<div class="sec" id="s-atena" data-toc="レターパックの宛名を印刷する（A4）"><h3>レターパックの宛名を印刷する（A4） <span class="chip new">10/19 追加</span></h3>
+
+<p>出荷指示の投稿の中のリンクを開くと、<strong>宛名がプレビューされ、そのままA4に印刷</strong>できます。印刷した紙を<strong>レターパックに貼って</strong>使います。</p>
+<div class="step"><span class="n">1</span><div>出荷指示の投稿の<strong>宛名印刷のリンク</strong>を開く（または出荷の行の <kbd>宛名印刷（A4）</kbd> ボタン）。<strong>@tadakayo.jp でログインしている人だけ</strong>見られます</div></div>
+<div class="step"><span class="n">2</span><div>届け先の宛名がプレビューで出る</div></div>
+<div class="step"><span class="n">3</span><div>上で<strong>レターパックの種類</strong>を選ぶ。<kbd>ライト（青）</kbd> と <kbd>プラス（赤）</kbd> で<strong>色が変わる</strong>。選んだ種類はその出荷に保存され、次に開いても同じになる</div></div>
+<div class="step"><span class="n">4</span><div>印刷する（A4）。レターパックに貼る</div></div>
+<ul>
+  <li>種類を選んでいないと、「上で選んでください」と案内が出ます</li>
+  <li>従来の <kbd>宛名</kbd> ボタン（実物風の宛名・差出人を選べる）も、これまでどおり残っています</li>
+</ul>
+<figure class="shot"><img src="/images/manual/letterpack-print.png" alt="宛名印刷の画面：ライト（青）／プラス（赤）の切り替えとA4プレビュー" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>宛名印刷の画面：ライト（青）／プラス（赤）の切り替えとA4プレビュー</figcaption></figure>
+
+</div>
+<div class="sec" id="s-tracking" data-toc="追跡番号の写真を残す"><h3>追跡番号の写真を残す <span class="chip new">10/19 追加</span></h3>
+
+<p>発送したあと、レターパックの<strong>追跡番号のシール</strong>を写真で記録できます。あとから「どの荷物か」を確認するためです。</p>
+<div class="step"><span class="n">1</span><div><strong>発送済以降</strong>の出荷の行にある <kbd>追跡番号の写真</kbd> を押す（スマホなら、その場で撮影して追加できます）</div></div>
+<div class="step"><span class="n">2</span><div>写真を追加する（<strong>複数枚</strong>可）。追加した写真は一覧に並ぶ</div></div>
+<div class="step"><span class="n">3</span><div>写真のかわりに（または写真に加えて）、<strong>追跡番号を手で入力</strong>して保存する。写真だけでもかまいません</div></div>
+<div class="step"><span class="n">4</span><div>間違えたときは写真を削除する。追跡番号を空にして保存すると消える</div></div>
+<ul>
+  <li>写真の<strong>追加・削除と追跡番号の入力ができるのは、編集できる人だけ</strong>です（閲覧のみの権限では見るだけ）</li>
+  <li>写真は、タダカヨ（@tadakayo.jp）の職員以外は見られません</li>
+  <li>入れた追跡番号や写真の有無は、出荷の行の下に小さく出ます</li>
+</ul>
+<figure class="shot"><img src="/images/manual/tracking-photo-modal.png" alt="追跡番号の写真の画面（写真の追加・削除と、追跡番号の手入力）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>追跡番号の写真の画面（写真の追加・削除と、追跡番号の手入力）</figcaption></figure>
+
+</div>
+</div></section>
+<section class="chap" id="ch-bill"><header class="chap-h"><span class="ico"><i class="ti ti-receipt-2" aria-hidden="true"></i></span><div><h2>請求・入金</h2><div class="sub">請求書・経理への報告・入金・催促</div></div></header><div class="chap-b">
+<div class="sec" id="s-invoice-date" data-toc="請求書の発行日と、支払期限（発行日から14日）"><h3>請求書の発行日と、支払期限（発行日から14日） <span class="chip new">10/19 追加</span></h3>
+
+<p><strong>請求書は、出荷（発送済にする）とは別の操作</strong>です。出荷の前に自動で発行されることはありません。担当の人が<strong>発行日を入れて、発行する</strong>のが決まりです。</p>
+<div class="step"><span class="n">1</span><div><kbd>出荷・請求・入金</kbd> で、発送済の行の <kbd class="pri">請求済にする</kbd> を押す（確認画面が開く）</div></div>
+<div class="step"><span class="n">2</span><div><strong>請求書の発行日</strong>を入れる（はじめは今日の日付）。発行日を変えると、<strong>支払期限・メールの本文・請求書のプレビュー</strong>も自動で直る</div></div>
+<div class="step"><span class="n">3</span><div>請求書番号・請求先・金額・支払期限を確認し、<kbd>請求済にして報告</kbd> を押す（経理への報告は<a href="#s-invoice-report">下の手順</a>のとおり）</div></div>
+<p><strong>支払期限のルール</strong></p>
+<div class="table-wrap"><table class="flow">
+  <thead><tr><th>いつ「発送済にする」を押した出荷か</th><th>支払期限</th></tr></thead>
+  <tbody>
+    <tr><td><strong>2026-10-20 以降</strong></td><td><strong>請求書の発行日から14日</strong></td></tr>
+    <tr><td>それより前（すでに発送済みの出荷）</td><td>従来どおり<strong>請求月の翌月末</strong>（<strong>変わりません</strong>）</td></tr>
+  </tbody>
+</table></div>
+<div class="callout imp">すでに発行した請求書や、発送済みの出荷の支払期限は<strong>変わりません</strong>。新しいルールになるのは、<strong>これからの発送分だけ</strong>です。請求書の文面・画面・未集金の表は、同じルールで揃っています。</div>
+<figure class="shot"><img src="/images/manual/invoice-confirm-date.png" alt="「請求済にする」の確認画面：発行日の入力と、自動で変わる支払期限" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>「請求済にする」の確認画面：発行日の入力と、自動で変わる支払期限</figcaption></figure>
+
+</div>
+<div class="sec" id="s-invoice-report" data-toc="請求書を発行したら経理へ報告する"><h3>請求書を発行したら経理へ報告する</h3>
         <p><button data-video="U4"></button></p>
-        <div class="step"><span class="n">1</span>出荷タブで、発送済の行の「<strong>請求済にする</strong>」を押す（確認画面が開きます）</div>
-        <div class="step"><span class="n">2</span>請求書番号・請求先・請求金額・支払期限を確認する。「<strong>経理へ報告する</strong>」にチェックが入っていることを確認（初めての発行なら自動で入っています）</div>
-        <div class="step"><span class="n">3</span>「<strong>請求済にして報告</strong>」を押す。経理のChatスペースに請求内容と「請求書PDFを開く」ボタンが投稿され、経理担当の方に請求書PDFを添付したメールが届きます</div>
+        <div class="step"><span class="n">1</span><div>出荷タブで、発送済の行の「<strong>請求済にする</strong>」を押す（確認画面が開きます）</div></div>
+        <div class="step"><span class="n">2</span><div>請求書番号・請求先・請求金額・<strong>発行日</strong>・支払期限を確認する。「<strong>経理へ報告する</strong>」にチェックが入っていることを確認（初めての発行なら自動で入っています）</div></div>
+        <div class="step"><span class="n">3</span><div>「<strong>請求済にして報告</strong>」を押す。経理のChatスペースに請求内容と「請求書PDFを開く」ボタンが投稿され、経理担当の方に請求書PDFを添付したメールが届きます</div></div>
         <ul>
           <li><strong>再発行のときはチェックを外してください。</strong> 報告は送らず、請求済にするだけになります（すでに報告済みの出荷では、チェックは自動で外れた状態で開きます）。動きだけ試したいときもこれで安全に確認できます</li>
           <li>Chatには「<strong>田中さんにもメールを送信しました</strong>」と出るので、二重に連絡する必要はありません</li>
@@ -318,12 +439,21 @@
           <li>Chatの投稿先・経理担当のメールアドレス・呼び名・メールの定型文は、すべて「<strong>設定</strong>」画面の「経理への請求書発行報告」で変更できます</li>
           <li>Google Chatの仕様でチャットに<strong>ファイルそのものを添付することはできない</strong>ため、PDF本体はメールに添付し、ChatにはPDFを開くリンクを載せています</li>
         </ul>
-
-        <h3>入金の確認・未集金の管理</h3>
+</div>
+<div class="sec" id="s-invoice-mail" data-toc="請求書・領収証を事業所へメールで送る"><h3>請求書・領収証を事業所へメールで送る</h3>
+        <div class="step"><span class="n">1</span><div>出荷の行から「<strong>請求書</strong>」または「<strong>領収証</strong>」を押して帳票を開く</div></div>
+        <div class="step"><span class="n">2</span><div>内容を画面で確かめる（領収証は但し書き・明細をここで直せます）</div></div>
+        <div class="step"><span class="n">3</span><div>上の「<strong>請求書をメールで送付</strong>」／「<strong>領収証をメールで送付</strong>」を押す。宛先は「<strong>認定事業者のメール → 出荷の送付先メール → 案件の担当者メール</strong>」の順で自動で入ります（2026-09-12・あとから直せます）</div></div>
+        <div class="step"><span class="n">4</span><div><strong>案件が紐づいた出荷の請求書</strong>では「<strong>支援報告書も同封する</strong>」チェックが出ます（2026-09-13）。チェックすると事業所向けの支援報告書（社内の対応履歴は載りません）がもう1つPDFで添付されます</div></div>
+        <div class="step"><span class="n">5</span><div>「PDFを添付して送信」。<strong>いま画面に出ている帳票がそのままPDF</strong>になって添付されます</div></div>
+        <p style="font-size:12.5px;color:var(--color-ink-muted)">送ったあとは出荷一覧に「請求書をメール送付済み 09/01」と出ます。再送しようとすると注意が出ます。</p>
+        <div class="callout warn"><strong>経理への報告</strong>（Chat投稿＋経理宛メール）と、この<strong>事業所への送付</strong>は別のものです。経理への報告は社内の記録用、こちらは請求先へ届けるためのものです。</div>
+</div>
+<div class="sec" id="s-payment" data-toc="入金の確認・未集金の管理"><h3>入金の確認・未集金の管理</h3>
         <p><button data-video="U4"></button></p>
-        <div class="step"><span class="n">1</span>出荷タブで、請求済の行の「<strong>入金を記録する</strong>」を押す</div>
-        <div class="step"><span class="n">2</span>請求額・入金済・残額・支払期限が出るので、金額（既定は残額）と入金日を入れて「この入金を記録」</div>
-        <div class="step"><span class="n">3</span>残額が0になると「入金済」になり、領収証が発行できます</div>
+        <div class="step"><span class="n">1</span><div>出荷タブで、請求済の行の「<strong>入金を記録する</strong>」を押す</div></div>
+        <div class="step"><span class="n">2</span><div>請求額・入金済・残額・支払期限が出るので、金額（既定は残額）と入金日を入れて「この入金を記録」</div></div>
+        <div class="step"><span class="n">3</span><div>残額が0になると「入金済」になり、領収証が発行できます</div></div>
         <ul>
           <li><strong>一部入金・分割払いに対応</strong>: 請求額より少ない入金もそのまま記録できます。残額があるうちは「請求済」のままで、一覧に「未集金 ¥○○（一部入金 ¥△△）」と表示されます。振込手数料が引かれて入ってきたときも、実際の入金額で記録すれば差額が残額として残ります</li>
           <li><strong>入金の取り消し</strong>: 入金済の行の「<strong>入金の履歴を見る</strong>」から、記録した入金を「<strong>入金を取り消す</strong>」（返金は「<strong>返金を取り消す</strong>」）で取り消せます（取り消すと自動で「請求済」に戻ります）</li>
@@ -332,51 +462,100 @@
           <li><strong>多く入金された（過入金）とき</strong>: 二重に入金された場合も同じ扱いです。 請求額より多い金額を記録すると確認のうえ<strong>過入金</strong>として残ります（返金処理はしません）。次の請求で「請求済にする」を押すと<strong>充当の画面</strong>が開きます（請求済の行の「過入金を充当」ボタンでも開けます）。<strong>同じ請求先の過入金は古い順に既定でチェック済み・金額も入っている</strong>ので、そのまま「この内容で充当する」でOKです（金額は変更できます）。充当すると<strong>請求書に「前回お預かり分の充当 −¥○○」と「今回お支払額」が入る</strong>ので、相手には差引後の金額を振り込んでもらえます。引ききれなかった分は残高として次回に持ち越されます</li>
           <li><strong>グループ会社の過入金を別の会社の請求に回す</strong>（2026-08-12 追加）: 充当の画面には<strong>別の請求先の過入金も「別請求先」の印つきで並びます</strong>（例: A社の過入金をB社の請求に回す）。<strong>既定はオフ</strong>で、チェックして金額を決め、確認で「はい」を選んだときだけ充当されます。この場合<strong>請求書の充当行に充当元の請求先名が印字される</strong>ため、相手先の合意が取れている場合にお使いください。なお「請求済にする」直後に自動で出る充当の提案は、同じ請求先に過入金があるときだけです</li>
           <li><strong>返金明細書（相手に渡す証憑）</strong>（2026-08-12 追加）: 返金を記録すると、その出荷の行に「<strong>返金明細書</strong>」ボタンが出ます。返金日・返金方法・摘要・金額の一覧と、ご請求金額／ご入金額／返金額／差引後のご入金額の内訳が入った書面を印刷・PDF保存できます（返金が複数回あれば全件並びます）。領収証ではなく<strong>当方からのご返金の明細</strong>で、書面にもその旨を記載しています。「この内容で発行済にする」を押すとボタンが「返金明細書（発行済 8/12）」になります</li>
-          <li><strong>未集金（請求先ごと）</strong>: 出荷タブの上に、請求先ごとの残額・対象の出荷番号・支払期限の表が出ます。<strong>支払期限は請求月の翌月末</strong>（請求書の記載と同じ）で、超過しているものが上に並び「○日超過」と赤で出ます</li>
+          <li><strong>未集金（請求先ごと）</strong>: 出荷タブの上に、請求先ごとの残額・対象の出荷番号・支払期限の表が出ます。<strong>支払期限は請求書に書かれた期限</strong>（2026-10-20以降に発送済にした出荷は<strong>請求書の発行日から14日</strong>、それより前の出荷は従来どおり請求月の翌月末）で、超過しているものが上に並び「○日超過」と赤で出ます</li>
           <li><strong>催促メール</strong>: 期限を過ぎた出荷に「<strong>催促メールを送る</strong>」ボタンが出ます。文面（行き違いでお振込みいただいていたらご放念ください、という書き方）が入った状態で開くので、必要なら直して送信してください。送信日はボタンに「7/30送信済」と残ります</li>
           <li><strong>受注タブでも確認できます</strong>: 認定事業者からの受注一覧に「請求・入金」列があり、その受注に紐づく出荷の未集金・入金済が並びます</li>
         </ul>
         <div class="callout tip"><strong>料金・送料の設定</strong>：認定事業者への卸価格・レターパック単価・ゆうパック送料表（滋賀発）は「料金・送料」ページで設定し「保存」します。出荷の単価・送料、請求書の送料はこの設定値を使います（保存していない場合は既定値で計算）。</div>
-
-        <h3>認定事業者からの発注を受ける（ポータル）</h3>
+</div>
+</div></section>
+<section class="chap" id="ch-partner"><header class="chap-h"><span class="ico"><i class="ti ti-certificate" aria-hidden="true"></i></span><div><h2>認定事業者からの発注</h2><div class="sub">ポータルとCSV／JSONの取り込み</div></div></header><div class="chap-b">
+<div class="sec" id="s-partner" data-toc="ポータルで受ける"><h3>認定事業者からの発注を受ける（ポータル）</h3>
         <p><button data-video="U5"></button></p>
-        <div class="step"><span class="n">1</span>出荷・請求・入金「パートナー管理」で認定事業者のログイン用メールと名称を登録</div>
-        <div class="step"><span class="n">2</span>同じ行の「<strong>発注案内</strong>」ボタンを押すと、ポータルのURL・ログイン方法・発注ファイル（CSV）の書き方をまとめた<strong>ご案内メール</strong>を送れます。送信前に宛先・件名・本文がプレビューで出るので、確認・編集してから「この内容で送信する」を押してください（送信すると行に「済 月/日」が付きます。何度でも送れます）</div>
-        <div class="step"><span class="n">3</span>届いた発注は出荷・請求・入金「受注（認定事業者）」で確認・ステータス更新</div>
-
-        <h3>発注ファイル（CSV／JSON）をメールで受け取った場合</h3>
+        <div class="step"><span class="n">1</span><div>出荷・請求・入金「パートナー管理」で認定事業者のログイン用メールと名称を登録</div></div>
+        <div class="step"><span class="n">2</span><div>同じ行の「<strong>発注案内</strong>」ボタンを押すと、ポータルのURL・ログイン方法・発注ファイル（CSV）の書き方をまとめた<strong>ご案内メール</strong>を送れます。送信前に宛先・件名・本文がプレビューで出るので、確認・編集してから「この内容で送信する」を押してください（送信すると行に「済 月/日」が付きます。何度でも送れます）</div></div>
+        <div class="step"><span class="n">3</span><div>届いた発注は出荷・請求・入金「受注（認定事業者）」で確認・ステータス更新</div></div>
+</div>
+<div class="sec" id="s-csv" data-toc="CSV／JSONを取り込む"><h3>発注ファイル（CSV／JSON）をメールで受け取った場合</h3>
         <p>ポータルを使わない相手には <strong>発注テンプレート.csv</strong> または <strong>発注スキーマサンプル.json</strong> をお渡しし、記入したファイルをメールで送ってもらいます。</p>
-        <div class="step"><span class="n">1</span>出荷・請求・入金 →「受注（認定事業者）」タブ →「<strong>発注ファイルを取り込む</strong>」</div>
-        <div class="step"><span class="n">2</span>届いたファイルを選ぶ（<strong>複数まとめて選べます</strong>。CSVとJSONの混在も可）</div>
-        <div class="step"><span class="n">3</span>プレビュー表で内容を確認する。品番の誤り・数量0・住所の抜けは<strong>何行目の何が問題か</strong>が赤く出ます</div>
-        <div class="step"><span class="n">4</span>「受注として登録」を押すと<strong>受注番号（SO-2026-0001 など）が自動で付いて</strong>一覧に並びます</div>
+        <div class="step"><span class="n">1</span><div>出荷・請求・入金 →「受注（認定事業者）」タブ →「<strong>発注ファイルを取り込む</strong>」</div></div>
+        <div class="step"><span class="n">2</span><div>届いたファイルを選ぶ（<strong>複数まとめて選べます</strong>。CSVとJSONの混在も可）</div></div>
+        <div class="step"><span class="n">3</span><div>プレビュー表で内容を確認する。品番の誤り・数量0・住所の抜けは<strong>何行目の何が問題か</strong>が赤く出ます</div></div>
+        <div class="step"><span class="n">4</span><div>「受注として登録」を押すと<strong>受注番号（SO-2026-0001 など）が自動で付いて</strong>一覧に並びます</div></div>
         <div class="callout"><strong>ポイント:</strong> すでに取り込んだ発注番号は「取り込み済み」と出て二重登録されません。1つの発注で複数の品番を頼まれた場合、CSVでは同じ <code>partner_order_no</code> で行を分けてもらえば自動で1件にまとまります。取り込んだあとの流れはポータル経由と同じ（「出荷へ」→ 請求書 → 入金）です。</div>
-
-        <h3>設定・ユーザー管理（管理者のみ）</h3>
+</div>
+</div></section>
+<section class="chap" id="ch-admin"><header class="chap-h"><span class="ico"><i class="ti ti-settings" aria-hidden="true"></i></span><div><h2>設定・通知（管理者のみ）</h2><div class="sub">Chat の投稿先・ユーザー管理・通知の地域</div></div></header><div class="chap-b">
+<div class="sec" id="s-admin" data-toc="設定・ユーザー管理"><h3>設定・ユーザー管理（管理者のみ）</h3>
         <p><button data-video="U6"></button></p>
         <ul>
-          <li><strong>設定</strong>: 通知先（Google Chat）・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>・経理への報告先を変えられます</li>
+          <li><strong>設定</strong>: <strong>Google Chat の投稿先（4つ）</strong>・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>・経理への報告先を変えられます（Chat の投稿先は<a href="#s-chat">下のとおり</a>）</li>
           <li><strong>ユーザー管理</strong>: 職員の追加、権限（管理者／スタッフ／閲覧のみ）の変更、退職した方の停止を行います</li>
           <li><strong>料金・送料</strong>: 認定事業者への卸価格、レターパック・ゆうパックの送料表を設定します</li>
         </ul>
+</div>
+<div class="sec" id="s-chat" data-toc="Google Chat の投稿先（4つ・管理者のみ）"><h3>Google Chat の投稿先（4つ・管理者のみ） <span class="chip new">10/19 追加</span></h3>
 
-        <h2>§4 よくある質問</h2>
-        <div class="faq"><div class="q">Q. 問い合わせはどうやって入ってきますか？</div><p>LP・見積もりツールから送信されると、自動で案件として登録され、Google Chatにも通知されます。</p></div>
-        <div class="faq"><div class="q">Q. メールはどのアドレスから送られますか？</div><p>「タダカヨ事務局 &lt;kjk-staff@tadakayo.jp&gt;」から送信されます。設定画面で変更できます。</p></div>
-        <div class="faq"><div class="q">Q. 「紹介元」と「流入元」は何が違うの？</div><p><strong>流入元</strong>は、その案件が<strong>どの入口から入ってきたか</strong>（LP問い合わせ／見積もり作成／手動登録）です。システムが自動で付け、ダッシュボードやレポートの集計に使っています。<strong>紹介元</strong>は、その案件が<strong>誰の紹介で来たか</strong>（タダカヨ／直接（飛び込み）など）で、案件詳細で人が選んで記録します。案件一覧では隣り合って並ぶのでご注意ください。</p></div>
-        <div class="faq"><div class="q">Q. どの案件も担当営業が「未割当」のままなのはなぜ？</div><p>2026-08-26 まで、担当営業を割り当てる操作そのものがありませんでした。今は案件詳細の上部（ステータスの隣）で選べます。これまでの案件は、開いて担当営業を選び直してください。</p></div>
-        <div class="faq"><div class="q">Q. 通知先のChatを変えたい</div><p>設定画面の「Google Chat Webhook URL」を変更して保存してください（最大60秒で反映）。</p></div>
-        <div class="faq"><div class="q">Q. AIの文章はそのまま送って大丈夫？</div><p>必ず内容を確認・修正してから送ってください。AIは下書きの補助です。</p></div>
-        <div class="faq"><div class="q">Q. 「認定事業所」と「認定事業者」は違うものですか？</div><p>同じものです。2026-09-06 に呼び名を「<strong>認定事業者</strong>」に統一しました（愛称「タダトモ」・認定番号 TDT-001 形式）。介護事業所と紛らわしかったためで、画面に出る言葉だけを変えており、登録済みのデータはそのままです。</p></div>
-        <div class="faq"><div class="q">Q. 出荷を間違えて登録した。削除とキャンセル、どちらを使えばいい？</div><p><strong>下書きなら「この出荷を削除」</strong>、<strong>発送済・請求済まで進んでいたら「キャンセルにする」</strong>を使ってください。入金済は返金の記録から取り消します。</p></div>
-        <div class="faq"><div class="q">Q. 請求書の金額が税込か税抜かはどこで決まる？</div><p><strong>請求先</strong>で決まります。事業所への直接請求は税込、認定事業者への卸は税別です（2026-09-13 是正・自動で切り替わります）。</p></div>
+<p>設定画面の「<strong>Google Chat の投稿先</strong>」で、用途ごとに<strong>4つの投稿先</strong>を持てます。設定を変えられるのは管理者だけです。</p>
+<div class="table-wrap"><table class="flow">
+  <thead><tr><th>投稿先</th><th>何が投稿されるか</th></tr></thead>
+  <tbody>
+    <tr><td><strong>CRM通知</strong></td><td>問い合わせ・見積・お申し込み・毎朝のまとめ</td></tr>
+    <tr><td><strong>PM</strong></td><td>PMに連絡したい内容（いまの投稿先を、そのまま取ってあります）</td></tr>
+    <tr><td><strong>出荷指示</strong></td><td>「発送済にする」を押したときの出荷の指示（宛名の印刷リンクつき）。<strong>初めは空欄</strong></td></tr>
+    <tr><td><strong>経理</strong></td><td>請求書の発行の報告</td></tr>
+  </tbody>
+</table></div>
+<div class="step"><span class="n">1</span><div><kbd>設定</kbd> を開き、「Google Chat の投稿先」の該当の行に、投稿先の URL を入れる</div></div>
+<div class="step"><span class="n">2</span><div>投稿を止めたいときは「<strong>有効</strong>」のチェックを外す（URL は消えません。外した投稿先には送られない）</div></div>
+<div class="step"><span class="n">3</span><div><kbd>保存</kbd> を押す（<strong>最大60秒</strong>で反映）</div></div>
+<div class="step"><span class="n">4</span><div>各行の <kbd>テスト送信</kbd> で、届くか確かめる（<strong>保存済みの URL</strong> へ送ります。URL を直したら、先に保存してから押す）</div></div>
+<div class="callout tip">出荷指示の投稿先は<strong>CRM通知とは別のスペース</strong>です。出荷の担当の人が入っているスペースの URL を入れてください。</div>
+<figure class="shot"><img src="/images/manual/settings-chat-spaces.png" alt="設定画面の「Google Chat の投稿先」（4つの行と、有効のチェック・テスト送信）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>設定画面の「Google Chat の投稿先」（4つの行と、有効のチェック・テスト送信）</figcaption></figure>
 
-        <h2>§5 困ったとき</h2>
+</div>
+<div class="sec" id="s-region" data-toc="通知に地域（都道府県・市区町村）が付く"><h3>通知に地域（都道府県・市区町村）が付く <span class="chip new">10/19 追加</span></h3>
+
+<p>Google Chat に出る通知の本文に、<strong>【都道府県 市区町村】</strong>の形で事業所の地域が付きます（例: 【大阪府 豊中市】）。通知を見ただけで、どの地域の案件か分かります。</p>
+<ul>
+  <li>地域は<strong>住所から読み取って</strong>います。案件に住所がないときは、事業所に登録されている住所から探します</li>
+  <li>どうしても読み取れないときは「<strong>（地域不明）</strong>」と出ます。案件の住所を直しておくと、次の通知から付きます</li>
+</ul>
+<figure class="shot"><img src="/images/manual/chat-notice-region.png" alt="地域が付いた Chat 通知の例（試験用のデータ）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>地域が付いた Chat 通知の例（試験用のデータ）</figcaption></figure>
+
+</div>
+</div></section>
+<section class="chap" id="ch-faq"><header class="chap-h"><span class="ico"><i class="ti ti-help-circle" aria-hidden="true"></i></span><div><h2>よくある質問</h2><div class="sub">押すと答えが開きます</div></div></header><div class="chap-b">
+<div class="sec" id="s-faq">
+<details class="faq"><summary>問い合わせはどうやって入ってきますか？</summary><div><p>LP・見積もりツールから送信されると、自動で案件として登録され、Google Chatにも通知されます。通知には<strong>地域（【都道府県 市区町村】）</strong>が付きます。</p></div></details>
+<details class="faq"><summary>初期連絡の「超過」は、何日目から出ますか？</summary><div><p>申込日の翌営業日を1営業日目として、<strong>6営業日目から</strong>です（土日・祝日・年末年始 12/29〜1/3 は数えません）。ステータスが「新規受信」のままの案件が対象で、案件一覧の赤い帯と行に出ます。通知は飛びません。→ <a href="#s-first">くわしく</a></p></div></details>
+<details class="faq"><summary>出荷指示が「未投稿」と赤く出ています。どうすれば？</summary><div><p>出荷指示の投稿先が未設定・停止中、または投稿に失敗した状態です。設定画面「Google Chat の投稿先」の<strong>出荷指示</strong>を確認（有効か・URLが入っているか、<kbd>テスト送信</kbd>）してから、出荷の行の <kbd>出荷指示を再送</kbd> を押してください。→ <a href="#s-shipnotice">くわしく</a></p></div></details>
+<details class="faq"><summary>宛名の色（青／赤）はどう決まりますか？</summary><div><p>宛名印刷の画面で<strong>ライト＝青／プラス＝赤</strong>を選びます。選んだ種類はその出荷に保存され、次に開いても同じです。「発送済にする」の確認画面でも選べます。→ <a href="#s-atena">くわしく</a></p></div></details>
+<details class="faq"><summary>請求書は、発送済にすると自動で出ますか？</summary><div><p>いいえ。<strong>請求書は出荷とは別の操作</strong>です。「請求済にする」を押して<strong>発行日</strong>を入れ、発行します。→ <a href="#s-invoice-date">くわしく</a></p></div></details>
+<details class="faq"><summary>支払期限が、出荷によって違うのはなぜですか？</summary><div><p>2026-10-20以降に発送済にした出荷は<strong>請求書の発行日から14日</strong>、それより前の出荷は従来どおり<strong>請求月の翌月末</strong>のままだからです。発行済みの分は変わりません。</p></div></details>
+<details class="faq"><summary>失注した案件の理由が「未記入」になっています。</summary><div><p>失注の理由を記録する機能ができる前に失注にした案件です。必要なら、案件詳細で記録を足してください。これからの失注では、ステータスを変えるときに理由を選びます。→ <a href="#s-lost">くわしく</a></p></div></details>
+<details class="faq"><summary>メールはどのアドレスから送られますか？</summary><div><p>「タダカヨ事務局 &lt;kjk-staff@tadakayo.jp&gt;」から送信されます。設定画面で変更できます。</p></div></details>
+<details class="faq"><summary>「紹介元」と「流入元」は何が違うの？</summary><div><p><strong>流入元</strong>は、その案件が<strong>どの入口から入ってきたか</strong>（LP問い合わせ／見積もり作成／手動登録）です。システムが自動で付け、ダッシュボードやレポートの集計に使っています。<strong>紹介元</strong>は、その案件が<strong>誰の紹介で来たか</strong>（タダカヨ／直接（飛び込み）など）で、案件詳細で人が選んで記録します。案件一覧では隣り合って並ぶのでご注意ください。</p></div></details>
+<details class="faq"><summary>どの案件も担当営業が「未割当」のままなのはなぜ？</summary><div><p>2026-08-26 まで、担当営業を割り当てる操作そのものがありませんでした。今は案件詳細の上部（ステータスの隣）で選べます。これまでの案件は、開いて担当営業を選び直してください。</p></div></details>
+<details class="faq"><summary>通知先のChatを変えたい</summary><div><p>設定画面の「<strong>Google Chat の投稿先</strong>」で変えられます（管理者のみ・最大60秒で反映）。投稿先は<strong>CRM通知・PM・出荷指示・経理</strong>の4つで、それぞれに「有効」のチェックと「テスト送信」があります。→ <a href="#s-chat">くわしく</a></p></div></details>
+<details class="faq"><summary>AIの文章はそのまま送って大丈夫？</summary><div><p>必ず内容を確認・修正してから送ってください。AIは下書きの補助です。</p></div></details>
+<details class="faq"><summary>「認定事業所」と「認定事業者」は違うものですか？</summary><div><p>同じものです。2026-09-06 に呼び名を「<strong>認定事業者</strong>」に統一しました（愛称「タダトモ」・認定番号 TDT-001 形式）。介護事業所と紛らわしかったためで、画面に出る言葉だけを変えており、登録済みのデータはそのままです。</p></div></details>
+<details class="faq"><summary>出荷を間違えて登録した。削除とキャンセル、どちらを使えばいい？</summary><div><p><strong>下書きなら「この出荷を削除」</strong>、<strong>発送済・請求済まで進んでいたら「キャンセルにする」</strong>を使ってください。入金済は返金の記録から取り消します。</p></div></details>
+<details class="faq"><summary>請求書の金額が税込か税抜かはどこで決まる？</summary><div><p><strong>請求先</strong>で決まります。事業所への直接請求は税込、認定事業者への卸は税別です（2026-09-13 是正・自動で切り替わります）。</p></div></details>
+</div>
+</div></section>
+<section class="chap" id="ch-help"><header class="chap-h"><span class="ico"><i class="ti ti-lifebuoy" aria-hidden="true"></i></span><div><h2>困ったとき</h2><div class="sub">ログイン・メールのトラブル</div></div></header><div class="chap-b">
+<div class="sec" id="s-help">
         <div class="callout warn"><strong>ログインできない</strong>：@tadakayo.jp のアカウントでログインしているか確認してください。認定事業者の方は許可リスト登録が必要です。</div>
         <div class="callout tip"><strong>メールが送れない</strong>：設定画面の「メール送信元」が正しいアカウントか確認してください。解決しない場合は事務局へご連絡ください。</div>
-
-        <p style="color:var(--color-ink-muted);font-size:12px;margin-top:24px">最終更新: 2026-09-14（見積もり機能の拡張・出荷のキャンセル・保管場所ごとの在庫・消費税の是正・請求書メールの宛先自動入力と支援報告書の同封を追記）／ 詳細は <code>MANUAL.md</code></p>
+</div>
+</div></section>
+            <div class="mn-noresult" id="mnNoResult">見つかりませんでした。別の言葉で探してみてください（例:「発送」「請求」「失注」）。</div>
+            <p class="mn-foot">最終更新: 2026-10-20（2026-10-19 の改修10項目を追記：初期連絡5営業日・Chat投稿先4つ・通知の地域・出荷指示・宛名印刷・追跡番号の写真・請求書の発行日と支払期限14日・失注の理由・訪問予定日・事業所）／ 詳細は <code>MANUAL.md</code></p>
+          </div>
+        </div>
       </div>
+      <button class="mn-top" id="mnTop" type="button" aria-label="ページの先頭へ"><i class="ti ti-arrow-up" aria-hidden="true"></i></button>
     </main>
   </div>
   <script src="/js/sidebar.js"></script>
@@ -384,5 +563,6 @@
   <script src="/js/firebase-config.js"></script>
   <script src="/js/docpage.js" type="module"></script>
   <script src="/js/video-player.js" type="module"></script>
+  <script src="/js/manual.js"></script>
 </body>
 </html>
