@@ -145,6 +145,8 @@ function estNoRange(rows) {
 export function renderQuoteGroupDocHtml(data) {
   if (!data || !data.rows?.length) return `<p style="padding:40px;text-align:center;color:var(--color-ink-muted)">まとめ見積もりが見つかりません。</p>`;
   const { corpName, contactName, contactEmail, contactTel, rows } = data;
+  // 発行元の担当＝各事業所の案件の担当営業（最初に見つかったもの）。未割当なら次田芳尚（2026-10-20）
+  const issuerStaff = rows.map((r) => r.kase?.assignedUserName).find(Boolean) || "次田芳尚";
   const T = sumGroupAmounts(rows);
   const n = rows.length;
 
@@ -204,8 +206,7 @@ export function renderQuoteGroupDocHtml(data) {
 
       <div class="qdoc-meta">
         <div>
-          <div class="qdoc-to-name">${esc(corpName || "（法人名未登録）")}</div>
-          <div class="qdoc-to-honorific">御中</div>
+          <div class="qdoc-to-name">${esc(corpName || "（法人名未登録）")}<span class="qdoc-to-honorific">御中</span></div>
           <div class="qdoc-contact">${contactLines.join("<br>")}</div>
         </div>
         <table class="qdoc-info-table">
@@ -220,7 +221,7 @@ export function renderQuoteGroupDocHtml(data) {
           <div class="qdoc-issuer-name">NPO法人タダカヨ</div>
           <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
             〒143-0014　東京都大田区大森中2-1-20-1001<br>
-            TEL: 050-6872-9884　／　担当: 佐藤拡史
+            TEL: 050-6872-9884　／　担当: ${esc(issuerStaff)}
           </div>
         </div>
         <img src="/images/seal-tadakayo.png" alt="タダカヨの角印" class="qdoc-hanko"

@@ -67,6 +67,9 @@ export async function loadQuoteDocData(db, quoteId) {
 }
 
 // ---- 見積書のHTML本体（.qdoc 配下。印刷・PDF化はこの要素をそのまま渡す） ----
+// 見積書の発行元の担当（案件の担当営業が未割当のとき）
+export const DEFAULT_ISSUER_STAFF = "次田芳尚";
+
 export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
   if (!q) return `<p style="padding:40px;text-align:center;color:var(--color-ink-muted)">見積もりが見つかりません。</p>`;
 
@@ -80,6 +83,9 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
   const toCorp = q.corpName || kase?.corpName || "";
   const toOffice = q.officeName || kase?.officeName || "";
   const displayName = [toCorp, toOffice].filter(Boolean).join("　") || "（法人名・事業所名未登録）";
+
+  // 発行元の担当＝案件の担当営業。未割当なら次田芳尚（2026-10-20 次田さん決定。以前は「佐藤拡史」を固定で表示していた）
+  const issuerStaff = kase?.assignedUserName || DEFAULT_ISSUER_STAFF;
 
   const contactLines = [];
   if (postal) contactLines.push(`〒${esc(postal)}`);
@@ -160,7 +166,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
           <div class="qdoc-issuer-name">NPO法人タダカヨ</div>
           <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
             〒143-0014　東京都大田区大森中2-1-20-1001<br>
-            TEL: 050-6872-9884　／　担当: 佐藤拡史
+            TEL: 050-6872-9884　／　担当: ${esc(issuerStaff)}
           </div>
         </div>
         <img src="/images/seal-tadakayo.png" alt="タダカヨの角印" class="qdoc-hanko"
