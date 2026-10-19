@@ -225,7 +225,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
           ${extraRow}
           <div class="qdoc-total-row grand"><span>合計（税込）</span><span>${yen(a.totalIncl)}</span></div>
           <div class="qdoc-total-row sub-grant"><span>介護情報基盤助成金（${esc(planLabel)}）</span><span>−${yen(a.grantAmt)}</span></div>
-          <div class="qdoc-total-row self"><span>事業所さまご負担額（自己負担）</span><span>${yen(a.selfPay)}${zeroBadge}</span></div>
+          <div class="qdoc-total-row self"><span>${zeroBadge ? "事業所さまご負担額" : "事業所さまご負担額（自己負担）"}</span><span>${yen(a.selfPay)}${zeroBadge}</span></div>
         </div>
       </div>
 
