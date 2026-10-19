@@ -219,9 +219,9 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
       <div class="qdoc-totals-wrap">
         <div class="qdoc-totals">
-          <div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>
+          ${detailRows ? "" : `<div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>
           <div class="qdoc-total-row sub"><span>伴走支援費（税込）</span><span>${yen(a.accompanyFee)}</span></div>
-          ${discountRow}
+          ${discountRow}`}
           ${extraRow}
           <div class="qdoc-total-row grand"><span>合計（税込）</span><span>${yen(a.totalIncl)}</span></div>
           <div class="qdoc-total-row sub-grant"><span>介護情報基盤助成金（${esc(planLabel)}）</span><span>−${yen(a.grantAmt)}</span></div>
@@ -321,12 +321,13 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-sub-note{font-size:8.5pt;color:#6a5e48;margin-top:2px;padding-left:2px;}
 .qdoc-badge-zero{display:inline-block;background:#1f7a4f;color:#fff;font-size:9pt;font-weight:700;padding:2px 10px;border-radius:20px;margin-left:7px;vertical-align:middle;}
 .qdoc-totals-wrap{display:flex;justify-content:flex-end;margin-bottom:5mm;}
-.qdoc-totals{width:270px;}
+.qdoc-totals{width:330px;}
+.qdoc-total-row>span:last-child{white-space:nowrap;margin-left:10px;}
 .qdoc-total-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:10pt;}
 .qdoc-total-row.sub{color:#6a5e48;font-size:9.5pt;}
 .qdoc-total-row.grand{font-size:12.5pt;font-weight:700;border-top:2px solid #111;border-bottom:1px solid #111;padding:6px 0;margin:2px 0;}
 .qdoc-total-row.sub-grant{color:#1f7a4f;font-weight:600;font-size:9.5pt;border-top:1px solid #eee;padding-top:6px;}
-.qdoc-total-row.self{font-size:14pt;font-weight:900;color:#c02828;border-top:2.5px solid #c02828;padding-top:7px;margin-top:2px;}
+.qdoc-total-row.self{white-space:nowrap;font-size:14pt;font-weight:900;color:#c02828;border-top:2.5px solid #c02828;padding-top:7px;margin-top:2px;}
 .qdoc-notes{font-size:8.5pt;color:#6a5e48;line-height:1.8;border-top:1px solid #E8E4DC;padding-top:4mm;margin-top:4mm;}
 .qdoc-notes strong{color:#111;}
 .qdoc-meta-line{margin-top:6px;color:#9a8e78;}
