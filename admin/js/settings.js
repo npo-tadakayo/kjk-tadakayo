@@ -174,6 +174,80 @@ function validateReferralSources(rows){
 
 const testFn = httpsCallable(functions, "testChatNotify");
 
+// ===== Google Chat の投稿先（4つ・各「有効／停止」とテスト送信）=====
+// 未定義の <kind>Enabled は「有効」扱い（functions の resolveWebhook と同じ）
+const WEBHOOK_PREFIX = "https://chat.googleapis.com/";
+const HOOKS = [
+  { kind:"crm",        label:"CRM通知の投稿先",  url:"chatWebhookUrl",           en:"chatWebhookEnabled",
+    note:"LP問い合わせ・見積もり・お申し込み・毎朝のまとめの通知先。" },
+  { kind:"pm",         label:"PMの投稿先",       url:"pmChatWebhookUrl",         en:"pmChatWebhookEnabled",
+    note:"PM（プロジェクト管理）向けの投稿先。" },
+  { kind:"shipping",   label:"出荷指示の投稿先", url:"shippingChatWebhookUrl",   en:"shippingChatWebhookEnabled",
+    note:"出荷指示の投稿先。" },
+  { kind:"accounting", label:"経理の投稿先",     url:"accountingChatWebhookUrl", en:"accountingChatWebhookEnabled",
+    note:"請求書発行の報告先（経理スペース）。空欄または停止にすると Chat へは投稿せず、メールのみ送ります。" },
+];
+const PH = "https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...";
+function renderWebhookRows(){
+  $("webhookRows").innerHTML = HOOKS.map(h=>`
+    <div class="form-group" style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <label class="form-label" for="${h.url}">${h.label}</label>
+      <input class="form-control" id="${h.url}" type="text" placeholder="${PH}">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <label style="display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:400;font-size:13px">
+          <input type="checkbox" id="${h.en}" style="width:18px;height:18px;flex:none"><span>有効</span>
+        </label>
+        <button class="btn btn-secondary" type="button" data-test="${h.kind}" style="font-size:12px;padding:6px 12px"><i class="ti ti-bell" aria-hidden="true"></i> テスト送信</button>
+        <span id="test_${h.kind}" style="font-size:12px"></span>
+      </div>
+      <p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">${h.note}</p>
+      <p id="note_${h.kind}" style="font-size:11px;color:var(--color-warn,#c87a1f);margin:4px 0 0;display:none"></p>
+    </div>`).join("");
+}
+function hookState(h){
+  const url = $(h.url).value.trim(), on = $(h.en).checked;
+  if (!url) return h.kind==="crm" ? { t:"未設定（予備の投稿先を使います）", c:"var(--color-ink-muted)" } : { t:"未設定", c:"var(--color-ink-muted)" };
+  return on ? { t:"有効", c:"var(--color-success)" } : { t:"停止", c:"var(--color-danger)" };
+}
+function updateWebhookStatus(){
+  $("webhookStatus").innerHTML = HOOKS.map(h=>{ const st=hookState(h);
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0"><span>${h.label}</span><strong style="color:${st.c}">${st.t}</strong></div>`; }).join("");
+}
+function validateWebhooks(){
+  for (const h of HOOKS){
+    const v = $(h.url).value.trim();
+    if (v && !v.startsWith(WEBHOOK_PREFIX)) return `${h.label}のURLは ${WEBHOOK_PREFIX} で始まる形式にしてください`;
+  }
+  return "";
+}
+function loadWebhooks(s){
+  renderWebhookRows();
+  for (const h of HOOKS){
+    let v = s[h.url];
+    // PMの投稿先は新設。未保存なら、いまの CRM通知の投稿先を取り込んで表示する（保存して確定）
+    if (h.kind==="pm" && v === undefined){
+      v = s.chatWebhookUrl || "";
+      if (v){ const n=$("note_pm"); n.textContent="いまのCRM通知の投稿先をコピーしました。保存すると確定します"; n.style.display="block"; }
+    }
+    $(h.url).value = v || "";
+    $(h.en).checked = s[h.en] !== false;
+    $(h.url).addEventListener("input", updateWebhookStatus);
+    $(h.en).addEventListener("change", updateWebhookStatus);
+  }
+  document.querySelectorAll("[data-test]").forEach(btn=>btn.addEventListener("click", async ()=>{
+    const kind = btn.dataset.test, out = $("test_"+kind);
+    out.style.color="var(--color-ink-muted)"; out.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
+    try{ await testFn({ kind }); out.style.color="var(--color-success)"; out.textContent="送信しました（保存済みのURLへ）"; }
+    catch(e){ out.style.color="var(--color-danger)"; out.textContent=`失敗: ${e.message}`; }
+  }));
+  updateWebhookStatus();
+}
+function collectWebhooks(){
+  const o = {};
+  for (const h of HOOKS){ o[h.url] = $(h.url).value.trim(); o[h.en] = $(h.en).checked; }
+  return o;
+}
+
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user,{adminOnly:true}))) return;
@@ -182,7 +256,7 @@ onAuthStateChanged(auth, async (user)=>{
 
   const snap = await getDoc(doc(db,"appConfig","settings"));
   const s = snap.exists() ? snap.data() : {};
-  $("chatWebhookUrl").value = s.chatWebhookUrl || "";
+  loadWebhooks(s);
   $("gmailSender").value = s.gmailSender || "kjk-staff@tadakayo.jp";
   // 見積もり作成時の Chat 通知は既定オフ（2026-09-11）。未設定＝オフとして扱う
   $("notifyQuoteChat").checked = s.notifyQuoteChat === true;
@@ -230,7 +304,6 @@ onAuthStateChanged(auth, async (user)=>{
   $("billingAccountNumber").value = s.billingAccountNumber || "";
   $("billingAccountHolder").value = s.billingAccountHolder || "";
   // 経理への請求書発行報告（Chat Webhook はファイル添付不可のため、Chatにはリンク／メールにPDF添付）
-  $("accountingChatWebhookUrl").value = s.accountingChatWebhookUrl || "";
   $("accountingEmail").value = s.accountingEmail || DEFAULT_ACCOUNTING_EMAIL;
   $("accountingContactName").value = s.accountingContactName || DEFAULT_ACCOUNTING_NAME;
   $("accountingEmailCc").value = s.accountingEmailCc || "";
@@ -244,9 +317,11 @@ onAuthStateChanged(auth, async (user)=>{
     const referralSources = collectReferralSources();
     const rErr = validateReferralSources(referralSources);
     if (rErr){ st.style.color="var(--color-danger)"; st.textContent=`保存できません: ${rErr}`; toast(rErr); return; }
+    const wErr = validateWebhooks();
+    if (wErr){ st.style.color="var(--color-danger)"; st.textContent=`保存できません: ${wErr}`; toast(wErr); return; }
     try{
       await setDoc(doc(db,"appConfig","settings"),{
-        chatWebhookUrl: $("chatWebhookUrl").value.trim(),
+        ...collectWebhooks(),
         gmailSender: $("gmailSender").value.trim(),
         notifyQuoteChat: $("notifyQuoteChat").checked,
         senders: collectSenders(),
@@ -277,7 +352,6 @@ onAuthStateChanged(auth, async (user)=>{
         billingAccountType: $("billingAccountType").value,
         billingAccountNumber: $("billingAccountNumber").value.trim(),
         billingAccountHolder: $("billingAccountHolder").value.trim(),
-        accountingChatWebhookUrl: $("accountingChatWebhookUrl").value.trim(),
         accountingEmail: $("accountingEmail").value.trim(),
         accountingContactName: $("accountingContactName").value.trim(),
         accountingEmailCc: $("accountingEmailCc").value.trim(),
@@ -289,11 +363,5 @@ onAuthStateChanged(auth, async (user)=>{
       st.style.color="var(--color-success)"; st.textContent="保存しました（反映まで最大60秒）";
       toast("設定を保存しました");
     }catch(e){ st.style.color="var(--color-danger)"; st.textContent=`保存に失敗: ${e.message}`; }
-  });
-
-  $("testBtn").addEventListener("click", async ()=>{
-    const st=$("saveStatus"); st.style.color="var(--color-ink-muted)"; st.innerHTML='<i class="ti ti-loader-2 ti-spin"></i> 送信中...';
-    try{ await testFn({}); st.style.color="var(--color-success)"; st.textContent="Chatにテスト通知を送信しました（保存済みURLへ）"; }
-    catch(e){ st.style.color="var(--color-danger)"; st.textContent=`テスト失敗: ${e.message}`; }
   });
 });

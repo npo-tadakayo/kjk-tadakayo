@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>レターパックの宛名 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+  <!-- レターパックの宛名印刷（2026-10-19 CRM改修 #4b）。
+       A4 に印刷して、上半分の宛名枠を切ってレターパックに貼る。
+       ライト＝青／プラス＝赤 をページ上で切り替え、選んだ種類は出荷（shipments.letterPackType）に保存する。
+       @tadakayo.jp でログインした職員だけが開ける（supply-print と同じ認証ガード）。 -->
+  <style>
+    :root{--ink:#2C2416;--muted:#6a5e48;--line:#E8E4DC;--bg:#FAFAF8;--lp:#7a7468;}
+    /* 種類で色を切り替える（未選択はグレー） */
+    body.lp-light{--lp:#1E5BB8;}
+    body.lp-plus{--lp:#E33535;}
+    *{box-sizing:border-box;}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;font-size:14px;line-height:1.6;}
+    .toolbar{position:sticky;top:0;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--line);z-index:10;}
+    .btn{border:none;border-radius:8px;padding:10px 18px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none;font-family:inherit;}
+    .btn-print{background:#c02828;color:#fff;}
+    .btn-back{background:var(--line);color:var(--ink);}
+    .kind{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+    .kind-label{font-size:13px;color:var(--muted);}
+    .kind input{position:absolute;opacity:0;pointer-events:none;}
+    .kind label.opt{border:2px solid var(--line);border-radius:999px;padding:6px 14px;font-size:13px;font-weight:700;cursor:pointer;background:#fff;}
+    .kind label.opt.light{color:#1E5BB8;}
+    .kind label.opt.plus{color:#E33535;}
+    .kind input:checked + label.opt.light{border-color:#1E5BB8;background:#EAF1FB;}
+    .kind input:checked + label.opt.plus{border-color:#E33535;background:#FDECEC;}
+    .kind input:focus-visible + label.opt{outline:2px solid var(--ink);outline-offset:2px;}
+    #saveMsg{font-size:12px;color:var(--muted);}
+    #senderWrap{font-size:13px;display:none;}
+    #senderWrap select{padding:6px 8px;border-radius:6px;border:1px solid var(--line);font-size:13px;font-family:inherit;}
+    /* 用紙（A4 縦）。画面でも印刷と同じ見た目 */
+    .paper{width:210mm;min-height:297mm;margin:16px auto;background:#fff;border:1px solid var(--line);padding:10mm;}
+    .loading{text-align:center;padding:60px;color:var(--muted);}
+    .warn{max-width:210mm;margin:12px auto 0;padding:10px 14px;border-left:4px solid #c87a1f;background:#fff8ec;font-size:13px;}
+    /* 宛名枠（A4 の上半分に収まる大きさ: 190mm × 約130mm） */
+    .label{border:2.5px solid var(--lp);border-radius:4mm;padding:6mm 8mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .label-head{display:flex;justify-content:space-between;align-items:center;background:var(--lp);color:#fff;margin:-6mm -8mm 5mm;padding:3mm 8mm;border-radius:2.5mm 2.5mm 0 0;font-weight:700;font-size:15pt;letter-spacing:.05em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .label-head small{font-size:10pt;font-weight:500;}
+    .sec{display:inline-block;color:var(--lp);border:1.5px solid var(--lp);border-radius:2mm;font-size:10pt;font-weight:700;padding:0 3mm;margin-bottom:2mm;}
+    .to{padding-bottom:4mm;border-bottom:1.5px dashed var(--lp);margin-bottom:4mm;}
+    .zip{font-size:16pt;font-weight:700;letter-spacing:.08em;}
+    .addr{font-size:16pt;line-height:1.45;margin:1mm 0 2mm;word-break:break-all;}
+    .org{font-size:14pt;line-height:1.4;}
+    .name{font-size:22pt;font-weight:700;margin-top:1mm;}
+    .name .sama{font-size:15pt;font-weight:500;margin-left:3mm;}
+    .tel{font-size:13pt;margin-top:2mm;}
+    .from{font-size:11pt;line-height:1.55;}
+    .from .from-name{font-size:12pt;font-weight:700;}
+    .so{display:flex;justify-content:space-between;align-items:flex-end;margin-top:3mm;font-size:10pt;color:var(--muted);}
+    .so strong{color:var(--ink);font-size:12pt;}
+    .cut{margin:6mm 0 4mm;border-top:1px dashed #999;position:relative;text-align:center;}
+    .cut span{position:relative;top:-0.8em;background:#fff;padding:0 3mm;font-size:9pt;color:#777;}
+    .memo{font-size:10pt;color:var(--muted);}
+    .memo table{border-collapse:collapse;width:100%;margin-top:2mm;}
+    .memo th,.memo td{border:1px solid var(--line);padding:1.5mm 2.5mm;text-align:left;font-size:10pt;color:var(--ink);}
+    .memo th{background:#F5F5F5;width:32%;}
+    @media (max-width: 820px){ .paper{width:auto;min-height:0;margin:12px 16px;padding:16px;} }
+    @media print{
+      @page{size:A4 portrait;margin:0;}
+      .toolbar,.warn,.no-print{display:none !important;}
+      body{background:#fff;}
+      .paper{margin:0;border:none;width:210mm;min-height:auto;padding:10mm;}
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a class="btn btn-back" href="/supply.html?tab=shipments" id="backBtn"><i class="ti ti-arrow-left" aria-hidden="true"></i> 出荷・請求・入金へ</a>
+    <div class="kind" role="radiogroup" aria-label="レターパックの種類">
+      <span class="kind-label">種類</span>
+      <input type="radio" name="lpType" id="lpLight" value="light"><label class="opt light" for="lpLight">ライト（青）</label>
+      <input type="radio" name="lpType" id="lpPlus" value="plus"><label class="opt plus" for="lpPlus">プラス（赤）</label>
+      <span id="saveMsg" role="status" aria-live="polite"></span>
+    </div>
+    <label id="senderWrap">依頼主 <select id="senderSel"></select></label>
+    <button class="btn btn-print" id="printBtn" type="button"><i class="ti ti-printer" aria-hidden="true"></i> 印刷</button>
+  </div>
+  <div id="warnBox" class="warn" style="display:none"></div>
+  <div class="paper">
+    <div class="loading" id="loadingEl"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div>
+    <div id="body" style="display:none"></div>
+  </div>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/letterpack-print.js" type="module"></script>
+</body>
+</html>

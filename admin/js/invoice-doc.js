@@ -49,6 +49,27 @@ export function invoiceTotals(s){
   return { taxIncluded, goods, goodsExcl, shipExcl, shipIncl, sub, tax, total, credit, payable: total-credit };
 }
 
+// 支払期限の文言（2026-10-19 CRM改修 #7）。
+//   dueRule:'net14' の出荷（新ルールの開始後に「発送済にする」を押した出荷）＝ 請求書の発行日＋14日の実際の日付を出す。
+//   それ以外（従来の出荷）＝ 従来どおり「請求書発行月の翌月末」。すでに発行・発送済みの分の文言は変わらない。
+//   期限日の決め方は supply.js の dueDateOf と同じ（shipments.dueDate があれば最優先）。
+//   まだ請求済にしていない出荷のプレビューでは、発行日＝今日（renderInvoiceHtml の発行日の既定と同じ）で数える。
+//   金額の計算には関わらない。
+function addDaysYmd(ymd, n){
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd||""));
+  if (!m) return "";
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2])-1, Number(m[3]) + n));
+  return d.toISOString().slice(0, 10);
+}
+function todayJstYmd(){ return new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}); }
+export function paymentDueText(s){
+  if (!s || s.dueRule !== "net14") return "請求書発行月の翌月末";
+  const due = s.dueDate || addDaysYmd(s.invoicedAt || todayJstYmd(), 14);
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(due||""));
+  if (!m) return "請求書発行日から14日";
+  return `${Number(m[1])}年${Number(m[2])}月${Number(m[3])}日（請求書発行日から14日）`;
+}
+
 // 発行元の連絡先（設定で入れた分だけ出す）。請求書・領収証で同じ並びにする（2026-09-13 追加）
 // 🔴 担当者だけは設定に持たせない。**案件の担当営業（cases.assignedUserName）**を
 //    contactName で受け取って出す（2026-09-13 次田さん指示）。
@@ -108,8 +129,8 @@ export function renderInvoiceHtml(s, st, opts){
   const bankName=st.billingBankName||"", branch=st.billingBranchName||"", acctType=st.billingAccountType||"普通", acctNo=st.billingAccountNumber||"", acctHolder=st.billingAccountHolder||"";
   const hasBank = bankName && acctNo;
   const payInner = hasBank
-    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div>${payerCodeOf(s)?`<div style="margin-top:6px;padding:6px 10px;background:#FFE4EC;border-radius:6px;font-size:12.5px;line-height:1.6">お振込の際は、<strong>ご依頼人名の前に「${esc(payerCodeOf(s))}」</strong>を付けてください（例：<strong>${esc(payerCodeOf(s))} ユ）○○○○</strong>）。どちらからのお振込みかを確実に確かめるためです。</div>`:""}<div style="font-size:12px;color:#6a5e48;margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：請求書発行月の翌月末。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
-    : `<div style="font-size:12px;color:#6a5e48">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：請求書発行月の翌月末。</div>`;
+    ? `<div style="font-size:13px;line-height:1.7">${esc(bankName)}　${esc(branch)}　${esc(acctType)} ${esc(acctNo)}<br>口座名義：${esc(acctHolder)}</div>${payerCodeOf(s)?`<div style="margin-top:6px;padding:6px 10px;background:#FFE4EC;border-radius:6px;font-size:12.5px;line-height:1.6">お振込の際は、<strong>ご依頼人名の前に「${esc(payerCodeOf(s))}」</strong>を付けてください（例：<strong>${esc(payerCodeOf(s))} ユ）○○○○</strong>）。どちらからのお振込みかを確実に確かめるためです。</div>`:""}<div style="font-size:12px;color:#6a5e48;margin-top:4px">※ 軽減税率対象品目はありません（すべて10%対象）。お支払期限：${esc(paymentDueText(s))}。恐れ入りますが振込手数料は御社にてご負担ください。</div>`
+    : `<div style="font-size:12px;color:#6a5e48">※ 軽減税率対象品目はありません（すべて10%対象）。振込先口座は別途ご案内します。お支払期限：${esc(paymentDueText(s))}。</div>`;
   // 適格請求書: 各明細に適用税率を表示
   // 品名だけでは USB か Bluetooth か（USBなら端子が A か C か）分からないので、明細に併記する。
   // 新しい明細は connection を持っている。古い明細は呼び出し側が products を渡してくれれば引ける。

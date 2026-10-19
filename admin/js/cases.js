@@ -10,6 +10,7 @@ import {
   DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel,
   ARCHIVE_REASONS, computeDuplicateGroups, pairKey,
   referralOptions, referralLabel, INQUIRY_INTENT_LABELS,
+  LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
 import { areaOf, REGIONS } from "/js/area.js";
 import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
@@ -57,6 +58,15 @@ function populateReferralFilter() {
   sel.innerHTML = `<option value="">すべての紹介元</option>${opts}` +
     `<option value="${REFERRAL_NONE}">未設定</option>`;
   sel.value = cur;
+}
+
+// 失注の理由の絞り込み（理由なしの失注は「未記入」）
+function populateLostFilter() {
+  const sel = document.getElementById("lostFilter");
+  if (!sel) return;
+  sel.innerHTML = `<option value="">失注の理由（すべて）</option>`
+    + Object.entries(LOST_REASONS).map(([k, v]) => `<option value="${escHtml(k)}">${escHtml(v)}</option>`).join("")
+    + `<option value="${REFERRAL_NONE}">未記入</option>`;
 }
 
 let deadline = DEADLINE;
@@ -135,6 +145,7 @@ function currentFilters() {
     quoteFilter: document.getElementById("quoteFilter")?.value || "",
     intentFilter: document.getElementById("intentFilter")?.value || "",
     referralFilter: document.getElementById("referralFilter")?.value || "",
+    lostFilter: document.getElementById("lostFilter")?.value || "",
     showArchived: !!document.getElementById("showArchived")?.checked,
     regionFilter: document.getElementById("regionFilter")?.value || "",
     prefFilter: document.getElementById("prefFilter")?.value || "",
@@ -163,7 +174,7 @@ function intentMatch(c, selected) {
   if (!selected) return true;
   return selected === INTENT_NONE ? !c.inquiryIntent : c.inquiryIntent === selected;
 }
-function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, intentFilter, referralFilter, showArchived,
+function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, intentFilter, referralFilter, lostFilter, showArchived,
                           regionFilter, prefFilter, cityFilter }) {
   // 対象外（テスト/重複/スパム/採用しない）は既定で非表示。チェック時のみ表示。
   if (c.archived && !showArchived) return false;
@@ -176,12 +187,15 @@ function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, inte
   // 紹介元（referralSource）。SOURCE_LABELS の流入元とは別物。
   const matchReferral = !referralFilter ||
     (referralFilter === REFERRAL_NONE ? !c.referralSource : c.referralSource === referralFilter);
+  // 失注の理由（失注案件だけが対象。理由なしは「未記入」で選べる）
+  const matchLost = !lostFilter || (Number(c.status) === LOST
+    && (lostFilter === REFERRAL_NONE ? !LOST_REASONS[c.lostReason] : c.lostReason === lostFilter));
   const a = c._area || {};
   const matchArea = areaMatch(a.region, regionFilter)
     && areaMatch(a.prefecture, prefFilter)
     && areaMatch(a.city, cityFilter);
   return matchSearch && matchStatus && matchSource && quoteMatch(c, quoteFilter)
-    && intentMatch(c, intentFilter) && matchReferral && matchArea;
+    && intentMatch(c, intentFilter) && matchReferral && matchLost && matchArea;
 }
 
 // 地域→都道府県→市町村の順に絞り込む。上位を選ぶと、下位の選択肢は
@@ -220,7 +234,7 @@ function populateAreaFilters() {
   fill(city, cities, "すべての市町村", "住所が未登録");
 }
 
-// 初期連絡（申込から3営業日以内）の超過。「新規受信」(status 1) のまま・対象外でない案件だけが対象。
+// 初期連絡（申込から5営業日以内・土日祝と12/29〜1/3は数えない）の超過。「新規受信」(status 1) のまま・対象外でない案件だけが対象。
 // 申込日は receivedAt（一覧の「受付日」と同じ。無ければ createdAt）。画面表示のみで通知は作らない。
 let firstContactOnly = false; // 「超過のみ」の絞り込み（URL・保存はしない）
 function firstContactOver(c, now = new Date()) {
@@ -255,7 +269,7 @@ function renderCases() {
     empty.style.display = "block";
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
-    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.intentFilter || f.referralFilter
+    const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.intentFilter || f.referralFilter || f.lostFilter
       || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone || firstContactOnly);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
@@ -283,8 +297,9 @@ function renderCases() {
       <td>${escHtml(c._area?.city || "") || areaBlank()}</td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}${intentBadge(c)}</td>
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
-      <td><span class="badge badge-${c.status}">${STATUS_LABELS[c.status] || "—"}</span>${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
+      <td><span class="badge badge-${c.status}"${Number(c.status) === LOST ? ` title="失注の理由: ${escHtml(lostReasonLabel(c))}${c.lostReasonNote ? `（${escHtml(c.lostReasonNote)}）` : ""}"` : ""}>${STATUS_LABELS[c.status] || "—"}</span>${Number(c.status) === LOST ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:2px">${escHtml(lostReasonLabel(c))}</div>` : ""}${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
+      <td>${c.visitDate ? escHtml(c.visitDate.replace(/-/g, "/")) : "—"}</td>
       <td>${formatDate(c.receivedAt)}</td>
       <td>${formatDate(c.updatedAt)}</td>
     </tr>
@@ -410,7 +425,7 @@ function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
   const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","ご希望","紹介元",
-    "ステータス","担当営業","補助金区分","想定補助額","受信日時","最終更新"];
+    "ステータス","失注の理由","担当営業","訪問予定日","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([
@@ -419,7 +434,8 @@ function exportCsv() {
       c.contactPhone || "", c.contactEmail || "", SOURCE_LABELS[c.source] || c.source || "",
       INQUIRY_INTENT_LABELS[c.inquiryIntent] || c.inquiryIntent || "",
       referralLabel(c.referralSource, appSettings),
-      STATUS_LABELS[c.status] || "", c.assignedUserName || "未割当",
+      STATUS_LABELS[c.status] || "", Number(c.status) === LOST ? lostReasonLabel(c) + (c.lostReasonNote ? `（${c.lostReasonNote}）` : "") : "",
+      c.assignedUserName || "未割当", c.visitDate || "",
       c.subsidyCategory || "", c.expectedSubsidyAmount || "",
       fmtFull(c.receivedAt), fmtFull(c.updatedAt),
     ].map(csvCell).join(","));
@@ -543,6 +559,8 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("quoteFilter")?.addEventListener("change", renderCases);
   document.getElementById("intentFilter")?.addEventListener("change", renderCases);
   document.getElementById("referralFilter")?.addEventListener("change", renderCases);
+  populateLostFilter();
+  document.getElementById("lostFilter")?.addEventListener("change", renderCases);
   document.getElementById("showArchived")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });
   // 上位を変えたら下位の選択肢を作り直す（存在しない組み合わせを残さない）
   document.getElementById("regionFilter")?.addEventListener("change", () => { populateAreaFilters(); renderCases(); });

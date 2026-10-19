@@ -9,6 +9,7 @@
       ["/dashboard.html", "ti-chart-bar", "ホーム（今日やること）"],
       ["/cases.html", "ti-layout-list", "案件一覧"],
       ["/kanban.html", "ti-layout-kanban", "カンバン"],
+      ["/offices.html", "ti-building", "事業所"],
     ]},
     { title: "お金と物品", items: [
       ["/supply.html?tab=shipments", "ti-truck-delivery", "出荷・請求・入金"],

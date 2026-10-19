@@ -214,6 +214,16 @@
           <select class="form-control" id="shipOrigin"></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">発送済に確定したとき、この場所の在庫から引き落とします。</p>
         </div>
+        <!-- レターパックの種類（新規登録のときだけ。宛名印刷ページの色と出荷指示に使う・2026-10-19） -->
+        <div class="form-group" id="shipLetterPackWrap">
+          <label class="form-label" for="shipLetterPack">レターパックの種類</label>
+          <select class="form-control" id="shipLetterPack">
+            <option value="">未選択（あとで宛名印刷ページで選べます）</option>
+            <option value="light">レターパックライト（青）</option>
+            <option value="plus">レターパックプラス（赤）</option>
+          </select>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「発送済」になり、出荷指示を投稿します。</p>
+        </div>
         <div id="shipItems"></div>
         <!-- 伴走支援費（電話・紙で受けた案件など、CRMで手作りする出荷に補助金上限までの構成を足す。
              事業所へ直接請求する出荷（direct）だけが対象。認定事業者への直送は卸なので対象外 -->
@@ -374,6 +384,11 @@
       <button class="btn btn-secondary" id="closeInvReportBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">この出荷を「請求済」にします。あわせて経理へ請求書発行の報告を送れます（<strong>再発行のときは下のチェックを外してください</strong>）。</p>
+        <!-- 請求書の発行日（既定は今日・2026-10-19 #6）。支払期限・プレビューの請求書はこの日付で描き直す -->
+        <div class="form-group" id="invReportDateWrap" style="max-width:260px">
+          <label class="form-label" for="invReportDate">請求書の発行日 <span style="color:red">*</span></label>
+          <input class="form-control" type="date" id="invReportDate">
+        </div>
         <div id="invReportSummary" style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.9;margin-bottom:12px"></div>
         <label style="display:flex;gap:8px;align-items:flex-start;padding:10px 12px;border:1px solid var(--color-line);border-radius:8px;cursor:pointer;margin-bottom:12px">
           <input id="invReportSend" type="checkbox" checked style="width:18px;height:18px;margin-top:2px;flex:0 0 auto">
@@ -393,6 +408,65 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelInvReportBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="doInvReportBtn" type="button"><i class="ti ti-send" aria-hidden="true"></i>請求済にして報告</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 発送済にする前の確認（出荷日・出荷元・レターパックの種類）。3つの経路で共通・2026-10-19 -->
+  <div class="modal-overlay" id="shipDoneModal" role="dialog" aria-modal="true" aria-label="発送済にする">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header"><h2 id="shipDoneTitle">発送済にする</h2>
+        <button class="btn btn-secondary" id="closeShipDoneBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div id="shipDoneSummary" style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.8;margin-bottom:12px"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="shipDoneDate">出荷日 <span style="color:red">*</span></label>
+            <input class="form-control" type="date" id="shipDoneDate"></div>
+          <div class="form-group"><label class="form-label" for="shipDoneLp">レターパックの種類</label>
+            <select class="form-control" id="shipDoneLp">
+              <option value="">未選択</option>
+              <option value="light">レターパックライト（青）</option>
+              <option value="plus">レターパックプラス（赤）</option>
+            </select></div>
+        </div>
+        <div class="form-group" id="shipDoneOriginWrap">
+          <label class="form-label" for="shipDoneOrigin">出荷元の保管場所 <span style="color:red">*</span></label>
+          <select class="form-control" id="shipDoneOrigin"></select>
+        </div>
+        <p id="shipDoneStockNote" style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px"></p>
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0">「発送済にする」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、発送済の記録だけ残ります）。</p>
+        <div id="shipDoneError" role="alert" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelShipDoneBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="doShipDoneBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>発送済にする</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 追跡番号の写真（レターパックの追跡番号シールを撮影・複数枚可・2026-10-19 #5） -->
+  <div class="modal-overlay" id="trackModal" role="dialog" aria-modal="true" aria-label="追跡番号の写真">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header"><h2 id="trackTitle">追跡番号の写真</h2>
+        <button class="btn btn-secondary" id="closeTrackBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label" for="trackFiles">写真を追加（スマホではカメラが開きます・複数枚可）</label>
+          <input class="form-control" id="trackFiles" type="file" accept="image/*" capture="environment" multiple>
+          <p id="trackStatus" role="status" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="trackNumber">追跡番号（任意・写真だけでも構いません）</label>
+          <div style="display:flex;gap:8px">
+            <input class="form-control" id="trackNumber" type="text" inputmode="numeric" placeholder="例: 1234-5678-9012">
+            <button class="btn btn-secondary" id="saveTrackNumberBtn" type="button" style="white-space:nowrap"><i class="ti ti-device-floppy" aria-hidden="true"></i>番号を保存</button>
+          </div>
+        </div>
+        <div id="trackPhotos" style="display:flex;flex-wrap:wrap;gap:10px"></div>
+        <div id="trackError" role="alert" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelTrackBtn" type="button">閉じる</button>
       </div>
     </div>
   </div>

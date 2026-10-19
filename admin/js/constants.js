@@ -18,6 +18,19 @@ export const STATUS_COLORS = {
 
 export const LOST = 4; // 失注（別枠・どのフェーズからも遷移しうる）
 
+// 失注の理由（cases.lostReason にコード値で保存。メモは cases.lostReasonNote）。2026-10-19
+// 失注にするときに必ず選ぶ。既存の失注案件は理由なし（未記入）のまま。
+export const LOST_REASONS = {
+  referred_partner: "他社紹介（認定パートナーへ）",
+  declined: "辞退",
+  same_day_cancel: "当日キャンセル",
+  other: "その他",
+};
+// 失注案件の理由ラベル。理由なしは「未記入」。
+export function lostReasonLabel(c) {
+  return LOST_REASONS[c?.lostReason] || (c?.lostReason ? String(c.lostReason) : "未記入");
+}
+
 // 受注確定以降（失注除く）。ダッシュボードのファネル集計・「今日やること」の
 // 「担当営業が決まっていない案件」判定など、複数画面で使う共通グルーピング。
 export const ENGAGED_STATUSES = [3, 5, 6, 7, 8, 9, 10, 11, 12, 13];

@@ -2,7 +2,7 @@
 // ねらい: 似た法人名からの入金を取り違えないよう、ご依頼人名の前に請求書番号の末尾4桁を付けていただく。
 // ネットバンキング・ATM・銀行窓口・ゆうちょ銀行（郵便局）それぞれでの書き方を案内する。
 // 振込先は設定（appConfig/settings.billing*）、番号は invoice-doc.js の payerCodeOf を使う。
-import { payerCodeOf, invoiceNoOf, invoiceTotals, buildOnePagePdf } from "/js/invoice-doc.js";
+import { payerCodeOf, invoiceNoOf, invoiceTotals, buildOnePagePdf, paymentDueText } from "/js/invoice-doc.js";
 
 function esc(v){ return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c])); }
 const yen = (n) => "¥" + Math.round(Number(n)||0).toLocaleString("ja-JP");
@@ -52,7 +52,7 @@ export function renderFurikomiGuideHtml(s, st) {
   <table class="bank"><tbody>
     <tr><th>口座</th><td>${esc(bank)}</td></tr>
     <tr><th>口座名義</th><td>${esc(holder)}</td></tr>
-    <tr><th>お支払期限</th><td>請求書発行月の翌月末（振込手数料は御社でご負担ください）</td></tr>
+    <tr><th>お支払期限</th><td>${esc(paymentDueText(s))}（振込手数料は御社でご負担ください）</td></tr>
   </tbody></table>
 
   <h2>振込のしかた別の書き方</h2>

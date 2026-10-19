@@ -1,11 +1,11 @@
-// 初期連絡の期限（申込から3営業日以内）の超過判定。純粋関数のみ（DOM・Firestore に触れない）。
+// 初期連絡の期限（申込から5営業日以内）の超過判定。純粋関数のみ（DOM・Firestore に触れない）。
 // 決定: 次田さん（常務理事）。通知（メール・Chat）は作らず、案件一覧の画面表示のみ。
 // テスト: node scripts/test-first-contact.mjs
 
-export const FIRST_CONTACT_LIMIT = 3; // 営業日
+export const FIRST_CONTACT_LIMIT = 5; // 営業日
 
 // 日本の祝日（内閣府）。YYYY-MM-DD。土日と重なる日の振替休日・国民の休日も含める。
-// 年末年始（12/29〜1/3）は法定の祝日ではないため含めない（営業日として数える）。
+// 年末年始（12/29〜1/3）は法定の祝日ではないが休業日として扱う（毎年。下の isYearEndHoliday で日付ルール判定）。
 // 2028年以降は未登録。年が変わる前に追記すること（未登録の年の祝日は平日扱いになる）。
 export const JP_HOLIDAYS = [
   // 2026
@@ -44,15 +44,21 @@ function dayNumber(ymd) { // "YYYY-MM-DD" → UTC 0時の通算日
   const [y, m, d] = ymd.split("-").map(Number);
   return Math.round(Date.UTC(y, m - 1, d) / 86400000);
 }
+/** 年末年始の休業日（12/29〜12/31 と 1/1〜1/3）。年ごとの列挙に頼らず月日で判定する。 */
+export function isYearEndHoliday(ymd) {
+  const m = Number(ymd.slice(5, 7)), d = Number(ymd.slice(8, 10));
+  return (m === 12 && d >= 29) || (m === 1 && d <= 3);
+}
 function isBusinessDayNum(n, holidaySet) {
   const dow = new Date(n * 86400000).getUTCDay(); // 0=日 6=土
   if (dow === 0 || dow === 6) return false;
-  return !holidaySet.has(new Date(n * 86400000).toISOString().slice(0, 10));
+  const ymd = new Date(n * 86400000).toISOString().slice(0, 10);
+  return !holidaySet.has(ymd) && !isYearEndHoliday(ymd);
 }
 
 /**
  * 申込日の「翌営業日」を1営業日目として、today が何営業日目かを返す（申込当日・申込日以前は 0）。
- * 営業日 = 土日と holidays（YYYY-MM-DD の配列）を除く日。日付は JST で判定する。
+ * 営業日 = 土日・holidays（YYYY-MM-DD の配列）・年末年始（12/29〜1/3）を除く日。日付は JST で判定する。
  */
 export function businessDaysElapsed(createdAtDate, today, holidays = JP_HOLIDAYS) {
   const a = jstDateString(createdAtDate), t = jstDateString(today);
@@ -65,9 +71,9 @@ export function businessDaysElapsed(createdAtDate, today, holidays = JP_HOLIDAYS
 
 /**
  * 初期連絡の超過日数（営業日）。
- * 定義: 申込日の翌営業日=1営業日目。3営業日以内（〜3営業日目）は超過なし（0）、
- * 3営業日を超えた＝4営業日目以降が「超過」で、超過日数 = 営業日目 − 3。
- * 例: 金曜申込 → 月=1・火=2・水=3（超過なし）・木=4（超過1日）。
+ * 定義: 申込日の翌営業日=1営業日目。5営業日以内（〜5営業日目）は超過なし（0）、
+ * 5営業日を超えた＝6営業日目以降が「超過」で、超過日数 = 営業日目 − 5。
+ * 例: 金曜申込 → 月=1・火=2・水=3・木=4・金=5（超過なし）・翌月=6（超過1日）。
  */
 export function countBusinessDaysOver(createdAtDate, today, holidays = JP_HOLIDAYS) {
   return Math.max(0, businessDaysElapsed(createdAtDate, today, holidays) - FIRST_CONTACT_LIMIT);

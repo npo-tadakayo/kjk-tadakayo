@@ -56,7 +56,7 @@
         </button>
       </div>
 
-      <!-- 初期連絡の超過（申込から3営業日を過ぎた「新規受信」。画面表示のみ） -->
+      <!-- 初期連絡の超過（申込から5営業日を過ぎた「新規受信」。画面表示のみ） -->
       <div id="firstContactBanner" class="deadline-banner danger" style="display:none" role="status">
         <i class="ti ti-alarm" aria-hidden="true"></i>
         <span id="firstContactText" style="flex:1"></span>
@@ -90,6 +90,9 @@
         </select>
         <select id="referralFilter" aria-label="紹介元で絞り込み">
           <option value="">すべての紹介元</option>
+        </select>
+        <select id="lostFilter" aria-label="失注の理由で絞り込み">
+          <option value="">失注の理由（すべて）</option>
         </select>
         <select id="regionFilter" aria-label="地域で絞り込み">
           <option value="">すべての地域</option>
@@ -129,7 +132,8 @@
                 <th class="sortable" data-sort="referralSource">紹介元 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="status">ステータス <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="assignedUserName">担当営業 <span class="sort-ind"></span></th>
-                <th class="sortable" data-sort="receivedAt">受信日 <span class="sort-ind"></span></th>
+                <th class="sortable" data-sort="visitDate">訪問予定日 <span class="sort-ind"></span></th>
+                                <th class="sortable" data-sort="receivedAt">受信日 <span class="sort-ind"></span></th>
                 <th class="sortable" data-sort="updatedAt">最終更新 <span class="sort-ind"></span></th>
               </tr>
             </thead>

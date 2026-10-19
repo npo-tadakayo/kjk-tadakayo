@@ -27,10 +27,11 @@
         <div class="card-header"><span style="font-weight:600;font-size:14px">通知・送信の設定</span></div>
         <div class="card-body" id="loadingEl"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...</div>
         <div class="card-body" id="form" style="display:none">
-          <div class="form-group">
-            <label class="form-label" for="chatWebhookUrl">Google Chat Webhook URL</label>
-            <input class="form-control" id="chatWebhookUrl" type="text" placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...">
-            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">LP問い合わせ・お申し込み・日次フォローアップの通知先。変更は即時反映（最大60秒）。</p>
+          <div style="margin-bottom:16px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:4px">Google Chat の投稿先</div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px">用途ごとに4つの投稿先を持てます。「有効」を外すと、その投稿先への投稿を止めます（URLは残ります）。変更は保存後、最大60秒で反映されます。</p>
+            <div id="webhookStatus" style="font-size:12px;border:1px solid var(--color-line);border-radius:8px;padding:8px 12px;margin-bottom:10px"></div>
+            <div id="webhookRows"></div>
           </div>
           <div class="form-group">
             <label class="form-label" style="display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:400">
@@ -143,11 +144,7 @@
           <div style="border-top:1px solid var(--color-line);margin:16px 0 12px;padding-top:12px">
             <div style="font-weight:600;font-size:13px;margin-bottom:4px">経理への請求書発行報告</div>
             <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">出荷を「請求済にする」とき、確認ダイアログで「経理へ報告する」を選ぶと、下記のChatスペースへ報告を投稿し、経理担当へ請求書PDFを添付したメールを送ります。<strong>Google Chatの Webhook はファイルを添付できない仕様</strong>のため、Chatには請求書PDFへのリンクを載せます。</p>
-            <div class="form-group">
-              <label class="form-label" for="accountingChatWebhookUrl">経理スペースの Google Chat Webhook URL</label>
-              <input class="form-control" id="accountingChatWebhookUrl" type="text" placeholder="https://chat.googleapis.com/v1/spaces/.../messages?key=...&token=...">
-              <p style="font-size:11px;color:var(--color-ink-muted);margin:4px 0 0">上の「通知・送信の設定」のWebhook（LP問い合わせ用）とは<strong>別のスペース</strong>です。空欄にすると Chat への投稿は行いません（メールのみ）。変更は即時反映（最大60秒）。</p>
-            </div>
+            <p style="font-size:11px;color:var(--color-ink-muted);margin:0 0 10px">Chat の投稿先（経理スペース）は、この画面の上の「Google Chat の投稿先」で設定します。そこを停止または空欄にすると Chat への投稿は行いません（メールのみ）。</p>
             <div class="form-row">
               <div class="form-group"><label class="form-label" for="accountingEmail">経理担当のメールアドレス</label><input class="form-control" id="accountingEmail" type="email" placeholder="hidetoshi-tanaka@tadakayo.jp"></div>
               <div class="form-group"><label class="form-label" for="accountingContactName">経理担当の呼び名</label><input class="form-control" id="accountingContactName" type="text" placeholder="田中"></div>
@@ -163,7 +160,7 @@
           </div>
           <div id="saveStatus" style="font-size:13px;margin-bottom:8px"></div>
           <div style="display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap">
-            <button class="btn btn-secondary" id="testBtn" type="button"><i class="ti ti-bell" aria-hidden="true"></i> Chatにテスト通知</button>
+            <span style="font-size:12px;color:var(--color-ink-muted);align-self:center">テスト送信は、各投稿先の行のボタンから（保存済みのURLへ送ります）</span>
             <button class="btn btn-primary" id="saveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i> 保存</button>
           </div>
         </div>

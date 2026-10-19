@@ -3,9 +3,11 @@ import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion }
+  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion, arrayRemove }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOnePagePdf,
   DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals } from "/js/invoice-doc.js";
@@ -21,6 +23,8 @@ const functions = getFunctions(app, "asia-northeast1");
 const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
 const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
 const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
+const notifyShipmentFn = httpsCallable(functions, "notifyShipment"); // 出荷指示の投稿（2026-10-19 #4）
+const storage = getStorage(app);
 
 let products = [];
 let locations = [];          // 保管場所マスタ（2026-09-12 追加）
@@ -846,36 +850,126 @@ async function createShipmentDraftFromPO(o){
     shipDate:today(), createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
   await updateDoc(doc(db,"purchaseOrders",o._id),{ shipmentId:ref.id });
 }
-// 直送の出荷下書き(draft) → 発送済(shipped)に確定。直送のため在庫は動かさない
-async function confirmDraftShipment(s){
-  // 在庫から出す出荷（Webのお申し込みで自動作成された下書き等）は、ここで在庫を引く。
-  // 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
-  const usesStock = shipUsedStock(s);
-  const its = usesStock ? stockItems(s.items) : [];
-  const locId = usesStock ? shipLocationOf(s) : "";
-  if(usesStock){
+// ===== 「発送済にする」の共通部品（2026-10-19 CRM改修 #4・#6・#7） =====
+// 3つの経路（下書きの確定・出荷の直接作成・認定事業者の受注から出荷）で同じものを使う。
+//   ・出荷日（既定は今日）／出荷元の保管場所（在庫を使う出荷のみ）／レターパックの種類 を確認・入力する
+//   ・押した人（shippedBy）と、支払期限の新ルールの印（dueRule:'net14'＝請求書の発行日＋14日）を書く
+//     → dueRule はここで初めて付く。すでに発送済み・請求済みの出荷には付かないので期限は変わらない
+//   ・発送済になった直後に、出荷指示を投稿する（notifyShipment。投稿先が未設定・停止中・失敗でも発送済の操作は止めない）
+const LETTERPACK_TYPE_LABEL = { light:"レターパックライト（青）", plus:"レターパックプラス（赤）" };
+function shippedStampPatch(){
+  return { shippedBy: currentUser.displayName||currentUser.email, shippedByEmail: currentUser.email||"",
+    shippedAt: serverTimestamp(), dueRule: "net14" };
+}
+function letterPackPatch(v){ return (v==="light"||v==="plus") ? { letterPackType:v } : {}; }
+// 出荷指示を投稿して、結果を一言で返す（画面のトーストに足す）。投稿の可否で処理を止めない
+async function postShipNotice(shipmentId, opts){
+  try{
+    const r = await notifyShipmentFn({ shipmentId, resend: !!(opts && opts.resend) });
+    const d = (r && r.data) || {};
+    if(d.posted) return d.resent ? "出荷指示を再送しました" : "出荷指示を投稿しました";
+    return ({
+      unset: "出荷指示の投稿先が未設定のため、投稿していません",
+      disabled: "出荷指示の投稿先が停止中のため、投稿していません",
+      error: "出荷指示の投稿に失敗しました（出荷の行の「出荷指示を再送」でやり直せます）",
+      already: "出荷指示は投稿済みです",
+      busy: "出荷指示はいま投稿中です",
+    })[d.reason] || "出荷指示は投稿していません";
+  }catch(e){
+    console.warn("notifyShipment:", e);
+    return `出荷指示を投稿できませんでした（${e.message||e}）。出荷の行の「出荷指示を再送」でやり直せます`;
+  }
+}
+// 出荷指示の再送（明示の操作なので投稿済みでも送る。必ず確認を出す）
+async function resendShipNotice(s){
+  const msg = s.shipNotifiedAt
+    ? `出荷 ${s.soNumber} の出荷指示は ${fmtDT(s.shipNotifiedAt)} に投稿済みです。\nもう一度投稿しますか？（同じ指示が2回届きます）`
+    : `出荷 ${s.soNumber} の出荷指示を投稿します。よろしいですか？`;
+  if(!confirm(msg)) return;
+  toast("出荷指示を投稿しています...");
+  toast(await postShipNotice(s._id, { resend: true }));
+}
+
+// 発送済にする前の確認ダイアログ。OK なら {shipDate, originLocationId, letterPackType}、やめたら null
+let shipDoneCtx = null; // { resolve, items, usesStock }
+function askShipDetails({ title, summaryHtml, usesStock, locId, date, letterPackType, items }){
+  return new Promise((resolve)=>{
+    if(shipDoneCtx && shipDoneCtx.resolve) shipDoneCtx.resolve(null);
+    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock };
+    document.getElementById("shipDoneTitle").textContent = title || "発送済にする";
+    document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
+    document.getElementById("shipDoneDate").value = date || today();
+    document.getElementById("shipDoneLp").value = (letterPackType==="light"||letterPackType==="plus") ? letterPackType : "";
+    const needLoc = !!usesStock && stockItems(items).length>0;
+    document.getElementById("shipDoneOriginWrap").style.display = needLoc ? "" : "none";
+    if(needLoc) fillLocationSelect(document.getElementById("shipDoneOrigin"), locId);
+    document.getElementById("shipDoneStockNote").textContent = usesStock ? "" : "直送のため、自社在庫は動きません。";
+    document.getElementById("shipDoneError").style.display = "none";
+    updateShipDoneHint();
+    document.getElementById("shipDoneModal").classList.add("open");
+  });
+}
+function updateShipDoneHint(){
+  if(!shipDoneCtx || !shipDoneCtx.usesStock) return;
+  const its = stockItems(shipDoneCtx.items);
+  const locId = document.getElementById("shipDoneOrigin").value;
+  document.getElementById("shipDoneStockNote").textContent = its.length
+    ? `${locationName(locId)||"保管場所未選択"} の在庫から ${its.map(it=>`${it.sku} × ${it.qty}`).join("・")} を引き落とします。`
+    : "在庫を使う品目はありません。";
+}
+function closeShipDone(result){
+  document.getElementById("shipDoneModal").classList.remove("open");
+  const c = shipDoneCtx; shipDoneCtx = null;
+  if(c && c.resolve) c.resolve(result || null);
+}
+function doShipDone(){
+  if(!shipDoneCtx) return;
+  const err = document.getElementById("shipDoneError"); err.style.display = "none";
+  const fail = (m)=>{ err.textContent = m; err.style.display = "block"; };
+  const shipDate = document.getElementById("shipDoneDate").value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail("出荷日を入れてください");
+  const its = shipDoneCtx.usesStock ? stockItems(shipDoneCtx.items) : [];
+  let originLocationId = "";
+  if(its.length){
+    originLocationId = document.getElementById("shipDoneOrigin").value;
+    if(!originLocationId) return fail("出荷元の保管場所を選んでください（未登録なら在庫タブから追加できます）");
     for(const it of its){
-      const p=products.find(x=>x.id===it.sku)||{};
-      if(stockAt(p, locId) < (Number(it.qty)||0)){
-        alert(`在庫が足りません: ${p.name||it.sku}（${locationName(locId)||"保管場所未設定"} ${stockAt(p,locId)} / 出荷 ${it.qty}）\n入荷を登録するか、別の保管場所に変えてください。`);
-        return;
-      }
+      const p = products.find(x=>x.id===it.sku)||{};
+      if(stockAt(p, originLocationId) < (Number(it.qty)||0))
+        return fail(`在庫が足りません: ${p.name||it.sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${it.qty}）。入荷を登録するか、別の保管場所を選んでください。`);
     }
   }
-  const lines = its.map(it=>`${it.sku} × ${it.qty}`).join("・");
-  const msg = usesStock
-    ? `出荷 ${s.soNumber}（${s.company||s.officeName||""}）を発送済に確定します。\n${locationName(locId)||"自社在庫"} から ${lines||"（在庫品なし）"} を引き落とします。よろしいですか？`
-    : `出荷 ${s.soNumber}（${s.partnerName||s.officeName||""}）を発送済に確定します。\n直送のため在庫は変動しません。よろしいですか？`;
-  if(!confirm(msg)) return;
+  closeShipDone({ shipDate, originLocationId, letterPackType: document.getElementById("shipDoneLp").value || "" });
+}
+
+// 出荷の下書き(draft) → 発送済(shipped)に確定。
+// 在庫から出す出荷（Webのお申し込みで自動作成された下書き等）は、ここで在庫を引く。
+// 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
+async function confirmDraftShipment(s){
+  const usesStock = shipUsedStock(s);
+  const ans = await askShipDetails({
+    title: `発送済にする（${s.soNumber||""}）`,
+    summaryHtml: `<div><strong>${esc(s.company||s.partnerName||"")}</strong> ${esc(s.officeName||"")}</div>`
+      + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([s.postal?`〒${s.postal}`:"", s.address||""].filter(Boolean).join(" "))}</div>`,
+    usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
+  });
+  if(!ans) return;
+  const its = usesStock ? stockItems(s.items) : [];
+  const locId = its.length ? ans.originLocationId : (usesStock ? shipLocationOf(s) : "");
   try{
-    await updateDoc(doc(db,"shipments",s._id),{ status:"shipped", shipDate:s.shipDate||today(), confirmedAt:serverTimestamp() });
+    await updateDoc(doc(db,"shipments",s._id),{
+      status:"shipped", shipDate:ans.shipDate, confirmedAt:serverTimestamp(),
+      ...(its.length ? { originLocationId: locId, originLocationName: locationName(locId) } : {}),
+      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch() });
     for(const it of its){
       await updateDoc(doc(db,"products",it.sku), stockPatch(locId, -it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku, -it.qty, "shipment", s.soNumber, locId));
     }
-    toast(usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`);
   }
-  catch(e){ alert(`確定失敗: ${e.message}`); }
+  catch(e){ alert(`確定失敗: ${e.message}`); return; }
+  const head = usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`;
+  toast(`${head}。出荷指示を投稿しています...`);
+  toast(`${head}。${await postShipNotice(s._id)}`);
 }
 
 // ===== 出荷の送料（料金・送料設定 appConfig を優先。デフォルト値・定数は supply-pricing.js） =====
@@ -1285,6 +1379,11 @@ function openShip(existing){
   const oSel=document.getElementById("shipOrigin");
   if(oSel){ fillLocationSelect(oSel, s && s.originLocationId); oSel.disabled = locked; }
   updateShipOriginHint();
+  // レターパックの種類（新規登録＝その場で発送済になるときだけ聞く。修正では出さない・2026-10-19）
+  const lpw=document.getElementById("shipLetterPackWrap");
+  if(lpw) lpw.style.display = s ? "none" : "";
+  const lpSel=document.getElementById("shipLetterPack");
+  if(lpSel && !s) lpSel.value="";
 
   document.getElementById("shipModal").classList.add("open");
 }
@@ -1321,14 +1420,22 @@ async function saveShip(){
   const shippingMethod=document.getElementById("shipMethod").value||"manual";
   const shippingFee=Number(document.getElementById("shipFee").value)||0;
   const shippingLabel=document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"");
+  const shipDateIn=document.getElementById("shipDate").value||today();
+  const letterPackType=(document.getElementById("shipLetterPack")||{}).value||"";
+  // この登録で発送済になる（下書きを経ない）。押した人・出荷日・出荷元・種類を確認してから登録する（2026-10-19）
+  const lpText = LETTERPACK_TYPE_LABEL[letterPackType] || "未選択";
+  const stockLine = stockItems(items).length ? `\n出荷元: ${locationName(originLocationId)}（在庫から引き落とします）` : "";
+  if(!confirm(`出荷を登録して「発送済」にします。\n出荷日: ${shipDateIn}${stockLine}\nレターパック: ${lpText}\n登録すると、出荷指示を投稿します。よろしいですか？`)) return;
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
+  let newShipId="", soNumber="";
   try{
-    const soNumber=seqFmt("SH",await nextSeq("shipments"));
-    await addDoc(collection(db,"shipments"),{
+    soNumber=seqFmt("SH",await nextSeq("shipments"));
+    const newRef = await addDoc(collection(db,"shipments"),{
       soNumber, shipType, partnerEmail, partnerName,
       status:"shipped", shippingMethod, shippingFee, shippingLabel,
+      ...letterPackPatch(letterPackType), ...shippedStampPatch(),
       originLocationId, originLocationName: locationName(originLocationId),
-      shipDate:document.getElementById("shipDate").value||today(),
+      shipDate:shipDateIn,
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
       officeName:office, address:document.getElementById("shipAddress").value.trim(),
@@ -1338,11 +1445,14 @@ async function saveShip(){
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       ...subsidyPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+    newShipId = newRef.id;
     for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(originLocationId,-it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,originLocationId)); }
     document.getElementById("shipModal").classList.remove("open");
-    toast(`出荷 ${soNumber} を登録しました（${locationName(originLocationId)||"在庫"}から引落）`);
-  }catch(e){ alert(`登録失敗: ${e.message}`);} finally{ btn.disabled=false; }
+  }catch(e){ alert(`登録失敗: ${e.message}`); return; } finally{ btn.disabled=false; }
+  const head = `出荷 ${soNumber} を登録しました（${locationName(originLocationId)||"在庫"}から引落）`;
+  toast(`${head}。出荷指示を投稿しています...`);
+  toast(`${head}。${await postShipNotice(newShipId)}`);
 }
 
 // 出荷の修正を保存する。
@@ -1634,10 +1744,26 @@ function crossCreditSourcesFor(s){
     .sort((a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")));
 }
 function crossCreditBalanceFor(s){ return crossCreditSourcesFor(s).reduce((a,x)=>a+creditBalanceOf(x),0); }
-// 支払期限＝請求月の翌月末（請求書の記載と同じ）。shipments.dueDate があればそれを優先
+// 支払期限（請求書の記載と同じ）。
+//   ① shipments.dueDate があればそれを最優先（請求済にしたときに確定値を保存する）
+//   ② dueRule:'net14'（2026-10-19 以降に「発送済にする」を押した出荷）＝ 請求書の発行日＋14日（納品日＝発行日）
+//   ③ それ以外（従来の出荷）＝ 請求月の翌月末。すでに発送済み・請求済みの出荷の期限は変えない
+//   請求書の文言は invoice-doc.js の paymentDueText と同じ規則にすること
+function addDaysYmd(ymd, n){
+  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd||""));
+  if(!m) return "";
+  return new Date(Date.UTC(Number(m[1]), Number(m[2])-1, Number(m[3])+n)).toISOString().slice(0,10);
+}
+// ISO文字列（UTC）を日本時間の「YYYY-MM-DD HH:MM」にする（追跡写真の登録時刻の表示用）
+function jstDateTime(iso){
+  const d=new Date(iso||"");
+  if(Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString("sv-SE",{timeZone:"Asia/Tokyo"}).slice(0,16);
+}
 function dueDateOf(s){
   if(s.dueDate) return s.dueDate;
   const base=s.invoicedAt||s.shipDate||"";
+  if(s.dueRule==="net14") return addDaysYmd(base, 14);
   const m=/^(\d{4})-(\d{2})/.exec(base);
   if(!m) return "";
   const d=new Date(Number(m[1]), Number(m[2])+1, 0); // 翌月末
@@ -1677,6 +1803,115 @@ function scrollToShipmentFromUrl(){
   row.style.backgroundColor = "var(--color-warning-soft)";
   setTimeout(()=>{ row.style.backgroundColor = ""; }, 3000);
 }
+// 出荷指示の投稿状況（2026-10-19 #4）。新ルール以降の出荷（dueRule:'net14'）か、投稿を試みた出荷だけに出す。
+// それより前の出荷は出荷指示の仕組みが無かったので「未投稿」と出さない
+function shipNotifyShown(s){
+  const st=s.status||"shipped";
+  return (st==="shipped"||st==="invoiced"||st==="paid") && (!!s.shipNotifiedAt || s.dueRule==="net14" || !!s.shipNotifyStatus);
+}
+function shipNotifyHtml(s){
+  if(!shipNotifyShown(s)) return "";
+  if(s.shipNotifiedAt) return `<div style="font-size:12px;color:var(--color-ink-muted)">出荷指示：投稿済 ${esc(fmtDT(s.shipNotifiedAt))}</div>`;
+  const why = ({ unset:"投稿先が未設定", disabled:"投稿先が停止中", error:"投稿に失敗" })[s.shipNotifyStatus] || "";
+  return `<div style="font-size:12px;color:var(--color-danger);font-weight:600">出荷指示：未投稿${why?`（${esc(why)}）`:""}</div>`;
+}
+// 追跡番号・写真の要約（入っている分だけ出す）
+function trackingHtml(s){
+  const n = Array.isArray(s.trackingPhotos) ? s.trackingPhotos.length : 0;
+  const parts = [];
+  if(s.trackingNumber) parts.push(`追跡番号 ${esc(s.trackingNumber)}`);
+  if(n) parts.push(`写真 ${n}枚`);
+  if(s.letterPackType) parts.push(esc(LETTERPACK_TYPE_LABEL[s.letterPackType]||""));
+  return parts.length ? `<div style="font-size:12px;color:var(--color-ink-muted)">${parts.join("・")}</div>` : "";
+}
+
+// ===== 追跡番号の写真（2026-10-19 #5） =====
+// Storage: shipments/{shipmentId}/tracking/{file}（storage.rules で @tadakayo.jp の職員だけ読み書き）
+// shipments.trackingPhotos = [{path, uploadedAt(ISO文字列), uploadedBy}] ／ 任意の shipments.trackingNumber（手入力）
+let trackShipId = null;
+function trackShipOf(id){ return shipments.find(x=>x._id===id) || null; }
+function openTrackModal(s){
+  trackShipId = s._id;
+  document.getElementById("trackTitle").textContent = `追跡番号の写真（${s.soNumber||""}）`;
+  document.getElementById("trackNumber").value = s.trackingNumber || "";
+  document.getElementById("trackFiles").value = "";
+  document.getElementById("trackError").style.display = "none";
+  document.getElementById("trackStatus").textContent = "";
+  renderTrackPhotos();
+  document.getElementById("trackModal").classList.add("open");
+}
+function closeTrackModal(){ document.getElementById("trackModal").classList.remove("open"); trackShipId = null; }
+async function renderTrackPhotos(){
+  const box = document.getElementById("trackPhotos");
+  const s = trackShipOf(trackShipId);
+  const list = (s && Array.isArray(s.trackingPhotos)) ? s.trackingPhotos : [];
+  if(!list.length){ box.innerHTML = `<div style="font-size:12px;color:var(--color-ink-muted)">まだ写真はありません。</div>`; return; }
+  const forId = trackShipId;
+  box.innerHTML = list.map((p,i)=>`<figure style="margin:0;width:120px">
+      <a data-i="${i}" class="track-open" target="_blank" rel="noopener" style="display:block;width:120px;height:120px;border:1px solid var(--color-line);border-radius:8px;overflow:hidden;background:#f3f1ec">
+        <img data-i="${i}" alt="追跡番号の写真 ${i+1}" style="width:100%;height:100%;object-fit:cover"></a>
+      <figcaption style="font-size:11px;color:var(--color-ink-muted);line-height:1.4;margin-top:2px">${esc(jstDateTime(p.uploadedAt))}<br>${esc(p.uploadedBy||"")}</figcaption>
+      <button class="btn btn-secondary track-del" data-i="${i}" type="button" style="font-size:11px;padding:2px 8px;margin-top:2px"><i class="ti ti-trash" aria-hidden="true"></i>この写真を削除</button>
+    </figure>`).join("");
+  list.forEach(async (p,i)=>{
+    try{
+      const url = await getDownloadURL(storageRef(storage, p.path));
+      if(trackShipId!==forId) return;
+      const img = box.querySelector(`img[data-i="${i}"]`); if(img) img.src = url;
+      const a = box.querySelector(`a.track-open[data-i="${i}"]`); if(a) a.href = url;
+    }catch(e){ console.warn("tracking photo:", e.message); }
+  });
+  box.querySelectorAll(".track-del").forEach(b=>b.addEventListener("click",()=>deleteTrackPhoto(list[Number(b.dataset.i)])));
+}
+async function uploadTrackPhotos(){
+  const s = trackShipOf(trackShipId); if(!s) return;
+  const files = Array.from(document.getElementById("trackFiles").files || []);
+  const err = document.getElementById("trackError"); err.style.display = "none";
+  if(!files.length) return;
+  const bad = files.find(f=>!/^image\//.test(f.type||"") || f.size >= 20*1024*1024);
+  if(bad){ err.textContent = `画像（20MB未満）だけ追加できます: ${bad.name}`; err.style.display = "block"; return; }
+  const status = document.getElementById("trackStatus");
+  const who = currentUser.displayName||currentUser.email;
+  let done = 0;
+  try{
+    for(const f of files){
+      status.textContent = `アップロード中… ${done+1} / ${files.length}`;
+      const ext = (String(f.name||"").match(/\.([A-Za-z0-9]{1,5})$/)||[])[1] || (f.type.split("/")[1]||"jpg");
+      const path = `shipments/${s._id}/tracking/${Date.now()}_${done}.${ext.toLowerCase()}`;
+      await uploadBytes(storageRef(storage, path), f, { contentType: f.type });
+      await updateDoc(doc(db,"shipments",s._id), {
+        trackingPhotos: arrayUnion({ path, uploadedAt: new Date().toISOString(), uploadedBy: who }),
+        updatedAt: serverTimestamp() });
+      done++;
+    }
+    status.textContent = `${done}枚を追加しました`;
+  }catch(e){
+    err.textContent = `追加に失敗しました（${done}枚まで保存済み）: ${e.message}`; err.style.display = "block"; status.textContent = "";
+  }
+  document.getElementById("trackFiles").value = "";
+  // onSnapshot で shipments が更新されるのを少し待ってから描き直す
+  setTimeout(renderTrackPhotos, 600);
+}
+async function deleteTrackPhoto(p){
+  const s = trackShipOf(trackShipId); if(!s || !p) return;
+  if(!confirm("この写真を削除します。元に戻せません。よろしいですか？")) return;
+  const err = document.getElementById("trackError"); err.style.display = "none";
+  try{
+    await updateDoc(doc(db,"shipments",s._id), { trackingPhotos: arrayRemove(p), updatedAt: serverTimestamp() });
+    try{ await deleteObject(storageRef(storage, p.path)); }catch(e){ console.warn("delete tracking photo object:", e.message); }
+  }catch(e){ err.textContent = `削除に失敗しました: ${e.message}`; err.style.display = "block"; return; }
+  setTimeout(renderTrackPhotos, 600);
+}
+async function saveTrackNumber(){
+  const s = trackShipOf(trackShipId); if(!s) return;
+  const v = document.getElementById("trackNumber").value.trim();
+  const err = document.getElementById("trackError"); err.style.display = "none";
+  try{
+    await updateDoc(doc(db,"shipments",s._id), { trackingNumber: v, updatedAt: serverTimestamp() });
+    document.getElementById("trackStatus").textContent = v ? "追跡番号を保存しました" : "追跡番号を消しました";
+  }catch(e){ err.textContent = `保存に失敗しました: ${e.message}`; err.style.display = "block"; }
+}
+
 function renderShipments(ships){
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
@@ -1752,7 +1987,13 @@ function renderShipments(ships){
     const docReceipt = st==="paid" ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-receipt-2"></i>領収証${s.receiptIssuedAt?`（発行済 ${esc(String(s.receiptIssuedAt).slice(5))}）`:""}</a>` : "";
     const docRefund = refundSum(s)>0 ? `<a class="btn btn-secondary" href="/supply-print.html?type=refund&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>返金明細書${s.refundStatementIssuedAt?`（発行済 ${esc(String(s.refundStatementIssuedAt).slice(5))}）`:""}</a>` : "";
     const docShipnote = `<a class="btn btn-secondary" href="/supply-print.html?type=ship&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>送付状</a>`;
-    const docLetterpack = `<a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>`;
+    const docLetterpack = `<a class="btn btn-secondary" href="/supply-print.html?type=letterpack&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-fast"></i>宛名</a>`
+      // A4に印刷してレターパックに貼る宛名ページ（出荷指示の投稿にも載るURL・2026-10-19 #4b）
+      + `<a class="btn btn-secondary" href="/letterpack-print.html?id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-printer"></i>宛名印刷（A4）</a>`;
+    // 発送済以降: 追跡番号の写真・出荷指示の再送（2026-10-19 #4・#5）
+    const shippedLike = st==="shipped"||st==="invoiced"||st==="paid";
+    const trackBtn = shippedLike ? `<button class="btn btn-secondary track-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-camera"></i>追跡番号の写真${Array.isArray(s.trackingPhotos)&&s.trackingPhotos.length?`（${s.trackingPhotos.length}）`:""}</button>` : "";
+    const notifyBtn = shipNotifyShown(s) ? `<button class="btn btn-secondary resend-notify" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-send"></i>${s.shipNotifiedAt?"出荷指示をもう一度投稿":"出荷指示を再送"}</button>` : "";
     const editBtn = `<button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${shipIsLocked(s)?"請求済のため送付先のみ修正できます":"数量・送付先・送料を修正"}"><i class="ti ti-edit"></i>送付先・数量を直す</button>`;
     const typeBtn = `<button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>請求先を変える</button>`;
     // 「この出荷を削除」は下書きだけ（2026-09-14）。発送済以降は取り消したい場合キャンセルへ誘導する
@@ -1769,7 +2010,8 @@ function renderShipments(ships){
       // 発送済の「次の一手」は請求済にする＝赤（下書きの「発送済にする」・請求済の「入金を記録する」と同じ扱い・2026-09-14）
       lifeBtns = `<button class="btn btn-primary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>請求済にする</button>`
         + docInvoice
-        + editBtn + docLetterpack + docShipnote + docRefund
+        + (s.shipNotifiedAt ? "" : notifyBtn) + trackBtn
+        + editBtn + docLetterpack + docShipnote + docRefund + (s.shipNotifiedAt ? notifyBtn : "")
         + typeBtn + cancelBtn;
     } else if(st==="invoiced"){
       // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → キャンセルにする
@@ -1784,14 +2026,14 @@ function renderShipments(ships){
         // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
         + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
         + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
-        + docRefund + docLetterpack + docShipnote
+        + docRefund + docLetterpack + docShipnote + trackBtn + notifyBtn
         + editBtn + typeBtn + cancelBtn;
     } else if(st==="paid"){
       // 流れの順: 領収証 → 入金の履歴を見る →（返金明細）→ 請求書・宛名・送付状 → 送付先・数量を直す → 請求先を変える
       // 入金がある出荷はキャンセル不可（返金の手続きが先＝既存の返金フローに任せる）。削除も不可
       lifeBtns = docReceipt
         + `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴を見る</button>`
-        + docRefund + docInvoice + docLetterpack + docShipnote
+        + docRefund + docInvoice + docLetterpack + docShipnote + trackBtn + notifyBtn
         + editBtn + typeBtn;
     } else {
       // canceled: 記録として残すだけ。帳票リンク・修正系のボタンは出さず、理由を小さく表示する
@@ -1802,7 +2044,7 @@ function renderShipments(ships){
     return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}</td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
       <td style="font-size:12px">${summary}</td>
       <td>
         <!-- ボタンが増えて右にはみ出し、削除が画面外で押せなくなっていた（2026-09-01）。
@@ -1828,6 +2070,12 @@ function renderShipments(ships){
   }));
   document.querySelectorAll(".type-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) openShipTypeModal(s);
+  }));
+  document.querySelectorAll(".track-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) openTrackModal(s);
+  }));
+  document.querySelectorAll(".resend-notify").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) resendShipNotice(s);
   }));
   document.querySelectorAll(".confirm-draft-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) confirmDraftShipment(s);
@@ -2318,33 +2566,40 @@ async function openInvoiceReport(s, opts){
   // 金額は一覧と同じ billableIncl（＝税込合計−過入金の充当）を使う。
   // invoice-doc.js の invoiceTotals().payable と同値だが、一覧表示とズレないよう supply.js 側の関数を正とする
   const amountText = yen(billableIncl(s));
-  // 請求月: 新規はこれから請求済にするので当日。後追い報告は既存の請求日を使う（請求書の記載とズレないように）
-  const invoicedAt = invReportOnly ? (s.invoicedAt || today()) : today();
-  // 支払期限は請求書の記載（請求月の翌月末）と一致させる
+  // 請求書の発行日: 新規は入力欄（既定は今日・2026-10-19 #6）。後追い報告は既存の請求日を使う（請求書の記載とズレないように）
+  const dateIn = document.getElementById("invReportDate");
+  document.getElementById("invReportDateWrap").style.display = invReportOnly ? "none" : "";
+  if(!invReportOnly) dateIn.value = today();
+  const invoicedAt = invReportOnly ? (s.invoicedAt || today()) : dateIn.value;
+  // 支払期限は請求書の記載と一致させる（dueRule:'net14' は発行日＋14日・従来は請求月の翌月末）
   const due = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
   const deliverTo = [s.company, s.officeName].filter(Boolean).join(" / ");
   const contactName = (st.accountingContactName || "").trim();
   const acctEmail = (st.accountingEmail || "").trim();
-  const webhook = (st.accountingChatWebhookUrl || "").trim();
+  // 経理の投稿先は設定画面の「有効／停止」に従う（未定義は有効。停止中は投稿しない＝functions の resolveWebhook と同じ）
+  const webhook = st.accountingChatWebhookEnabled === false ? "" : (st.accountingChatWebhookUrl || "").trim();
 
-  const fill=(t)=>String(t||"")
+  // dueOverride: 発行日を入れ直したときの支払期限（renderInvReportDated から渡す）
+  const fill=(t, dueOverride)=>String(t||"")
     .split("{{経理担当}}").join(contactName || "経理ご担当")
     .split("{{請求書番号}}").join(invNo)
     .split("{{請求先}}").join(billToOf(s))
     .split("{{納品先}}").join(deliverTo)
     .split("{{請求金額}}").join(amountText)
-    .split("{{支払期限}}").join(due || "（未設定）")
+    .split("{{支払期限}}").join((dueOverride ?? due) || "（未設定）")
     .split("{{出荷番号}}").join(s.soNumber||"")
     .split("{{出荷日}}").join(s.shipDate||"");
 
   document.getElementById("invReportTitle").textContent = invReportOnly
     ? `経理へ報告（${s.soNumber}）` : `請求済にする（${s.soNumber}）`;
+  // 発行日を変えたら、支払期限・メール本文・プレビューの請求書を描き直す（下の renderInvReportDated）
+  invReportFill = { fill, contactName, deliverTo, amountText, invNo };
   document.getElementById("invReportSummary").innerHTML =
     `<div><strong>請求書番号</strong>　${esc(invNo)}</div>`
     + `<div><strong>請求先</strong>　${esc(billToOf(s))}</div>`
     + (deliverTo?`<div><strong>納品先</strong>　${esc(deliverTo)}</div>`:"")
     + `<div><strong>請求金額（税込）</strong>　${esc(amountText)}</div>`
-    + `<div><strong>支払期限</strong>　${esc(due||"（未設定）")}</div>`
+    + `<div><strong>支払期限</strong>　<span id="invReportDue">${esc(due||"（未設定）")}</span>${s.dueRule==="net14"?`<span style="font-size:12px;color:var(--color-ink-muted)">（請求書の発行日から14日）</span>`:""}</div>`
     + (s.accountingReportedAt
         ? `<div style="color:var(--color-warn,#c87a1f);margin-top:4px"><i class="ti ti-alert-triangle"></i> この出荷は ${esc(s.accountingReportedAt)} に経理へ報告済みです（再発行ならチェックを外してください）</div>`
         : "");
@@ -2368,6 +2623,8 @@ async function openInvoiceReport(s, opts){
   cb.closest("label").style.display = (invReportOnly && ready) ? "none" : "flex";
   document.getElementById("invReportSubject").value = fill(st.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT);
   document.getElementById("invReportBody").value = fill(st.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY);
+  invReportFill.lastSubject = document.getElementById("invReportSubject").value;
+  invReportFill.lastBody = document.getElementById("invReportBody").value;
   // PDF生成の対象。請求書の発行日は請求済にする当日＝請求書PDFの記載と支払期限を揃える
   // 書面の「担当」は案件の担当営業（無ければ空欄のまま）。
   // ⚠ この関数には送付先担当者の contactName が既にあるので別名にする
@@ -2378,10 +2635,33 @@ async function openInvoiceReport(s, opts){
   // PDF はこの文脈からその場で作り直す（プレビュー枠の中身を使うと、更新前に押したとき前の案件の請求書が入る・2026-10-09）
   invReportCtx = { id: s._id, st, salesRepName, invoicedAt };
   document.getElementById("invReportPreview").innerHTML =
-    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt }, st, { products, contactName: salesRepName });
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, st, { products, contactName: salesRepName, issueDate: jpYmd(invoicedAt) });
   document.getElementById("invReportError").style.display="none";
   syncInvReportFields();
   document.getElementById("invReportModal").classList.add("open");
+}
+// "YYYY-MM-DD" → "YYYY年M月D日"（請求書の発行日の表記。supply-print.js の jpDateOf と同じ）
+function jpYmd(ymd){ const m=String(ymd||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m?`${+m[1]}年${+m[2]}月${+m[3]}日`:""; }
+let invReportFill = null; // { fill, lastSubject, lastBody, ... } 発行日を変えたときの差し込み直し用
+// 発行日の入力が変わったら、支払期限・メールの件名本文（手で直していなければ）・プレビューの請求書を描き直す
+function renderInvReportDated(){
+  const s = invReportShip; if(!s || invReportOnly || !invReportCtx || invReportCtx.id!==s._id) return;
+  const invoicedAt = document.getElementById("invReportDate").value;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(invoicedAt)) return;
+  invReportCtx.invoicedAt = invoicedAt;
+  const due = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+  const dueEl = document.getElementById("invReportDue"); if(dueEl) dueEl.textContent = due || "（未設定）";
+  if(invReportFill){
+    const st = invReportCtx.st || {};
+    // 件名・本文は {{支払期限}} を含むので作り直す。ただし手で直した後なら上書きしない
+    const subjEl = document.getElementById("invReportSubject"), bodyEl = document.getElementById("invReportBody");
+    const subj = invReportFill.fill(st.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT, due);
+    const body = invReportFill.fill(st.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY, due);
+    if(subjEl.value === invReportFill.lastSubject){ subjEl.value = subj; invReportFill.lastSubject = subj; }
+    if(bodyEl.value === invReportFill.lastBody){ bodyEl.value = body; invReportFill.lastBody = body; }
+  }
+  document.getElementById("invReportPreview").innerHTML =
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, invReportCtx.st, { products, contactName: invReportCtx.salesRepName, issueDate: jpYmd(invoicedAt) });
 }
 // 「経理へ報告する」のON/OFFで、メール件名・本文・プレビューの表示とボタン名を切り替える
 function syncInvReportFields(){
@@ -2400,6 +2680,15 @@ async function doInvoiceReport(){
   const err = document.getElementById("invReportError"); err.style.display="none";
   if(send && (!subject || !body.trim())){ err.textContent="件名・本文は必須です"; err.style.display="block"; return; }
   if(invReportOnly && !send){ err.textContent="報告先が未設定です。「設定」画面で登録してください"; err.style.display="block"; return; }
+  // 請求書の発行日（2026-10-19 #6）。後追い報告では使わない（既存の請求日のまま）
+  const issueYmd = invReportOnly ? "" : document.getElementById("invReportDate").value;
+  if(!invReportOnly){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(issueYmd)){ err.textContent="請求書の発行日を入れてください"; err.style.display="block"; return; }
+    if(s.shipDate && issueYmd < s.shipDate
+      && !confirm(`請求書の発行日（${issueYmd}）が出荷日（${s.shipDate}）より前です。このまま請求済にしますか？`)) return;
+    // 入力欄を変えたのに描き直しが走っていない場合に備えて、PDF の描画材料もこの日付にそろえる
+    if(invReportCtx && invReportCtx.id===s._id) invReportCtx.invoicedAt = issueYmd;
+  }
   const btn = document.getElementById("doInvReportBtn"); const orig = btn.innerHTML;
   btn.disabled = true;
   try{
@@ -2409,9 +2698,11 @@ async function doInvoiceReport(){
       cur = { ...s };
     }else{
       btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 請求済にしています...';
-      const invoicedAt = today();
-      await updateDoc(doc(db,"shipments",s._id),{ status:"invoiced", invoicedAt, updatedAt:serverTimestamp() });
-      cur = { ...s, status:"invoiced", invoicedAt };
+      const invoicedAt = issueYmd;
+      // 支払期限は請求済にした時点で確定値として保存する（以後、計算の規則が変わっても請求書の記載とずれない）
+      const dueDate = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+      await updateDoc(doc(db,"shipments",s._id),{ status:"invoiced", invoicedAt, ...(dueDate?{ dueDate }:{}), updatedAt:serverTimestamp() });
+      cur = { ...s, status:"invoiced", invoicedAt, ...(dueDate?{ dueDate }:{}) };
     }
 
     // 2) 経理へ報告（PDFはブラウザで生成 → 関数がStorage保存・メール添付・Chat投稿）
@@ -2425,7 +2716,9 @@ async function doInvoiceReport(){
         const stEl = document.createElement("style"); stEl.id = "invoice-pdf-style"; stEl.textContent = INVOICE_STYLE; document.head.appendChild(stEl);
       }
       const freshHost = document.createElement("div");
-      freshHost.innerHTML = renderInvoiceHtml({ ...s, invoicedAt: cur.invoicedAt || invReportCtx.invoicedAt }, invReportCtx.st, { products, contactName: invReportCtx.salesRepName });
+      const pdfInvoicedAt = cur.invoicedAt || invReportCtx.invoicedAt;
+      freshHost.innerHTML = renderInvoiceHtml({ ...s, invoicedAt: pdfInvoicedAt, dueDate: dueDateOf({ ...cur, invoicedAt: pdfInvoicedAt }) || "" }, invReportCtx.st,
+        { products, contactName: invReportCtx.salesRepName, issueDate: jpYmd(pdfInvoicedAt) });
       const el = freshHost.querySelector(".inv");
       if(!el) throw new Error("請求書を作れませんでした");
       if(!el.textContent.includes(invNo)) throw new Error(`請求書の番号が一致しません（${invNo}）。いったん閉じて開き直してください`);
@@ -2598,27 +2891,39 @@ async function shipFromOrder(o){
     return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:partnerPriceFor(p, Number(it.qty)||0) };
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
-  const fromLoc = defaultLocationId();
-  if(stockItems(items).length && !fromLoc){ alert("保管場所が登録されていません。先に在庫タブで追加してください"); return; }
-  for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
-    if(!p || stockAt(p,fromLoc)<it.qty){ alert(`在庫不足: ${it.name}（${locationName(fromLoc)} ${p?stockAt(p,fromLoc):0} / 必要 ${it.qty}）。先に在庫を補充してください`); return; } }
-  if(!confirm(`受注（${o.partnerName||o.partnerEmail}）を直送出荷として登録します。\n送付先: ${sh.officeName||""}\n在庫から引き落とします。よろしいですか？`)) return;
+  if(stockItems(items).length && !defaultLocationId()){ alert("保管場所が登録されていません。先に在庫タブで追加してください"); return; }
+  // 出荷日・出荷元・レターパックの種類を確認してから登録する（在庫不足の確認もダイアログ側で行う・2026-10-19）
+  const ans = await askShipDetails({
+    title: `受注から出荷する（${o.partnerName||o.partnerEmail||""}）`,
+    summaryHtml: `<div>受注（${esc(o.partnerName||o.partnerEmail||"")}）を直送出荷として登録し、発送済にします。</div>`
+      + `<div><strong>送付先</strong>　${esc(sh.company||"")} ${esc(sh.officeName||"")}</div>`
+      + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([sh.postal?`〒${sh.postal}`:"", sh.address||""].filter(Boolean).join(" "))}</div>`,
+    usesStock: true, locId: defaultLocationId(), date: today(), letterPackType: "", items,
+  });
+  if(!ans) return;
+  const fromLoc = ans.originLocationId || defaultLocationId();
+  let newShipId="", soNumber="";
   try{
-    const soNumber=seqFmt("SH",await nextSeq("shipments"));
+    soNumber=seqFmt("SH",await nextSeq("shipments"));
     const packs=Math.max(1,Math.ceil(items.reduce((a,i)=>a+i.qty,0)/3));
-    await addDoc(collection(db,"shipments"),{
+    const newRef = await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"shipped", partnerOrderId:o._id,
       originLocationId: fromLoc, originLocationName: locationName(fromLoc),
       shippingMethod:"letterpack", shippingFee:taxExcl(packs*letterpackFee()), shippingLabel:`送料（レターパック ${packs}通）`,
-      shipDate:today(), postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
+      shipDate:ans.shipDate, postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
+      ...(o.desiredDeliveryDate ? { desiredDeliveryDate:o.desiredDeliveryDate } : {}),
+      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+    newShipId = newRef.id;
     for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(fromLoc,-it.qty));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,fromLoc)); }
     await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
-    toast(`受注を出荷登録しました（${soNumber}）`);
-  }catch(e){ alert(`出荷登録失敗: ${e.message}`); }
+  }catch(e){ alert(`出荷登録失敗: ${e.message}`); return; }
+  const head = `受注を出荷登録しました（${soNumber}）`;
+  toast(`${head}。出荷指示を投稿しています...`);
+  toast(`${head}。${await postShipNotice(newShipId)}`);
 }
 
 // ===== パートナー管理 =====
@@ -2938,6 +3243,17 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("cancelInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
   document.getElementById("invReportSend").addEventListener("change",syncInvReportFields);
   document.getElementById("doInvReportBtn").addEventListener("click",doInvoiceReport);
+  document.getElementById("invReportDate").addEventListener("change",renderInvReportDated);
+  // 発送済にする前の確認（出荷日・出荷元・レターパックの種類・2026-10-19）
+  document.getElementById("closeShipDoneBtn").addEventListener("click",()=>closeShipDone(null));
+  document.getElementById("cancelShipDoneBtn").addEventListener("click",()=>closeShipDone(null));
+  document.getElementById("doShipDoneBtn").addEventListener("click",doShipDone);
+  document.getElementById("shipDoneOrigin").addEventListener("change",updateShipDoneHint);
+  // 追跡番号の写真（2026-10-19）
+  document.getElementById("closeTrackBtn").addEventListener("click",closeTrackModal);
+  document.getElementById("cancelTrackBtn").addEventListener("click",closeTrackModal);
+  document.getElementById("trackFiles").addEventListener("change",uploadTrackPhotos);
+  document.getElementById("saveTrackNumberBtn").addEventListener("click",saveTrackNumber);
   // 催促メールモーダル
   document.getElementById("closeDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));
   document.getElementById("cancelDunBtn").addEventListener("click",()=>document.getElementById("dunModal").classList.remove("open"));

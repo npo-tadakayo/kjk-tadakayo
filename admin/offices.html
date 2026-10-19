@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>事業所 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">事業所</h1>
+      </div>
+      <p class="page-intro">事業所ごとに案件をまとめて見られます（読み取り専用）。アーカイブ済み・失注・完了の案件も含むので、過去の対応を探すときに使います。行を押すと、その事業所の案件が開きます。</p>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+      <div id="main" style="display:none">
+        <div class="filter-bar">
+          <input type="search" id="searchInput" placeholder="事業所名・法人名・住所で検索..." style="flex:1; min-width:200px;" aria-label="事業所名・法人名・住所で検索">
+          <select id="prefFilter" aria-label="都道府県で絞り込み"><option value="">すべての都道府県</option></select>
+          <span id="countLabel" style="font-size:13px;color:var(--color-ink-muted);white-space:nowrap"></span>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table id="officesTable">
+              <thead><tr>
+                <th>法人名</th><th>事業所名</th><th>都道府県</th><th>市区町村</th>
+                <th>案件数</th><th>最新の案件のステータス</th><th>最終更新日</th>
+              </tr></thead>
+              <tbody id="officesBody"></tbody>
+            </table>
+            <div id="emptyEl" class="empty-state" style="display:none"><i class="ti ti-building" aria-hidden="true"></i><p>条件に合う事業所がありません</p></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/offices.js" type="module"></script>
+</body>
+</html>

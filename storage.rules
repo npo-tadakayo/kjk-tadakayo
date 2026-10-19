@@ -23,6 +23,27 @@ service firebase.storage {
       allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
       allow write: if false;
     }
+    // 出荷の追跡番号のシール写真（2026-10-19 CRM改修 #5）。見るのは @tadakayo.jp の職員。
+    // 置く・消すのは、Firestore の isEditor() と同じ条件（users/{email} に登録・active・viewer 以外）。
+    // 閲覧専用の人が証跡の写真だけを消せないようにするため（Codex レビュー指摘・2026-10-19）。
+    // ⚠ firestore.get を使うので、初回の deploy で「Storage から Firestore を読む権限」の付与を求められる。
+    // 置けるのは画像だけ・1枚20MBまで（スマホの撮影そのまま）。削除は request.resource が無いので別に許可する
+    match /shipments/{shipmentId}/tracking/{fileName} {
+      function isStaffMail() {
+        return request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      }
+      function isEditorUser() {
+        return isStaffMail()
+          && firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email))
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.active == true
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'viewer';
+      }
+      allow read: if isStaffMail();
+      allow delete: if isEditorUser();
+      allow create, update: if isEditorUser()
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size < 20 * 1024 * 1024;
+    }
     match /quotes/{caseId}/{fileName} {
       allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
       allow write: if false;

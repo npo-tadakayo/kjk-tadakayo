@@ -9,8 +9,9 @@ import {
   STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS_SHORT, PHASES, LOST,
   phaseOf, phaseEntryStatus, STALE_DAYS, TERMINAL, ACTIVE_PRE_APPLY,
   DEADLINE, daysUntilDeadline, daysSince, resolveDeadline, deadlineLabel,
-  referralLabel,
+  referralLabel, LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
+import { askLostReason } from "/js/case-detail-util.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -106,13 +107,18 @@ function cardHtml(c, col) {
   const stale = isStale(c);
   const src = SOURCE_LABELS_SHORT[c.source];
   const referral = referralLabel(c.referralSource, appSettings); // 紹介元（流入元とは別）
+  const visit = c.visitDate ? `${Number(c.visitDate.slice(5, 7))}/${Number(c.visitDate.slice(8, 10))}` : "";
+  const lostInfo = Number(c.status) === LOST
+    ? `<div class="kanban-card-sub" style="font-size:12px;color:var(--color-ink-muted)">理由: ${escHtml(lostReasonLabel(c))}</div>` : "";
   return `
     <div class="kanban-card ${stale ? "stale" : ""}" draggable="true" data-id="${c._id}" data-status="${c.status}">
       <div class="kanban-card-num">#${c.caseNumber || "—"}${src ? " · " + src : ""}</div>
       <div class="kanban-card-office">${escHtml(c.officeName || "—")}</div>
       <div class="kanban-card-sub">${substatusControl(c, col)}</div>
+      ${lostInfo}
       <div class="kanban-card-meta">
         <span><i class="ti ti-user" aria-hidden="true"></i> ${escHtml(c.assignedUserName || "未割当")}</span>
+        ${visit ? `<span title="訪問予定日 ${escHtml(c.visitDate)}"><i class="ti ti-calendar-event" aria-hidden="true"></i> 訪問 ${visit}</span>` : ""}
         ${referral ? `<span><i class="ti ti-share" aria-hidden="true"></i> ${escHtml(referral)}</span>` : ""}
         ${since !== null ? `<span class="${stale ? "stale-flag" : ""}">${stale ? "停滞 " : ""}${since}日前</span>` : ""}
       </div>
@@ -181,13 +187,24 @@ async function changeStatus(id, newStatus) {
   const c = allCases.find((x) => x._id === id);
   if (!c || c.status === newStatus) return;
   const prev = c.status;
+  // 失注にするときは理由を聞く（キャンセルなら何も変えない）。失注から戻すときは理由を消す
+  const patch = { status: newStatus, updatedAt: serverTimestamp() };
+  let lostNote = "";
+  if (newStatus === LOST) {
+    const r = await askLostReason(LOST_REASONS);
+    if (!r) { renderBoard(); return; } // セレクトの表示を元に戻す
+    patch.lostReason = r.reason; patch.lostReasonNote = r.note || null;
+    lostNote = `失注の理由: ${LOST_REASONS[r.reason]}${r.note ? `（${r.note}）` : ""}`;
+  } else if (prev === LOST) {
+    patch.lostReason = null; patch.lostReasonNote = null;
+  }
   try {
-    await updateDoc(doc(db, "cases", id), { status: newStatus, updatedAt: serverTimestamp() });
+    await updateDoc(doc(db, "cases", id), patch);
     await addDoc(collection(db, "activities"), {
       caseId: id, type: "memo", occurredAt: serverTimestamp(),
       userId: currentUser.uid, userName: currentUser.displayName || currentUser.email,
       subject: `ステータス変更 ${STATUS_LABELS[prev]} → ${STATUS_LABELS[newStatus]}`,
-      body: "（カンバンで変更）", attachmentUrls: [],
+      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : ""), attachmentUrls: [],
     });
     toast(`#${c.caseNumber} ${c.officeName} → ${STATUS_LABELS[newStatus]}`);
   } catch (e) {

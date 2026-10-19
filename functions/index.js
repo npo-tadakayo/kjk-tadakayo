@@ -40,9 +40,72 @@ async function getSettings() {
   _settingsAt = Date.now();
   return _settingsCache;
 }
-async function getChatWebhook() {
+// 投稿先の解決（2026-10-19 Webhook設定メニュー）。kind: 'crm' | 'pm' | 'shipping' | 'accounting'
+// 停止スイッチ（<kind>ChatWebhookEnabled）が false のとき、または URL が空のときは '' を返す。未定義は「有効」扱い。
+// crm だけは従来どおり Secret CHAT_WEBHOOK_URL へのフォールバックを残す（設定が空でも通知を止めない）。
+const WEBHOOK_FIELDS = {
+  crm: { url: "chatWebhookUrl", enabled: "chatWebhookEnabled" },
+  pm: { url: "pmChatWebhookUrl", enabled: "pmChatWebhookEnabled" },
+  shipping: { url: "shippingChatWebhookUrl", enabled: "shippingChatWebhookEnabled" },
+  accounting: { url: "accountingChatWebhookUrl", enabled: "accountingChatWebhookEnabled" },
+};
+function resolveWebhook(kind, s, secretValue) {
+  const f = WEBHOOK_FIELDS[kind];
+  if (!f) return "";
+  const st = s || {};
+  if (st[f.enabled] === false) return "";
+  const url = String(st[f.url] || "").trim();
+  if (url) return url;
+  return kind === "crm" ? (secretValue || "") : "";
+}
+async function getWebhook(kind) {
   const s = await getSettings();
-  return (s && s.chatWebhookUrl) || CHAT_WEBHOOK_URL.value() || "";
+  return resolveWebhook(kind, s, kind === "crm" ? CHAT_WEBHOOK_URL.value() : "");
+}
+
+// 通知本文用の地域ラベル「【大阪府 豊中市】」。住所が手元になければ offices から引く。取れなければ「（地域不明）」。
+// 利用者・被保険者の情報は扱わない（事業所の都道府県・市区町村のみ）。
+// 住所の先頭から「都道府県」「市区町村」を拾う。offices には prefecture/city が無く address しか無いことが多い。
+// 政令市は「大阪市北区」まで、郡部は「八重瀬町」（郡名を除く）。「大和郡山市」のように市名に「郡」を含む場合は市を優先。
+// 取れなければ空オブジェクト
+function regionFromAddress(addr) {
+  const a = String(addr || "").replace(/^\s*〒?\s*\d{3}-?\d{4}\s*/, "").replace(/\s+/g, "");
+  const m = /^(東京都|北海道|(?:京都|大阪)府|.{2,3}?県)/.exec(a);
+  if (!m) return {};
+  const rest = a.slice(m[1].length);
+  const iShi = rest.indexOf("市"), iGun = rest.indexOf("郡");
+  let city = "";
+  if (iGun > 0 && (iShi < 0 || iGun < iShi)) {
+    const g = /^.+?郡(.+?[町村])/.exec(rest);
+    if (g && !g[1].includes("市")) city = g[1]; // 「大和郡山市…町」を郡として読まない
+  }
+  if (!city) {
+    const c = /^(.+?市.+?区|.+?[市区町村])/.exec(rest);
+    if (c) city = c[1];
+    // 「○○市△△区」は政令市のときだけ区まで残す（「市川市八幡」等で誤って区まで伸ばさない）
+    if (/^.+?市.+?区$/.test(city) && !/^(札幌|仙台|さいたま|千葉|横浜|川崎|相模原|新潟|静岡|浜松|名古屋|京都|大阪|堺|神戸|岡山|広島|北九州|福岡|熊本)市/.test(city)) {
+      city = city.replace(/^(.+?市).*$/, "$1");
+    }
+  }
+  return { prefecture: m[1], city };
+}
+function formatRegion(prefecture, city) {
+  const t = [prefecture, city].map((x) => String(x || "").trim()).filter(Boolean).join(" ");
+  return t ? `【${t}】` : "（地域不明）";
+}
+async function officeRegionLabel({ prefecture, city, officeId } = {}) {
+  let pref = prefecture, cty = city;
+  if (!(pref || cty) && officeId) {
+    try {
+      const od = await db.collection("offices").doc(String(officeId)).get();
+      if (od.exists) {
+        const o = od.data();
+        pref = o.prefecture; cty = o.city;
+        if (!(pref || cty)) { const r = regionFromAddress(o.address); pref = r.prefecture; cty = r.city; }
+      }
+    } catch (e) { console.warn("officeRegionLabel failed:", e.message); }
+  }
+  return formatRegion(pref, cty);
 }
 
 // ===== Vertex AI (Gemini) — SA認証/ADC・鍵なし =====
@@ -309,10 +372,11 @@ exports.webhookLpInquiry = onRequest(
         // 同じ事業所からの再問い合わせは、最新の希望を採用する（既存案件の inquiryIntent を更新）
         await db.collection("cases").doc(existing.id)
           .update({ updatedAt: now, message: body.message || existing.message || "", inquiryIntent: intent });
-        const chatWebhook = await getChatWebhook();
+        const chatWebhook = await getWebhook("crm");
+        const regionLp = await officeRegionLabel({ prefecture: body.prefecture, city: body.city, officeId: existing.officeId });
         await notifyChat(
           chatWebhook,
-          `${INQUIRY_INTENT_EMOJI[intent]} LP問い合わせ（既存の案件 #${existing.caseNumber} に追記）\nご希望: ${INQUIRY_INTENT_LABEL[intent]}\n事業所: ${officeName}\n担当者: ${body.name || ""}\nメッセージ: ${body.message || ""}`
+          `${INQUIRY_INTENT_EMOJI[intent]} LP問い合わせ（既存の案件 #${existing.caseNumber} に追記）\nご希望: ${INQUIRY_INTENT_LABEL[intent]}\n事業所: ${regionLp}${officeName}\n担当者: ${body.name || ""}\nメッセージ: ${body.message || ""}`
         );
         await notifyInquiryMail({
           officeName, corpName: body.corpName || "", name: body.name || "", phone: body.phone || "",
@@ -387,10 +451,10 @@ exports.webhookLpInquiry = onRequest(
         attachmentUrls: [],
       });
 
-      const chatWebhook = await getChatWebhook();
+      const chatWebhook = await getWebhook("crm");
       await notifyChat(
         chatWebhook,
-        `${INQUIRY_INTENT_EMOJI[intent]} 新規LP問い合わせ [案件 #${caseNumber}]\nご希望: ${INQUIRY_INTENT_LABEL[intent]}\n事業所: ${officeData.officeName}\n担当者: ${body.name || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nメッセージ: ${body.message || ""}`
+        `${INQUIRY_INTENT_EMOJI[intent]} 新規LP問い合わせ [案件 #${caseNumber}]\nご希望: ${INQUIRY_INTENT_LABEL[intent]}\n事業所: ${formatRegion(prefecture, city)}${officeData.officeName}\n担当者: ${body.name || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nメッセージ: ${body.message || ""}`
       );
       await notifyInquiryMail({
         officeName: officeData.officeName, corpName: body.corpName || "", name: body.name || "",
@@ -574,7 +638,7 @@ async function createOrUpdateMitsumoriQuote(input, groupMeta) {
 
   const crSummary = cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ");
   return {
-    ok: true, duplicate: false, created, caseId, caseNumber, officeName,
+    ok: true, duplicate: false, created, caseId, caseNumber, officeName, officeId, prefecture, city,
     quoteId: quoteRef.id, estNo, version, quoteToken: accessToken, validUntil: validUntil.toDate(),
     calc, cardReaders, crSummary,
   };
@@ -645,11 +709,12 @@ exports.webhookMitsumori = onRequest(
         const notifySettings = await getSettings();
         if (notifySettings.notifyQuoteChat === true && oks.some((r) => !r.duplicate)) {
           const created = oks.filter((r) => !r.duplicate);
-          const chatWebhook = await getChatWebhook();
+          const chatWebhook = await getWebhook("crm");
+          const regions = await Promise.all(created.map((r) => officeRegionLabel(r)));
           await notifyChat(
             chatWebhook,
             `📝 見積もり作成（${created.length}事業所・${body.corpName || ""}）\n`
-            + created.map((r) => `・${r.estNo} ${r.officeName}（${r.calc.plan.label}）¥${fmtNum(r.calc.totalIncl)}`).join("\n")
+            + created.map((r, i) => `・${r.estNo} ${regions[i]}${r.officeName}（${r.calc.plan.label}）¥${fmtNum(r.calc.totalIncl)}`).join("\n")
           );
         }
 
@@ -697,10 +762,11 @@ exports.webhookMitsumori = onRequest(
       // 相談・お申し込みの通知（webhookLpInquiry・acceptQuote）はこの設定に関係なく従来どおり送る。
       const notifySettings = await getSettings();
       if (notifySettings.notifyQuoteChat === true) {
-        const chatWebhook = await getChatWebhook();
+        const chatWebhook = await getWebhook("crm");
+        const regionQ = await officeRegionLabel(r);
         await notifyChat(
           chatWebhook,
-          `📝 見積もり作成 ${r.estNo}（v${r.version}）${INTENT_LABEL[body.intent] || ""} [案件 #${r.caseNumber}${r.created ? "・新規" : ""}]\n事業所: ${r.officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${r.calc.plan.label}\n構成: ${r.crSummary}\n金額: ¥${fmtNum(r.calc.totalIncl)}（自己負担 ¥${fmtNum(r.calc.selfPay)}）`
+          `📝 見積もり作成 ${r.estNo}（v${r.version}）${INTENT_LABEL[body.intent] || ""} [案件 #${r.caseNumber}${r.created ? "・新規" : ""}]\n事業所: ${regionQ}${r.officeName} (${body.corpName || ""})\n担当者: ${body.contactName || ""}\nメール: ${email}\nプラン: ${r.calc.plan.label}\n構成: ${r.crSummary}\n金額: ¥${fmtNum(r.calc.totalIncl)}（自己負担 ¥${fmtNum(r.calc.selfPay)}）`
         );
       }
 
@@ -1107,11 +1173,12 @@ exports.acceptQuote = onRequest(
             } catch (e) { console.error("acceptQuote(group) mail error:", e); }
           }
 
-          const chatWebhook = await getChatWebhook();
+          const chatWebhook = await getWebhook("crm");
+          const regionsA = await Promise.all(newly.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
           await notifyChat(
             chatWebhook,
             `🛒 お申し込み（${newly.length}事業所・${first.corpName || ""}）\n`
-            + newly.map((r) => `・#${r.q.caseNumber} ${r.q.officeName}（${r.q.estNo}）出荷 ${r.soNumber} ¥${yen(r.q.amounts?.totalIncl)}`).join("\n")
+            + newly.map((r, i) => `・#${r.q.caseNumber} ${regionsA[i]}${r.q.officeName}（${r.q.estNo}）出荷 ${r.soNumber} ¥${yen(r.q.amounts?.totalIncl)}`).join("\n")
             + `\nお支払い: ${PAY_LABELS[payKey]}\n供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
           );
         }
@@ -1171,10 +1238,11 @@ exports.acceptQuote = onRequest(
         } catch (e) { console.error("acceptQuote mail error:", e); }
       }
 
-      const chatWebhook = await getChatWebhook();
+      const chatWebhook = await getWebhook("crm");
+      const regionAq = await officeRegionLabel({ officeId: q.officeId });
       await notifyChat(
         chatWebhook,
-        `🎉 お申し込みを受け付けました [案件 #${q.caseNumber}]\n見積: ${q.estNo}（v${q.version}）\n事業所: ${q.officeName}（${q.corpName || ""}）\n`
+        `🎉 お申し込みを受け付けました [案件 #${q.caseNumber}]\n見積: ${q.estNo}（v${q.version}）\n事業所: ${regionAq}${q.officeName}（${q.corpName || ""}）\n`
         + `金額: ${yen(q.amounts?.totalIncl)}（自己負担 ${yen(q.amounts?.selfPay)}）\nお支払い: ${PAY_LABELS[payKey]}\n`
         + `出荷 ${soNumber} の下書きを作りました。供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
       );
@@ -1538,13 +1606,16 @@ exports.saveQuotePdf = onCall(
   }
 );
 
+const WEBHOOK_KIND_LABELS = { crm: "CRM通知", pm: "PM", shipping: "出荷指示", accounting: "経理" };
 exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
-  const url = await getChatWebhook();
-  if (!url) throw new HttpsError("failed-precondition", "Chat Webhook URLが未設定です");
+  const kind = (request.data && request.data.kind) || "crm";
+  if (!WEBHOOK_KIND_LABELS[kind]) throw new HttpsError("invalid-argument", "投稿先の種類が不正です");
   _settingsCache = null; // 最新設定で送る
-  await notifyChat(await getChatWebhook(), `✅ タダカヨCRM 設定テスト通知（送信者: ${email}）`);
+  const url = await getWebhook(kind);
+  if (!url) throw new HttpsError("failed-precondition", `${WEBHOOK_KIND_LABELS[kind]}の投稿先は未設定、または停止中です`);
+  await notifyChat(url, `✅ タダカヨCRM 設定テスト通知（${WEBHOOK_KIND_LABELS[kind]}の投稿先・送信者: ${email}）`);
   return { ok: true };
 });
 
@@ -1577,7 +1648,16 @@ async function buildFollowupDigest() {
   if (!unassigned.length && !stale.length && !deadlineNear.length && !awaitingDeposit.length) {
     return null; // 通知不要
   }
-  const line = (c) => `・#${c.caseNumber || "?"} ${c.officeName || "(名称未登録)"}（${STATUS_LABELS_FN[c.status] || "?"}）`;
+  // 事業所の都道府県・市区町村を付ける（offices を一括で引く。取れなければ「（地域不明）」）
+  const officeSnap = await db.collection("offices").get();
+  const officeMap = new Map(officeSnap.docs.map((d) => [d.id, d.data()]));
+  const regionOf = (c) => {
+    const o = officeMap.get(c.officeId) || {};
+    if (o.prefecture || o.city) return formatRegion(o.prefecture, o.city);
+    const r = regionFromAddress(o.address);
+    return formatRegion(r.prefecture, r.city);
+  };
+  const line = (c) => `・#${c.caseNumber || "?"} ${regionOf(c)}${c.officeName || "(名称未登録)"}（${STATUS_LABELS_FN[c.status] || "?"}）`;
   const sec = (title, arr) => arr.length
     ? `\n*${title}（${arr.length}件）*\n${arr.slice(0, 10).map(line).join("\n")}${arr.length > 10 ? `\n…ほか${arr.length - 10}件` : ""}` : "";
 
@@ -1596,7 +1676,7 @@ exports.dailyFollowup = onSchedule(
   async () => {
     try {
       const msg = await buildFollowupDigest();
-      if (msg) await notifyChat(await getChatWebhook(), msg);
+      if (msg) await notifyChat(await getWebhook("crm"), msg);
       console.log("dailyFollowup done:", msg ? "通知あり" : "通知不要");
     } catch (e) {
       console.error("dailyFollowup error:", e);
@@ -2040,7 +2120,7 @@ exports.reportInvoiceToAccounting = onCall(
     if (!subject || !body) throw new HttpsError("invalid-argument", "件名・本文は必須です");
 
     const st = await getSettings();
-    const webhookUrl = st.accountingChatWebhookUrl || "";
+    const webhookUrl = resolveWebhook("accounting", st, ""); // 停止中・空欄なら '' （メールだけ送る）
     const to = (st.accountingEmail || "").trim();
     const cc = (st.accountingEmailCc || "").trim();
     const contactName = (st.accountingContactName || "").trim();
@@ -2134,6 +2214,153 @@ exports.reportInvoiceToAccounting = onCall(
     }
 
     return result;
+  }
+);
+
+// ===== 出荷指示の投稿（2026-10-19 CRM改修 #4・#4b） =====
+// 「発送済にする」を押した時点で、設定の「出荷指示の投稿先」（getWebhook('shipping')）へ投稿する。
+// 受注時点では投稿しない。投稿先が空欄・停止中なら投稿せず、発送済の操作自体は止めない（呼び出し側は結果だけ見る）。
+// 二重投稿の防止: shipments.shipNotifiedAt があれば投稿しない（resend:true の再送ボタンだけは再投稿する）。
+// 載せるのは出荷に必要な事業所側の情報（宛名・住所・電話・ご担当者名）だけ。出荷データに利用者・被保険者の情報は無い。
+// ⚠️ Webhook の URL はログにも戻り値にも出さない。
+const LETTERPACK_LABELS = { light: "レターパックライト（青）", plus: "レターパックプラス（赤）" };
+const NON_SHIP_SKUS = new Set(["support-fee", "discount"]);
+function shipmentChatMessage(s, shipmentId, o) {
+  const items = (Array.isArray(s.items) ? s.items : [])
+    .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
+    .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
+  const toAddr = [s.postal ? `〒${s.postal}` : "", s.address || ""].filter(Boolean).join(" ");
+  const rows = [
+    ["出荷番号", s.soNumber || shipmentId],
+    ["地域", o.region],
+    ["出荷日", s.shipDate || ""],
+    ["出荷元", s.originLocationName || (s.fulfillment === "direct" ? "AB Circleから直送（自社在庫を通さない）" : "")],
+    ["レターパックの種類", LETTERPACK_LABELS[s.letterPackType] || "未選択"],
+    ["届け先の住所", toAddr],
+    ["会社名", s.company || ""],
+    ["事業所名", s.officeName || ""],
+    ["宛名", s.contactName ? `${s.contactName} 様` : `${s.officeName || ""} ご担当者様`],
+    ["電話", s.phone || ""],
+    ["品目", items.join("\n")],
+    ["希望到着日", s.desiredDeliveryDate || ""],
+    ["追跡番号", s.trackingNumber || ""],
+    ["追跡番号の写真", Array.isArray(s.trackingPhotos) && s.trackingPhotos.length ? `あり（${s.trackingPhotos.length}枚・CRMで確認）` : ""],
+    ["発送済にした人", s.shippedBy || o.byName],
+  ].filter((r) => String(r[1] || "").trim());
+  const printUrl = `${CRM_BASE_URL}/letterpack-print.html?id=${encodeURIComponent(shipmentId)}`;
+  const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
+  const head = o.resend ? "📦 出荷指示（再送）" : "📦 出荷指示";
+  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）
+  const text = [
+    `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
+    ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
+    `🖨 レターパックの宛名印刷: ${printUrl}`,
+    `👉 CRMの出荷: ${crmUrl}`,
+  ].join("\n");
+  return {
+    text,
+    cardsV2: [{
+      cardId: `shipment-${shipmentId}`,
+      card: {
+        header: { title: o.resend ? "出荷指示（再送）" : "出荷指示", subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}` },
+        sections: [
+          { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
+          { widgets: [{ buttonList: { buttons: [
+            { text: "宛名を印刷（A4）", onClick: { openLink: { url: printUrl } } },
+            { text: "CRMで開く", onClick: { openLink: { url: crmUrl } } },
+          ] } }] },
+        ],
+      },
+    }],
+  };
+}
+
+exports.notifyShipment = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
+  async (request) => {
+    const email = request.auth?.token?.email || "";
+    if (!email.endsWith("@tadakayo.jp")) {
+      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    }
+    // 発送済にできる人（firestore.rules の isEditor 相当＝登録済み・有効・閲覧のみでない）だけが投稿できる
+    const u = await db.collection("users").doc(email).get();
+    const ud = u.exists ? u.data() : null;
+    if (!ud || ud.active !== true || ud.role === "viewer") {
+      throw new HttpsError("permission-denied", "出荷指示を投稿する権限がありません");
+    }
+    const { shipmentId, resend } = request.data || {};
+    if (!shipmentId || typeof shipmentId !== "string") throw new HttpsError("invalid-argument", "出荷IDは必須です");
+    const ref = db.collection("shipments").doc(shipmentId);
+    const byName = request.auth?.token?.name || email;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    // 二重投稿の防止（同時に2回押されたときも1回にするため、トランザクションで「投稿中」の印を付ける）
+    let s;
+    const gate = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return { stop: "not-found" };
+      const d = snap.data();
+      if (!["shipped", "invoiced", "paid"].includes(d.status)) return { stop: "not-shipped" };
+      if (d.shipNotifiedAt && !resend) return { stop: "already" };
+      const lockAt = d.shipNotifyLockAt && d.shipNotifyLockAt.toMillis ? d.shipNotifyLockAt.toMillis() : 0;
+      if (lockAt && Date.now() - lockAt < 60000) return { stop: "busy" };
+      tx.update(ref, { shipNotifyLockAt: admin.firestore.Timestamp.now() });
+      s = d;
+      return {};
+    });
+    if (gate.stop === "not-found") throw new HttpsError("not-found", "出荷が見つかりません");
+    if (gate.stop === "not-shipped") throw new HttpsError("failed-precondition", "発送済になっていない出荷は投稿できません");
+    if (gate.stop === "already") return { posted: false, reason: "already" };
+    if (gate.stop === "busy") return { posted: false, reason: "busy" };
+
+    // 活動記録（案件にひも付いている出荷だけ。案件が無い出荷は出荷側の記録だけ残る）
+    const logActivity = async (subject, body) => {
+      if (!s.caseId) return;
+      try {
+        await db.collection("activities").add({
+          caseId: s.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
+          subject, body, attachmentUrls: [],
+        });
+      } catch (e) { console.warn("notifyShipment activity failed:", e.message); }
+    };
+
+    _settingsCache = null; // 設定画面で直した直後でも最新の投稿先を使う
+    const st = await getSettings();
+    const url = await getWebhook("shipping");
+    if (!url) {
+      const reason = st.shippingChatWebhookEnabled === false ? "disabled" : "unset";
+      const why = reason === "disabled" ? "停止中" : "未設定";
+      await ref.update({ shipNotifyStatus: reason, shipNotifyAttemptAt: now, shipNotifyLockAt: null });
+      await logActivity(`出荷指示: 未投稿（${s.soNumber || ""}）`,
+        `出荷指示の投稿先が${why}のため、投稿していません。設定で投稿先を有効にしてから、出荷の画面の「再送」で投稿できます。`);
+      return { posted: false, reason };
+    }
+
+    try {
+      const officeRegion = s.officeId ? await officeRegionLabel({ officeId: s.officeId }) : "";
+      const region = officeRegion && officeRegion !== "（地域不明）"
+        ? officeRegion
+        : (() => { const r = regionFromAddress(s.address); return r.prefecture ? formatRegion(r.prefecture, r.city) : ""; })();
+      await postChatCard(url, shipmentChatMessage(s, shipmentId, { region, byName, resend: !!resend }));
+    } catch (e) {
+      // Chat の応答本文に URL は含まれないが、念のためメッセージは先頭だけ・URL らしき文字列は伏せて残す
+      const msg = String(e.message || e).replace(/https?:\/\/\S+/g, "(URL)").slice(0, 200);
+      console.error("notifyShipment chat failed:", msg);
+      await ref.update({ shipNotifyStatus: "error", shipNotifyError: msg, shipNotifyAttemptAt: now, shipNotifyLockAt: null });
+      await logActivity(`出荷指示: 投稿に失敗（${s.soNumber || ""}）`,
+        `出荷指示の投稿に失敗しました（${msg}）。出荷の画面の「再送」でやり直せます。発送済の記録はそのままです。`);
+      return { posted: false, reason: "error" };
+    }
+
+    await ref.update({
+      shipNotifiedAt: now, shipNotifiedBy: byName, shipNotifiedByEmail: email,
+      shipNotifyStatus: "posted", shipNotifyError: admin.firestore.FieldValue.delete(),
+      shipNotifyAttemptAt: now, shipNotifyLockAt: null,
+      shipNotifyCount: admin.firestore.FieldValue.increment(1),
+    });
+    await logActivity(`出荷指示: 投稿しました${resend ? "（再送）" : ""}（${s.soNumber || ""}）`,
+      `出荷指示の投稿先へ、出荷 ${s.soNumber || ""} の指示を投稿しました（投稿者: ${byName}）。`);
+    return { posted: true, resent: !!resend };
   }
 );
 

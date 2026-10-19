@@ -10,8 +10,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 import { getFunctions, httpsCallable }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
-  referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS } from "/js/constants.js";
-import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit } from "/js/case-detail-util.js";
+  referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
+import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -72,6 +72,29 @@ function renderCaseHeader(c) {
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
+  renderLostReason(c);
+  const vd = document.getElementById("visitDateInput");
+  if (vd) vd.value = c.visitDate || "";
+}
+
+// 失注の理由の表示（ステータス横）。失注でなければ隠す。既存の失注案件は「未記入」。
+function renderLostReason(c) {
+  const el = document.getElementById("lostReasonInfo");
+  if (!el) return;
+  if (Number(c.status) !== LOST) { el.style.display = "none"; el.textContent = ""; return; }
+  el.style.display = "inline";
+  el.textContent = `理由: ${lostReasonLabel(c)}${c.lostReasonNote ? `（${c.lostReasonNote}）` : ""}`;
+}
+
+// ===== 訪問予定日（visitDate: "YYYY-MM-DD" の文字列） =====
+// 担当営業と同じ作法で、誰がいつ何日に変えたかをタイムラインに残す。
+async function saveVisitDate(value) {
+  const v = value || null;
+  const prev = currentCase.visitDate || "未設定";
+  await updateDoc(doc(db, "cases", caseId), { visitDate: v, updatedAt: serverTimestamp() });
+  currentCase.visitDate = v;
+  await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${prev}`);
+  showToast(v ? `訪問予定日を ${v} にしました` : "訪問予定日を未設定にしました");
 }
 
 // ===== 担当営業（assignedUserId / assignedUserName） =====
@@ -567,11 +590,17 @@ async function saveSubsidyInfo() {
 }
 
 // ステータス変更
-async function changeStatus(newStatus, userId, userName) {
-  await updateDoc(doc(db, "cases", caseId), {
-    status: Number(newStatus),
-    updatedAt: serverTimestamp(),
-  });
+// lost: 失注にするときの { reason, note }（それ以外は null）。失注から戻すときは理由を消す。
+async function changeStatus(newStatus, userId, userName, lost = null) {
+  const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
+  if (lost) {
+    patch.lostReason = lost.reason; patch.lostReasonNote = lost.note || null;
+  } else if (Number(currentCase?.status) === LOST) {
+    patch.lostReason = null; patch.lostReasonNote = null;
+  }
+  await updateDoc(doc(db, "cases", caseId), patch);
+  if (lost) { currentCase.lostReason = lost.reason; currentCase.lostReasonNote = lost.note || null; }
+  else if (patch.lostReason === null) { currentCase.lostReason = null; currentCase.lostReasonNote = null; }
   await addDoc(collection(db, "activities"), {
     caseId,
     type: "memo",
@@ -579,7 +608,7 @@ async function changeStatus(newStatus, userId, userName) {
     userId,
     userName,
     subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
-    body: "",
+    body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : "",
     attachmentUrls: [],
   });
 }
@@ -1501,6 +1530,21 @@ onAuthStateChanged(auth, async (user) => {
     }
   });
 
+  // 訪問予定日の変更（保存＋タイムラインに記録）
+  document.getElementById("visitDateInput")?.addEventListener("change", async (e) => {
+    const inp = e.target;
+    const prev = currentCase.visitDate || "";
+    inp.disabled = true;
+    try {
+      await saveVisitDate(inp.value);
+    } catch (err) {
+      inp.value = prev;
+      alert(`訪問予定日の保存に失敗しました: ${err.message || err}`);
+    } finally {
+      inp.disabled = false;
+    }
+  });
+
   // 紹介元の変更（値は id を保存。表示名は保存しない）
   document.getElementById("referralSelect")?.addEventListener("change", async (e) => {
     const sel = e.target;
@@ -1518,8 +1562,14 @@ onAuthStateChanged(auth, async (user) => {
 
   // ステータス変更
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
-    await changeStatus(e.target.value, user.uid, user.displayName || user.email);
+    let lost = null;
+    if (Number(e.target.value) === LOST) {
+      lost = await askLostReason(LOST_REASONS);
+      if (!lost) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
+    }
+    await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost);
     currentCase.status = Number(e.target.value);
+    renderLostReason(currentCase);
     renderNextStep(); // 次の一手を即座に更新
     showToast(`ステータスを「${STATUS_LABELS[e.target.value]}」に変更しました`);
   });
