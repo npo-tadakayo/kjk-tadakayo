@@ -67,6 +67,37 @@ export async function loadQuoteDocData(db, quoteId) {
 }
 
 // ---- 見積書のHTML本体（.qdoc 配下。印刷・PDF化はこの要素をそのまま渡す） ----
+// 明細を「品名・数量・単価・金額」と「伴走支援費」「金額調整」の行で出す（見積もりページ mitsumori.html と同じ形・2026-10-20）。
+// 金額は料金の正本 estimate-pricing.js（window.EstimatePricing）の computeAmounts だけで出し、自前で計算しない。
+// 保存済みの合計（quotes.amounts）と一致しないとき（料金改定前の見積もり等）は null を返し、従来の簡易の形で出す。
+function detailedQuoteRows(q, products) {
+  const EP = (typeof window !== "undefined" && window.EstimatePricing) || null;
+  if (!EP || !EP.PLANS[q.plan]) return null;
+  let bt = 0, btx = 0, usb = 0, usbx = 0, usbSku = null;
+  for (const it of (Array.isArray(q.items) ? q.items : [])) {
+    const sub = Number(it?.subsidyQty) || 0, ext = Number(it?.extraQty) || 0;
+    if (it?.sku === EP.SKU.BT) { bt += sub; btx += ext; }
+    else if (it?.sku === EP.SKU.USB_A || it?.sku === EP.SKU.USB_C) { usb += sub; usbx += ext; usbSku = it.sku; }
+    else return null; // 想定外の品番は簡易の形にする
+  }
+  const c = EP.computeAmounts(q.plan, bt, usb, btx, usbx);
+  const a = q.amounts || {};
+  if (c.totalIncl !== Number(a.totalIncl) || c.selfPay !== Number(a.selfPay) || c.discount !== Number(a.discount || 0)) return null;
+  const btName = productDisplayName(EP.SKU.BT, products); // 中で esc 済み
+  const usbName = productDisplayName(usbSku || EP.SKU.USB_A, products);
+  const r = [];
+  const row = (name, note, qty, unit, amount, style = "") =>
+    `<tr${style ? ` style="${style}"` : ""}><td>${name}${note ? `<div class="qdoc-sub-note">${note}</div>` : ""}</td><td>${qty}</td><td class="qdoc-num">${unit}</td><td class="qdoc-num">${amount}</td></tr>`;
+  if (bt > 0) r.push(row(btName, `補助対象 ${bt}台（伴走支援の対象）`, `${bt}台`, yen(EP.BT_PRICE), yen(c.btSubtotal)));
+  if (usb > 0) r.push(row(usbName, `補助対象 ${usb}台（伴走支援の対象）`, `${usb}台`, yen(EP.USB_PRICE), yen(c.usbSubtotal)));
+  if (c.subsidyTotal > 0) r.push(row(`伴走支援費<span class="qdoc-badge-free">申請手続きの支援を含む</span>`,
+    "初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談", "1式", yen(c.accFeeIncl), yen(c.accFeeIncl)));
+  if (c.discount > 0) r.push(row(`<strong>金額調整</strong>`, "合計を助成金の上限ぴったりに収めるための調整", "1式", `−${yen(c.discount)}`, `−${yen(c.discount)}`, "color:#c02828"));
+  if (btx > 0) r.push(row(btName, `補助対象外 ${btx}台（自己負担で追加）`, `${btx}台`, yen(EP.BT_PRICE), yen(c.btExtraSubtotal), "background:#fff8e1"));
+  if (usbx > 0) r.push(row(usbName, `補助対象外 ${usbx}台（自己負担で追加）`, `${usbx}台`, yen(EP.USB_PRICE), yen(c.usbExtraSubtotal), "background:#fff8e1"));
+  return r.join("");
+}
+
 // 見積書の発行元の担当（案件の担当営業が未割当のとき）
 export const DEFAULT_ISSUER_STAFF = "次田芳尚";
 
@@ -117,6 +148,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
     return rowsHtml.join("");
   }).join("");
 
+  const detailRows = detailedQuoteRows(q, products);
   const a = q.amounts || {};
   const zeroBadge = Number(a.selfPay) === 0 ? `<span class="qdoc-badge-zero">自己負担 ¥0</span>` : "";
   const extraRow = Number(a.extraPartTotal) > 0
@@ -175,11 +207,14 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
       <table class="qdoc-table">
         <thead><tr>
-          <th style="width:46%;text-align:left">品名・摘要</th>
+          ${detailRows ? `<th style="width:52%;text-align:left">品名・摘要</th>
+          <th style="width:10%">数量</th>
+          <th style="width:19%">単価（税込）</th>
+          <th style="width:19%">金額（税込）</th>` : `<th style="width:46%;text-align:left">品名・摘要</th>
           <th style="width:14%">数量</th>
-          <th style="width:40%" colspan="2">備考</th>
+          <th style="width:40%" colspan="2">備考</th>`}
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="3" style="text-align:center;color:var(--color-ink-muted)">明細がありません</td></tr>`}</tbody>
+        <tbody>${detailRows || rows || `<tr><td colspan="3" style="text-align:center;color:var(--color-ink-muted)">明細がありません</td></tr>`}</tbody>
       </table>
 
       <div class="qdoc-totals-wrap">
@@ -262,6 +297,8 @@ export const QUOTE_DOC_STYLE = `
 .qdoc-hanko{width:72px;height:72px;object-fit:contain;}
 .qdoc-hanko-ph{width:72px;height:72px;border:2px solid #c02828;display:flex;align-items:center;justify-content:center;color:#c02828;font-size:11px;text-align:center;line-height:1.5;}
 .qdoc-meta{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:6mm;}
+.qdoc-num{text-align:right;white-space:nowrap;}
+.qdoc-badge-free{display:inline-block;background:#1f7a4d;color:#fff;font-size:8.5pt;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:5px;vertical-align:1px;}
 .qdoc-to-corp{font-size:11pt;font-weight:600;color:#333;margin-bottom:2px;word-break:keep-all;overflow-wrap:anywhere;}
 .qdoc-to-name{font-size:15pt;font-weight:700;border-bottom:1.5px solid #111;padding-bottom:3px;margin-bottom:3px;min-width:180px;max-width:105mm;word-break:keep-all;overflow-wrap:anywhere;line-height:1.4;}
 .qdoc-to-honorific{font-size:11pt;font-weight:600;color:#111;margin-left:.6em;white-space:nowrap;}
