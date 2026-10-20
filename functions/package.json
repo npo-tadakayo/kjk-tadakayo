@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "タダカヨ介護情報基盤 CRM Cloud Functions",
   "engines": {
-    "node": "20"
+    "node": "22"
   },
   "main": "index.js",
   "dependencies": {
