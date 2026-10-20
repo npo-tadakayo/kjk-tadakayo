@@ -16,6 +16,7 @@ const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 const { defineSecret } = require("firebase-functions/params");
+const { roleAllows } = require("./accept-flow");
 
 const REGION = "asia-northeast1";
 const SA_ANALYTICS = "fn-analytics-sa@kjk-tadakayo.iam.gserviceaccount.com";
@@ -205,6 +206,11 @@ exports.collectAnalyticsNow = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
+    // 2026-10-21 管理者だけ（設計 §4）。index.js の requireStaff と同じ判定（循環 require を避けて判定関数だけ共用）
+    const db = admin.firestore();
+    let u = await db.collection("users").doc(email).get();
+    if (!u.exists && email.toLowerCase() !== email) u = await db.collection("users").doc(email.toLowerCase()).get();
+    if (!roleAllows(u.exists ? u.data() : null, "admin")) throw new HttpsError("permission-denied", "この操作は管理者だけができます");
     try {
       return await collectCore();
     } catch (e) {

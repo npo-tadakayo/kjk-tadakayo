@@ -107,6 +107,11 @@
           <span style="font-size:12px;color:var(--color-ink-muted)">担当は、出荷の元になった案件の担当営業です（案件につながらない卸の出荷は「未割当」）。下の件数・金額も絞り込みに合わせて変わります。</span>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
+        <!-- 入金明細の取り込み（2026-10-21 §7）: 銀行のCSVを照合して、人が選んだものだけ入金として記録する -->
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
+          <button class="btn btn-secondary" id="bankImportBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>入金明細を取り込む（CSV）</button>
+          <span style="font-size:12px;color:var(--color-ink-muted)">ネットバンキングの入出金明細から、振込人コード・金額で出荷の候補を出します。記録するのは選んだ行だけです。</span>
+        </div>
         <h3 style="font-size:14px;margin:16px 0 8px">未集金（請求先ごと）</h3>
         <div id="arSummary" style="margin-bottom:16px"></div>
         <h3 style="font-size:14px;margin:16px 0 8px">出荷の一覧</h3>
@@ -208,7 +213,7 @@
             <select class="form-control" id="shipPartner"></select></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label" for="shipDate">出荷日</label><input class="form-control" type="date" id="shipDate"></div>
+          <div class="form-group"><label class="form-label" for="shipDate">出荷日（依頼のときは希望出荷日）</label><input class="form-control" type="date" id="shipDate"></div>
           <div class="form-group"><label class="form-label" for="shipPostal">郵便番号</label><input class="form-control" type="text" id="shipPostal" placeholder="000-0000"></div>
         </div>
         <div class="form-group"><label class="form-label" for="shipCompany">法人名</label><input class="form-control" type="text" id="shipCompany"></div>
@@ -228,9 +233,9 @@
         <div class="form-group" id="shipOriginWrap">
           <label class="form-label" for="shipOrigin">発送元の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="shipOrigin"></select>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">発送済に確定したとき、この場所の在庫から引き落とします。</p>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">「発送済にする」を押したとき、この場所の在庫から引き落とします（出荷を依頼した時点では引き落としません）。</p>
         </div>
-        <!-- レターパックの種類（新規登録のときだけ。宛名印刷ページの色と出荷指示に使う・2026-10-19） -->
+        <!-- レターパックの種類と登録のしかた（新規登録のときだけ。宛名印刷ページの色と出荷指示に使う・2026-10-19／二段階化 2026-10-21） -->
         <div class="form-group" id="shipLetterPackWrap">
           <label class="form-label" for="shipLetterPack">レターパックの種類</label>
           <select class="form-control" id="shipLetterPack">
@@ -238,7 +243,11 @@
             <option value="light">レターパックライト（青）</option>
             <option value="plus">レターパックプラス（赤）</option>
           </select>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「発送済」になり、出荷指示を投稿します。</p>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「依頼済」になり、出荷指示を投稿します。在庫は、センターが発送したのを確認して「発送済にする」を押したときに引き落とします。</p>
+          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;margin-top:8px">
+            <input type="checkbox" id="shipAlreadyShipped" style="margin-top:3px">
+            <span>すでに発送済として登録（指示は送らない）<br><span style="font-size:11.5px;color:var(--color-ink-muted)">すでに届いている・手渡し済みなどの出荷に使います。登録と同時に発送済になり、在庫を引き落とします。出荷指示は投稿しません。</span></span>
+          </label>
         </div>
         <div id="shipItems"></div>
         <!-- 伴走支援費（電話・紙で受けた案件など、CRMで手作りする出荷に補助金上限までの構成を足す。
@@ -428,15 +437,15 @@
     </div>
   </div>
 
-  <!-- 発送済にする前の確認（出荷日・出荷元・レターパックの種類）。3つの経路で共通・2026-10-19 -->
-  <div class="modal-overlay" id="shipDoneModal" role="dialog" aria-modal="true" aria-label="発送済にする">
+  <!-- 出荷を依頼する／発送済にする／すでに発送済（記録のみ）の前の確認。3つの経路で共通・2026-10-19（二段階化で mode ごとに文言を差し替え・2026-10-21） -->
+  <div class="modal-overlay" id="shipDoneModal" role="dialog" aria-modal="true" aria-labelledby="shipDoneTitle">
     <div class="modal" style="max-width:560px">
       <div class="modal-header"><h2 id="shipDoneTitle">発送済にする</h2>
         <button class="btn btn-secondary" id="closeShipDoneBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <div id="shipDoneSummary" style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.8;margin-bottom:12px"></div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label" for="shipDoneDate">出荷日 <span style="color:red">*</span></label>
+          <div class="form-group"><label class="form-label" for="shipDoneDate"><span id="shipDoneDateLabel">出荷日</span> <span style="color:red">*</span></label>
             <input class="form-control" type="date" id="shipDoneDate"></div>
           <div class="form-group"><label class="form-label" for="shipDoneLp">レターパックの種類</label>
             <select class="form-control" id="shipDoneLp">
@@ -445,24 +454,24 @@
               <option value="plus">レターパックプラス（赤）</option>
             </select></div>
         </div>
-        <div class="form-group" id="shipDoneNoNoticeWrap" style="margin-bottom:10px">
-          <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">
-            <input type="checkbox" id="shipDoneNoNotice" style="margin-top:3px">
-            <span>出荷指示を送らない（記録だけ残す）<br><span style="font-size:11.5px;color:var(--color-ink-muted)">すでに届いている・手渡し済みなど、出荷のスペースに指示を出すと二重に送ってしまうときに使います</span></span>
-          </label>
-          <div id="shipDoneNoNoticeHint" style="display:none;font-size:11.5px;color:#b27800;margin-top:4px"></div>
+        <!-- 追跡番号（発送済にする・記録のみのときだけ。任意） -->
+        <div class="form-group" id="shipDoneTrackWrap">
+          <label class="form-label" for="shipDoneTrack">追跡番号（任意）</label>
+          <input class="form-control" type="text" id="shipDoneTrack" placeholder="例: 1234-5678-9012" autocomplete="off">
         </div>
+        <!-- 伴走支援が済んだ案件など、すでに届いている可能性があるときの注意 -->
+        <div id="shipDoneHint" style="display:none;font-size:11.5px;color:#b27800;margin:0 0 10px"></div>
         <div class="form-group" id="shipDoneOriginWrap">
           <label class="form-label" for="shipDoneOrigin">出荷元の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="shipDoneOrigin"></select>
         </div>
         <p id="shipDoneStockNote" style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px"></p>
-        <p style="font-size:12px;color:var(--color-ink-muted);margin:0">「発送済にする」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、発送済の記録だけ残ります）。</p>
+        <p id="shipDoneNote" style="font-size:12px;color:var(--color-ink-muted);margin:0"></p>
         <div id="shipDoneError" role="alert" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelShipDoneBtn" type="button">キャンセル</button>
-        <button class="btn btn-primary" id="doShipDoneBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>発送済にする</button>
+        <button class="btn btn-primary" id="doShipDoneBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i><span id="shipDoneBtnLabel">発送済にする</span></button>
       </div>
     </div>
   </div>
@@ -827,6 +836,71 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelImportBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="doImportBtn" type="button" disabled><i class="ti ti-check" aria-hidden="true"></i>受注として登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 入金明細の取り込み（2026-10-21 §7）。CSV 全体は保存しない。記録した行だけ bankTxns に最小限を残す -->
+  <div class="modal-overlay" id="bankModal" role="dialog" aria-modal="true" aria-labelledby="bankModalTitle">
+    <div class="modal" style="max-width:1080px">
+      <div class="modal-header"><h2 id="bankModalTitle">入金明細を取り込む</h2>
+        <button class="btn btn-secondary" id="closeBankBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <!-- 1. ファイル -->
+        <div class="form-group">
+          <label class="form-label" for="bankFile">1. 明細ファイル（.csv）</label>
+          <input class="form-control" id="bankFile" type="file" accept=".csv,text/csv">
+          <div id="bankFileInfo" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></div>
+        </div>
+        <!-- 2. 列の割り当て -->
+        <div id="bankMapWrap" style="display:none">
+          <div class="form-label" style="margin-bottom:6px">2. 列の割り当て（先頭5行で確かめてください）</div>
+          <div class="table-wrap" style="margin-bottom:10px"><table style="font-size:12px">
+            <thead id="bankPreviewHead"></thead><tbody id="bankPreviewBody"></tbody>
+          </table></div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankPreset">保存した割り当て</label>
+              <select class="form-control" id="bankPreset"><option value="">（選ばない）</option></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankSkip">読み飛ばす見出し行</label>
+              <input class="form-control" id="bankSkip" type="number" min="0" max="50" value="1" style="width:90px"></div>
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankColDate">日付</label>
+              <select class="form-control bank-col" id="bankColDate"></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankMode">入金額の形</label>
+              <select class="form-control" id="bankMode">
+                <option value="split">入金・出金が別の列</option>
+                <option value="single">1つの列（出金はマイナス）</option>
+              </select></div>
+            <div class="form-group bank-split" style="margin:0"><label class="form-label" for="bankColDeposit">入金</label>
+              <select class="form-control bank-col" id="bankColDeposit"></select></div>
+            <div class="form-group bank-split" style="margin:0"><label class="form-label" for="bankColWithdrawal">出金（任意）</label>
+              <select class="form-control bank-col" id="bankColWithdrawal"></select></div>
+            <div class="form-group bank-single" style="margin:0;display:none"><label class="form-label" for="bankColAmount">入金額</label>
+              <select class="form-control bank-col" id="bankColAmount"></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankColPayer">名義</label>
+              <select class="form-control bank-col" id="bankColPayer"></select></div>
+            <div class="form-group" style="margin:0"><label class="form-label" for="bankColBalance">残高（任意）</label>
+              <select class="form-control bank-col" id="bankColBalance"></select></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px">
+            <input class="form-control" id="bankPresetName" type="text" maxlength="40" placeholder="割り当ての名前（例: ○○銀行）" style="max-width:240px">
+            <button class="btn btn-secondary" id="bankSavePresetBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>この割り当てを保存</button>
+            <button class="btn btn-primary" id="bankMatchBtn" type="button"><i class="ti ti-arrows-exchange" aria-hidden="true"></i>照合する</button>
+          </div>
+        </div>
+        <div id="bankError" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-top:10px"></div>
+        <!-- 3. 照合表 -->
+        <div id="bankResultWrap" style="display:none;margin-top:16px">
+          <div class="form-label" style="margin-bottom:6px">3. 照合（記録する出荷を選んでください。最初から選ばれているのは、振込人コードと金額の両方が1対1で一致したものだけです）</div>
+          <div id="bankResultInfo" style="font-size:12px;color:var(--color-ink-muted);margin-bottom:6px"></div>
+          <div class="table-wrap"><table style="font-size:12px">
+            <thead><tr><th>日付</th><th class="num">金額</th><th>名義</th><th>記録する出荷</th><th>理由</th><th class="num">点数</th></tr></thead>
+            <tbody id="bankResultBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelBankBtn" type="button">閉じる</button>
+        <button class="btn btn-primary" id="doBankBtn" type="button" disabled><i class="ti ti-cash" aria-hidden="true"></i><span id="doBankLabel">選んだ 0件を入金として記録</span></button>
       </div>
     </div>
   </div>

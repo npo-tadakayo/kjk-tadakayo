@@ -25,6 +25,7 @@ function render(list){
       <td style="font-size:12px">${esc(u._id)}</td>
       <td><span class="badge badge-${ROLE_BADGE[u.role]||2}">${ROLE_LABEL[u.role]||u.role||"—"}</span></td>
       <td>${u.active!==false?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
+      <td>${u.chatUserId?'<span class="badge badge-3">設定済</span>':'<span class="badge badge-4">未設定</span>'}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-secondary edit-u" data-email="${esc(u._id)}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
         <button class="btn btn-danger del-u" data-email="${esc(u._id)}" data-name="${esc(u.name||u._id)}" style="font-size:12px;padding:4px 8px" ${u._id===myEmail?"disabled title='自分は削除できません'":""}><i class="ti ti-trash"></i></button>
@@ -47,6 +48,7 @@ function openModal(u){
   $("uName").value=u.name||"";
   $("uRole").value=u.role||"staff";
   $("uActive").value=(u.active!==false)?"true":"false";
+  $("uChatId").value=u.chatUserId||"";
   $("uError").style.display="none";
   $("userModal").classList.add("open");
 }
@@ -55,15 +57,17 @@ async function save(){
   const name=$("uName").value.trim();
   const role=$("uRole").value;
   const active=$("uActive").value==="true";
+  const chatUserId=$("uChatId").value.trim();
   const err=$("uError"); err.style.display="none";
   if(!/^[^\s@]+@tadakayo\.jp$/.test(email)){ err.textContent="@tadakayo.jp のメールアドレスを入力してください"; err.style.display="block"; return; }
   if(!name){ err.textContent="氏名を入力してください"; err.style.display="block"; return; }
+  if(chatUserId && !/^\d{5,30}$/.test(chatUserId)){ err.textContent="Google Chat のユーザーIDは数字5〜30桁で入力してください（不明なら空欄）"; err.style.display="block"; return; }
   if(!editing && usersCache.some(u=>u._id===email)){ err.textContent="このユーザーは既に登録されています"; err.style.display="block"; return; }
   // 自分自身を停止/降格して締め出すのを防ぐ
   if(email===myEmail && (!active || role!=="admin")){
     if(!confirm("自分自身の権限を変更します。管理者でなくなる/停止すると、この画面に入れなくなる可能性があります。続けますか？")) return;
   }
-  const data={ email, name, role, active, updatedAt:serverTimestamp() };
+  const data={ email, name, role, active, chatUserId, updatedAt:serverTimestamp() };
   if(!editing){ data.createdAt=serverTimestamp(); }
   await setDoc(doc(db,"users",email), data, {merge:true});
   $("userModal").classList.remove("open");

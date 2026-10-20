@@ -13,6 +13,12 @@ const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
 const { GoogleAuth } = require("google-auth-library");
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（公開ページと同じ計算）
+const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
+const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
+const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
+// 通知の分類と文面（純粋 ESM）。CommonJS からは import() で遅延ロードする
+let _nt;
+const loadNotify = () => (_nt ||= import("./notify-text.mjs"));
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -24,6 +30,9 @@ const SA_WEBHOOK = "fn-webhook-sa@kjk-tadakayo.iam.gserviceaccount.com"; // data
                                                                         // + kjk-gmail-sa tokenCreator（2026-09-09・問い合わせ通知メール用。宛先は自分たちの受信箱に固定）
 const SA_BATCH   = "fn-batch-sa@kjk-tadakayo.iam.gserviceaccount.com";   // datastore.user + CHAT secretAccessor
 const SA_AI      = "fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com";      // aiplatform.user のみ
+// ⚠️ デプロイ手順（2026-10-21）: aiAssist は requireStaff で users を読むので、fn-ai-sa に Firestore の読み取り権限
+//    （roles/datastore.viewer 以上）の付与が別途必要。無いと aiAssist が「権限の確認に失敗しました」（internal）になる。
+//    gcloud projects add-iam-policy-binding kjk-tadakayo --member=serviceAccount:fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/datastore.viewer
 const SA_MAIL    = "fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com";    // datastore.user + kjk-gmail-sa tokenCreator
 
 // アプリ設定（Firestore appConfig/settings）を読む。60秒キャッシュ・未設定は.env/既定にフォールバック
@@ -276,6 +285,34 @@ async function notifyChat(webhookUrl, message) {
   } catch (e) {
     console.error("Chat通知失敗:", e.message);
   }
+}
+
+// ===== Callable の共通認可（2026-10-21 設計 §4 P）=====
+// users/{email} に登録があり active===true の人だけ通す。allow:
+//   "viewer" … 登録済み・有効なら誰でも／"editor" … 閲覧のみ（viewer）以外／"admin" … 管理者のみ
+// firestore.rules の isRegistered / isEditor / isAdmin と同じ考え方。users の doc id はログインのメール
+// （rules と同じ）。大文字が混じる登録に備えて小文字でも引く。
+// ⚠️ 呼び出す関数の SA に Firestore の読み取り権限が要る（fn-ai-sa は aiplatform.user のみだったので追加が必要）。
+async function requireStaff(request, { allow = "editor" } = {}) {
+  const email = String(request.auth?.token?.email || "").trim();
+  if (!email || !email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+  let snap;
+  try {
+    snap = await db.collection("users").doc(email).get();
+    if (!snap.exists && email.toLowerCase() !== email) snap = await db.collection("users").doc(email.toLowerCase()).get();
+  } catch (e) {
+    // 実行 SA に Firestore の読み取り権限が無いと PERMISSION_DENIED(7) の素の例外になる。画面には分かる文言で返す（レビュー指摘 9）
+    console.error("requireStaff: users の読み取りに失敗", e && e.code, (e && e.message) || e);
+    throw new HttpsError("internal", "権限の確認に失敗しました（サービスアカウントの Firestore 読み取り権限を確認）");
+  }
+  const user = snap.exists ? snap.data() : null;
+  if (!Flow.roleAllows(user, allow)) {
+    const msg = allow === "admin" ? "この操作は管理者だけができます"
+      : allow === "editor" ? "この操作をする権限がありません（閲覧のみの利用者・未登録・無効の利用者はできません）"
+        : "このアプリの利用権限がありません";
+    throw new HttpsError("permission-denied", msg);
+  }
+  return { email, uid: request.auth.uid, user, name: user.name || user.displayName || request.auth?.token?.name || email };
 }
 
 // ===== App Check 手動検証（M-1 Webhook保護・段階移行 / SECURITY_REMEDIATION M-1） =====
@@ -604,6 +641,9 @@ async function createOrUpdateMitsumoriQuote(input, groupMeta) {
     leadToken: lead ? lead.id : null,
   };
   if (groupMeta) Object.assign(quoteData, { groupId: groupMeta.groupId, groupIndex: groupMeta.groupIndex, groupSize: groupMeta.groupSize });
+  // 出荷の参照（shipmentId/shipmentNo）は新しい版に引き継がない（2026-10-21 レビュー指摘 3）。
+  // 二重の下書きの再発防止は、申込のトランザクションが案件の出荷を見て使い直すこと（Flow.planWebShipment）で行う。
+  // 引き継ぐと、未申込の版で reviseQuote したときに申込済みの出荷の下書きが上書きされる。
   batch.set(quoteRef, quoteData);
   const caseUpdate = {
     latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
@@ -1015,72 +1055,225 @@ function shipmentNumberPrefix() {
   return `SH-${new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }).slice(0, 4)}-`;
 }
 
-// お申し込み1件分の状態確認と書き込み（トランザクション本体）。単一・複数の両方から呼ぶ共通コア。
+// お申し込みの確認メール（事業所宛）の本文。Web の申込（単一）とスタッフの受注確定で共用する（2026-10-21 切り出し）。
+function acceptMailText({ q, agreedName, payKey, delivery, preferredDate }) {
+  const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
+  const d = delivery || {};
+  return {
+    subject: `【NPO法人タダカヨ】お申し込みを受け付けました（${q.estNo}）`,
+    body:
+      `${[q.corpName, q.officeName].filter(Boolean).join("　")} 御中\n${String(agreedName).trim()} 様\n\n` +
+      `お申し込みをいただき、ありがとうございます。以下の内容で承りました。\n\n` +
+      `見積番号: ${q.estNo}（第${q.version}版）\n` +
+      `合計（税込）: ${yen(q.amounts?.totalIncl)}　／　助成金充当: ${yen(q.amounts?.grantAmt)}　／　自己負担: ${yen(q.amounts?.selfPay)}\n` +
+      `お支払い: ${PAY_LABELS[payKey]}\n` +
+      `お届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n` +
+      (preferredDate ? `ご希望日: ${preferredDate}\n` : "") +
+      `\nこのあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。\n` +
+      `台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。\n` +
+      `お気づきの点は、このメールへの返信でお知らせください。\n\n` +
+      `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+  };
+}
+// 複数事業所分をまとめた確認メール（Web の一括申込・スタッフのグループ受注確定で共用）。items = [{q, soNumber}]
+function acceptMailTextGroup({ items, agreedName, payKey, preferredDate }) {
+  const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
+  const first = items[0].q;
+  const lines = items.map((r) => `・${r.q.estNo}（${r.q.officeName || ""}） 出荷 ${r.soNumber} — 合計 ${yen(r.q.amounts?.totalIncl)}（自己負担 ${yen(r.q.amounts?.selfPay)}）`).join("\n");
+  return {
+    subject: `【NPO法人タダカヨ】お申し込みを受け付けました（${items.length}事業所分）`,
+    body:
+      `${first.corpName || ""} 御中\n${String(agreedName).trim()} 様\n\n` +
+      `お申し込みをいただき、ありがとうございます。以下の内容で承りました。\n\n` +
+      `${lines}\n\n` +
+      `お支払い: ${PAY_LABELS[payKey]}\n` +
+      (preferredDate ? `ご希望日: ${preferredDate}\n` : "") +
+      `\nこのあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。\n` +
+      `台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。\n` +
+      `お気づきの点は、このメールへの返信でお知らせください。\n\n` +
+      `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+  };
+}
+
+// 出荷の「使い直し・重複」の Chat 用の注記（Web・スタッフ共通）
+function acceptShipNote(r) {
+  const re = r.reopenedFrom ? `🔁 ${Flow.reopenLabel(r.reopenedFrom)}（案件を「受注確定」に戻しました）。` : "";
+  return [re, acceptShipNoteBody(r)].filter(Boolean).join(" ");
+}
+function acceptShipNoteBody(r) {
+  if (r.reused) {
+    return `既存の出荷 ${r.soNumber}（${r.reusedStatus === "requested" ? "依頼済み" : "下書き"}）を新しい内容に更新しました（新しい下書きは作っていません）。`
+      + (r.reusedStatus === "requested" ? " ⚠️ 出荷指示は投稿済みです。内容が変わる場合はセンターへ連絡してください。" : "");
+  }
+  if (r.duplicateWarning) {
+    return `⚠️ この案件には既に発送済みの出荷 ${r.existingNos.join("・") || "（番号なし）"} があります。重複していないか確認してください（出荷 ${r.soNumber} の下書きを作りました）。`;
+  }
+  return "";
+}
+
+// お申し込み1件分の状態確認と書き込み（トランザクション本体）。Web（単一・複数）とスタッフの受注確定から呼ぶ共通コア。
 // 二重送信（ボタン連打・回線の再送）で出荷の下書きが2つできるのを防ぐため、必ずトランザクションでまとめる。
-async function acceptQuoteTransaction({ quoteId, quoteToken, delivery, payKey, preferredDate, note, agreedName, agreedPolicy }) {
+// actor（2026-10-21 設計 §5 A）:
+//   {kind:"web"}（既定）… 事業所の申込。quoteToken で本人確認する
+//   {kind:"staff", email, uid, name, channel, receivedDate, acceptedName} … 電話・メール等で受けた申込をスタッフが確定。トークン確認なし
+// 共通: tx 内で案件の出荷を読み、
+//   Web   … 生きている draft/requested があれば新しく作らず使い直す（新規作成と同じ申込の項目〔届け先・明細・補助区分と台数・
+//            希望日・支払方法・メモ・見積番号〕を Flow.shipmentFieldsFromAccept で書き直す。soNumber・状態・出荷元は既存のまま）。
+//            発送済以降だけがあれば作成は続け、出荷に duplicateWarning:true（Chat に注記）
+//   Staff … checkStaffAccept（キャンセル以外の出荷があれば拒否・旧版・期限切れ〔受付日で比較〕など）
+// 案件の状態: 1・2 → 3。3・5〜12 は据え置き。4（失注）・13（完了）は再申込として受け付けて 3 に戻す（2026-10-21 レビュー指摘 4。
+//            活動の件名に「再申込で再開（失注から／完了から）」・cases.reopenedFrom/reopenedAt を記録）。
+async function acceptQuoteTransaction({ quoteId, quoteToken, delivery, payKey, preferredDate, note, agreedName, agreedPolicy, actor }) {
+  const who = actor && actor.kind === "staff" ? actor : { kind: "web" };
+  const staff = who.kind === "staff";
   const qRef = db.collection("quotes").doc(String(quoteId));
   const now = admin.firestore.FieldValue.serverTimestamp();
   const d = delivery || {};
-  let q = null, soNumber = null, alreadyAccepted = false, shipRefId = null;
+  const name = String(staff ? who.acceptedName : agreedName).trim();
+  const out = { q: null, soNumber: null, alreadyAccepted: false, shipRefId: null,
+    reused: false, reusedStatus: null, duplicateWarning: false, existingNos: [], caseStatusTo: null,
+    reopenedFrom: null, caseContactEmail: "" };
   await db.runTransaction(async (tx) => {
+    // ---- 読み取り（tx は読み取りを書き込みより前に済ませる）----
     const snap = await tx.get(qRef);
     if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
-    q = { id: snap.id, ...snap.data() };
-    if (q.accessToken !== quoteToken) throw new HttpsError("permission-denied", "この見積もりを操作する権限がありません");
-    if (q.status === "accepted") { alreadyAccepted = true; return; }
-    if (q.status !== "issued") throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（新しい見積もりが発行されている可能性があります）");
-    if (q.validUntil && q.validUntil.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "この見積もりは有効期限が切れています。お手数ですが、もう一度お見積もりをお作りください");
+    const q = { id: snap.id, ...snap.data() };
+    out.q = q;
+    if (!staff) {
+      if (q.accessToken !== quoteToken) throw new HttpsError("permission-denied", "この見積もりを操作する権限がありません");
+      if (q.status === "accepted") { out.alreadyAccepted = true; return; }
+      if (q.status !== "issued") throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（新しい見積もりが発行されている可能性があります）");
+      if (q.validUntil && q.validUntil.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "この見積もりは有効期限が切れています。お手数ですが、もう一度お見積もりをお作りください");
+    }
+    const caseRef = db.collection("cases").doc(String(q.caseId));
+    const caseSnap = await tx.get(caseRef);
+    const kase = caseSnap.exists ? caseSnap.data() : null;
+    const shipSnap = await tx.get(db.collection("shipments").where("caseId", "==", q.caseId));
+    const shipments = shipSnap.docs.map((x) => ({ id: x.id, ...x.data() }));
 
-    // 採番はトランザクションの中で行う（採番だけ進んで書き込みが失敗する事故を避ける）
+    let plan;
+    if (staff) {
+      const sibSnap = await tx.get(db.collection("quotes").where("caseId", "==", q.caseId));
+      const chk = checkStaffAccept({
+        quote: q, siblings: sibSnap.docs.map((x) => ({ id: x.id, ...x.data() })), kase, shipments,
+        receivedDate: who.receivedDate, todayYmd: todayJst(), acceptedName: name, channel: who.channel,
+      });
+      if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
+      plan = { reuse: null, duplicateWarning: false, existingNos: [] };
+    } else {
+      if (!kase) throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（案件が見つかりません）。お手数ですがお問い合わせください");
+      plan = Flow.planWebShipment(shipments, kase.shipmentId || null);
+    }
+    const stPlan = Flow.caseStatusOnAccept(kase && kase.status); // 4・13 も受け付けて 3 に戻す（reopenedFrom）
+    out.reopenedFrom = stPlan.reopenedFrom || null;
+    out.caseContactEmail = (kase && kase.contactEmail) || "";
+    let n = null;
     const cRef = db.collection("_counters").doc("shipments");
-    const cSnap = await tx.get(cRef);
-    const n = (cSnap.exists ? cSnap.data().value : 0) + 1;
-    tx.set(cRef, { value: n });
-    soNumber = `${shipmentNumberPrefix()}${String(n).padStart(4, "0")}`;
+    if (!plan.reuse) {
+      // 採番はトランザクションの中で行う（採番だけ進んで書き込みが失敗する事故を避ける）
+      const cSnap = await tx.get(cRef);
+      n = (cSnap.exists ? cSnap.data().value : 0) + 1;
+    }
 
-    const items = shipmentItemsFromQuote(q);
-    const shipRef = db.collection("shipments").doc();
-    shipRefId = shipRef.id;
-    tx.set(shipRef, {
-      soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "",
-      caseId: q.caseId, caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
-      company: d.company || q.corpName || "", officeName: d.officeName || q.officeName || "",
-      postal: d.postalCode || "", address: d.address || "",
-      contactName: d.contactName || q.contactName || "", phone: d.phone || "",
-      items, shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
-      // CRM「送付先・数量を直す」の伴走支援費ブロックが復元に使う（2026-09-14）
-      subsidyCategory: q.plan || null,
-      subsidyQty: {
-        bt: (q.items || []).filter((i) => i.sku === Pricing.SKU.BT).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0),
-        usb: (q.items || []).filter((i) => i.sku !== Pricing.SKU.BT).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0),
-      },
-      shipDate: todayJst(), preferredDate: preferredDate || "", payMethod: payKey,
-      orderNote: String(note || "").slice(0, 1000),
-      createdAt: now, createdBy: "web（事業所のお申し込み）",
+    // ---- 書き込み ----
+    // 申込の内容から決まる出荷の項目（新規作成と使い直しで同じもの。2026-10-21 レビュー指摘 1）
+    const orderFields = Flow.shipmentFieldsFromAccept({
+      q, delivery: d, shipItems: shipmentItemsFromQuote(q), btSku: Pricing.SKU.BT, preferredDate, payKey, note,
     });
-    tx.update(qRef, {
-      status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
-      acceptedBy: String(agreedName).trim().slice(0, 100), payMethod: payKey,
-      // 申し込み画面で「プライバシーポリシー・利用規約に同意」に入れたかどうかを残す（監査用）
-      agreedPolicy: agreedPolicy === true, agreedPolicyAt: now,
-      delivery: { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
-        address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" },
-    });
-    tx.update(db.collection("cases").doc(q.caseId), {
-      status: STATUS.ORDERED, orderedAt: now, orderedVia: "web", updatedAt: now,
-      shipmentId: shipRef.id, payMethod: payKey,
-    });
-    tx.set(db.collection("activities").doc(), {
-      caseId: q.caseId, type: "memo", occurredAt: now, userId: "system",
-      subject: `お申し込みを受け付けました（${q.estNo}・出荷 ${soNumber} の下書きを作成）`,
-      body: `お申し込み者: ${String(agreedName).trim()}\n支払方法: ${PAY_LABELS[payKey]}\n`
-        + `届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n`
-        + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
-        + (note ? `ご要望: ${note}\n` : ""),
-      attachmentUrls: [],
-    });
+    let shipId;
+    if (plan.reuse) {
+      shipId = plan.reuse.id;
+      out.soNumber = plan.reuse.soNumber || "";
+      out.reused = true;
+      out.reusedStatus = plan.reuse.status || "draft";
+      // 状態・番号・出荷元・作成日時は既存のまま。requested のときは Chat に「センターへ連絡」を注記（acceptShipNote）
+      tx.update(db.collection("shipments").doc(shipId), {
+        ...orderFields, updatedAt: now,
+        updatedBy: "web（事業所のお申し込み・既存の出荷を使い直し）",
+      });
+    } else {
+      tx.set(cRef, { value: n });
+      out.soNumber = `${shipmentNumberPrefix()}${String(n).padStart(4, "0")}`;
+      const shipRef = db.collection("shipments").doc();
+      shipId = shipRef.id;
+      const shipDoc = {
+        soNumber: out.soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "",
+        caseId: q.caseId, ...orderFields,
+        shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
+        shipDate: todayJst(),
+        createdAt: now, createdBy: staff ? Flow.staffCreatedBy(who.channel, who.email) : "web（事業所のお申し込み）",
+      };
+      if (plan.duplicateWarning) Object.assign(shipDoc, { duplicateWarning: true, duplicateOf: plan.existingNos });
+      tx.set(shipRef, shipDoc);
+      out.duplicateWarning = !!plan.duplicateWarning;
+      out.existingNos = plan.existingNos || [];
+    }
+    out.shipRefId = shipId;
+
+    const deliveryRec = { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
+      address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" };
+    const quoteUpdate = {
+      status: "accepted", acceptedAt: now, shipmentId: shipId, shipmentNo: out.soNumber,
+      acceptedBy: name.slice(0, 100), payMethod: payKey, delivery: deliveryRec,
+    };
+    if (staff) {
+      Object.assign(quoteUpdate, {
+        acceptedVia: "staff", acceptedChannel: who.channel, acceptedReceivedDate: who.receivedDate,
+        acceptedByStaff: who.email, agreedName: name.slice(0, 100),
+        agreedPolicy: null, // 同意の画面を通っていないので「同意した」とは記録しない（偽装しない）
+      });
+    } else {
+      Object.assign(quoteUpdate, {
+        acceptedVia: "web",
+        // 申し込み画面で「プライバシーポリシー・利用規約に同意」に入れたかどうかを残す（監査用）
+        agreedPolicy: agreedPolicy === true, agreedPolicyAt: now,
+      });
+    }
+    tx.update(qRef, quoteUpdate);
+
+    const caseUpdate = { updatedAt: now, shipmentId: shipId, payMethod: payKey };
+    if (stPlan.status != null) { caseUpdate.status = stPlan.status; out.caseStatusTo = stPlan.status; }
+    if (stPlan.reopenedFrom) Object.assign(caseUpdate, { reopenedFrom: stPlan.reopenedFrom, reopenedAt: now });
+    if (staff) {
+      Object.assign(caseUpdate, { orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: who.email });
+      // 受注日は最初の申込の日を保つ（Web と同じ。2026-10-21 レビュー指摘 5）。無ければ受付日（JST 0時）
+      const oMs = Flow.staffOrderedAtMs(kase, who.receivedDate);
+      if (oMs != null) caseUpdate.orderedAt = admin.firestore.Timestamp.fromMillis(oMs);
+    } else {
+      // 受注日は最初の申込の日を保つ（進んだ案件に再度の申込があっても月ごとの集計を動かさない）
+      if (!kase.orderedAt) caseUpdate.orderedAt = now;
+      caseUpdate.orderedVia = kase.orderedVia || "web";
+    }
+    tx.update(caseRef, caseUpdate);
+
+    const shipLine = out.reused
+      ? `既存の出荷 ${out.soNumber}（${out.reusedStatus === "requested" ? "依頼済み" : "下書き"}）を新しい内容に更新（新しい下書きは作っていません）`
+      : `出荷 ${out.soNumber} の下書きを作成${out.duplicateWarning ? `（⚠️ 発送済みの出荷 ${out.existingNos.join("・")} があります。重複の確認を）` : ""}`;
+    const stLine = stPlan.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`;
+    if (staff) {
+      tx.set(db.collection("activities").doc(), {
+        caseId: q.caseId, type: "memo", occurredAt: now, userId: who.uid || null, userName: who.email,
+        subject: Flow.staffAcceptSubject(who.channel, q.estNo, out.soNumber, out.reused, out.reopenedFrom),
+        body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[who.channel] || who.channel}\n受付日: ${who.receivedDate}\n`
+          + `支払方法: ${PAY_LABELS[payKey]}\n${shipLine}\n${stLine}`
+          + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+          + (note ? `メモ: ${note}\n` : ""),
+        attachmentUrls: [],
+      });
+    } else {
+      tx.set(db.collection("activities").doc(), {
+        caseId: q.caseId, type: "memo", occurredAt: now, userId: "system",
+        subject: Flow.webAcceptSubject(q.estNo, out.soNumber, out.reused, out.reopenedFrom),
+        body: `お申し込み者: ${name}\n支払方法: ${PAY_LABELS[payKey]}\n`
+          + `届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n`
+          + `${shipLine}\n${stLine}`
+          + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+          + (note ? `ご要望: ${note}\n` : ""),
+        attachmentUrls: [],
+      });
+    }
   });
-  return { q, soNumber, alreadyAccepted, shipRefId };
+  return out;
 }
 
 // 「各事業所の住所へ」用に、見積もりに紐づく事業所の住所を届け先へ変換する（無ければ見積もりの事業所名だけ使う）
@@ -1134,12 +1327,12 @@ exports.acceptQuote = onRequest(
               if (!preSnap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
               delivery = await deliveryFromOfficeForQuote({ id: preSnap.id, ...preSnap.data() });
             }
-            const { q, soNumber, alreadyAccepted } = await acceptQuoteTransaction({
+            const r = await acceptQuoteTransaction({
               quoteId: item.quoteId, quoteToken: item.quoteToken, delivery, payKey,
               preferredDate: body.preferredDate, note: body.note,
               agreedName: body.agreedName, agreedPolicy: body.agreedPolicy,
             });
-            results.push({ quoteId: item.quoteId, ok: true, q, soNumber: soNumber || q.shipmentNo || "", alreadyAccepted });
+            results.push({ ...r, quoteId: item.quoteId, ok: true, soNumber: r.soNumber || r.q.shipmentNo || "" });
           } catch (e) {
             const msg = e instanceof HttpsError ? e.message : (e.message || String(e));
             console.error("acceptQuote(group) item error:", item && item.quoteId, e);
@@ -1155,21 +1348,8 @@ exports.acceptQuote = onRequest(
           const to = first.contactEmail || "";
           if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
             try {
-              const lines = newly.map((r) => `・${r.q.estNo}（${r.q.officeName || ""}） 出荷 ${r.soNumber} — 合計 ${yen(r.q.amounts?.totalIncl)}（自己負担 ${yen(r.q.amounts?.selfPay)}）`).join("\n");
-              await sendGmail({
-                to, cc: GMAIL_SENDER,
-                subject: `【NPO法人タダカヨ】お申し込みを受け付けました（${newly.length}事業所分）`,
-                body:
-                  `${first.corpName || ""} 御中\n${String(body.agreedName).trim()} 様\n\n` +
-                  `お申し込みをいただき、ありがとうございます。以下の内容で承りました。\n\n` +
-                  `${lines}\n\n` +
-                  `お支払い: ${PAY_LABELS[payKey]}\n` +
-                  (body.preferredDate ? `ご希望日: ${body.preferredDate}\n` : "") +
-                  `\nこのあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。\n` +
-                  `台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。\n` +
-                  `お気づきの点は、このメールへの返信でお知らせください。\n\n` +
-                  `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
-              });
+              const m = acceptMailTextGroup({ items: newly, agreedName: body.agreedName, payKey, preferredDate: body.preferredDate });
+              await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body });
             } catch (e) { console.error("acceptQuote(group) mail error:", e); }
           }
 
@@ -1178,7 +1358,8 @@ exports.acceptQuote = onRequest(
           await notifyChat(
             chatWebhook,
             `🛒 お申し込み（${newly.length}事業所・${first.corpName || ""}）\n`
-            + newly.map((r, i) => `・#${r.q.caseNumber} ${regionsA[i]}${r.q.officeName}（${r.q.estNo}）出荷 ${r.soNumber} ¥${yen(r.q.amounts?.totalIncl)}`).join("\n")
+            + newly.map((r, i) => `・#${r.q.caseNumber} ${regionsA[i]}${r.q.officeName}（${r.q.estNo}）出荷 ${r.soNumber} ${yen(r.q.amounts?.totalIncl)}`
+              + (acceptShipNote(r) ? `\n　${acceptShipNote(r)}` : "")).join("\n")
             + `\nお支払い: ${PAY_LABELS[payKey]}\n供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
           );
         }
@@ -1205,9 +1386,10 @@ exports.acceptQuote = onRequest(
       const payKey = payMethod === "before" ? "before" : "after";
       const d = delivery || {};
 
-      const { q, soNumber, alreadyAccepted } = await acceptQuoteTransaction({
+      const acc = await acceptQuoteTransaction({
         quoteId, quoteToken, delivery, payKey, preferredDate, note, agreedName, agreedPolicy,
       });
+      const { q, soNumber, alreadyAccepted } = acc;
 
       if (alreadyAccepted) {
         res.status(200).json({ status: "already", soNumber: q.shipmentNo || "", caseNumber: q.caseNumber });
@@ -1219,22 +1401,8 @@ exports.acceptQuote = onRequest(
       const to = q.contactEmail || "";
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
-          await sendGmail({
-            to, cc: GMAIL_SENDER,
-            subject: `【NPO法人タダカヨ】お申し込みを受け付けました（${q.estNo}）`,
-            body:
-              `${[q.corpName, q.officeName].filter(Boolean).join("　")} 御中\n${String(agreedName).trim()} 様\n\n` +
-              `お申し込みをいただき、ありがとうございます。以下の内容で承りました。\n\n` +
-              `見積番号: ${q.estNo}（第${q.version}版）\n` +
-              `合計（税込）: ${yen(q.amounts?.totalIncl)}　／　助成金充当: ${yen(q.amounts?.grantAmt)}　／　自己負担: ${yen(q.amounts?.selfPay)}\n` +
-              `お支払い: ${PAY_LABELS[payKey]}\n` +
-              `お届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n` +
-              (preferredDate ? `ご希望日: ${preferredDate}\n` : "") +
-              `\nこのあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。\n` +
-              `台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。\n` +
-              `お気づきの点は、このメールへの返信でお知らせください。\n\n` +
-              `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
-          });
+          const m = acceptMailText({ q, agreedName, payKey, delivery: d, preferredDate });
+          await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body });
         } catch (e) { console.error("acceptQuote mail error:", e); }
       }
 
@@ -1244,7 +1412,8 @@ exports.acceptQuote = onRequest(
         chatWebhook,
         `🎉 お申し込みを受け付けました [案件 #${q.caseNumber}]\n見積: ${q.estNo}（v${q.version}）\n事業所: ${regionAq}${q.officeName}（${q.corpName || ""}）\n`
         + `金額: ${yen(q.amounts?.totalIncl)}（自己負担 ${yen(q.amounts?.selfPay)}）\nお支払い: ${PAY_LABELS[payKey]}\n`
-        + `出荷 ${soNumber} の下書きを作りました。供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
+        + (acc.reused || acc.duplicateWarning ? `${acceptShipNote(acc)}\n` : `${acc.reopenedFrom ? `${acceptShipNote(acc)} ` : ""}出荷 ${soNumber} の下書きを作りました。`)
+        + `供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`
       );
 
       res.status(200).json({ status: "ok", soNumber, caseNumber: q.caseNumber });
@@ -1261,6 +1430,105 @@ exports.acceptQuote = onRequest(
   }
 );
 
+// ===== 電話・メール等で受けたお申し込みを、スタッフが「受注確定」にする（2026-10-21 設計 §5 A）=====
+// admin/js/quote-admin.js の「受注確定にする（電話・メールで申込を受けた）」から呼ぶ（画面との約束: admin/js/screen-rules.js buildAcceptPayload）。
+// 入力 {quoteId, acceptedName, channel:"phone"|"email"|"fax"|"other", receivedDate:"YYYY-MM-DD", payMethod:"after"|"before",
+//       preferredDate?, note?, sendMail:boolean, groupQuoteIds?:string[]（対象以外の同じグループの見積もり）}
+// 戻り値 {ok:true, results:[{quoteId, shipmentId, soNumber}], partial:boolean, errors:[{quoteId, code, message}],
+//        mailed:boolean, mailError:string|null}（確認メールの宛先は案件の contactEmail → 見積もりの contactEmail の順）
+// 全件が拒否されたときは HttpsError（failed-precondition）で返す（メッセージは checkStaffAccept の文言そのまま）。
+// 確認メールは sendMail が真で宛先があるときだけ。Chat は常に投稿する（CRM通知の投稿先）。
+exports.staffAcceptQuote = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_MAIL },
+  async (request) => {
+    const me = await requireStaff(request, { allow: "editor" });
+    const { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = request.data || {};
+    if (!quoteId || typeof quoteId !== "string") throw new HttpsError("invalid-argument", "quoteId は必須です");
+    const name = String(acceptedName || "").trim().slice(0, 100);
+    if (!name) throw new HttpsError("invalid-argument", "申込者のお名前を入れてください");
+    if (!Object.prototype.hasOwnProperty.call(STAFF_ACCEPT_CHANNELS, channel)) throw new HttpsError("invalid-argument", "受付方法（電話・メール・FAX・その他）を選んでください");
+    if (Flow.jstMidnightMs(receivedDate) == null) throw new HttpsError("invalid-argument", "受付日を正しく入れてください（YYYY-MM-DD）");
+    if (preferredDate && Flow.jstMidnightMs(preferredDate) == null) throw new HttpsError("invalid-argument", "希望日を正しく入れてください（YYYY-MM-DD）");
+    const payKey = payMethod === "before" ? "before" : "after";
+    const memo = String(note || "").trim().slice(0, 1000);
+
+    // 対象の一覧（同じグループの見積もりを同時に確定するとき）
+    const extra = Array.isArray(groupQuoteIds) ? groupQuoteIds.filter((x) => typeof x === "string" && x && x !== quoteId) : [];
+    const ids = [quoteId, ...new Set(extra)];
+    if (ids.length > MAX_ACCEPT_QUOTES) throw new HttpsError("invalid-argument", `一度に受注確定にできるのは${MAX_ACCEPT_QUOTES}件までです`);
+    const pre = await Promise.all(ids.map(async (id) => {
+      const s = await db.collection("quotes").doc(id).get();
+      return s.exists ? { id: s.id, ...s.data() } : null;
+    }));
+    // 1件だけならグループでなくてよい。groupQuoteIds があるのに対象がグループでなければ拒否（Flow.checkAcceptGroup）
+    if (!pre[0]) throw new HttpsError("not-found", "見積もりが見つかりません");
+    const g = Flow.checkAcceptGroup(pre, ids);
+    if (!g.ok) throw new HttpsError("failed-precondition", g.message);
+
+    const actor = { kind: "staff", email: me.email, uid: me.uid, name: me.name, channel, receivedDate, acceptedName: name };
+    const done = [], errors = [];
+    for (const pq of pre) {
+      try {
+        const delivery = await deliveryFromOfficeForQuote(pq);
+        const r = await acceptQuoteTransaction({
+          quoteId: pq.id, delivery, payKey, preferredDate: preferredDate || "", note: memo, actor,
+        });
+        done.push({ ...r, quoteId: pq.id });
+      } catch (e) {
+        if (!(e instanceof HttpsError)) console.error("staffAcceptQuote item error:", pq && pq.id, e);
+        errors.push({ quoteId: pq.id, code: (e && e.details && e.details.code) || (e && e.code) || "error", message: e.message || String(e) });
+      }
+    }
+    if (!done.length) {
+      throw new HttpsError("failed-precondition", errors.map((e) => e.message).join("／"), { errors });
+    }
+
+    // 事業所への確認メール（任意）。宛先は案件の contactEmail を優先し、無ければ見積もりの contactEmail（レビュー指摘 6）
+    // 戻り値の mailed（送れたか）・mailError（送らなかった／送れなかった理由。送れたか送る指定でなければ null）は画面が表示に使う
+    let mailed = false, mailError = null;
+    const first = done[0].q;
+    const to = Flow.acceptMailTo(done[0].caseContactEmail, first.contactEmail);
+    if (sendMail && !to) mailError = "宛先のメールアドレスが案件にも見積もりにも登録されていないため、確認メールは送っていません";
+    if (sendMail && to) {
+      try {
+        const m = done.length === 1
+          ? acceptMailText({ q: first, agreedName: name, payKey, delivery: await deliveryFromOfficeForQuote(first), preferredDate })
+          : acceptMailTextGroup({ items: done, agreedName: name, payKey, preferredDate });
+        const sent = await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body });
+        mailed = true;
+        for (const r of done) {
+          await db.collection("activities").add({
+            caseId: r.q.caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
+            userId: me.uid, userName: me.email,
+            subject: `メール送信: ${m.subject}`, body: `宛先: ${to}（受注確定の確認メール・送信元 ${sent.sender}）`, attachmentUrls: [],
+          });
+        }
+      } catch (e) { mailError = String((e && e.message) || e || "送信に失敗しました"); console.error("staffAcceptQuote mail error:", e); }
+    }
+
+    // Chat（CRM通知の投稿先）。利用者の情報・申込者名・連絡先は載せない
+    try {
+      const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
+      const regions = await Promise.all(done.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
+      await notifyChat(await getWebhook("crm"),
+        `${Flow.staffAcceptChatHead(channel, me.name)}\n`
+        + done.map((r, i) => `・#${r.q.caseNumber} ${regions[i]}${r.q.officeName || ""}（${r.q.estNo}）出荷 ${r.soNumber} ${yen(r.q.amounts?.totalIncl)}`
+          + (acceptShipNote(r) ? `\n　${acceptShipNote(r)}` : "")).join("\n")
+        + `\n受付日: ${receivedDate}／お支払い: ${PAY_LABELS[payKey]}`
+        + (errors.length ? `\n⚠️ ${errors.length}件は受注確定にできませんでした（CRMで確認してください）` : "")
+        + `\n供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`);
+    } catch (e) { console.error("staffAcceptQuote chat error:", e.message); }
+
+    return {
+      ok: true,
+      results: done.map((r) => ({ quoteId: r.quoteId, shipmentId: r.shipRefId, soNumber: r.soNumber })),
+      partial: errors.length > 0,
+      errors,
+      mailed: mailed === true, mailError: mailError || null,
+    };
+  }
+);
+
 // ===== 見積もりの改版（2026-09-06・Phase 2）=====
 // 「見積もりを取ったあと、支援の調整で台数・タイプ・機種を変えたい」に応えるための関数。
 // 前の版は superseded にして残し、新しい版を作る（何をいつ変えたかが追える）。
@@ -1271,6 +1539,7 @@ exports.reviseQuote = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, reason, sendMail } = request.data || {};
     if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
     if (!reason || !String(reason).trim()) throw new HttpsError("invalid-argument", "変更の理由をご入力ください（あとから経緯を追えるようにするためです）");
@@ -1296,6 +1565,11 @@ exports.reviseQuote = onCall(
     if (shipmentId) {
       const sh = await db.collection("shipments").doc(shipmentId).get();
       shipStatus = sh.exists ? (sh.data().status || null) : null;
+      // 依頼済（requested）も止める: 出荷指示をすでにセンターへ投稿しているため（2026-10-21 出荷の二段階化）
+      if (sh.exists && shipStatus === "requested") {
+        throw new HttpsError("failed-precondition",
+          `この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧で「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。センターへの取り消しの連絡もお願いします。`);
+      }
       if (sh.exists && shipStatus !== "draft") {
         throw new HttpsError("failed-precondition",
           `この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
@@ -1344,6 +1618,8 @@ exports.reviseQuote = onCall(
       batch.update(db.collection("shipments").doc(shipmentId), {
         items: shipmentItemsFromQuote({ items, amounts }),
         quoteId: quoteRef.id, estNo,
+        // 伴走支援費ブロックの復元に使う補助区分・台数も新しい版に合わせる（2026-10-21 レビュー指摘 2）
+        subsidyCategory: planKey || null, subsidyQty: Flow.subsidyQtyFromItems(items, Pricing.SKU.BT),
         updatedAt: now, updatedBy: email,
       });
     }
@@ -1396,6 +1672,7 @@ exports.resendQuoteMail = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, to: toOverride } = request.data || {};
     if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
     const ref = db.collection("quotes").doc(String(quoteId));
@@ -1434,6 +1711,7 @@ exports.staffCreateQuote = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { caseId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, note, sendMail } = request.data || {};
     if (!caseId) throw new HttpsError("invalid-argument", "caseId は必須です");
 
@@ -1559,6 +1837,7 @@ exports.saveQuotePdf = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, pdfBase64, mail } = request.data || {};
     if (!quoteId || !pdfBase64) throw new HttpsError("invalid-argument", "quoteId・pdfBase64 は必須です");
     if (typeof pdfBase64 !== "string" || pdfBase64.length > 13_400_000) throw new HttpsError("invalid-argument", "PDFが大きすぎます（10MB以下）");
@@ -1610,6 +1889,7 @@ const WEBHOOK_KIND_LABELS = { crm: "CRM通知", pm: "PM", shipping: "出荷指�
 exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
+  await requireStaff(request, { allow: "admin" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
   const kind = (request.data && request.data.kind) || "crm";
   if (!WEBHOOK_KIND_LABELS[kind]) throw new HttpsError("invalid-argument", "投稿先の種類が不正です");
   _settingsCache = null; // 最新設定で送る
@@ -1620,66 +1900,222 @@ exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBH
 });
 
 // ===== Phase 6: アフターフォロー自動化（日次・Chat通知）=====
-const STATUS_LABELS_FN = {
-  1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注", 5: "担当者決定",
-  6: "事前準備中", 7: "伴走支援待ち", 8: "伴走支援実施済", 9: "書類準備完了・申請ガイド中",
-  10: "申請完了・採択待ち", 11: "採択・入金待ち", 12: "アフターフォロー中", 13: "案件完了",
-};
-const FU_TERMINAL = [4, 13];
-const FU_PRE_APPLY = [1, 2, 3, 5, 6, 7, 8, 9];
-const FU_DEADLINE = new Date("2027-03-12T23:59:59+09:00");
+// 2026-10-21 書き換え（設計 §3 N2・N3）: 分類と文面は notify-text.mjs（純粋 ESM）、投稿計画は accept-flow.js の planDailyPosts。
+//   全体1通（初期連絡の超過・未割当の新規・受注確定以降の未割当・担当なしの停滞）＋担当ごとに1通（未対応が1件以上の人だけ・@メンション）。
+//   期限は設定値（appConfig/settings.subsidyDeadline）。対象外（archived）は全項目で除外。
+//   二重実行防止: _notifyLog/daily_YYYY-MM-DD（JST）を create（既にあれば何もしない）。投稿の間に 1.1 秒あける（Chat の毎秒の上限）。
 
-function daysAgo(ts) {
-  if (!ts) return null;
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return Math.floor((Date.now() - d.getTime()) / 86400000);
-}
-
-async function buildFollowupDigest() {
-  const snap = await db.collection("cases").get();
-  const cases = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const deadlineDays = Math.ceil((FU_DEADLINE - new Date()) / 86400000);
-
-  const unassigned = cases.filter((c) => c.status === 1 && !c.assignedUserId);
-  const stale = cases.filter((c) => !FU_TERMINAL.includes(c.status) && (daysAgo(c.updatedAt) ?? 0) >= 7);
-  const deadlineNear = deadlineDays <= 30 ? cases.filter((c) => FU_PRE_APPLY.includes(c.status)) : [];
-  const awaitingDeposit = cases.filter((c) => c.status === 11 && (daysAgo(c.updatedAt) ?? 0) >= 14);
-
-  if (!unassigned.length && !stale.length && !deadlineNear.length && !awaitingDeposit.length) {
-    return null; // 通知不要
-  }
-  // 事業所の都道府県・市区町村を付ける（offices を一括で引く。取れなければ「（地域不明）」）
-  const officeSnap = await db.collection("offices").get();
-  const officeMap = new Map(officeSnap.docs.map((d) => [d.id, d.data()]));
-  const regionOf = (c) => {
+// offices から地域ラベル「【大阪府 豊中市】」を引く関数を作る（officeRegionLabel と同じ規則を同期で）
+function regionOfFromOffices(officeMap) {
+  return (c) => {
     const o = officeMap.get(c.officeId) || {};
     if (o.prefecture || o.city) return formatRegion(o.prefecture, o.city);
     const r = regionFromAddress(o.address);
     return formatRegion(r.prefecture, r.city);
   };
-  const line = (c) => `・#${c.caseNumber || "?"} ${regionOf(c)}${c.officeName || "(名称未登録)"}（${STATUS_LABELS_FN[c.status] || "?"}）`;
-  const sec = (title, arr) => arr.length
-    ? `\n*${title}（${arr.length}件）*\n${arr.slice(0, 10).map(line).join("\n")}${arr.length > 10 ? `\n…ほか${arr.length - 10}件` : ""}` : "";
+}
 
-  return [
-    `🗓 *タダカヨCRM 日次フォローアップ*（申請期限まで残り ${deadlineDays} 日）`,
-    sec("⏳ 未割当の新規案件", unassigned),
-    sec("⚠️ 停滞案件（7日以上未更新）", stale),
-    sec("📋 未申請（期限対応が必要）", deadlineNear),
-    sec("💰 入金待ちが14日以上", awaitingDeposit),
-    "\n👉 管理画面: https://kjk-tadakayo-admin.web.app/kanban",
-  ].filter(Boolean).join("\n");
+// 日次まとめの本文を組み立てる（投稿はしない）。dailyFollowup と previewDailyFollowup で共用
+async function buildDailyPlan(now = new Date()) {
+  const nt = await loadNotify();
+  _settingsCache = null; // 期限の設定を直した直後でも最新を使う
+  const [caseSnap, officeSnap, userSnap, settings] = await Promise.all([
+    db.collection("cases").get(), db.collection("offices").get(), db.collection("users").get(), getSettings(),
+  ]);
+  const cases = caseSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const users = userSnap.docs.map((d) => ({ ...d.data(), email: d.id }));
+  const regionOf = regionOfFromOffices(new Map(officeSnap.docs.map((d) => [d.id, d.data()])));
+  return Flow.planDailyPosts(nt, { cases, users, settings, now, regionOf });
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Chat に文字だけを投稿（res.ok を確かめる。失敗は例外）。URL はログに出さない
+async function postChatText(url, text) {
+  await postChatCard(url, { text });
+}
+const maskUrl = (e) => String((e && e.message) || e).replace(/https?:\/\/\S+/g, "(URL)").slice(0, 200);
+
+// _notifyLog/{id} を「最初の1回だけ」作る。既にあれば false（Firestore の ALREADY_EXISTS = 6）
+async function claimNotifyLog(id, data) {
+  try {
+    await db.collection("_notifyLog").doc(id).create({ ...data, createdAt: admin.firestore.FieldValue.serverTimestamp() });
+    return true;
+  } catch (e) {
+    if (e && (e.code === 6 || e.code === "already-exists" || /ALREADY_EXISTS/.test(String(e.message)))) return false;
+    throw e;
+  }
 }
 
 exports.dailyFollowup = onSchedule(
   { schedule: "0 9 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
   async () => {
+    const day = todayJst();
+    const logId = `daily_${day}`;
+    const logRef = db.collection("_notifyLog").doc(logId);
+    let claimed = false, posted = 0;
     try {
-      const msg = await buildFollowupDigest();
-      if (msg) await notifyChat(await getWebhook("crm"), msg);
-      console.log("dailyFollowup done:", msg ? "通知あり" : "通知不要");
+      if (!(await claimNotifyLog(logId, { kind: "daily", day, status: "running" }))) {
+        console.log("dailyFollowup: 本日分は実行済み", logId);
+        return;
+      }
+      claimed = true;
+      const plan = await buildDailyPlan(new Date());
+      const posts = Flow.dailyPostTexts(plan);
+      if (!posts.length) {
+        await logRef.update({ status: "nothing", finishedAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log("dailyFollowup done: 通知不要");
+        return;
+      }
+      const url = await getWebhook("crm");
+      if (!url) {
+        await logRef.update({ status: "no-webhook", finishedAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.warn("dailyFollowup: CRM通知の投稿先が未設定・停止中");
+        return;
+      }
+      const errs = [];
+      for (let i = 0; i < posts.length; i++) {
+        if (i > 0) await sleep(1100);
+        try { await postChatText(url, posts[i]); posted++; } catch (e) { errs.push(maskUrl(e)); }
+      }
+      // 全件の投稿に失敗した（503・429 など）ときは記録を消し、同じ日の再実行で投稿できるようにする（2026-10-21 Codex 指摘）
+      if (Flow.dailyFailureAction({ claimed, posted }) === "delete" && errs.length) {
+        console.error("dailyFollowup: 全件の投稿に失敗したため記録を消す（再実行で投稿できる）", errs.slice(0, 5));
+        await logRef.delete();
+        return;
+      }
+      await logRef.update({
+        status: errs.length ? (posted ? "partial" : "error") : "posted",
+        overall: !!plan.overall, assignees: plan.assignees.length, posted, errors: errs.slice(0, 5),
+        finishedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      console.log(`dailyFollowup done: 投稿 ${posted}/${posts.length}`);
     } catch (e) {
       console.error("dailyFollowup error:", e);
+      // 記録を作ったあとの例外（組み立て・投稿先の取得・記録の更新）の後始末（2026-10-21 レビュー指摘 8）
+      //   1件も投稿していない → 記録を消す（次の再実行で投稿できるように）／1件以上投稿済み → partial と error を残す（二重投稿を防ぐ）
+      const act = Flow.dailyFailureAction({ claimed, posted });
+      try {
+        if (act === "delete") await logRef.delete();
+        else if (act === "partial") {
+          await logRef.update({ status: "partial", posted, error: maskUrl(e), finishedAt: admin.firestore.FieldValue.serverTimestamp() });
+        }
+      } catch (e2) {
+        console.error(`dailyFollowup: _notifyLog/${logId} の後始末（${act}）に失敗`, e2);
+      }
+    }
+  }
+);
+
+// 日次まとめのプレビュー（管理者のみ・投稿しない）。設定画面から本番データで文面を確かめる用（設計 §3）
+// 戻り値 {overall: string|null, assignees: [{email, name, text}]}（admin/js/screen-rules.js dailyPreviewBlocks と約束）
+exports.previewDailyFollowup = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
+  async (request) => {
+    await requireStaff(request, { allow: "admin" });
+    const plan = await buildDailyPlan(new Date());
+    return { overall: plan.overall, assignees: plan.assignees };
+  }
+);
+
+// ===== N1 担当が決まったら本人に通知（2026-10-21 設計 §3）=====
+// Firestore トリガー。画面（saveAssignee）だけでなく、他の経路の担当変更も拾う。
+// 発火条件は Flow.shouldNotifyAssign（担当が変わった・空でない・対象外/統合元でない・assignedAt が変わった）。
+// 二重防止: _notifyLog/assign_${event.id} を create してから投稿（再配信で同じ event.id が来ても1回だけ）。
+// cases には書かない（このトリガーが自分を呼び直すループを作らない）。活動の記録は画面側がしている。
+// ⚠️ region は Firestore DB のロケーションに合わせる必要がある。asia-northeast1 で書いているが、デプロイ時に
+//    `gcloud firestore databases describe --project kjk-tadakayo` の locationId を確認すること（違えばここを直す）。
+exports.onCaseAssigned = onDocumentUpdated(
+  { document: "cases/{caseId}", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    if (!Flow.shouldNotifyAssign(before, after)) return;
+    const caseId = event.params.caseId;
+    if (!(await claimNotifyLog(`assign_${event.id}`, { kind: "assign", caseId, assignee: after.assignedUserId, status: "running" }))) return;
+    const logRef = db.collection("_notifyLog").doc(`assign_${event.id}`);
+    try {
+      const nt = await loadNotify();
+      const getUser = async (email) => {
+        const e = String(email || "").trim();
+        if (!e) return null;
+        let s = await db.collection("users").doc(e).get();
+        if (!s.exists && e.toLowerCase() !== e) s = await db.collection("users").doc(e.toLowerCase()).get();
+        return s.exists ? { ...s.data(), email: s.id } : null;
+      };
+      const assignee = (await getUser(after.assignedUserId))
+        || { email: after.assignedUserId, displayName: after.assignedUserName || "" };
+      // assignedBy は今回の変更で書かれたもの（assignedAt が変わっている）だけを使う
+      const byEmail = String(after.assignedBy || "").trim();
+      const by = byEmail ? ((await getUser(byEmail)) || { email: byEmail }) : null;
+      const regionLabel = await officeRegionLabel({ officeId: after.officeId });
+      const text = nt.assigneeNoticeText({ kase: { ...after, id: caseId }, assignee, assignedBy: by, regionLabel, caseId });
+      const url = await getWebhook("crm");
+      if (!url) { await logRef.update({ status: "no-webhook" }); return; }
+      await postChatText(url, text);
+      await logRef.update({ status: "posted", postedAt: admin.firestore.FieldValue.serverTimestamp() });
+    } catch (e) {
+      console.error("onCaseAssigned failed:", maskUrl(e));
+      await logRef.update({ status: "error", error: maskUrl(e) }).catch(() => {});
+    }
+  }
+);
+
+// ===== N4 承諾書にオンラインで署名されたら通知（2026-10-21 設計 §3）=====
+// 条件 Flow.shouldNotifyConsent（pending→signed・method==="web"・caseId あり）。紙の記録（新規作成で signed）は対象外。
+// 案件の活動に記録し cases.updatedAt を更新。Chat（CRM通知）へ担当を @メンション。確認者名・連絡先は載せない。
+// 投稿に失敗しても活動は残し、失敗したことを本文に書く。二重防止 _notifyLog/consent_${token}。
+// ⚠️ region はデプロイ時に Firestore のロケーションを確認（onCaseAssigned の注記と同じ）。
+exports.onConsentSigned = onDocumentUpdated(
+  { document: "consentRequests/{token}", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data() || {};
+    if (!Flow.shouldNotifyConsent(before, after)) return;
+    const token = event.params.token;
+    const caseId = String(after.caseId);
+    if (!(await claimNotifyLog(`consent_${token}`, { kind: "consent", caseId, status: "running" }))) return;
+    const logRef = db.collection("_notifyLog").doc(`consent_${token}`);
+    let postErr = null;
+    let kase = null;
+    try {
+      const cs = await db.collection("cases").doc(caseId).get();
+      kase = cs.exists ? cs.data() : null;
+      const nt = await loadNotify();
+      let assignee = null;
+      if (kase && kase.assignedUserId) {
+        const e = String(kase.assignedUserId).trim();
+        let us = await db.collection("users").doc(e).get();
+        if (!us.exists && e.toLowerCase() !== e) us = await db.collection("users").doc(e.toLowerCase()).get();
+        assignee = us.exists ? { ...us.data(), email: us.id } : { email: e, displayName: kase.assignedUserName || "" };
+      }
+      const regionLabel = await officeRegionLabel({ officeId: kase && kase.officeId });
+      const text = nt.consentSignedText({ kase: { ...(kase || {}), id: caseId }, assignee, regionLabel, caseId });
+      const url = await getWebhook("crm");
+      if (!url) postErr = "CRM通知の投稿先が未設定・停止中";
+      else await postChatText(url, text);
+    } catch (e) {
+      postErr = maskUrl(e);
+      console.error("onConsentSigned chat failed:", postErr);
+    }
+    try {
+      if (kase) {
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const batch = db.batch();
+        batch.set(db.collection("activities").doc(), {
+          caseId, type: "memo", occurredAt: now, userId: null, userName: "システム（署名の自動記録）",
+          subject: "承諾書にオンラインで署名されました",
+          body: `伴走支援の承諾書に、事業所の方がオンラインで署名しました${after.document && after.document.version ? `（条文の版 ${after.document.version}）` : ""}。`
+            + "確認者名・署名日時は案件の「承諾書」の欄で確認できます。"
+            + (postErr ? `\n※ Chat への通知に失敗しました（${postErr}）。` : ""),
+          attachmentUrls: [],
+        });
+        batch.update(db.collection("cases").doc(caseId), { updatedAt: now });
+        await batch.commit();
+      }
+      await logRef.update({ status: postErr ? "error" : "posted", error: postErr || null, caseFound: !!kase });
+    } catch (e) {
+      console.error("onConsentSigned record failed:", e);
+      await logRef.update({ status: "error", error: maskUrl(e) }).catch(() => {});
     }
   }
 );
@@ -1743,6 +2179,7 @@ exports.aiAssist = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { task, context, question } = request.data || {};
     const prompt = buildPrompt(task, context || {}, question);
     if (!prompt) throw new HttpsError("invalid-argument", `不明なタスク: ${task}`);
@@ -1851,6 +2288,7 @@ exports.sendCaseEmail = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, subject, body, caseId } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -1902,6 +2340,7 @@ exports.sendSupplierOrder = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, cc, subject, body, pdfBase64, filename, poId } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -1950,6 +2389,7 @@ exports.sendPartnerMail = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, cc, subject, body, shipmentId, kind, pdfBase64, filename, extraAttachments } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -2111,6 +2551,7 @@ exports.reportInvoiceToAccounting = onCall(
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
+    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const {
       shipmentId, pdfBase64, filename, subject, body,
       invNo, billName, deliverTo, amountText, dueDate, soNumber, shipDate,
@@ -2217,23 +2658,30 @@ exports.reportInvoiceToAccounting = onCall(
   }
 );
 
-// ===== 出荷指示の投稿（2026-10-19 CRM改修 #4・#4b） =====
-// 「発送済にする」を押した時点で、設定の「出荷指示の投稿先」（getWebhook('shipping')）へ投稿する。
-// 受注時点では投稿しない。投稿先が空欄・停止中なら投稿せず、発送済の操作自体は止めない（呼び出し側は結果だけ見る）。
+// ===== 出荷指示の投稿（2026-10-19 CRM改修 #4・#4b／2026-10-21 出荷の二段階化） =====
+// 「出荷を依頼する」を押した時点（requested になった直後）で、設定の「出荷指示の投稿先」（getWebhook('shipping')）へ投稿する。
+// 「発送済にする」では投稿しない（呼び出し側が呼ばない）。受注時点・下書きでは投稿しない。
+// 投稿先が空欄・停止中なら投稿せず、依頼の操作自体は止めない（呼び出し側は結果だけ見る）。
+// 投稿してよい状態は NOTIFY_STATUSES。⚠️ admin/js/ship-flow.js の NOTIFY_STATUSES と同じ値にしておくこと
+// （Functions は CommonJS で ESM の ship-flow.js を require できないため複製している）。
+// 依頼を取り消す（requested → draft）ときは画面側が shipNotifiedAt/shipNotifyStatus/shipNotifyLockAt を消すので、再依頼でまた投稿される。
 // 二重投稿の防止: shipments.shipNotifiedAt があれば投稿しない（resend:true の再送ボタンだけは再投稿する）。
 // 載せるのは出荷に必要な事業所側の情報（宛名・住所・電話・ご担当者名）だけ。出荷データに利用者・被保険者の情報は無い。
 // ⚠️ Webhook の URL はログにも戻り値にも出さない。
 const LETTERPACK_LABELS = { light: "レターパックライト（青）", plus: "レターパックプラス（赤）" };
 const NON_SHIP_SKUS = new Set(["support-fee", "discount"]);
+const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"]; // admin/js/ship-flow.js と同じ値
 function shipmentChatMessage(s, shipmentId, o) {
   const items = (Array.isArray(s.items) ? s.items : [])
     .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
     .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
   const toAddr = [s.postal ? `〒${s.postal}` : "", s.address || ""].filter(Boolean).join(" ");
+  // 依頼の時点の shipDate は「希望出荷日」（発送済にしたとき実際の発送日に置き換わる）
+  const requested = s.status === "requested";
   const rows = [
     ["出荷番号", s.soNumber || shipmentId],
     ["地域", o.region],
-    ["出荷日", s.shipDate || ""],
+    [requested ? "希望出荷日" : "出荷日", s.shipDate || ""],
     ["出荷元", s.originLocationName || (s.fulfillment === "direct" ? "AB Circleから直送（自社在庫を通さない）" : "")],
     ["レターパックの種類", LETTERPACK_LABELS[s.letterPackType] || "未選択"],
     ["届け先の住所", toAddr],
@@ -2245,7 +2693,9 @@ function shipmentChatMessage(s, shipmentId, o) {
     ["希望到着日", s.desiredDeliveryDate || ""],
     ["追跡番号", s.trackingNumber || ""],
     ["追跡番号の写真", Array.isArray(s.trackingPhotos) && s.trackingPhotos.length ? `あり（${s.trackingPhotos.length}枚・CRMで確認）` : ""],
-    ["発送済にした人", s.shippedBy || o.byName],
+    ["依頼した人", s.requestedBy || (requested ? o.byName : "")],
+    // 依頼の段階を通らなかった古い出荷は、今までどおり押した人を「発送済にした人」として出す
+    ["発送済にした人", requested ? "" : (s.shippedBy || (s.requestedBy ? "" : o.byName))],
   ].filter((r) => String(r[1] || "").trim());
   const printUrl = `${CRM_BASE_URL}/letterpack-print.html?id=${encodeURIComponent(shipmentId)}`;
   const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
@@ -2296,23 +2746,38 @@ exports.notifyShipment = onCall(
 
     // 二重投稿の防止（同時に2回押されたときも1回にするため、トランザクションで「投稿中」の印を付ける）
     let s;
+    const lockTs = admin.firestore.Timestamp.now(); // この送信が付けたロック（古い送信の後始末で、自分のロックだけ外すため）
     const gate = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) return { stop: "not-found" };
       const d = snap.data();
-      if (!["shipped", "invoiced", "paid"].includes(d.status)) return { stop: "not-shipped" };
+      if (!NOTIFY_STATUSES.includes(d.status)) return { stop: "not-shipped" };
       if (d.shipNotifiedAt && !resend) return { stop: "already" };
       const lockAt = d.shipNotifyLockAt && d.shipNotifyLockAt.toMillis ? d.shipNotifyLockAt.toMillis() : 0;
       if (lockAt && Date.now() - lockAt < 60000) return { stop: "busy" };
-      tx.update(ref, { shipNotifyLockAt: admin.firestore.Timestamp.now() });
+      tx.update(ref, { shipNotifyLockAt: lockTs });
       s = d;
-      return {};
+      return { seq: Flow.requestSeqOf(d) }; // この依頼の番号を控える（取り消し→再依頼の後に古い送信が結果を書き戻さないように）
     });
     if (gate.stop === "not-found") throw new HttpsError("not-found", "出荷が見つかりません");
-    if (gate.stop === "not-shipped") throw new HttpsError("failed-precondition", "発送済になっていない出荷は投稿できません");
+    if (gate.stop === "not-shipped") throw new HttpsError("failed-precondition", "出荷を依頼していない出荷（下書き・キャンセル）は投稿できません");
     if (gate.stop === "already") return { posted: false, reason: "already" };
     if (gate.stop === "busy") return { posted: false, reason: "busy" };
 
+    // 投稿の結果を出荷に書く。まだ依頼済以上で requestSeq が同じときだけ（Codex 指摘4）。書かなかったら false
+    const writeResult = async (patch) => db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) return false;
+      const cur = snap.data();
+      if (!Flow.notifyResultWritable(cur, gate.seq, NOTIFY_STATUSES)) {
+        // 古い送信: 結果は書かない。ただし自分が付けたロックが残っていれば外す（残すと再依頼の投稿が60秒「投稿中」で止まる）
+        if (Flow.ownsNotifyLock(cur, lockTs)) tx.update(ref, { shipNotifyLockAt: null });
+        return false;
+      }
+      tx.update(ref, patch);
+      return true;
+    });
+    const STALE_NOTE = "送信の途中で依頼が取り消された（または依頼し直された）ため、取り消し後の古い送信として出荷には記録しません。";
     // 活動記録（案件にひも付いている出荷だけ。案件が無い出荷は出荷側の記録だけ残る）
     const logActivity = async (subject, body) => {
       if (!s.caseId) return;
@@ -2330,7 +2795,10 @@ exports.notifyShipment = onCall(
     if (!url) {
       const reason = st.shippingChatWebhookEnabled === false ? "disabled" : "unset";
       const why = reason === "disabled" ? "停止中" : "未設定";
-      await ref.update({ shipNotifyStatus: reason, shipNotifyAttemptAt: now, shipNotifyLockAt: null });
+      if (!(await writeResult({ shipNotifyStatus: reason, shipNotifyAttemptAt: now, shipNotifyLockAt: null }))) {
+        await logActivity(`出荷指示: 取り消し後の古い送信のため記録しない（${s.soNumber || ""}）`, STALE_NOTE);
+        return { posted: false, reason: "stale" };
+      }
       await logActivity(`出荷指示: 未投稿（${s.soNumber || ""}）`,
         `出荷指示の投稿先が${why}のため、投稿していません。設定で投稿先を有効にしてから、出荷の画面の「再送」で投稿できます。`);
       return { posted: false, reason };
@@ -2346,18 +2814,26 @@ exports.notifyShipment = onCall(
       // Chat の応答本文に URL は含まれないが、念のためメッセージは先頭だけ・URL らしき文字列は伏せて残す
       const msg = String(e.message || e).replace(/https?:\/\/\S+/g, "(URL)").slice(0, 200);
       console.error("notifyShipment chat failed:", msg);
-      await ref.update({ shipNotifyStatus: "error", shipNotifyError: msg, shipNotifyAttemptAt: now, shipNotifyLockAt: null });
+      if (!(await writeResult({ shipNotifyStatus: "error", shipNotifyError: msg, shipNotifyAttemptAt: now, shipNotifyLockAt: null }))) {
+        await logActivity(`出荷指示: 取り消し後の古い送信のため記録しない（${s.soNumber || ""}）`, STALE_NOTE);
+        return { posted: false, reason: "stale" };
+      }
       await logActivity(`出荷指示: 投稿に失敗（${s.soNumber || ""}）`,
-        `出荷指示の投稿に失敗しました（${msg}）。出荷の画面の「再送」でやり直せます。発送済の記録はそのままです。`);
+        `出荷指示の投稿に失敗しました（${msg}）。出荷の画面の「再送」でやり直せます。出荷の記録（依頼済・発送済）はそのままです。`);
       return { posted: false, reason: "error" };
     }
 
-    await ref.update({
+    const wrote = await writeResult({
       shipNotifiedAt: now, shipNotifiedBy: byName, shipNotifiedByEmail: email,
       shipNotifyStatus: "posted", shipNotifyError: admin.firestore.FieldValue.delete(),
       shipNotifyAttemptAt: now, shipNotifyLockAt: null,
       shipNotifyCount: admin.firestore.FieldValue.increment(1),
     });
+    if (!wrote) {
+      await logActivity(`出荷指示: 取り消し後の古い送信のため記録しない（${s.soNumber || ""}）`,
+        `出荷 ${s.soNumber || ""} の出荷指示は投稿しましたが、${STALE_NOTE}センターへ取り消しの連絡をしてください。`);
+      return { posted: true, stale: true, resent: !!resend };
+    }
     await logActivity(`出荷指示: 投稿しました${resend ? "（再送）" : ""}（${s.soNumber || ""}）`,
       `出荷指示の投稿先へ、出荷 ${s.soNumber || ""} の指示を投稿しました（投稿者: ${byName}）。`);
     return { posted: true, resent: !!resend };

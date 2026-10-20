@@ -295,6 +295,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-10-20 | **見積書の宛先の体裁（次田さん確認済み・この見た目を標準にする）**（`25b1b86`・本番反映済み）: 宛先は **1行目＝法人名（`.qdoc-to-corp` 11pt・太さ600）／2行目＝事業所名（`.qdoc-to-name` 15pt・太字・下線）＋「御中」を同じ行に続ける（`.qdoc-to-honorific` 11pt・`white-space:nowrap`）**。法人名と事業所名を1つの見出しにつなげると、幅いっぱいで言葉の途中から折り返していた（実例「社会福祉法人 栄寿の会　介護老人保健施設 栄 / 寿園」・EST-2026-0144）。`word-break:keep-all; overflow-wrap:anywhere`（言葉の途中で切らない・長すぎるときだけ折る）、事業所名の幅は `max-width:105mm`。法人名が無いときは事業所名だけ（従来どおり1行）。**合計見積書（`quote-group-doc.js`）も同じ書式**（法人名＋御中を同じ行・CSS は `QUOTE_DOC_STYLE` を共有）。帳票の宛先を新しく作るときは、この2行の形にそろえる |
 | 2026-10-20 | **見積書の発行元の担当**: これまで `quote-doc.js`・`quote-group-doc.js` に「担当: 佐藤拡史」が固定で書かれていた。**案件の担当営業（`cases.assignedUserName`）を出し、未割当なら「次田芳尚」**（`DEFAULT_ISSUER_STAFF`）に変更（次田さん決定）。合計見積書は各事業所の案件のうち最初に見つかった担当営業 |
 | 2026-10-20 | **firestore.rules の「その他すべて」が個別の制限を素通りさせていた穴を修正（ブランチ `fix-users-rules`）**。ルールは「どれか1つの match が許せば通る」ため、末尾の `match /{document=**}`（書き込み＝isEditor）が users／leadTokens／supportBadges／supportEvaluations にも当たり、**登録スタッフなら誰でも users を書き換えられた（自分を admin にできた）**・leadTokens を書けた・バッジの訂正削除・評価の削除ができた。末尾を `match /{coll}/{document=**}` にし、書き込みからこの4つを除外（`!(coll in [...])`）。読み取りは従来どおり（職員は担当営業の候補で users を読む）。partnerOrders は職員の発注取り込み（supply.js）がここに頼るので対象外にしない。テスト `scripts/test-rules-catchall.mjs`（エミュレータ 26/26。変更前のルールでは穴の9件＋その影響1件が落ちる＝ほかの権限は不変）。テストモード（crm-test-mode）の rules と自動で統合でき、統合後もテストモード側 111/111 |
+| 2026-10-21 | **CRM改善（ブランチ `crm-ship-request`・設計 `docs/CRM改善_設計_20261021.md`）**。①**出荷の二段階化**: `status:'requested'` を追加（draft →「出荷を依頼する」→ requested →「発送済にする」→ shipped）。依頼で出荷指示を投稿、在庫は発送済で引く。`stockDeducted(s)` を在庫を戻す・差分を動かす判定の正本に。**既存バグ3件修正**（下書き削除で在庫水増し／下書き数量変更で二重引き落とし／発送済の同時押しで二重引き落とし）。`ship-flow.js` 新設（§C7）②**通知**: `onCaseAssigned`・`onConsentSigned`（Firestore トリガー）・日次まとめを全体＋担当別に書き換え（初期連絡の超過・期限は設定値・archived 除外）・`previewDailyFollowup`。`_notifyLog` で二重防止、`users.chatUserId` でメンション、`functions/notify-text.mjs`・`first-contact.mjs`（同期チェック `check-shared-sync.sh`）③**権限**: `requireStaff` で Callable の認可を共通化、`appConfig` を管理者だけに（`_notifyLog` は Functions のみ）④**受注確定**: `staffAcceptQuote`（`orderedVia:'staff'`・同意は記録しない）・`acceptQuoteTransaction` の共用化（出荷の重複防止・状態は1・2のときだけ3へ）⑤**警告**: 完了(13)の確認（`case-complete-check.js`・`cases.completedAt`）・出荷の重複警告と在庫の目安（`ship-dup.js`）⑥**入金明細の取り込み**（`bank-match.js`・`bank-import.js`・`bankTxns`・`bankConfig`。確定は必ず人）⑦**文書**: 支払期限の記述を請求書と一致（`dueRule:'net14'`／請求済の時点で `dueDate` 保存）、MANUAL・manual.html・video-catalog の更新。テスト一覧は §C10。**本番反映は次田さんの承認後（プレビュー → verify → 昇格。Functions → Hosting の順）** |
 
 ## §C0 何のシステムか
 
@@ -313,7 +314,7 @@ flowchart TD
   G --> H["アフターフォロー / 完了"]
   B -.失注.-> X["失注"]
   C2["認定事業者"] -->|B2B発注| I["受注"]
-  I --> J["在庫引当・出荷<br/>送付状"]
+  I --> J["出荷を依頼（指示をChatへ）<br/>→ 発送済（在庫を引く）<br/>送付状"]
   classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
   class A,C2 care; class B,C,D,E,F,G,H,I,J sys;
@@ -335,6 +336,8 @@ flowchart LR
     SEND["sendCaseEmail"]
     AI["aiAssist"]
     SCH["dailyFollowup (毎朝9時)"]
+    TRG["onCaseAssigned / onConsentSigned<br/>(Firestore トリガー)"]
+    SHIPN["notifyShipment (出荷指示)"]
   end
   DB[("Firestore<br/>データ保管")]
   LP -->|問い合わせ/成約| WH --> DB
@@ -345,10 +348,13 @@ flowchart LR
   WH -->|通知| CHAT["Google Chat"]
   SCH --> DB
   SCH -->|通知| CHAT
+  TRG -->|担当決定・署名完了の通知| CHAT
+  DB -.変更を検知.-> TRG
+  ADM --> SHIPN -->|出荷指示（依頼時）| CHAT
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
   classDef db fill:#e0e3e6,stroke:#37474f,color:#2C2416;
   classDef ext fill:#f5e6d8,stroke:#c05a1f,color:#2C2416;
-  class LP,ADM,PT,WH,SEND,AI,SCH sys; class DB db; class GEM,GM,CHAT ext;
+  class LP,ADM,PT,WH,SEND,AI,SCH,TRG,SHIPN sys; class DB db; class GEM,GM,CHAT ext;
 ```
 
 ## §C3 データモデル（ER）
@@ -369,6 +375,8 @@ erDiagram
   cases ||--o{ leadTokens : "問い合わせ→見積もり→申込の継続トークン"
   quotes ||--o| shipments : "Web申込で出荷下書きを自動作成(quoteId)"
   locations ||--o{ shipments : "出荷元(originLocationId)"
+  shipments ||--o{ bankTxns : "入金明細の取込行(bankTxnId)"
+  cases ||--o{ _notifyLog : "通知の二重防止(Functionsのみ)"
   cases {
     int caseNumber
     string officeName
@@ -381,6 +389,10 @@ erDiagram
     string quoteGroupId "同一法人まとめ見積もり"
     timestamp orderedAt
     string orderedVia "web/staff"
+    string assignedUserId "担当営業(メール)"
+    string assignedBy "担当を決めた人(メール)"
+    timestamp assignedAt "担当を決めた時刻(通知の発火条件)"
+    timestamp completedAt "13にした時刻"
   }
   quotes { string estNo int version string plan array items json amounts string status string createdVia string groupId string pdfPath timestamp validUntil }
   leadTokens { string caseId string email timestamp expiresAt array usedFor }
@@ -390,7 +402,11 @@ erDiagram
   sessions { string sessionDate string summary array photoUrls }
   products { string sku string name int stock int wholesale2_10 }
   purchaseOrders { string poNumber array items int total string status }
-  shipments { string soNumber string officeName array items array payments array refunds string dueDate string receiptNo int creditApplied int overpayUsed array creditFrom string refundStatementNo }
+  shipments { string soNumber string officeName string status "draft/requested/shipped/invoiced/paid/canceled" string fulfillment "warehouse/direct" array items array payments array refunds string dueDate string dueRule "net14" string receiptNo int creditApplied int overpayUsed array creditFrom string refundStatementNo timestamp requestedAt string requestedBy timestamp shippedAt string trackingNumber bool duplicateWarning }
+  bankTxns { string hash "docId=行のハッシュ" string date int amount string payerNorm string shipmentId timestamp confirmedAt }
+  bankConfig { map presets "列の割り当て(docId=presets)" map payerAliases "名義の学習(docId=payerAliases)" }
+  _notifyLog { string kind "assign/consent/daily" string status "running/posted/no-webhook/error" timestamp createdAt }
+  users { string email string role bool active string chatUserId "Google Chat の数字ID(管理者のみ入力)" }
   partners { string email string partnerName bool active }
   partnerOrders { string partnerEmail array items string status }
   receipts { string receiptNo string issuedAt int amountIncl array items }
@@ -402,7 +418,7 @@ erDiagram
 |---|---|
 | 入金 | `shipments.payments[] = {amount(税込), date, note, recordedBy, recordedAt}` に履歴で積む。**部分入金・分割払い対応**。合計は `paymentAmount` にも同期（旧フィールド互換）。旧形式（`paymentAmount`+`paidAt` の1回きり）は `payList()` が1件の履歴として読み替える |
 | ステータス遷移 | 残額>0 → `invoiced` のまま（一部入金）／残額≤0 → `paid` + `paidAt`=最終入金日。入金の取消でも同じ判定で自動的に戻る |
-| 支払期限 | `dueDateOf()` = `shipments.dueDate` があれば優先、無ければ **請求月（`invoicedAt`、無ければ `shipDate`）の翌月末**（請求書の記載と同じ）。`overdueDays()` が超過日数を返す |
+| 支払期限 | `dueDateOf()` = `shipments.dueDate` があれば優先 → `dueRule==='net14'` なら**請求書の発行日＋14日** → 無ければ **請求月（`invoicedAt`、無ければ `shipDate`）の翌月末**。**請求済にした時点で期限を保存し（`dueDate`）、あとから変わらない**。`dueRule:'net14'` は「発送済にする」（`markShipped`／`recordShippedDirect`）で付く（2026-10-20 以降の発送分）。請求書の印字・未集金の表・MANUAL は同じ表現にそろえる（2026-10-21）。`overdueDays()` が超過日数を返す |
 | 返金（2026-08-01） | `shipments.refunds[] = {amount, date, method(振込/現金/相殺), note, recordedBy, recordedAt}`。**判定は純入金 `netPaid = 入金合計 − 返金合計`** で行う（`payRemain`・`overpayOf`・チップの「入金済・累計」・受注タブの表示すべて純額）。旧フィールド同期は `paymentAmount`=純額・`refundAmount`=返金合計。過入金の返金で `creditBalanceOf` が0になる（返金分は次回請求へ回らない）。**請求額まで返金すると `paid`→`invoiced` に戻る**（取引取消は出荷削除＝在庫も戻す運用）。入金・返金は履歴を日付順にマージして純入金の推移を表示、どちらも個別に取消可 |
 | 入金が複数回 | `payments[]` に追記するだけ（回数の上限なし）。一覧に「入金N回」を表示。二重入金は「満額×2」＝過入金として扱い、①次回請求へ充当 ②返金 のいずれかで解消する |
 | 過入金の充当（2026-08-01） | 請求額を超えた入金は返金せず**次回請求へ充当**する。`billableIncl(s) = 税込合計 − creditApplied`（充当後の請求額）／`payRemain = billableIncl − 入金合計`／`overpayOf = 入金合計 − billableIncl`／未充当残高 `creditBalanceOf = overpayOf − overpayUsed`。充当先に `creditApplied`（累計）と `creditFrom[{shipmentId,soNumber,amount,date,appliedBy}]`、充当元に `overpayUsed` を積む。**請求先の同一判定は `billToKey()`**（直送=`partnerEmail`／直接=`company`or`officeName`）、**充当は古い `shipDate` の過入金から FIFO**。充当額は `min(請求先の未充当残高, 残額)` で、引ききれない分は残高として次回に残る。充当で残額0になれば `paid` に遷移。トリガーは①「請求済にする」直後の確認②請求済の行の「過入金を充当」③入金モーダルのボタン。請求書(`renderInvoice`)は税込合計の下に「前回お預かり分の充当 −¥X（充当元SO番号）」＋「今回お支払額」を出し、ヘッダーの大きい金額も充当後の額にする |
@@ -430,7 +446,11 @@ erDiagram
 | `leadTokens` | 継続トークン（128bit 乱数・30日）。LP問い合わせの応答で発行し `mitsumori.html?t=` で事業所情報を引き継ぐ。`get` のみ公開・`list` はスタッフ・書き込みは Functions のみ |
 | `locations` | 保管場所マスタ（2026-09-12）。`products.stockByLocation` と `shipments.originLocationId` が参照 |
 | `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない） |
-| `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定 |
+| `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定。**2026-10-21〜 読めるのは登録スタッフ・書けるのは管理者だけ**（`match /appConfig/{docId}`）。`settings.js`・`pricing.js`・`simulator.js` はいずれも管理者画面 |
+| `bankTxns/{hash}` | 入金明細の取込記録（2026-10-21）。**記録した行だけ**を最小限（日付・金額・正規化名義・出荷）で残し、同じ行の二重取り込みを防ぐ。CSV 全体は保存しない。職員が書く（catch-all のまま） |
+| `bankConfig/{presets,payerAliases}` | 銀行CSVの列割り当てプリセットと、名義の学習（2026-10-21）。**appConfig に置かない**（staff が書くため）。職員が書く |
+| `_notifyLog/{id}` | 通知の送信記録・二重防止（2026-10-21）。id は `assign_${event.id}`／`consent_${token}`／`daily_YYYY-MM-DD`（JST）。**書くのは Functions（Admin SDK）だけ、読めるのは管理者だけ**。catch-all の読み・書き両方から除外 |
+| `users/{email}.chatUserId` | Google Chat のユーザーID（数字5〜30桁）。メンションに使う。管理者が利用者管理で入力（users の書き込みは管理者と本人の onboarding のみ） |
 | `_counters` | 案件番号・発注/出荷番号の採番 |
 
 ## §C4 シーケンス：問い合わせ → 見積もり → 申し込み（SEQ・2026-09-14 更新）
@@ -505,3 +525,111 @@ FUNCTIONS_DISCOVERY_TIMEOUT=180 firebase deploy --only "functions:sendPartnerMai
 これはコードの不具合ではないので、この文言が出たらまずタイムアウトを疑うこと。
 
 なお rule05 のとおり **`--only functions` 単独は禁止**。必ず `functions:関数名` で列挙する。
+
+## §C7 出荷の状態遷移と在庫（2026-10-21・出荷の二段階化 案B）
+
+正本は純粋関数 `admin/js/ship-flow.js`（ESM・firebase 非依存・`scripts/test-ship-flow.mjs`）。画面（supply.js・case-detail.js・dashboard.js）は判定を自前に持たない。Functions は CommonJS で require できないため `NOTIFY_STATUSES` を `functions/index.js` に複製し、**両方に相互参照のコメント**がある（変えるときは両方）。
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft: Web申込・直送発注・受注から作成
+  [*] --> requested: 新規「登録して出荷を依頼する」
+  draft --> requested: 出荷を依頼する（出荷指示を Chat 投稿・在庫は動かさない）
+  draft --> shipped: すでに発送済（記録のみ・在庫を引く・指示は送らない）
+  requested --> shipped: 発送済にする（tx で在庫を引く・不足なら止める・dueRule=net14）
+  requested --> draft: 依頼を取り消す（shipNotified* を消す・在庫は動かさない）
+  shipped --> invoiced: 請求済にする（発行日・dueDate 保存）
+  invoiced --> paid: 入金（残額0）
+  paid --> invoiced: 入金の取消
+  draft --> canceled
+  requested --> canceled: 在庫は戻さない（センターへ連絡）
+  shipped --> canceled: 在庫を戻す
+  invoiced --> canceled: 在庫を戻す
+  canceled --> [*]
+  note right of requested
+    出荷指示は投稿済み。削除不可
+    （取り消してから）
+  end note
+```
+
+| 遷移 | 在庫 | Chat（出荷指示） | 記録するフィールド |
+|---|---|---|---|
+| draft →（依頼）→ requested | 動かさない（不足は警告のみ） | **投稿する**（`notifyShipment`） | `requestedBy/ByEmail/At`・`shipDate`＝希望出荷日・出荷元（必須）・`letterPackType` |
+| requested →（発送済）→ shipped | **引く**（tx で状態と在庫を再確認・不足なら止める） | 投稿しない | `shippedBy/ByEmail/At`・`confirmedAt`・`shipDate`＝発送日・`trackingNumber`（任意）・`dueRule:'net14'` |
+| draft →（記録のみ）→ shipped | 引く | 投稿しない（`shipNotifyStatus:"skipped"`） | 上と同じ |
+| requested →（取り消す）→ draft | 動かさない | 投稿しない（**取消の連絡は人**） | `requestRevertedAt/By`。**`shipNotifiedAt/Status/LockAt` を消す**（消さないと再依頼で投稿されない・`notifyShipment` が `shipNotifiedAt` で二重投稿を止めるため） |
+| requested → canceled | **戻さない** | なし | 画面が「出荷指示は投稿済み。センターへ取り消しの連絡を」と表示 |
+| shipped/invoiced → canceled | 戻す | ― | 従来どおり |
+
+**在庫を引いたかの判定は `stockDeducted(s)`**（状態が shipped/invoiced/paid **かつ** `fulfillment≠direct`）に一本化した。**在庫を戻す（`deleteShipment`・キャンセルの `cancelShipUsesStock`）・数量変更の差分を動かす（`saveShipEdit`・`qtyDelta`）のはこれが真のときだけ**。「発送元の欄」と「自社在庫から発送のバッジ」は `usesWarehouse` のまま（在庫を引くかとは別の問い）。
+
+**直した既存バグ3件（設計 §1・2026-10-21）**: ①下書きを削除すると、引いていない在庫が戻っていた（水増し）②下書きの数量を直すと在庫が動き、確定でもう一度全量を引いていた（二重引き落とし）③「発送済にする」の同時押しで二重に引かれた（`confirmDraftShipment` が tx でなかった。`markShipped` は tx で `requested` を再確認）。**過去の削除で在庫が水増しされていないか**は、`inventoryMovements` の `shipment_canceled` のうち対応する引き落としが無い soNumber を数えれば分かる（調べるだけ・実装後に1回）。
+
+**デプロイ順: Functions（`requested` を許可）→ Hosting。** 逆だと依頼時に `failed-precondition`。見積もりの改版（`reviseQuote`）は `requested` の出荷を止めたまま「依頼を取り消してから」と案内する（出荷指示を投稿済みのため）。
+
+**重複警告・在庫の目安**: `admin/js/ship-dup.js` の `findDuplicateDrafts`（案件ごとに draft/requested が2件以上・残す候補は `cases.shipmentId`）と `stockAdvice(items, products, locations)`。「こちらを残す」は同じ案件のほかの出荷を、既存のキャンセルの画面で理由「重複登録」にして1件ずつキャンセルする（**削除ではない**）。判定は `supply-rules.js`（`stockAdviceShown`）・`screen-rules.js`（`caseDuplicateBanner`・`preShipCountAfterMerge`）。
+
+## §C8 通知・受注確定・認可（Functions・2026-10-21）
+
+| 関数 | 種別 | 役割 | 要点 |
+|---|---|---|---|
+| `onCaseAssigned` | Firestore トリガー（`onDocumentUpdated cases/{id}`） | 担当決定を本人へ Chat 通知 | 発火は `Flow.shouldNotifyAssign`（担当が変わった・空でない・archived/統合元でない・`assignedAt` が変わった）。二重防止 `_notifyLog/assign_${event.id}`（再配信でも1回）。**cases には書かない**（自分を呼び直すループを作らない）。メンションは `users/{email}.chatUserId`（数字のみ `<users/ID>`、無ければ「名前さん」）。自分で自分を担当にしたときはメンションなし。統合（`mergeInto`）の担当書き換えは `assignedBy` を書かず通知しない |
+| `onConsentSigned` | Firestore トリガー（`consentRequests/{token}`） | 承諾書のオンライン署名完了を通知 | `Flow.shouldNotifyConsent`（pending→signed・`method==="web"`・caseId あり。紙の記録＝新規作成は対象外）。案件の活動に記録し、Chat（CRM通知）へ担当を @メンション。**確認者名は載せない**。二重防止 `_notifyLog/consent_${token}` |
+| `dailyFollowup` | スケジュール（毎朝9時 JST） | 日次まとめ | 全体1通＋担当ごとに1通（`planDailyPosts`）。期限は `settings.subsidyDeadline`（以前は 2027-03-12 固定）。archived は全項目で除外。二重実行防止 `_notifyLog/daily_YYYY-MM-DD`。投稿の間に1.1秒。途中の例外は下の「レビュー指摘の修正」⑧ |
+| `previewDailyFollowup` | Callable（admin） | 日次まとめのプレビュー | 投稿せず `{overall, assignees}` の本文を返す。settings 画面のボタン |
+| `staffAcceptQuote` | Callable（editor） | 電話・メール・FAX で受けた申込を受注確定 | `acceptQuoteTransaction` を `actor`（web/staff）で共用。スタッフ経路はトークン確認なし。拒否条件は `accept-rules.js` の `checkStaffAccept`（受理済み・旧版・期限切れ〔**受付日**で比較〕・受付日が未来・申込者名なし・キャンセル以外の出荷あり。**失注/完了は拒否しない**＝下の「レビュー指摘の修正」） |
+| `requireStaff(request,{allow})` | 共通認可 | users に登録・active・role を確認 | `Flow.roleAllows`。editor＝reviseQuote・resendQuoteMail・staffCreateQuote・saveQuotePdf・sendCaseEmail・sendSupplierOrder・sendPartnerMail・reportInvoiceToAccounting・aiAssist・staffAcceptQuote、admin＝testChatNotify・collectAnalyticsNow・previewDailyFollowup。`notifyShipment` は既に同等の判定 |
+
+**受注確定の共通処理（Web・スタッフ）**: tx の中で案件の出荷を取得し、**生きている draft/requested があれば新しく作らず使い直す**（`planWebShipment`）。発送済以降だけがあるとき、Web は作成を続けつつ出荷に `duplicateWarning:true`・`duplicateOf`（Chat に注記）、スタッフは拒否。案件の状態は **1・2 のときだけ 3 にする**（5〜12 は据え置き。4・13 は再申込として 3 に戻す＝下の④。以前は無条件で 3 に戻していた）。スタッフ経路の書き込み: `cases.orderedVia:"staff"`・`orderedAt`＝受付日・`orderConfirmedAt/By`、`quotes.acceptedVia:"staff"`・`acceptedChannel`・`acceptedReceivedDate`・`acceptedByStaff`・`agreedName`、**`agreedPolicy:null`（同意を偽装しない）**。~~`createOrUpdateMitsumoriQuote` は accepted の版があるとき `shipmentId` を引き継ぐ~~ → **廃止**（下の③）。
+
+**共有コード**: `functions/first-contact.mjs` は `admin/js/first-contact.js` の**バイト単位で同じコピー**（Functions は CommonJS で ESM の admin 側を require できないため）。`scripts/check-shared-sync.sh`（`cmp`）で一致を検査する（`check-pricing-sync.sh` と同じ方式）。違ったら正本（admin 側）から `cp` する。`functions/notify-text.mjs`（純粋 ESM）は `index.js` から `import()` で遅延ロード。定数（TERMINAL・ENGAGED など）は `admin/js/constants.js` とコピーせず、テストで一致を確かめる。**通知本文に入れてよいのは案件番号・地域・事業所名・状態・日数まで**（利用者の情報・事業所の連絡先・確認者名は入れない）。
+
+**firestore.rules（2026-10-21）**: ①`appConfig` を `allow read: isRegistered()`・`allow write: isAdmin()` に（以前は catch-all の `isEditor()` で staff も書けた）②`_notifyLog` は read=管理者・write=誰も（Functions のみ）③catch-all の除外に `appConfig`・`_notifyLog` を追加し、**`_notifyLog` は catch-all の read からも除外**（個別 match の「管理者だけ」を素通りさせない）④`bankTxns`・`bankConfig` は職員が書くので除外しない。
+
+**デプロイ前の確認（トリガー）**: ①`region` を Firestore DB のロケーションに合わせる（`gcloud firestore databases describe --project kjk-tadakayo` の `locationId`。コードは `asia-northeast1`）②実行 SA（`SA_BATCH`＝fn-batch-sa）に `roles/eventarc.eventReceiver`、初回は Eventarc／Pub/Sub のサービスエージェント権限 ③`requireStaff` を呼ぶ関数の SA に Firestore 読み取り権限（`fn-ai-sa` は `aiplatform.user` のみだったので追加が必要）。**PM の投稿先**（`pmChatWebhookUrl`）は現在どの機能からも自動投稿していない（設定画面に注記・削除はしない）。
+
+**レビュー指摘の修正（2026-10-21 夕・Functions 側）**
+- ① **Web 申込で既存の出荷を使い直すとき**、新規作成と同じ「申込の項目」を書き直す: 届け先（`company`・`officeName`・`postal`・`address`・`contactName`・`phone`）・`items`・`subsidyCategory`・`subsidyQty`・`preferredDate`・`payMethod`・`orderNote`・`quoteId`・`estNo`・`caseNumber`。組み立ては `Flow.shipmentFieldsFromAccept`（新規作成も同じ関数）。**状態・`soNumber`・出荷元（`shipType`・partner・`shippingMethod` 等）・`shipDate`・`createdAt/By` は書き換えない**（スタッフが進めた段取りを申込で巻き戻さない）。使い直した出荷が requested なら Chat に「センターへ連絡」を注記（従来どおり）。
+- ② `reviseQuote` が下書きの出荷を更新するときも `subsidyCategory`・`subsidyQty`（`Flow.subsidyQtyFromItems`）を更新する。
+- ③ **新しい版への `shipmentId`/`shipmentNo` の引き継ぎ（`inheritShipmentRef`）を廃止**。申込時に案件の出荷を使い直す（`planWebShipment`）ので不要で、残すと未申込の版で `reviseQuote` したときに申込済みの出荷の下書きが上書きされた。
+- ④ **失注(4)・完了(13)の案件への申込は拒否しない**。Web・スタッフとも受け付けて案件を **3 に戻し**、`cases.reopenedFrom`（4/13）・`reopenedAt` を記録、活動の件名に「再申込で再開（失注から／完了から）」（`Flow.reopenLabel`）、Chat に 🔁 の注記。`lostReason`・`completedAt` は消さない（経緯として残す）。`checkStaffAccept` の `case_lost`/`case_done` は削除。5〜12 は従来どおり据え置き。
+- ⑤ **スタッフ経路の `orderedAt` は、案件にすでにあれば上書きしない**（Web と同じ・`Flow.staffOrderedAtMs`）。無ければ受付日（JST 0時）。
+- ⑥ `staffAcceptQuote` の確認メールの宛先は **案件の `contactEmail` → 見積もりの `contactEmail`** の順（`Flow.acceptMailTo`）。戻り値に必ず `mailed`（真偽）・`mailError`（文字列 or null。送る指定なのに宛先が無いときも理由を入れる）。
+- ⑦ グループの事前確認（`checkAcceptGroup`）: 1件だけ（`groupQuoteIds` が空）はグループでなくても通す。`groupQuoteIds` があるのに対象に `groupId` が無ければ「この見積もりはグループ（同じ法人の一括見積もり）ではありません。…1件ずつ受注確定にしてください」で拒否。
+- ⑧ **日次まとめの途中の例外**: `_notifyLog/daily_日付` を作ったあとに組み立て・投稿先の取得・記録の更新で例外が出たら、**1件も投稿していなければ記録を削除**（次の再実行で投稿できる）、**1件以上投稿済みなら `status:"partial"`・`error`・`posted` を記録**（消すと二重投稿になる）。判定は `Flow.dailyFailureAction`、例外は `console.error`。
+- ⑨ `requireStaff` で `users` の読み取りが失敗したら（実行 SA に Firestore 読み取り権限が無い等）、`HttpsError("internal","権限の確認に失敗しました（サービスアカウントの Firestore 読み取り権限を確認）")` に変換して返す（元の例外は `console.error`）。**デプロイ手順: `fn-ai-sa` に `roles/datastore.viewer` 以上を付与**（`aiAssist` が `requireStaff` を呼ぶため。`index.js` の `SA_AI` の横にコマンドを記載）。
+- テスト: `test-functions-wiring.mjs`（15件）・`test-accept-rules.mjs`（9件）に上記の判定と `index.js` の結線（静的検査）を追加。
+
+## §C9 入金明細（銀行CSV）の取り込み（2026-10-21）
+
+- 純粋関数 `admin/js/bank-match.js`: `decodeBankFile`（UTF-8→だめなら Shift_JIS）・`mapRows`（列割り当て・日付4形式・金額の記号除去・出金は捨てる）・`normalizePayer`（NFKC・小書きカナ・空白）・`extractCode`（振込人コード＝出荷番号の末尾4桁）・`rowHash`・`buildCandidates`（コード一致+50・金額一致+40・名義の学習一致+30、理由つき）・`autoSelect`。
+- **`autoSelect` は「コードと金額の両方が一致する候補が1件だけで、出荷側も1対1」のときだけ**選択状態にする。それ以外は人が選ぶまで記録しない（**確定は必ず人**）。
+- 画面 `admin/js/bank-import.js`＋`supply.html` の `bankModal`: ファイル → 先頭5行で列割り当て（プリセットは `bankConfig/presets`）→ 照合表 → 「選んだ n件を入金として記録」。確定は出荷ごとに tx で残額を計算し直し、`payments[]` に `{amount, date, note:"銀行明細取込", recordedBy, recordedAt, source:"bank_csv", bankTxnId}`、`bankTxns/{hash}` に最小限を残す。**同じ行は二度取り込めない**（既存 hash は「取込済み」）。名義の学習は `bankConfig/payerAliases`。
+- 1回の振込で複数の請求を払った場合は v1 では対象外（手で記録）。銀行ごとの CSV 形式は未確定（次田さんから実ファイルを預かるまでは列割り当て画面で対応・設計 §9-12）。
+
+## §C10 テスト一覧（2026-10-21 追加分）
+
+いずれも `node scripts/<ファイル>` で実行（Firebase に接続しない純粋関数のテスト。ルールのみエミュレーター）。
+
+| ファイル | 対象 |
+|---|---|
+| `test-ship-flow.mjs` | 状態×出荷元の18通り・遷移表・ボタン・`stockDeducted`・`qtyDelta`・再送判定 |
+| `test-notify-text.mjs` | 分類の境界・文面（**連絡先や確認者名が含まれないこと**）・`constants.js` との定数一致 |
+| `test-accept-rules.mjs` | `checkStaffAccept` の拒否条件（期限は受付日で比較） |
+| `test-case-complete-check.mjs` | 完了(13)の警告8種の判定 |
+| `test-ship-dup.mjs` | 重複の検出・残す候補・在庫の目安 |
+| `test-bank-match.mjs` | 正規化・日付4形式・Shift_JIS・1対1のときだけ自動選択 |
+| `test-functions-wiring.mjs` | `accept-flow.js`（認可・受注確定・通知の発火条件・日次の投稿計画）と `index.js` の結線 |
+| `test-screen-wiring.mjs` | 画面側の判定（完了の警告・重複の帯・統合の確認・受注確定の入力） |
+| `test-supply-wiring.mjs` | 供給管理の画面ルール（重複・在庫の目安・入金取り込み） |
+| `test-rules-appconfig.mjs` | **エミュレーター**: staff・viewer は `appConfig` を書けない／admin は書ける／`_notifyLog` は誰も書けない |
+| `scripts/check-shared-sync.sh` | `first-contact.js` と `first-contact.mjs` の一致 |
+| 既存の回帰 | `test-first-contact.mjs`・`test-assignee-filter.mjs`・`test-rules-catchall.mjs` ほか |
+
+**ハマりポイント（2026-10-21）**
+- Firestore ルールは「どれか1つの match が許せば通る」。個別 match で「管理者だけ」と決めても、catch-all が許せば素通りする。**catch-all の除外に入れ忘れない**（read も）。
+- 取り消し（requested→draft）で `shipNotified*` を消し忘れると、再依頼で出荷指示が投稿されない。
+- Firestore トリガーの `region` が DB のロケーションと違うとデプロイで失敗する。
+- 出荷指示の `NOTIFY_STATUSES` を片方だけ変えると、画面は依頼できるのに Function が止める（`failed-precondition`）。
+- `functions/first-contact.mjs` を直接直すと次の同期で消える。正本は admin 側。
+- 日次まとめの祝日表（`JP_HOLIDAYS`）が 2027 年までしか無い。`holidaysCover` が false のときは更新が要る（未登録の年は祝日が平日扱いになり初期連絡の超過が早く出る）。

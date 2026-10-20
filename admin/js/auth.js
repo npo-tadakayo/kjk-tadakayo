@@ -1,3 +1,4 @@
+import "/js/emu.js"; // ローカルのエミュレーター接続（localhost かつ ?emu=1 のときだけ。本番では何もしない）
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";

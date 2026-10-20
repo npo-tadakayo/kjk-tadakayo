@@ -6,6 +6,7 @@
 //   ・各版の「見積書を表示」から /quote-print.html を開き、閲覧・印刷・PDF保存・事業所へ送付ができる
 //   ・PDFを開く（保存済みの場合）
 //   ・事業所へ再送（Cloud Functions の resendQuoteMail を呼ぶ。Storage の保存済みPDFを添付して送る）
+//   ・電話・メール・FAX で受けた申込を「受注確定」にする（staffAcceptQuote。設計 §5 A）
 //
 // 設計の要:
 //   ・見積もりは事業所側（mitsumori.html）でも、スタッフ（このカード）でも作れる。
@@ -21,6 +22,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
+import { todayYmdJst, ACCEPT_CHANNELS, PAY_METHODS, buildGroupChoices, buildAcceptPayload,
+  summarizeAcceptResult, acceptMailTo } from "/js/screen-rules.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -119,6 +122,18 @@ function isExpired(q) {
   return !!(d && !Number.isNaN(d.getTime()) && d.getTime() < Date.now());
 }
 
+// 「受注確定にする」ボタン。最新版で発行済み（issued）のときだけ出す。
+// 文言に「確定」を含むので、閲覧のみ（viewer）の人には role.js の applyViewerMode が自動で無効化する。
+function acceptBtn(q, isLatest) {
+  if (!isLatest || q.status !== "issued") return "";
+  const expiredNote = isExpired(q)
+    ? `<span style="font-size:12px;color:#8a5a1f">有効期限を過ぎています。申込を受けた日（受付日）が有効期限内のときだけ確定できます</span>`
+    : "";
+  return `<button class="btn btn-primary" data-accept-id="${esc(q._id)}" type="button">
+    <i class="ti ti-circle-check" aria-hidden="true"></i> 受注確定にする（電話・メールで申込を受けた）
+  </button>${expiredNote}`;
+}
+
 function rowHtml(q, isLatest) {
   const plan = PLAN_LABELS[q.plan] || q.plan || "—";
   const expiredTag = isExpired(q) && q.status !== "superseded"
@@ -145,6 +160,7 @@ function rowHtml(q, isLatest) {
         ${pdfCell(q)}
         ${resendBtn(q)}
         ${reviseBtn(q, isLatest)}
+        ${acceptBtn(q, isLatest)}
       </div>
     </div>`;
 }
@@ -208,6 +224,9 @@ function wire() {
   });
   host.querySelectorAll("[data-revise-id]").forEach((btn) => {
     btn.addEventListener("click", () => openRevise(btn.getAttribute("data-revise-id")));
+  });
+  host.querySelectorAll("[data-accept-id]").forEach((btn) => {
+    btn.addEventListener("click", () => openAccept(btn.getAttribute("data-accept-id")));
   });
   const cancel = document.getElementById("reviseCancel");
   if (cancel) cancel.addEventListener("click", closeRevise);
@@ -466,6 +485,198 @@ async function submitCreate() {
     show(e.message || String(e));
     btn.disabled = false; btn.textContent = "この内容で見積もりを作る";
   }
+}
+
+// ---- 受注確定（電話・メール・FAX で受けた申込）----
+// サーバの staffAcceptQuote が正（拒否条件は functions/accept-rules.js の checkStaffAccept）。
+// 画面では入力の形だけ確かめ、サーバのエラー文はそのまま見せる。
+let accepting = null;      // モーダルを開いている見積もり
+let acceptBusy = false;    // 二重押し防止
+
+// 同じグループの見積もりは「選んだ見積もりの groupId」で引く（2026-10-21 レビュー指摘）。
+// 案件の quoteGroupId は別の版・別のグループを指していることがあるので使わない。groupId が無ければ一覧を出さない
+async function loadGroupChoices(q) {
+  const gid = q.groupId || "";
+  if (!gid) return [];
+  try {
+    const snap = await getDocs(query(collection(ctx.db, "quotes"), where("groupId", "==", gid)));
+    return buildGroupChoices(snap.docs.map((d) => ({ _id: d.id, ...d.data() })), q);
+  } catch (e) {
+    console.warn("quote card: group quotes load failed", e.message);
+    return null;   // 読めなかった（一覧は出さず、その旨を表示）
+  }
+}
+
+async function openAccept(quoteId) {
+  const q = quotes.find((x) => x._id === quoteId);
+  if (!q) return;
+  accepting = q;
+  acceptBusy = false;
+  const kase = ctx.getCase ? ctx.getCase() : {};
+  // 確認メールの宛先はサーバと同じ規則（案件の contactEmail → 無ければ見積もりの contactEmail）
+  const hasEmail = !!acceptMailTo(kase?.contactEmail, q.contactEmail);
+  const today = todayYmdJst();
+  const host = document.getElementById("reviseModalHost");
+  host.innerHTML = `
+    <div class="modal-overlay open" id="acceptModal">
+      <div class="modal" style="width:min(560px,95vw)">
+        <div class="modal-header">
+          <h3 style="font-size:15px;margin:0">受注確定にする（${esc(q.estNo || "")} v${esc(q.version ?? "—")}）</h3>
+        </div>
+        <div class="modal-body" style="display:grid;gap:14px" id="acBody">
+          <p style="font-size:12.5px;color:var(--color-ink-muted);line-height:1.8;margin:0">
+            電話・メール・FAX などで、この見積もりへのお申し込みを受けたときに使います。
+            Web でのお申し込みと同じく、出荷の下書きを作ります（同意のチェックは記録しません）。
+          </p>
+          ${isExpired(q) ? `<p style="font-size:12.5px;color:#8a5a1f;margin:0;line-height:1.7">この見積もりは有効期限（${esc(ymdJst(q.validUntil))}）を過ぎています。受付日が有効期限内のときだけ確定できます。</p>` : ""}
+          <div>
+            <label class="form-label" for="acName">申込者のお名前<span style="color:var(--color-primary)">必須</span></label>
+            <input class="form-control" id="acName" placeholder="例: 山田 花子（管理者）" maxlength="100">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label class="form-label" for="acChannel">受付方法</label>
+              <select class="form-control" id="acChannel">
+                ${ACCEPT_CHANNELS.map((c) => `<option value="${c.value}">${esc(c.label)}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="acDate">受付日</label>
+              <input class="form-control" id="acDate" type="date" value="${today}" max="${today}">
+            </div>
+            <div>
+              <label class="form-label" for="acPay">お支払い</label>
+              <select class="form-control" id="acPay">
+                ${PAY_METHODS.map((p) => `<option value="${p.value}">${esc(p.label)}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="form-label" for="acPreferred">ご希望日（任意）</label>
+              <input class="form-control" id="acPreferred" type="date">
+            </div>
+          </div>
+          <div>
+            <label class="form-label" for="acNote">メモ（任意）</label>
+            <input class="form-control" id="acNote" placeholder="例: 10/21 電話で管理者さまから申込。発送先は事業所あて">
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px">
+            <input type="checkbox" id="acMail" ${hasEmail ? "checked" : "disabled"}> お申し込みの確認メールを事業所へ送る
+          </label>
+          ${!hasEmail ? `<p style="font-size:12.5px;color:var(--color-ink-muted);margin:0">案件・見積もりにメールアドレスがないため、確認メールは送れません。</p>` : ""}
+          <div id="acGroup"></div>
+          <p id="acError" role="alert" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7;white-space:pre-wrap"></p>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end" id="acFooter">
+          <button class="btn btn-secondary" id="acceptCancel" type="button">やめる</button>
+          <button class="btn btn-primary" id="acceptSubmit" type="button">受注確定にする</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById("acceptCancel").addEventListener("click", closeAccept);
+  document.getElementById("acceptSubmit").addEventListener("click", submitAccept);
+  document.getElementById("acceptModal").addEventListener("click", (e) => {
+    if (e.target.id === "acceptModal" && !acceptBusy) closeAccept();
+  });
+
+  // 同じグループ（法人まとめ）の他の事業所。既定は全部オン
+  const gwrap = document.getElementById("acGroup");
+  if (q.groupId) {
+    gwrap.innerHTML = `<p style="font-size:12px;color:var(--color-ink-muted);margin:0"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 同じ法人の事業所を確認しています...</p>`;
+    const choices = await loadGroupChoices(q);
+    if (accepting !== q) return;   // 読み込み中に閉じられた
+    if (choices === null) {
+      gwrap.innerHTML = `<p style="font-size:12px;color:var(--color-primary);margin:0">同じ法人の事業所を読み込めませんでした。この事業所だけを確定します。</p>`;
+    } else if (!choices.length) {
+      gwrap.innerHTML = "";
+    } else {
+      gwrap.innerHTML = `
+        <fieldset style="border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;margin:0">
+          <legend style="font-size:13px;font-weight:600;padding:0 4px">同じ法人の事業所もまとめて確定する</legend>
+          ${choices.map((c) => `
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px">
+              <input type="checkbox" class="ac-group" value="${esc(c.quoteId)}" ${c.checked ? "checked" : ""}> ${esc(c.label)}
+            </label>`).join("")}
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:4px 0 0">発行済みで最新の版の見積もりだけを出しています。外した事業所は確定しません。</p>
+        </fieldset>`;
+    }
+  }
+}
+
+function closeAccept() {
+  if (acceptBusy) return;
+  const host = document.getElementById("reviseModalHost");
+  if (host) host.innerHTML = "";
+  accepting = null;
+}
+
+async function submitAccept() {
+  if (!accepting || acceptBusy) return;
+  const err = document.getElementById("acError");
+  const show = (m) => { err.textContent = m; err.style.display = "block"; };
+  err.style.display = "none";
+  const val = (id) => (document.getElementById(id)?.value || "");
+  const built = buildAcceptPayload({
+    quoteId: accepting._id,
+    acceptedName: val("acName"),
+    channel: val("acChannel"),
+    receivedDate: val("acDate"),
+    payMethod: val("acPay"),
+    preferredDate: val("acPreferred"),
+    note: val("acNote"),
+    sendMail: !!document.getElementById("acMail")?.checked,
+    groupQuoteIds: [...document.querySelectorAll("#acGroup .ac-group:checked")].map((x) => x.value),
+  }, todayYmdJst());
+  if (built.error) { show(built.error); return; }
+
+  const btn = document.getElementById("acceptSubmit");
+  const cancel = document.getElementById("acceptCancel");
+  acceptBusy = true;
+  btn.disabled = true; btn.textContent = "確定中...";
+  if (cancel) cancel.disabled = true;
+  try {
+    const fn = httpsCallable(ctx.functions, "staffAcceptQuote");
+    const r = await fn(built.payload);
+    const sum = summarizeAcceptResult(r.data, { sendMail: built.payload.sendMail });
+    acceptBusy = false;
+    showAcceptResult(sum);
+    if (sum.ok) {
+      ctx.toast(`受注確定にしました（出荷番号 ${sum.soNumbers.join("・") || "—"}）`
+        + (sum.mail === "sent" ? "。確認メールを送りました" : sum.mail === "failed" ? "。確認メールは送れませんでした" : ""));
+    }
+  } catch (e) {
+    // サーバの拒否理由（期限切れ・受理済みなど）はそのまま見せる
+    acceptBusy = false;
+    show(e.message || String(e));
+    btn.disabled = false; btn.textContent = "受注確定にする";
+    if (cancel) cancel.disabled = false;
+  }
+}
+
+// 結果をモーダルの中に出す（出荷番号と、次にやること）。閉じるボタンだけにする
+function showAcceptResult(sum) {
+  const body = document.getElementById("acBody");
+  const footer = document.getElementById("acFooter");
+  if (!body || !footer) return;
+  const soLinks = sum.soNumbers.map((so) =>
+    `<a href="/supply.html?tab=shipments&so=${encodeURIComponent(so)}">${esc(so)}</a>`).join("・");
+  body.innerHTML = `
+    ${sum.ok ? `
+      <p style="font-size:14px;font-weight:600;margin:0;color:#1F7A4F"><i class="ti ti-circle-check" aria-hidden="true"></i> 受注確定にしました</p>
+      <p style="font-size:13px;margin:0;line-height:1.8">出荷番号: ${soLinks || "—"}</p>
+      <p style="font-size:13px;margin:0;line-height:1.8"><strong>供給管理で出荷を依頼してください。</strong>（出荷の下書きができています）</p>
+      ${sum.mail === "sent" ? `<p style="font-size:13px;margin:0;line-height:1.8"><i class="ti ti-mail-check" aria-hidden="true"></i> 事業所へ確認メールを送りました</p>` : ""}
+      ${sum.mail === "failed" ? `
+        <div id="acMailWarn" role="alert" style="font-size:13px;line-height:1.8;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:10px 12px">
+          <strong><i class="ti ti-alert-triangle" aria-hidden="true"></i> 確認メールは送れていません</strong><br>${esc(sum.mailWarning)}
+        </div>` : ""}`
+    : `<p style="font-size:14px;font-weight:600;margin:0;color:var(--color-primary)">受注確定にできませんでした</p>`}
+    ${sum.errors.length ? `
+      <div style="font-size:12.5px;color:var(--color-primary);line-height:1.7">
+        ${sum.partial ? "一部の事業所は確定できませんでした:<br>" : ""}
+        ${sum.errors.map((m) => `・${esc(m)}`).join("<br>")}
+      </div>` : ""}`;
+  footer.innerHTML = `<button class="btn btn-secondary" id="acceptClose" type="button">閉じる</button>`;
+  document.getElementById("acceptClose").addEventListener("click", closeAccept);
 }
 
 async function loadProducts() {

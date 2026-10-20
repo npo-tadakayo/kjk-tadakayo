@@ -125,6 +125,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // アプリの設定（通知先・シミュレーター・伴走トレーナー名簿など）。
+    // 読めるのは登録スタッフ、書けるのは管理者だけ（2026-10-21）。
+    match /appConfig/{docId} {
+      allow read: if isRegistered();
+      allow write: if isAdmin();
+    }
+
+    // 通知の送信記録（重複送信の防止・追跡用）。書き込みは Functions（Admin SDK）だけ。
+    // 読めるのは管理者だけ（2026-10-21）。
+    match /_notifyLog/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     //
     // ⚠ 2026-10-20 修正: Firestore のルールは「どれか1つの match が許せば通る」。この「その他すべて」は
@@ -132,13 +146,17 @@ service cloud.firestore {
     //    実際に、登録スタッフなら誰でも users を書き換えられた（自分を admin にできた）。
     //    個別の match で書き込みを「狭く」決めているコレクションは、ここでの書き込みの対象から外す:
     //      users（管理者と本人の onboarding だけ）／leadTokens（Functions だけ）／
-    //      supportBadges（訂正・削除は管理者だけ）／supportEvaluations（削除は管理者だけ）
+    //      supportBadges（訂正・削除は管理者だけ）／supportEvaluations（削除は管理者だけ）／
+    //      appConfig（管理者だけ）／_notifyLog（Functions だけ）
+    //    bankTxns（入金明細の取り込み記録）・bankConfig（列割り当てのプリセット・名義の学習）は
+    //    職員が書くのでここのまま（除外しない）。
     //    読み取りは従来どおり（担当営業の候補などで職員が users を読んでいるため、ここでは変えない）。
     //    partnerOrders は職員の発注ファイル取り込み（supply.js）がここの書き込みに頼っているので対象外にしない。
     match /{coll}/{document=**} {
-      allow read: if isRegistered();
+      // _notifyLog だけは読みも管理者に絞る（ここで読めてしまうと個別 match の「管理者だけ」が素通りになる）
+      allow read: if isRegistered() && coll != "_notifyLog";
       allow write: if isEditor()
-        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations"]);
+        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations", "appConfig", "_notifyLog"]);
     }
   }
 }

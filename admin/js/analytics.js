@@ -160,7 +160,14 @@ onAuthStateChanged(auth, async (user) => {
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
-  document.getElementById("refreshBtn").addEventListener("click", (e) => refresh(e.currentTarget));
+  // 「今すぐ更新」は管理者だけ（サーバ側も管理者以外は permission-denied）。それ以外の人には出さない
+  const refreshBtn = document.getElementById("refreshBtn");
+  if (myRole.role === "admin") {
+    refreshBtn.style.display = "";
+    refreshBtn.addEventListener("click", (e) => refresh(e.currentTarget));
+  } else {
+    refreshBtn.remove();
+  }
 
   onSnapshot(doc(db, "analyticsSummary", "latest"), (snap) => {
     render(snap.exists() ? snap.data() : null);
