@@ -20,11 +20,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // それ以外（練習用の案件・事業所・見積・出荷・設定など）は @tadakayo.jp の職員なら読み書き可。
-    // 注: Firestore のルールは「どれか1つの match が許可すれば通る」ので、ここで users を
-    //     除外しておかないと上の false が効かない。そのためコレクション名で users を除く。
+    // 通知の送信記録（_notifyLog）は練習DBでは使わない（通知のトリガーは本番DBだけに反応する・2026-10-21）。
+    // 練習中の画面も読まないので、読み書きとも閉じる。
+    match /_notifyLog/{id} {
+      allow read, write: if false;
+    }
+
+    // それ以外（練習用の案件・事業所・見積・出荷・設定・入金明細の取り込み記録 bankTxns・
+    // 列割り当て／名義の学習 bankConfig など）は @tadakayo.jp の職員なら読み書き可。
+    // 注: Firestore のルールは「どれか1つの match が許可すれば通る」ので、ここで users・_notifyLog を
+    //     除外しておかないと上の false が効かない。そのためコレクション名で除く。
     match /{collection}/{docId=**} {
-      allow read, write: if collection != 'users' && isTadakayoStaff();
+      allow read, write: if !(collection in ['users', '_notifyLog']) && isTadakayoStaff();
     }
   }
 }

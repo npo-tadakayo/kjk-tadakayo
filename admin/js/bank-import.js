@@ -5,8 +5,9 @@
 // 列の割り当て（プリセット）と名義の学習は bankConfig/ に置く（appConfig は管理者専用なので使わない）。
 // 照合・記録の判定は bank-match.js（部品）と supply-rules.js（画面の判定）に寄せ、ここは画面と書き込みだけ。
 
+// 練習モードでは練習DBに書く（db は supply.js から渡される。書き込みの作成者の印は fs.js が付ける・2026-10-21）
 import { doc, getDoc, setDoc, runTransaction, serverTimestamp, arrayUnion }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import { decodeBankFile, parseCsv, mapRows, hashRows, buildCandidates, autoSelect, bankTxnIdCandidates, pickFreeTxnId } from "/js/bank-match.js";
 import { guessMapping, toMapRowsMapping, initialSelection, groupByShipment, bankPaymentOf, bankTxnDocOf,
   applyBankPayments, payConfirmText, aliasLearnings, remainOf } from "/js/supply-rules.js";

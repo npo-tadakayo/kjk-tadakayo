@@ -8,6 +8,9 @@
 // 条件がそろったら firebaseConfig の projectId を demo-kjk に差し替える（demo- で始まるプロジェクトは
 // エミュレーター専用で、本番につながる経路を持たない）。差し替え後にもう一度 demo- を確かめてから接続する。
 //
+// 練習モード（fs.js）との関係: 接続先の切り替え（本番DB／練習DB）は fs.js、エミュレーターへの接続はここ。
+// ここは両方のDBをエミュレーターへつなぐだけで、どちらを使うかは決めない（衝突しない）。
+//
 // 使い方: 各画面のモジュールが共通で読む role.js（と consent-sign.js・auth.js）の先頭で
 //   import "/js/emu.js";
 // とするだけ。依存モジュールは読み込み側より先に評価されるので、画面の getFirestore 等より前に接続が済む。
@@ -50,6 +53,10 @@ if (EMULATED) {
   const h = location.hostname;
   A.connectAuthEmulator(A.getAuth(app), `http://${h}:9099`, { disableWarnings: true });
   F.connectFirestoreEmulator(F.getFirestore(app), h, 8080);
+  // 練習用データベース（practice・2026-10-20 テストモード）も同じエミュレーターにつなぐ。
+  // fs.js の getFirestore は練習中 getFirestore(app, "practice") を返すので、ここで接続しておかないと
+  // 練習DBだけがエミュレーターの外（demo-kjk の本物の宛先）へ向かう。接続は最初の読み書きより前に1回だけ。
+  F.connectFirestoreEmulator(F.getFirestore(app, "practice"), h, 8080);
   Fn.connectFunctionsEmulator(Fn.getFunctions(app, "asia-northeast1"), h, 5001);
   S.connectStorageEmulator(S.getStorage(app), h, 9199);
   console.warn(`[emu] Firebase エミュレーターに接続しました（project=${EMU_PROJECT}）`);

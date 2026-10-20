@@ -31,7 +31,7 @@ const SA_WEBHOOK = "fn-webhook-sa@kjk-tadakayo.iam.gserviceaccount.com"; // data
 const SA_BATCH   = "fn-batch-sa@kjk-tadakayo.iam.gserviceaccount.com";   // datastore.user + CHAT secretAccessor
 const SA_AI      = "fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com";      // aiplatform.user のみ
 // ⚠️ デプロイ手順（2026-10-21）: aiAssist は requireStaff で users を読むので、fn-ai-sa に Firestore の読み取り権限
-//    （roles/datastore.viewer 以上）の付与が別途必要。無いと aiAssist が「権限の確認に失敗しました」（internal）になる。
+//    （roles/datastore.viewer 以上）が要る。無いと aiAssist が「権限の確認に失敗しました」（internal）になる。→ 2026-10-21 付与済み
 //    gcloud projects add-iam-policy-binding kjk-tadakayo --member=serviceAccount:fn-ai-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/datastore.viewer
 const SA_MAIL    = "fn-mail-sa@kjk-tadakayo.iam.gserviceaccount.com";    // datastore.user + kjk-gmail-sa tokenCreator
 
@@ -158,6 +158,8 @@ const STATUS = {
 // 画面は練習中に Functions を呼ばない（admin/js/fn.js）が、SDK から直接呼べば届いてしまうので、ここでも止める。
 // Admin SDK は Firestore ルールを迂回するため、ルールの拒否だけでは足りない（Codex レビュー指摘）。
 // 未登録の人の扱いは各関数の従来どおり（ここでは練習生だけを止める）。
+// 2026-10-21 統合: requireStaff（下）が練習生も拒否するので、requireStaff を使う Callable はそちらだけを呼ぶ。
+// rejectTrainee は独自の権限確認を持つ notifyShipment だけが使う。
 async function rejectTrainee(request) {
   const email = request.auth?.token?.email || "";
   if (!email) return;
@@ -319,6 +321,11 @@ async function requireStaff(request, { allow = "editor" } = {}) {
     throw new HttpsError("internal", "権限の確認に失敗しました（サービスアカウントの Firestore 読み取り権限を確認）");
   }
   const user = snap.exists ? snap.data() : null;
+  // 練習生（trainee）は本番の Callable をどれも使えない（2026-10-20 テストモードの rejectTrainee をここに統合。
+  // Flow.roleAllows も trainee を通さないが、分かる文言で返すため先に判定する）
+  if (user && user.role === "trainee") {
+    throw new HttpsError("permission-denied", "練習生のアカウントでは本番の操作はできません（練習モードで操作してください）");
+  }
   if (!Flow.roleAllows(user, allow)) {
     const msg = allow === "admin" ? "この操作は管理者だけができます"
       : allow === "editor" ? "この操作をする権限がありません（閲覧のみの利用者・未登録・無効の利用者はできません）"
@@ -1550,10 +1557,9 @@ exports.staffAcceptQuote = onCall(
 exports.reviseQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, reason, sendMail } = request.data || {};
     if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
     if (!reason || !String(reason).trim()) throw new HttpsError("invalid-argument", "変更の理由をご入力ください（あとから経緯を追えるようにするためです）");
@@ -1684,10 +1690,9 @@ exports.reviseQuote = onCall(
 exports.resendQuoteMail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, to: toOverride } = request.data || {};
     if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
     const ref = db.collection("quotes").doc(String(quoteId));
@@ -1724,10 +1729,9 @@ exports.resendQuoteMail = onCall(
 exports.staffCreateQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { caseId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, note, sendMail } = request.data || {};
     if (!caseId) throw new HttpsError("invalid-argument", "caseId は必須です");
 
@@ -1851,10 +1855,9 @@ exports.staffCreateQuote = onCall(
 exports.saveQuotePdf = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { quoteId, pdfBase64, mail } = request.data || {};
     if (!quoteId || !pdfBase64) throw new HttpsError("invalid-argument", "quoteId・pdfBase64 は必須です");
     if (typeof pdfBase64 !== "string" || pdfBase64.length > 13_400_000) throw new HttpsError("invalid-argument", "PDFが大きすぎます（10MB以下）");
@@ -1904,10 +1907,9 @@ exports.saveQuotePdf = onCall(
 
 const WEBHOOK_KIND_LABELS = { crm: "CRM通知", pm: "PM", shipping: "出荷指示", accounting: "経理" };
 exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "admin" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
-  await requireStaff(request, { allow: "admin" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
   const kind = (request.data && request.data.kind) || "crm";
   if (!WEBHOOK_KIND_LABELS[kind]) throw new HttpsError("invalid-argument", "投稿先の種類が不正です");
   _settingsCache = null; // 最新設定で送る
@@ -1934,6 +1936,8 @@ function regionOfFromOffices(officeMap) {
 }
 
 // 日次まとめの本文を組み立てる（投稿はしない）。dailyFollowup と previewDailyFollowup で共用
+// 読むのは本番の (default) データベースだけ（db = admin.firestore()）。練習DB（practice）は読まない（2026-10-21）。
+// dailyFollowup・previewDailyFollowup の両方がここを通る。
 async function buildDailyPlan(now = new Date()) {
   const nt = await loadNotify();
   _settingsCache = null; // 期限の設定を直した直後でも最新を使う
@@ -2040,10 +2044,12 @@ exports.previewDailyFollowup = onCall(
 // 発火条件は Flow.shouldNotifyAssign（担当が変わった・空でない・対象外/統合元でない・assignedAt が変わった）。
 // 二重防止: _notifyLog/assign_${event.id} を create してから投稿（再配信で同じ event.id が来ても1回だけ）。
 // cases には書かない（このトリガーが自分を呼び直すループを作らない）。活動の記録は画面側がしている。
+// 本番の (default) データベースだけに反応する（database を明示・2026-10-21）。練習DB（practice・テストモード）の
+// 案件の担当変更・署名では動かない＝練習中の操作で Chat に通知が飛ばない。
 // ⚠️ region は Firestore DB のロケーションに合わせる必要がある。asia-northeast1 で書いているが、デプロイ時に
 //    `gcloud firestore databases describe --project kjk-tadakayo` の locationId を確認すること（違えばここを直す）。
 exports.onCaseAssigned = onDocumentUpdated(
-  { document: "cases/{caseId}", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
+  { document: "cases/{caseId}", database: "(default)", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
   async (event) => {
     const before = event.data?.before?.data() || {};
     const after = event.data?.after?.data() || {};
@@ -2084,7 +2090,7 @@ exports.onCaseAssigned = onDocumentUpdated(
 // 投稿に失敗しても活動は残し、失敗したことを本文に書く。二重防止 _notifyLog/consent_${token}。
 // ⚠️ region はデプロイ時に Firestore のロケーションを確認（onCaseAssigned の注記と同じ）。
 exports.onConsentSigned = onDocumentUpdated(
-  { document: "consentRequests/{token}", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
+  { document: "consentRequests/{token}", database: "(default)", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
   async (event) => {
     const before = event.data?.before?.data() || {};
     const after = event.data?.after?.data() || {};
@@ -2193,13 +2199,10 @@ function buildPrompt(task, ctx, question) {
 exports.aiAssist = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_AI },
   async (request) => {
-    // ⚠ aiAssist だけは rejectTrainee を呼ばない（実行SA fn-ai-sa は aiplatform.user のみで Firestore を読めない＝最小権限を保つ）。
-    //    AI は画面から渡された文章を要約するだけで、本番のデータを読まず外部にも送らないため、練習生が直接呼んでも本番は変わらない（2026-10-20）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否
+    // 2026-10-21: fn-ai-sa に roles/datastore.viewer を付与済みなので、aiAssist も requireStaff で練習生を拒否する
+    //   （2026-10-20 のテストモードでは SA が Firestore を読めないため対象外にしていた。練習中の画面は代役を使う）
     const email = request.auth?.token?.email || "";
-    if (!email.endsWith("@tadakayo.jp")) {
-      throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    }
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { task, context, question } = request.data || {};
     const prompt = buildPrompt(task, context || {}, question);
     if (!prompt) throw new HttpsError("invalid-argument", `不明なタスク: ${task}`);
@@ -2304,12 +2307,11 @@ function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
 exports.sendCaseEmail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, subject, body, caseId } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -2357,12 +2359,11 @@ exports.sendCaseEmail = onCall(
 exports.sendSupplierOrder = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, cc, subject, body, pdfBase64, filename, poId } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -2407,12 +2408,11 @@ exports.sendSupplierOrder = onCall(
 exports.sendPartnerMail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const { to, cc, subject, body, shipmentId, kind, pdfBase64, filename, extraAttachments } = request.data || {};
     if (!to || !subject || !body) {
       throw new HttpsError("invalid-argument", "宛先・件名・本文は必須です");
@@ -2570,12 +2570,11 @@ async function postChatCard(webhookUrl, message) {
 exports.reportInvoiceToAccounting = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
   async (request) => {
-    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
+    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     }
-    await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
     const {
       shipmentId, pdfBase64, filename, subject, body,
       invNo, billName, deliverTo, amountText, dueDate, soNumber, shipDate,

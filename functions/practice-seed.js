@@ -242,7 +242,7 @@ function buildPracticeSeed(now, opts = {}) {
     Object.assign(seed.cases[caseId(i)], { orderedAt: seed.quotes[qid].acceptedAt, orderedVia: "staff" });
   });
 
-  // --- 出荷 4 件（下書き・発送済・請求済・入金済）---
+  // --- 出荷 5 件（下書き・依頼済・発送済・請求済・入金済）---
   let shipSeq = 0;
   const shipBase = (i, quoteId, q, status, extra) => {
     shipSeq += 1;
@@ -291,6 +291,19 @@ function buildPracticeSeed(now, opts = {}) {
     paymentAmount: paidAmount, paidAt: ymdJst(t0, -20),
   });
   seed.shipments["practice-ship-04"] = paidShip;
+  // 依頼済（案件5：同一法人の一括見積もりの1件目から）。2026-10-21 出荷の二段階化（下書き→依頼済→発送済）の練習用。
+  // 出荷指示は「投稿したことにした」状態（練習DBなので実際の投稿はしていない）。出荷元は「発送済にする」のときに選ぶ
+  const reqShip = shipBase(4, "practice-quote-02", q2a, "requested", {
+    shipDate: ymdJst(t0, 2), preferredDate: "",
+    requestedBy: TARO.name, requestedByEmail: TARO.id, requestedAt: ago(t0, 1), requestSeq: 1,
+    shipNotifiedAt: ago(t0, 1), shipNotifiedBy: TARO.name, shipNotifiedByEmail: TARO.id,
+    shipNotifyStatus: "posted", shipNotifyAttemptAt: ago(t0, 1), shipNotifyLockAt: null, shipNotifyCount: 1,
+    letterPackType: "plus",
+  });
+  seed.shipments["practice-ship-05"] = reqShip;
+  seed.quotes["practice-quote-02"].shipmentId = "practice-ship-05";
+  seed.quotes["practice-quote-02"].shipmentNo = reqShip.soNumber;
+  seed.cases[caseId(4)].shipmentId = "practice-ship-05";
   // 案件側から出荷への参照
   seed.cases[caseId(7)].shipmentId = "practice-ship-02";
   seed.cases[caseId(8)].shipmentId = "practice-ship-03";

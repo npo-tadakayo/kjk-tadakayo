@@ -11,6 +11,7 @@ const ST_NEW = 1, ST_CONFIRMING = 2, ST_ORDERED = 3, ST_LOST = 4, ST_DONE = 13;
 // firestore.rules の isRegistered / isEditor / isAdmin と同じ考え方。
 function roleAllows(user, allow = "editor") {
   if (!user || user.active !== true) return false;
+  if (user.role === "trainee") return false; // 練習生は本番の操作をどれもできない（2026-10-20 テストモード）
   if (allow === "admin") return user.role === "admin";
   if (allow === "editor") return user.role !== "viewer";
   if (allow === "viewer") return true;

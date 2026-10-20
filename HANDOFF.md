@@ -5,6 +5,11 @@
 
 ## 2026-10-21 CRM改善（全項目を実装・未コミット・本番未反映）
 
+- **統合マージ（10/21）**: main（テストモード・Node 22）を crm-ship-request に取り込み、両方が共存するように直した（push 前・司令塔の確認待ち）。
+  requireStaff が練習生（trainee）も拒否（rejectTrainee は notifyShipment だけに残す・aiAssist も対象に）／通知トリガーは `database:"(default)"` を明示＝練習DBでは動かない／
+  代役に staffAcceptQuote・previewDailyFollowup を追加、notifyShipment・reviseQuote の代役を依頼済（requested）に対応／bank-import.js を fs.js 経由に／
+  練習DBのルールで _notifyLog を閉じる／emu.js が練習DBもエミュレーターにつなぐ／練習の初期データに依頼済の出荷を1件追加（出荷5件）。
+
 - 設計 `docs/CRM改善_設計_20261021.md`（§9 判断16点は次田さん決定済み・§12 実装後の変更点）。出荷の二段階化（案B）・在庫バグ3件・担当通知・日次まとめの担当別化・署名完了通知・電話受注の受注確定・完了の警告・重複警告・入金明細CSV取り込み・権限（appConfig管理者のみ・requireStaff）・マニュアル。
 - 検証: 単体テスト14本・ルールのテスト（エミュレーター）31/31・26/26・E2E 81項目すべて合格。Codex レビュー3回・独立レビュー1回の指摘は修正済み。
 - **本番前に要るもの（次田さんの承認）**: ①コミット・push ②fn-ai-sa に roles/datastore.viewer（付けないと AI アシスタントが止まる）③fn-batch-sa に roles/eventarc.eventReceiver・トリガーの region と Firestore のロケーションの確認 ④Functions を先に `--only "functions:…"` で列挙して反映 → previewDailyFollowup で文面確認 → Hosting ⑤利用者に Chat ID を入れる（chat_write.py の who で23人分取得可）⑥銀行の入金明細CSVを1つ預かる
