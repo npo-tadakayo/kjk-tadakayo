@@ -99,14 +99,17 @@ const shipStatusOf = (s) => (s && s.status) || "shipped"; // 未設定は発送�
 function planWebShipment(shipments, preferredId = null) {
   const live = (shipments || []).filter((s) => s && shipStatusOf(s) !== "canceled");
   const pre = live.filter((s) => PRE_SHIP.includes(shipStatusOf(s)));
-  if (pre.length) {
-    const reuse = pre.find((s) => preferredId && s.id === preferredId)
-      || pre.find((s) => shipStatusOf(s) === "requested") // 依頼済み（センターへ投稿済み）を優先
-      || pre[0];
+  // 請求先を認定事業者（dropship）に変えた出荷は使い直さない。見積の単価は税込、認定事業者向けの明細は税抜として
+  // 扱われるため、上書きすると請求額が過大になる（2026-10-21 Codex 指摘）。新しい下書きを作り、重複の印を付ける
+  const reusable = pre.filter((s) => (s.shipType || "direct") !== "dropship");
+  if (reusable.length) {
+    const reuse = reusable.find((s) => preferredId && s.id === preferredId)
+      || reusable.find((s) => shipStatusOf(s) === "requested") // 依頼済み（センターへ投稿済み）を優先
+      || reusable[0];
     return { reuse, duplicateWarning: false, existingNos: [], extraPre: pre.length - 1 };
   }
-  const done = live.filter((s) => !PRE_SHIP.includes(shipStatusOf(s)));
-  return { reuse: null, duplicateWarning: done.length > 0, existingNos: done.map((s) => s.soNumber).filter(Boolean), extraPre: 0 };
+  const others = live.filter((s) => !reusable.includes(s));
+  return { reuse: null, duplicateWarning: others.length > 0, existingNos: others.map((s) => s.soNumber).filter(Boolean), extraPre: 0 };
 }
 
 /** "YYYY-MM-DD"（JST の日付）→ その日の JST 0 時のミリ秒。不正なら null。 */

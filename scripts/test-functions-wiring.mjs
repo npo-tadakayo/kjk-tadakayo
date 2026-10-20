@@ -300,3 +300,16 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   }
   console.log("OK test-functions-wiring 追加: 全件失敗で記録を消す");
 }
+
+// ===== 2026-10-21 Codex 指摘: 請求先が認定事業者（dropship）の下書きは Web 申込で使い直さない =====
+{
+  const { createRequire } = await import("node:module");
+  const F2 = createRequire(import.meta.url)("../functions/accept-flow.js");
+  const p1 = F2.planWebShipment([{ id: "d1", status: "draft", shipType: "dropship", soNumber: "SH-2026-0001" }], null);
+  if (p1.reuse !== null || p1.duplicateWarning !== true || p1.existingNos[0] !== "SH-2026-0001") throw new Error("dropship の下書きを使い直している");
+  const p2 = F2.planWebShipment([{ id: "d1", status: "draft", shipType: "dropship" }, { id: "d2", status: "draft", shipType: "direct" }], "d1");
+  if (!p2.reuse || p2.reuse.id !== "d2") throw new Error("direct の下書きを使い直していない");
+  const p3 = F2.planWebShipment([{ id: "d3", status: "requested" }], null);
+  if (!p3.reuse || p3.reuse.id !== "d3") throw new Error("shipType 未設定（direct 扱い）の依頼済を使い直していない");
+  console.log("OK test-functions-wiring 追加: dropship の下書きは使い直さない");
+}
