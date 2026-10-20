@@ -12,7 +12,7 @@
 // （本番と練習が1つのタブの中で混ざらないように）。
 import { getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, query, where, limit, getDocs, doc, addDoc, runTransaction,
+import { getFirestore, collection, query, where, getDocs, doc, runTransaction,
   writeBatch, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -166,57 +166,63 @@ function interceptLogout(email) {
 
 /**
  * 練習生の「あなたの担当」2件（練習モードに入っている全員に用意する）。
- * 自分の担当の案件が2件未満なら、自分の作成として足す（ログアウトで消え、次に入るとまた作られる）。
+ * 人ごとに決まった ID（practice-mine-{UID}-A／-B）で、無ければ作る（ログアウトで消え、次に入るとまた作られる）。
+ *
+ * 2026-10-21 本番確認で、CRM のタブを複数開いていると 4件できた（練習モードは全タブ共通なので、
+ * 切り替えたときに各タブが同時に読み込み直し、それぞれが「まだ無い」と判断して作っていた）。
+ * そこで「ID を決めておき、有無の確認と作成を1つのトランザクションで行う」方式にした。
+ * タブがいくつあっても、同じ ID の案件は1件しかできない（後から来た方は「もうある」で何もしない）。
  */
 export async function ensureMyPracticeCases(user) {
   const email = user?.email;
   if (!email) return 0;
-  // 毎回あるかを確かめる（夜間・管理者の初期化で消えたあとも、次に開いた画面で作り直すため・Codex 指摘）。
-  // 同じ画面の中で二重に作らないよう、確認中はこのページの中だけで印を持つ
-  if (ensuring) return 0;
-  ensuring = true;
-  try {
   const db = practiceDb();
-  const mine = await getDocs(query(collection(db, "cases"), where("assignedUserId", "==", email), limit(2)));
-  const need = 2 - mine.size;
   const name = user.displayName || email;
+  // ID は Firebase Auth の UID（人ごとに一意）。メールを記号置き換えすると first.last@ と first-last@ が
+  // 同じになって他人の案件を「作成済み」と見てしまう（Codex 指摘）。UID が取れないときはメールを壊さずに符号化する
+  const key = user.uid || encodeURIComponent(email.toLowerCase()).replace(/%/g, "_").replace(/\./g, "_2E");
   // 1件は準備の始め（担当者決定）、1件は伴走支援待ち
   const plans = [
     { status: 3, label: "A", pref: "東京都", city: "練馬区", memo: "練習用：あなたが担当する案件です。事前確認から進めてみましょう。" },
     { status: 7, label: "B", pref: "大阪府", city: "堺市堺区", memo: "練習用：伴走支援の日程を決めて、記録を残してみましょう。" },
-  ].slice(0, Math.max(0, need));
+  ];
+  let made = 0;
   for (const p of plans) {
-    const now = serverTimestamp();
+    const caseRef = doc(db, "cases", `practice-mine-${key}-${p.label}`);
+    const officeRef = doc(db, "offices", `practice-mine-${key}-${p.label}`);
+    const actRef = doc(collection(db, "activities"));
     const counter = doc(db, "_counters", "cases");
-    const caseNumber = await runTransaction(db, async (tx) => {
+    const created = await runTransaction(db, async (tx) => {
+      const c = await tx.get(caseRef);
+      if (c.exists()) return false;
       const s = await tx.get(counter);
-      const next = (s.exists() ? s.data().value : 0) + 1;
-      tx.set(counter, { value: next });
-      return next;
+      const caseNumber = (s.exists() ? s.data().value : 0) + 1;
+      const now = serverTimestamp();
+      const officeName = `【練習】あなたの担当 ${p.label} 居宅介護支援事業所`;
+      tx.set(counter, { value: caseNumber });
+      tx.set(officeRef, {
+        corpName: "【練習】株式会社れんしゅう", officeName,
+        address: `${p.pref}${p.city}練習町1-2-3`, phone: "000-0000-0000",
+        createdAt: now, updatedAt: now, _practiceBy: email,
+      });
+      tx.set(caseRef, {
+        caseNumber, officeId: officeRef.id, officeName, corpName: "【練習】株式会社れんしゅう",
+        contactName: "練習 一郎", contactEmail: "renshu@example.jp", contactPhone: "000-0000-0000",
+        source: "manual", status: p.status, assignedUserId: email, assignedUserName: name,
+        referralSource: null, receivedAt: now, updatedAt: now, cardReaders: [],
+        subsidyCategory: null, expectedSubsidyAmount: null, lostReason: null,
+        orderedAt: null, completedAt: null, _practiceBy: email,
+      });
+      tx.set(actRef, {
+        caseId: caseRef.id, type: "memo", occurredAt: now, userId: user.uid || "", userName: name,
+        subject: "練習用の案件", body: p.memo, attachmentUrls: [], _practiceBy: email,
+      });
+      return true;
     });
-    const officeName = `【練習】あなたの担当 ${p.label} 居宅介護支援事業所`;
-    const office = await addDoc(collection(db, "offices"), {
-      corpName: "【練習】株式会社れんしゅう", officeName,
-      address: `${p.pref}${p.city}練習町1-2-3`, phone: "000-0000-0000",
-      createdAt: now, updatedAt: now, _practiceBy: email,
-    });
-    const c = await addDoc(collection(db, "cases"), {
-      caseNumber, officeId: office.id, officeName, corpName: "【練習】株式会社れんしゅう",
-      contactName: "練習 一郎", contactEmail: "renshu@example.jp", contactPhone: "000-0000-0000",
-      source: "manual", status: p.status, assignedUserId: email, assignedUserName: name,
-      referralSource: null, receivedAt: now, updatedAt: now, cardReaders: [],
-      subsidyCategory: null, expectedSubsidyAmount: null, lostReason: null,
-      orderedAt: null, completedAt: null, _practiceBy: email,
-    });
-    await addDoc(collection(db, "activities"), {
-      caseId: c.id, type: "memo", occurredAt: now, userId: user.uid || "", userName: name,
-      subject: "練習用の案件", body: p.memo, attachmentUrls: [], _practiceBy: email,
-    });
+    if (created) made++;
   }
-  return plans.length;
-  } finally { ensuring = false; }
+  return made;
 }
-let ensuring = false;
 
 /**
  * ロールが分かったあとに role.js の gateRole から呼ぶ。

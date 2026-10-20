@@ -97,4 +97,13 @@ ok(/value="trainee"/.test(src["users.html"]), "ユーザー管理に練習生が
 ok(/isPracticeLink \? getFirestore\(app, "practice"\) : getFirestore\(app\)/.test(src["js/consent-sign.js"]), "署名ページの練習DB切替が無い");
 ok(/isPracticeMode\(\) \? "&p=1" : ""/.test(src["js/consent-admin.js"]), "署名URLに練習の印が付かない");
 
+// 11) 「あなたの担当」は人ごとに決まった ID をトランザクションで作る（複数タブで同時に作っても2件だけ・2026-10-21 本番で4件できた）
+{
+  const m = src["js/mode.js"];
+  const body = m.slice(m.indexOf("export async function ensureMyPracticeCases"), m.indexOf("export function setupModeUi"));
+  ok(/doc\(db, "cases", `practice-mine-\$\{key\}-\$\{p\.label\}`\)/.test(body), "「あなたの担当」の案件 ID が人ごとに決まっていない");
+  ok(/runTransaction\(db, async \(tx\) => \{\s*const c = await tx\.get\(caseRef\);\s*if \(c\.exists\(\)\) return false;/.test(body), "有無の確認と作成が同じトランザクションの中にない");
+  ok(!/addDoc\(/.test(body), "「あなたの担当」を addDoc（ID が毎回変わる）で作っている");
+}
+
 console.log(`OK test-practice-mode: ${checks} checks passed（呼び出し ${called.size} 種・代役 ${stubNames.size} 種）`);
