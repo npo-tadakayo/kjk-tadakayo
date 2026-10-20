@@ -126,9 +126,19 @@ service cloud.firestore {
     }
 
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
-    match /{document=**} {
+    //
+    // ⚠ 2026-10-20 修正: Firestore のルールは「どれか1つの match が許せば通る」。この「その他すべて」は
+    //    上の個別の match のパスにも当たるため、個別に書いた制限（users は管理者だけ等）を素通りさせていた。
+    //    実際に、登録スタッフなら誰でも users を書き換えられた（自分を admin にできた）。
+    //    個別の match で書き込みを「狭く」決めているコレクションは、ここでの書き込みの対象から外す:
+    //      users（管理者と本人の onboarding だけ）／leadTokens（Functions だけ）／
+    //      supportBadges（訂正・削除は管理者だけ）／supportEvaluations（削除は管理者だけ）
+    //    読み取りは従来どおり（担当営業の候補などで職員が users を読んでいるため、ここでは変えない）。
+    //    partnerOrders は職員の発注ファイル取り込み（supply.js）がここの書き込みに頼っているので対象外にしない。
+    match /{coll}/{document=**} {
       allow read: if isRegistered();
-      allow write: if isEditor();
+      allow write: if isEditor()
+        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations"]);
     }
   }
 }
