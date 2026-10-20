@@ -4,10 +4,10 @@ import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
   addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion, arrayRemove, deleteField }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+  from "/js/fs.js";
+import { getFunctions, httpsCallable } from "/js/fn.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+  from "/js/st.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOnePagePdf,
   DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals } from "/js/invoice-doc.js";

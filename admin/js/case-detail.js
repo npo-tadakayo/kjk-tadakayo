@@ -2,13 +2,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
+import { getFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+  from "/js/st.js";
 import { getFunctions, httpsCallable }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+  from "/js/fn.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason } from "/js/case-detail-util.js";
@@ -1520,7 +1520,15 @@ onAuthStateChanged(auth, async (user) => {
   } catch (_) {}
 
   // 担当営業の候補（users）。取得に失敗しても「未割当＋現在の担当」だけで動く。
-  try {
+  // 練習モードでは、自分と架空の担当者（初期データの「練習 太郎」「練習 花子」）を候補にする
+  // （練習DBに users は置かない。本番の職員名簿を練習に出さない）
+  if (isPracticeMode()) {
+    usersList = [
+      { _id: currentUser.email, name: currentUser.displayName || currentUser.email, active: true },
+      { _id: "practice-taro@example.jp", name: "練習 太郎", active: true },
+      { _id: "practice-hanako@example.jp", name: "練習 花子", active: true },
+    ];
+  } else try {
     const us = await getDocs(collection(db, "users"));
     usersList = us.docs.map((d) => ({ _id: d.id, ...d.data() }));
   } catch (_) { usersList = []; }

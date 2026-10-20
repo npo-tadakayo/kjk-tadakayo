@@ -7,14 +7,24 @@ service cloud.firestore {
     function emailIsTadakayo() {
       return isAuthenticated() && request.auth.token.email.matches('.*@tadakayo[.]jp$');
     }
-    // users/{email} に登録があり active==true の @tadakayo.jp ユーザー
+    // users/{email} に登録があり active==true の @tadakayo.jp ユーザー（練習生を除く）
     function userData() {
       return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data;
     }
+    // 2026-10-20 テストモード: ロール「練習生（trainee）」は本番DBを読み書きとも不可にする。
+    // 練習生は練習DB（practice・firestore.practice.rules）だけを使う。画面側で練習モードに
+    // 固定するが、画面の漏れがあっても本番の案件・事業所を見られないよう、サーバー側で止める。
+    // isEditor / isAdmin はこの関数から派生するので、練習生はそれらでも自動で拒否される。
+    // 例外として、練習生も自分の users/{email} だけは読める（ログイン時のロール確認に必要。
+    // 下の users のルールの「本人なら読める」は isRegistered() を経由しないので、そのまま通る）。
+    // role が未設定の登録者は、これまでどおり登録済み（読める）として扱う。
+    // そのため .role ではなく .get('role', '') で読む（無いフィールドを .role で読むと評価エラー＝拒否になり、
+    // role 未設定の人の閲覧まで止めてしまう。2026-10-20 ルールテストで確認）。
     function isRegistered() {
       return emailIsTadakayo()
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
-        && userData().active == true;
+        && userData().active == true
+        && userData().get('role', '') != 'trainee';
     }
     function isAdmin() {
       return isRegistered() && userData().role == 'admin';

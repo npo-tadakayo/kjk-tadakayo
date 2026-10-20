@@ -207,9 +207,11 @@ exports.collectAnalyticsNow = onCall(
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
     // 2026-10-21 管理者だけ（設計 §4）。index.js の requireStaff と同じ判定（循環 require を避けて判定関数だけ共用）
+    // 練習生は本番の Functions を使えない（2026-10-20 テストモード・roleAllows も trainee を通さないが、分かる文言で返す）
     const db = admin.firestore();
     let u = await db.collection("users").doc(email).get();
     if (!u.exists && email.toLowerCase() !== email) u = await db.collection("users").doc(email.toLowerCase()).get();
+    if (u.exists && u.data().role === "trainee") throw new HttpsError("permission-denied", "練習生のアカウントでは本番の操作はできません");
     if (!roleAllows(u.exists ? u.data() : null, "admin")) throw new HttpsError("permission-denied", "この操作は管理者だけができます");
     try {
       return await collectCore();

@@ -154,6 +154,19 @@ const STATUS = {
   COMPLETED: 13,   // 案件完了
 };
 
+// 練習生（users.role == "trainee"）は本番の Callable を使えない（2026-10-20 テストモード）。
+// 画面は練習中に Functions を呼ばない（admin/js/fn.js）が、SDK から直接呼べば届いてしまうので、ここでも止める。
+// Admin SDK は Firestore ルールを迂回するため、ルールの拒否だけでは足りない（Codex レビュー指摘）。
+// 未登録の人の扱いは各関数の従来どおり（ここでは練習生だけを止める）。
+async function rejectTrainee(request) {
+  const email = request.auth?.token?.email || "";
+  if (!email) return;
+  const u = await db.collection("users").doc(email).get();
+  if (u.exists && u.data().role === "trainee") {
+    throw new HttpsError("permission-denied", "練習生のアカウントでは本番の操作はできません（練習モードで操作してください）");
+  }
+}
+
 // 案件番号の自動採番
 async function getNextCaseNumber() {
   const counterRef = db.collection("_counters").doc("cases");
@@ -1537,6 +1550,7 @@ exports.staffAcceptQuote = onCall(
 exports.reviseQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
@@ -1670,6 +1684,7 @@ exports.reviseQuote = onCall(
 exports.resendQuoteMail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
@@ -1709,6 +1724,7 @@ exports.resendQuoteMail = onCall(
 exports.staffCreateQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
@@ -1835,6 +1851,7 @@ exports.staffCreateQuote = onCall(
 exports.saveQuotePdf = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
     await requireStaff(request, { allow: "editor" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
@@ -1887,6 +1904,7 @@ exports.saveQuotePdf = onCall(
 
 const WEBHOOK_KIND_LABELS = { crm: "CRM通知", pm: "PM", shipping: "出荷指示", accounting: "経理" };
 exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
   const email = request.auth?.token?.email || "";
   if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
   await requireStaff(request, { allow: "admin" }); // 2026-10-21 users の登録・有効・ロールを確認（設計 §4）
@@ -2175,6 +2193,8 @@ function buildPrompt(task, ctx, question) {
 exports.aiAssist = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_AI },
   async (request) => {
+    // ⚠ aiAssist だけは rejectTrainee を呼ばない（実行SA fn-ai-sa は aiplatform.user のみで Firestore を読めない＝最小権限を保つ）。
+    //    AI は画面から渡された文章を要約するだけで、本番のデータを読まず外部にも送らないため、練習生が直接呼んでも本番は変わらない（2026-10-20）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2284,6 +2304,7 @@ function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
 exports.sendCaseEmail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2336,6 +2357,7 @@ exports.sendCaseEmail = onCall(
 exports.sendSupplierOrder = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2385,6 +2407,7 @@ exports.sendSupplierOrder = onCall(
 exports.sendPartnerMail = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2547,6 +2570,7 @@ async function postChatCard(webhookUrl, message) {
 exports.reportInvoiceToAccounting = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, serviceAccount: SA_MAIL },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2728,6 +2752,7 @@ function shipmentChatMessage(s, shipmentId, o) {
 exports.notifyShipment = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
   async (request) => {
+    await rejectTrainee(request); // 練習生は本番の Functions を使えない（2026-10-20 テストモード）
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) {
       throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
@@ -2845,3 +2870,9 @@ exports.notifyShipment = onCall(
 const analytics = require("./analytics");
 exports.collectAnalytics = analytics.collectAnalytics;
 exports.collectAnalyticsNow = analytics.collectAnalyticsNow;
+
+// ===== 学習用テストモード：練習DB（practice）の初期化（2026-10-20）=====
+// 実装は ./practice.js。練習DBにだけ書く（本番DBは読み取りのみ）。
+const practice = require("./practice");
+exports.resetPractice = practice.resetPractice;
+exports.nightlyPracticeReset = practice.nightlyPracticeReset;

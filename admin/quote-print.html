@@ -50,8 +50,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+    import { getFirestore } from "/js/fs.js";
+    import { getFunctions, httpsCallable } from "/js/fn.js";
     import { gateRole } from "/js/role.js";
     import { QUOTE_DOC_STYLE, renderQuoteDocHtml, loadQuoteDocData, quoteDocPrintableClone, installPrintFit } from "/js/quote-doc.js";
     installPrintFit(".qdoc");

@@ -3,7 +3,7 @@
 // officeId の無い案件は事業所名の文字列でまとめ、「（マスター未登録）」として出す。
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, onSnapshot } from "/js/fs.js";
 import { gateRole } from "/js/role.js";
 import { STATUS_LABELS, LOST, lostReasonLabel, ARCHIVE_REASONS } from "/js/constants.js";
 import { areaOf, parseAddress, PREFECTURES } from "/js/area.js";

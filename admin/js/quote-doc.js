@@ -10,7 +10,7 @@
 //   const data = await loadQuoteDocData(db, quoteId);
 //   el.innerHTML = renderQuoteDocHtml(data);
 
-import { doc, getDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, collection, getDocs } from "/js/fs.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
