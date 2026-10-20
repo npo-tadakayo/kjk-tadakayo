@@ -18,8 +18,8 @@
 
 import {
   collection, query, where, onSnapshot, getDocs,
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+} from "/js/fs.js";
+import { httpsCallable } from "/js/fn.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

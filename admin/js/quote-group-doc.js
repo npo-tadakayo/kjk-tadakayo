@@ -18,7 +18,7 @@
 //   const data = await loadQuoteGroupData(db, groupId);
 //   el.innerHTML = renderQuoteGroupDocHtml(data);
 
-import { doc, getDoc, collection, getDocs, query, where } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { doc, getDoc, collection, getDocs, query, where } from "/js/fs.js";
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }

@@ -1,0 +1,30 @@
+rules_version = '2';
+// 練習DB（Firestore データベース `practice`）のルール。2026-10-20 テストモードで新設。
+// 本番DB（(default)）のルールは firestore.rules。firebase.json の firestore 配列でDBごとに割り当てる。
+//
+// ・中身は架空データだけ（事業所・案件・見積・出荷などの練習用。初期化は Functions が practice DB にだけ書く）。
+// ・ルールから別DB（本番）の users を見に行けないため、ロール（閲覧のみ・練習生など）の区別は
+//   練習DBではしない。@tadakayo.jp でメール確認済みのログインなら、誰でも読み書きできる。
+// ・ロール確認は画面が常に本番DBの users/自分 を読んで行う。練習DBには users を置かない
+//   （置いても使われず、ロールを偽装した書き込みの誤解を招くので、読み書きとも閉じる）。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isTadakayoStaff() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+    }
+
+    // ユーザー（ロール）は練習DBに置かない。誰も読み書きできない。
+    match /users/{email} {
+      allow read, write: if false;
+    }
+
+    // それ以外（練習用の案件・事業所・見積・出荷・設定など）は @tadakayo.jp の職員なら読み書き可。
+    // 注: Firestore のルールは「どれか1つの match が許可すれば通る」ので、ここで users を
+    //     除外しておかないと上の false が効かない。そのためコレクション名で users を除く。
+    match /{collection}/{docId=**} {
+      allow read, write: if collection != 'users' && isTadakayoStaff();
+    }
+  }
+}

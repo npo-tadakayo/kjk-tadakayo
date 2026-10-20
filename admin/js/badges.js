@@ -3,8 +3,8 @@
 // 付与できるのはトレーナーのみ（画面側の制限。firestore.rules は登録スタッフの作成可・訂正削除は管理者のみ）。
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, onSnapshot, addDoc, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, getProdFirestore, collection, doc, getDoc, onSnapshot, addDoc, serverTimestamp }
+  from "/js/fs.js";
 import { gateRole } from "/js/role.js";
 import { buildGrant, badgeHolders, badgesToCsv, trainerIds, isTrainer } from "/js/support-evaluation.js";
 
@@ -98,7 +98,9 @@ onAuthStateChanged(auth, async (user) => {
   $("csvBtn").addEventListener("click", downloadCsv);
   $("gate").style.display = "none"; $("main").style.display = "block";
   try { const d = await getDoc(doc(db, "appConfig", "supportTrainers")); if (d.exists()) rosterIds = d.data().ids || null; } catch (_) {}
-  onSnapshot(collection(db, "users"), (s) => { users = s.docs.map((d) => ({ _id: d.id, ...d.data() })); render(); });
+  // 職員の名簿は練習モード中も本番の users（練習DBに users は置かない）
+  onSnapshot(collection(getProdFirestore(app), "users"), (s) => { users = s.docs.map((d) => ({ _id: d.id, ...d.data() })); render(); },
+    (e) => console.warn("users:", e.message));
   onSnapshot(collection(db, "supportBadges"), (s) => { grants = s.docs.map((d) => ({ _id: d.id, ...d.data() })); render(); });
   onSnapshot(collection(db, "supportEvaluations"), (s) => { evals = s.docs.map((d) => ({ _id: d.id, ...d.data() })); render(); });
 });

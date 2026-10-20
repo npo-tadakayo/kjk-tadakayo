@@ -1,51 +1,69 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // @tadakayo.jp でログインしている人
+    function isStaffMail() {
+      return request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+    }
+    // 2026-10-20 テストモード: ロール「練習生（trainee）」は職員向けファイル
+    // （訪問写真・報告書・書類・請求書PDF・見積PDF・追跡番号の写真）を読めない・書けない。
+    // 本番の Firestore と同じく、画面の漏れがあっても実データに触れないようサーバー側で止める。
+    // users/{email} が無い職員の扱いはこれまでどおり（@tadakayo.jp なら通す）。
+    // 「users があって role == 'trainee'」のときだけ拒否する（exists を先に見るので、無い人で get は失敗しない）。
+    // role 未設定の users でも拒否しないよう .get('role', '') で読む（.role だと評価エラー＝拒否になる）。
+    // ⚠ firestore.get/exists を使うので、Storage から Firestore を読む権限が要る（shipments/tracking で付与済みの想定）。
+    function isNotTrainee() {
+      return !firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email))
+        || firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.get('role', '') != 'trainee';
+    }
+    function isStaff() {
+      return isStaffMail() && isNotTrainee();
+    }
+
     match /sessions/{sessionId}/photos/{photoId} {
-      allow read, write: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read, write: if isStaff();
     }
     match /reports/{reportId} {
-      allow read, write: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read, write: if isStaff();
     }
     match /documents/{caseId}/{fileId} {
-      allow read, write: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read, write: if isStaff();
     }
     // 請求書PDF（経理報告で保存）。書き込みは Cloud Functions の SA のみ（Admin SDK はこのルールを迂回する）。
     // ⚠️ Chat に載せるリンクは Firebase の download token 付きURLで、このルールを通らずに読める。
     //    token を知っている人だけが読める設計（token は shipments.invoicePdfPath のメタデータで差し替え＝失効可）。
     match /invoices/{shipmentId}/{fileName} {
-      allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read: if isStaff();
       allow write: if false;
     }
-    // 見積書PDF（版ごと）。書き込みは Cloud Functions の SA のみ。事業所へは download token 付きURLをメールで渡す
     // 動画マニュアル（CRM操作説明の mp4/vtt）。読むのは職員だけ。書き込みは開発担当が gcloud で行う（Admin 権限はルールを迂回）
+    // 2026-10-20 テストモード: 練習生も学習に使うので、ここだけは練習生も読める（isStaffMail のまま）。
     match /training/{fileName} {
-      allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read: if isStaffMail();
       allow write: if false;
     }
-    // 出荷の追跡番号のシール写真（2026-10-19 CRM改修 #5）。見るのは @tadakayo.jp の職員。
-    // 置く・消すのは、Firestore の isEditor() と同じ条件（users/{email} に登録・active・viewer 以外）。
+    // 出荷の追跡番号のシール写真（2026-10-19 CRM改修 #5）。見るのは @tadakayo.jp の職員（練習生を除く）。
+    // 置く・消すのは、Firestore の isEditor() と同じ条件（users/{email} に登録・active・viewer 以外・練習生以外）。
     // 閲覧専用の人が証跡の写真だけを消せないようにするため（Codex レビュー指摘・2026-10-19）。
     // ⚠ firestore.get を使うので、初回の deploy で「Storage から Firestore を読む権限」の付与を求められる。
     // 置けるのは画像だけ・1枚20MBまで（スマホの撮影そのまま）。削除は request.resource が無いので別に許可する
     match /shipments/{shipmentId}/tracking/{fileName} {
-      function isStaffMail() {
-        return request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
-      }
       function isEditorUser() {
         return isStaffMail()
           && firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email))
           && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.active == true
-          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'viewer';
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'viewer'
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'trainee';
       }
-      allow read: if isStaffMail();
+      allow read: if isStaff();
       allow delete: if isEditorUser();
       allow create, update: if isEditorUser()
         && request.resource.contentType.matches('image/.*')
         && request.resource.size < 20 * 1024 * 1024;
     }
+    // 見積書PDF（版ごと）。書き込みは Cloud Functions の SA のみ。事業所へは download token 付きURLをメールで渡す
     match /quotes/{caseId}/{fileName} {
-      allow read: if request.auth != null && request.auth.token.email.matches('.*@tadakayo[.]jp$');
+      allow read: if isStaff();
       allow write: if false;
     }
   }

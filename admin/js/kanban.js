@@ -4,7 +4,7 @@ import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
   doc, getDoc, updateDoc, addDoc, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import {
   STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS_SHORT, PHASES, LOST,
   phaseOf, phaseEntryStatus, STALE_DAYS, TERMINAL, ACTIVE_PRE_APPLY,

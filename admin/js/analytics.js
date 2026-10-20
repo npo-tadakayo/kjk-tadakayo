@@ -2,9 +2,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, onSnapshot }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import { getFunctions, httpsCallable }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+  from "/js/fn.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 
 const app = initializeApp(firebaseConfig);

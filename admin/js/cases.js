@@ -3,7 +3,7 @@ import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
   addDoc, setDoc, serverTimestamp, doc, getDoc, runTransaction }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import {
   STATUS_LABELS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES,

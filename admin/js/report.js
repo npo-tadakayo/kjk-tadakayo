@@ -3,7 +3,7 @@ import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, collection, query, where, orderBy, getDocs }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);

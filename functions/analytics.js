@@ -205,6 +205,9 @@ exports.collectAnalyticsNow = onCall(
   async (request) => {
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "権限がありません");
+    // 練習生は本番の Functions を使えない（2026-10-20 テストモード・index.js の rejectTrainee と同じ）
+    const u = await admin.firestore().collection("users").doc(email).get();
+    if (u.exists && u.data().role === "trainee") throw new HttpsError("permission-denied", "練習生のアカウントでは本番の操作はできません");
     try {
       return await collectCore();
     } catch (e) {

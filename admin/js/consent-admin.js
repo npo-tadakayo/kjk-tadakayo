@@ -15,7 +15,8 @@
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteField, query, where,
   serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+} from "/js/fs.js";
+import { isPracticeMode } from "/js/mode.js";
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -30,7 +31,8 @@ function newToken() {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-function signUrl(token) { return `${location.origin}/consent?t=${token}`; }
+// 練習モードで作った依頼は練習DBにあるので、署名ページに「練習」の印（p=1）を付けて渡す（2026-10-20）
+function signUrl(token) { return `${location.origin}/consent?t=${token}${isPracticeMode() ? "&p=1" : ""}`; }
 
 function fmt(ts) {
   try {

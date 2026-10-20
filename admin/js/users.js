@@ -1,18 +1,20 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, doc, query, onSnapshot, setDoc, deleteDoc, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getProdFirestore, collection, doc, query, onSnapshot, setDoc, deleteDoc, serverTimestamp }
+  from "/js/fs.js";
 import { gateRole } from "/js/role.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-const db = getFirestore(app);
+// ユーザー（ロール）は練習モード中でも常に本番DBで管理する（2026-10-20 テストモード）
+const db = getProdFirestore(app);
 
 function $(id){ return document.getElementById(id); }
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
-const ROLE_LABEL={admin:"管理者",staff:"スタッフ",viewer:"閲覧のみ"};
-const ROLE_BADGE={admin:9,staff:2,viewer:4};
+// 練習生（trainee）＝練習モード固定・本番は読み書きとも不可（firestore.rules）。独り立ちしたら「スタッフ」に変える（2026-10-20）
+const ROLE_LABEL={admin:"管理者",staff:"スタッフ",viewer:"閲覧のみ",trainee:"練習生"};
+const ROLE_BADGE={admin:9,staff:2,viewer:4,trainee:6};
 
 let usersCache=[], myEmail="", editing=null;
 

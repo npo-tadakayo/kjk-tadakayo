@@ -1,8 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "/js/fs.js";
+import { getFunctions, httpsCallable } from "/js/fn.js";
+// 練習用データの初期化だけは、練習モード中でも本物の Functions を呼ぶ（練習DBにしか書かない関数のため）
+import { httpsCallable as realCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 import { REFERRAL_DEFAULTS } from "/js/constants.js";
 
@@ -248,11 +250,28 @@ function collectWebhooks(){
   return o;
 }
 
+// 練習用データの初期化（管理者のみ・Functions resetPractice）
+async function resetPractice(){
+  const btn=$("practiceResetBtn"), out=$("practiceResetOut");
+  if(!confirm("練習用のデータをすべて初期の架空データに戻します。\n練習中の人のデータも消えます（本番には触れません）。よろしいですか？")) return;
+  btn.disabled=true; out.style.color=""; out.textContent="初期化しています…";
+  try{
+    const r = await realCallable(functions, "resetPractice")({});
+    const d = (r && r.data) || {};
+    out.style.color="var(--color-success)";
+    const sd = d.seeded || {};
+    out.textContent = `初期化しました${sd.cases!=null?`（案件 ${sd.cases}件・事業所 ${sd.offices}件・出荷 ${sd.shipments}件）`:""}`;
+  }catch(e){
+    out.style.color="var(--color-danger)"; out.textContent=`初期化できませんでした: ${e.message||e}`;
+  }finally{ btn.disabled=false; }
+}
+
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user,{adminOnly:true}))) return;
   $("userEmail").textContent = user.displayName || user.email;
   $("logoutBtn").addEventListener("click", ()=>signOut(auth).then(()=>location.href="/index.html"));
+  $("practiceResetBtn")?.addEventListener("click", resetPractice);
 
   const snap = await getDoc(doc(db,"appConfig","settings"));
   const s = snap.exists() ? snap.data() : {};

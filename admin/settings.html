@@ -165,6 +165,19 @@
           </div>
         </div>
       </div>
+
+      <!-- 練習モードの初期化（2026-10-20 テストモード） -->
+      <div class="card" style="max-width:720px;margin-top:20px">
+        <div class="card-header"><span style="font-weight:600;font-size:14px">練習モード（学習用）の初期化</span></div>
+        <div class="card-body">
+          <p style="font-size:13px;margin:0 0 8px">練習用のデータを、すべて初期の架空データ（事業所・案件12件ずつなど）に戻します。毎晩3時にも自動で戻ります。研修を始める前などに使ってください。</p>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">練習中の全員のデータが消えます（本番のデータには触れません）。商品・料金・設定は本番から写し直します（Chat の投稿先・メールの宛先・印影は写しません）。</p>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-secondary" id="practiceResetBtn" type="button"><i class="ti ti-refresh" aria-hidden="true"></i> 練習用のデータを今すぐ初期化</button>
+            <span id="practiceResetOut" style="font-size:13px"></span>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"

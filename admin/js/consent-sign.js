@@ -10,10 +10,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { parseEmbeddedDocument } from "/js/consent-document.js";
 
 const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+// 練習モードで作った署名依頼（URL に p=1）は練習DB（practice）を読む（2026-10-20 テストモード）。
+// 練習DBはログイン中の職員しか読めないので、同じブラウザでログインしている職員が開いたときだけ表示できる。
+const isPracticeLink = new URLSearchParams(location.search).get("p") === "1";
+const db = isPracticeLink ? getFirestore(app, "practice") : getFirestore(app);
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -161,6 +165,16 @@ function renderSigned(data, docu, justNow) {
 
 (async () => {
   if (!token || !/^[A-Za-z0-9_-]{16,128}$/.test(token)) { showNotFound(); return; }
+  if (isPracticeLink) {
+    // ログイン状態が分かるまで待ってから読む（練習DBはログインが必要）
+    await new Promise((resolve) => { const off = onAuthStateChanged(getAuth(app), () => { off(); resolve(); }); });
+    const bar = document.createElement("div");
+    bar.setAttribute("role", "status");
+    bar.style.cssText = "background:#FFF4C2;border-bottom:3px solid #C99A00;color:#2C2416;font-size:14px;font-weight:700;"
+      + "padding:10px 16px;text-align:center;font-family:'Hiragino Sans','Noto Sans JP',system-ui,sans-serif";
+    bar.textContent = "練習モードの署名ページです（実際の署名ではありません）";
+    document.body.insertBefore(bar, document.body.firstChild);
+  }
   let snap;
   try {
     snap = await getDoc(doc(db, "consentRequests", token));

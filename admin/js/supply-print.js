@@ -1,8 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serverTimestamp } from "/js/fs.js";
+import { getFunctions, httpsCallable } from "/js/fn.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
 import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf } from "/js/invoice-doc.js";

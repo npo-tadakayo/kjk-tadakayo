@@ -15,9 +15,9 @@
 //     判定・検証の純粋関数は support-evaluation.js（scripts/test-support-evaluation.mjs）
 
 import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  from "/js/fs.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+  from "/js/st.js";
 
 import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
 import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvaluation, evaluationId, evaluationEligible,

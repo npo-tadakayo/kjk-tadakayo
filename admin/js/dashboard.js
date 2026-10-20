@@ -2,8 +2,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp }
-  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, getProdFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp }
+  from "/js/fs.js";
 import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
 import { matchAssignee, bindPrefSelect, ASSIGNEE_ME } from "/js/assignee-filter.js";
@@ -11,6 +11,7 @@ import { matchAssignee, bindPrefSelect, ASSIGNEE_ME } from "/js/assignee-filter.
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const prodDb = getProdFirestore(app); // users（はじめての方へを閉じた記録）は練習モード中も本番
 
 // ファネル用グルーピング（ENGAGED は constants.js の ENGAGED_STATUSES＝SSOT。今日やることカードとも共有）
 const ENGAGED = ENGAGED_STATUSES;
@@ -102,7 +103,7 @@ async function initOnboarding(email) {
   const card = document.getElementById("onboardingCard");
   if (!card) return;
   try {
-    const snap = await getDoc(doc(db, "users", email));
+    const snap = await getDoc(doc(prodDb, "users", email));
     if (snap.exists() && snap.data().onboardingDismissedAt) return;
   } catch (e) {
     return;
@@ -112,7 +113,7 @@ async function initOnboarding(email) {
   dismissBtn?.addEventListener("click", async () => {
     card.style.display = "none";
     try {
-      await setDoc(doc(db, "users", email), { onboardingDismissedAt: serverTimestamp() }, { merge: true });
+      await setDoc(doc(prodDb, "users", email), { onboardingDismissedAt: serverTimestamp() }, { merge: true });
     } catch (e) {
       console.warn("onboardingDismissedAt の保存に失敗:", e.message);
     }
