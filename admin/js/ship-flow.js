@@ -206,3 +206,10 @@ export function notifyInFlight(s, nowMs = Date.now()) {
   const ms = l && typeof l.toMillis === "function" ? l.toMillis() : (typeof l === "number" ? l : 0);
   return !!ms && nowMs - ms < 60000;
 }
+
+// レターパックの種類の初期値。カードリーダーは厚さ3cmを超えてライト（青）では送れないため、
+// 未設定ならプラス（赤）にする（2026-10-21 藤田さん提案・次田さん決定）。ライトを選んで保存したものはそのまま
+export const DEFAULT_LETTERPACK = "plus";
+export function letterPackOrDefault(v) {
+  return v === "light" || v === "plus" ? v : DEFAULT_LETTERPACK;
+}
