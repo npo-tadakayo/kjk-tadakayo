@@ -77,21 +77,37 @@ ok(/SHARED = new Set\(\["_counters", "appConfig"\]\)/.test(src["js/fs.js"]), "fs
 ok(/value="trainee"/.test(src["users.html"]), "ユーザー管理に練習生が無い");
 
 // 9) 本番の Callable はすべて練習生を拒否する（SDK から直接呼ばれても本番を触らせない）
+//    2026-10-21 統合: requireStaff（CRM改善の共通認可）が練習生も拒否するので、各 Callable の先頭は
+//    requireStaff か、独自の権限確認を持つものは rejectTrainee のどちらか。aiAssist も requireStaff で拒否する
+//    （実行SA fn-ai-sa に roles/datastore.viewer を付与済み・2026-10-21）。
 {
   const fnRoot = fileURLToPath(new URL("../functions/", import.meta.url));
   const idx = readFileSync(join(fnRoot, "index.js"), "utf8");
   const parts = idx.split(/(?=^exports\.[A-Za-z]+ = onCall\()/m).slice(1);
-  ok(parts.length >= 11, `index.js の onCall が想定より少ない（${parts.length}）`);
+  ok(parts.length >= 13, `index.js の onCall が想定より少ない（${parts.length}）`);
   for (const part of parts) {
     const name = part.match(/^exports\.([A-Za-z]+)/)[1];
     const head = part.slice(0, part.indexOf("async (request) => {") + 200);
-    // aiAssist は Firestore を読めない SA で動き、本番のデータに触れないので例外（index.js のコメント参照）
-    if (name === "aiAssist") { ok(!/await rejectTrainee/.test(head), "aiAssist は rejectTrainee を呼ばない（SA の権限）"); continue; }
-    ok(/await rejectTrainee\(request\);/.test(head), `${name} が練習生を拒否していない`);
+    ok(/await (requireStaff\(request|rejectTrainee\(request\);)/.test(head), `${name} が練習生を拒否していない（先頭で requireStaff か rejectTrainee を呼ぶ）`);
   }
+  // requireStaff の中で練習生を拒否している／判定関数 roleAllows も練習生を通さない
+  const rs = idx.slice(idx.indexOf("async function requireStaff"), idx.indexOf("async function requireStaff") + 1600);
+  ok(/user\.role === "trainee"/.test(rs), "requireStaff が練習生を拒否していない");
+  const { createRequire } = await import("node:module");
+  const Flow = createRequire(import.meta.url)("../functions/accept-flow.js");
+  for (const allow of ["viewer", "editor", "admin"]) ok(!Flow.roleAllows({ role: "trainee", active: true }, allow), `roleAllows が練習生を通す（${allow}）`);
+  ok(Flow.roleAllows({ role: "staff", active: true }, "editor"), "roleAllows が職員を通さない");
   const an = readFileSync(join(fnRoot, "analytics.js"), "utf8");
   ok(/role === "trainee"/.test(an.slice(an.indexOf("exports.collectAnalyticsNow"))), "collectAnalyticsNow が練習生を拒否していない");
+  // Firestore トリガーは本番の (default) DB だけに反応する（練習DBの変更で Chat に通知しない・2026-10-21）
+  const triggers = [...idx.matchAll(/onDocument(?:Updated|Created|Written|Deleted)\(\s*\{(.*?)\},\s*async/gs)].map((m) => m[1]);
+  ok(triggers.length >= 2, `Firestore トリガーが想定より少ない（${triggers.length}）`);
+  for (const t of triggers) ok(/database: "\(default\)"/.test(t), `Firestore トリガーが (default) を明示していない: ${t.trim().slice(0, 60)}`);
+  ok(!/getFirestore\(\s*["']practice/.test(idx), "index.js が練習DBを開いている（練習DBを扱うのは practice.js だけ）");
 }
+
+// 9b) エミュレーター接続（emu.js）は本番DBと練習DBの両方をつなぐ（練習中だけ外へ出ないように）
+ok(/connectFirestoreEmulator\(F\.getFirestore\(app, "practice"\)/.test(src["js/emu.js"]), "emu.js が練習DBをエミュレーターにつないでいない");
 
 // 10) 練習で作った署名依頼は練習DBで開く（p=1）。本番の署名ページの既定は本番DBのまま
 ok(/isPracticeLink \? getFirestore\(app, "practice"\) : getFirestore\(app\)/.test(src["js/consent-sign.js"]), "署名ページの練習DB切替が無い");

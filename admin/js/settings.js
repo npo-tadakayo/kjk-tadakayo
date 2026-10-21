@@ -7,6 +7,7 @@ import { getFunctions, httpsCallable } from "/js/fn.js";
 import { httpsCallable as realCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import { DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 import { REFERRAL_DEFAULTS } from "/js/constants.js";
+import { dailyPreviewBlocks } from "/js/screen-rules.js";
 
 // 経理報告の既定値（未設定のときの初期表示）
 const DEFAULT_ACCOUNTING_EMAIL = "hidetoshi-tanaka@tadakayo.jp";
@@ -175,6 +176,33 @@ function validateReferralSources(rows){
 }
 
 const testFn = httpsCallable(functions, "testChatNotify");
+const previewDailyFn = httpsCallable(functions, "previewDailyFollowup");
+
+// ===== 日次まとめのプレビュー（投稿しない）=====
+// サーバ（previewDailyFollowup・管理者のみ）が本番データで本文を作って返す。ここは表示するだけ。
+function escHtml(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+let previewBusy = false;
+async function runDailyPreview(){
+  if (previewBusy) return;
+  previewBusy = true;
+  const btn = $("dailyPreviewBtn"), out = $("dailyPreviewOut");
+  btn.disabled = true;
+  out.innerHTML = '<p style="font-size:12px;color:var(--color-ink-muted);margin:0"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 作成中...</p>';
+  try{
+    const r = await previewDailyFn({});
+    const blocks = dailyPreviewBlocks(r.data);
+    out.innerHTML = blocks.map(b=>`
+      <div style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;margin-bottom:8px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">${escHtml(b.title)}</div>
+        <pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:12.5px;line-height:1.7;margin:0;color:${b.empty?"var(--color-ink-muted)":"inherit"}">${escHtml(b.text)}</pre>
+      </div>`).join("");
+  }catch(e){
+    out.innerHTML = `<p style="font-size:12px;color:var(--color-danger);margin:0">プレビューを作れませんでした: ${escHtml(e.message || e)}</p>`;
+  }finally{
+    previewBusy = false;
+    btn.disabled = false;
+  }
+}
 
 // ===== Google Chat の投稿先（4つ・各「有効／停止」とテスト送信）=====
 // 未定義の <kind>Enabled は「有効」扱い（functions の resolveWebhook と同じ）
@@ -183,7 +211,7 @@ const HOOKS = [
   { kind:"crm",        label:"CRM通知の投稿先",  url:"chatWebhookUrl",           en:"chatWebhookEnabled",
     note:"LP問い合わせ・見積もり・お申し込み・毎朝のまとめの通知先。" },
   { kind:"pm",         label:"PMの投稿先",       url:"pmChatWebhookUrl",         en:"pmChatWebhookEnabled",
-    note:"PM（プロジェクト管理）向けの投稿先。" },
+    note:"PM（プロジェクト管理）向けの投稿先。※現在、CRMからの自動投稿はありません（将来用・テスト送信のみ）。" },
   { kind:"shipping",   label:"出荷指示の投稿先", url:"shippingChatWebhookUrl",   en:"shippingChatWebhookEnabled",
     note:"出荷指示の投稿先。" },
   { kind:"accounting", label:"経理の投稿先",     url:"accountingChatWebhookUrl", en:"accountingChatWebhookEnabled",
@@ -271,6 +299,7 @@ onAuthStateChanged(auth, async (user)=>{
   if(!(await gateRole(db,user,{adminOnly:true}))) return;
   $("userEmail").textContent = user.displayName || user.email;
   $("logoutBtn").addEventListener("click", ()=>signOut(auth).then(()=>location.href="/index.html"));
+  $("dailyPreviewBtn").addEventListener("click", runDailyPreview);
   $("practiceResetBtn")?.addEventListener("click", resetPractice);
 
   const snap = await getDoc(doc(db,"appConfig","settings"));

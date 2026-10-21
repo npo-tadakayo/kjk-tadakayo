@@ -18,6 +18,11 @@ import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
+import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone } from "/js/ship-flow.js";
+// 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
+import { completionWarnings } from "/js/case-complete-check.js";
+import { isCompleting, completionConfirmText, completionActivityNote,
+  caseDuplicateBanner, preShipCountAfterMerge } from "/js/screen-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -46,6 +51,8 @@ let usersList = [];
 // 「出荷・請求・入金」タブが購読している shipments のキャッシュ。
 // ヘッダー「次の一手」2行目（お金の流れ）が同じデータ・同じ判定関数を再利用するために保持（二重購読しない）。
 let shipmentsCache = [];
+// 申請情報（subsidyApplications/{caseId}）の購読結果。完了(13)にするときの警告に使う（無ければ null）
+let subsidyCache = null;
 
 // 「ご希望」（inquiryIntent）を流入元の隣に表示。「正式に申込みたい」は目立つ色のバッジにする
 // （既存の badge-1 の赤系トーンを流用。色の直書きはせず既存の意味色パレットに合わせる）。
@@ -130,8 +137,12 @@ async function saveAssignee(value) {
     // users から引けないとき（削除済みなど）は、いま案件に入っている氏名を保つ
     name = userDisplayName(u) || currentCase.assignedUserName || id;
   }
+  // assignedBy / assignedAt は「誰が担当を決めたか」。Functions（onCaseAssigned）がこれで
+  // 画面からの割り当てを見分け、自分で自分を担当にしたときはメンションしない（設計 §3 N1）。
+  // ⚠️ 統合（mergeInto）で担当を書き換えるときは assignedBy を書かない（通知を出さないため）。
   await updateDoc(doc(db, "cases", caseId), {
     assignedUserId: id, assignedUserName: name, updatedAt: serverTimestamp(),
+    assignedBy: currentUser?.email || null, assignedAt: serverTimestamp(),
   });
   currentCase.assignedUserId = id;
   currentCase.assignedUserName = name;
@@ -368,31 +379,19 @@ function toggleRejectionField() {
 
 // ===== 出荷・請求・入金タブ（読み取り専用） =====
 // 金額を動かす操作は複製しない。ここは「見せる」「/supply.html・/supply-print.html へ飛ばす」だけ。
-// 状態の日本語・バッジ色は admin/js/supply.js の SHIP_STATUS / SHIP_STATUS_BADGE と同じ見た目に揃える
-// （supply.js は export していないローカル定数なので import できず、表示用にここへ複製している。
-//   計算ロジックは複製せず invoiceTotals を必ず通す）。
-const SHIP_STATUS_JA = { draft: "下書き", shipped: "発送済", invoiced: "請求済", paid: "入金済", canceled: "キャンセル" };
-const SHIP_STATUS_BADGE_NO = { draft: 2, shipped: 7, invoiced: 9, paid: 3, canceled: 4 };
+// 状態の日本語・バッジ色・ステッパーの判定は admin/js/ship-flow.js が正本（供給管理と同じものを import する・2026-10-21）。
+// 計算ロジックは複製せず invoiceTotals を必ず通す。
+const SHIP_STATUS_JA = SHIP_STATUS_LABEL;
+const SHIP_STATUS_BADGE_NO = SHIP_STATUS_BADGE;
 function yen(n) { return "¥" + Number(n || 0).toLocaleString("ja-JP"); }
 function shipCreatedAtMs(s) { return s.createdAt?.toMillis ? s.createdAt.toMillis() : 0; }
 
-// 4段ステッパー（発送済 → 請求書 → 入金 → 領収証）の各段の完了判定
-function shipStepsDone(s) {
-  const st = s.status || "shipped";
-  const order = ["draft", "shipped", "invoiced", "paid"];
-  const idx = order.indexOf(st);
-  return {
-    shipped: idx >= order.indexOf("shipped"),
-    invoiced: idx >= order.indexOf("invoiced"),
-    paid: st === "paid",
-    receipt: !!s.receiptIssuedAt,
-  };
-}
-
+// 5段ステッパー（依頼 → 発送 → 請求書 → 入金 → 領収証）。各段の完了判定は ship-flow.js の shipStepsDone
 function shipStepperHtml(s) {
   const done = shipStepsDone(s);
   const steps = [
-    { key: "shipped", label: "発送済" },
+    { key: "requested", label: "依頼" },
+    { key: "shipped", label: "発送" },
     { key: "invoiced", label: "請求書" },
     { key: "paid", label: "入金" },
     { key: "receipt", label: "領収証" },
@@ -407,11 +406,14 @@ function shipStepperHtml(s) {
 // 案件詳細ヘッダー「次の一手」2行目（お金の流れ）が共通で使う（2026-09-14・コピーせず共通化）。
 // supply.html?tab=shipments&so=… は別担当が実装中の契約（案件詳細からは触らず、遷移先の URL 形式だけ合わせる）
 function shipNextAction(s) {
-  const st = s.status || "shipped";
+  const st = shipStatusOf(s);
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
   const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
-  if (st === "draft") return { label: "発送済にする", icon: "truck-delivery", url: soUrl, external: false };
+  // 出荷の二段階化（2026-10-21）: 下書きは「出荷を依頼する」、依頼済はセンターの発送を確かめて「発送済にする」。
+  // どちらも在庫・出荷指示が動く操作なので、ここでは押させず供給管理の該当行へ飛ばす
+  if (st === "draft") return { label: "出荷を依頼する", icon: "send", url: soUrl, external: false };
+  if (st === "requested") return { label: "発送済にする", icon: "truck-delivery", url: soUrl, external: false };
   if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invUrl, external: true };
   if (st === "invoiced") return { label: "入金を記録する", icon: "cash", url: soUrl, external: false };
   if (st === "paid") {
@@ -440,7 +442,7 @@ function shipPendingList(ships) {
 }
 
 function shipCardHtml(s) {
-  const st = s.status || "shipped";
+  const st = shipStatusOf(s);
   const canceled = st === "canceled";
   const totals = invoiceTotals(s);
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
@@ -496,6 +498,33 @@ function renderShippingError() {
   if (emptyEl) emptyEl.style.display = "none";
   if (listEl) listEl.innerHTML = "";
   if (errorEl) errorEl.style.display = "block";
+}
+
+// ===== 出荷の重複の帯（出荷タブの一覧の上。設計 §6 W） =====
+// 同じ案件に、まだ発送していない出荷（下書き・依頼済）が2件以上あれば警告する。
+// 解消（1件を残し、ほかを「重複登録」でキャンセル）は供給管理で行う。ここは知らせるだけ。
+function renderShipDupBanner(ships) {
+  const listEl = document.getElementById("shippingList");
+  if (!listEl) return;
+  let el = document.getElementById("shipDupBanner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "shipDupBanner";
+    el.setAttribute("role", "status");
+    listEl.parentNode.insertBefore(el, listEl);
+  }
+  const b = caseDuplicateBanner(ships, caseId, currentCase?.shipmentId || null);
+  if (!b) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const soLink = (so) => `/supply.html?tab=shipments&so=${encodeURIComponent(so)}`;
+  const target = b.keepSo || b.soNumbers[0];
+  el.style.cssText = "display:block;background:#FFF3E0;border:1px solid #E0B070;border-radius:8px;"
+    + "padding:10px 14px;margin-bottom:var(--space-3);font-size:13px;line-height:1.8;color:#5a3d12";
+  el.innerHTML = `<i class="ti ti-alert-triangle" aria-hidden="true"></i>
+    <strong>まだ発送していない出荷が ${b.count} 件あります</strong>（${b.soNumbers.map(escHtml).join("・")}）。
+    二重に送らないよう、1件だけ残して、ほかは理由「重複登録」でキャンセルしてください。
+    ${b.keepSo ? `<br>残す候補: ${escHtml(b.keepSo)}（案件に結び付いている出荷）` : ""}
+    <div style="margin-top:6px"><a class="btn btn-secondary" href="${soLink(target)}" style="font-size:12px;padding:6px 12px">
+      <i class="ti ti-list-check" aria-hidden="true"></i> 供給管理で選ぶ</a></div>`;
 }
 
 // ===== 次の一手（案件ヘッダー最下部・タブの上。2026-09-14） =====
@@ -591,8 +620,11 @@ async function saveSubsidyInfo() {
 
 // ステータス変更
 // lost: 失注にするときの { reason, note }（それ以外は null）。失注から戻すときは理由を消す。
-async function changeStatus(newStatus, userId, userName, lost = null) {
+// warnNote: 完了(13)の警告を確認して続行したときの1行（completionActivityNote の戻り。無ければ ""）
+async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "") {
   const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
+  // 13 以外 → 13 にしたときだけ完了日時を残す（13 のまま保存し直しても上書きしない）
+  if (isCompleting(currentCase?.status, newStatus)) patch.completedAt = serverTimestamp();
   if (lost) {
     patch.lostReason = lost.reason; patch.lostReasonNote = lost.note || null;
   } else if (Number(currentCase?.status) === LOST) {
@@ -608,7 +640,7 @@ async function changeStatus(newStatus, userId, userName, lost = null) {
     userId,
     userName,
     subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
-    body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : "",
+    body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : (warnNote || ""),
     attachmentUrls: [],
   });
 }
@@ -686,7 +718,8 @@ async function loadDuplicateCandidates() {
     .map((d) => ({ _id: d.id, ...d.data() }))
     .filter((c) => c._id !== caseId && !c.archived
       // 同一法人のまとめ見積もり（quoteGroupId が同じ）は、意図して分けた別事業所なので重複候補にしない（2026-09-14）
-      && !(kase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === kase.quoteGroupId)
+      // ⚠️ 以前は未定義の変数 kase を見ていて ReferenceError になり、候補が常に0件（統合ボタンが出ない）だった（2026-10-21 E2E で発見）
+      && !(currentCase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === currentCase.quoteGroupId)
       && dupKeys(c).some((k) => myKeys.has(k))
       && !dismissed.has(pairKey(caseId, c._id)));
 }
@@ -905,9 +938,20 @@ async function mergeInto(other) {
   try {
     const batch = writeBatch(db);
     // 統合元の記録・セッション・見積もり・出荷を当案件へ付け替え（見積もり・出荷は計画書 §4.4）
+    let otherShipments = [];
     for (const col of ["activities", "sessions", "quotes", "shipments"]) {
       const snap = await getDocs(query(collection(db, col), where("caseId", "==", other._id)));
+      if (col === "shipments") otherShipments = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
       snap.forEach((d) => batch.update(d.ref, { caseId, caseNumber: keep.caseNumber ?? null }));
+    }
+    // 付け替えの結果、まだ発送していない出荷（下書き・依頼済）が2件以上になるなら先に知らせる（設計 §5 再発防止）。
+    // やめたら何も書かない（batch は commit 前なので捨てるだけ）
+    const preShip = preShipCountAfterMerge(shipmentsCache, otherShipments);
+    if (preShip >= 2 && !confirm(
+      `統合すると、この案件に「まだ発送していない出荷（下書き・依頼済）」が ${preShip} 件になります。\n`
+      + "統合のあと、供給管理で1件だけ残し、ほかは理由「重複登録」でキャンセルしてください。\n\n"
+      + "このまま統合しますか？")) {
+      return;
     }
     // 見積もり・Web申込の目印（案件一覧の絞り込みと見積もりカードが見る値）は、残る側に無いときだけ引き継ぐ
     for (const k of ["latestQuoteId", "quoteIssuedAt", "orderedAt", "orderedVia"]) {
@@ -1571,11 +1615,19 @@ onAuthStateChanged(auth, async (user) => {
   // ステータス変更
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
     let lost = null;
+    let warnNote = "";
     if (Number(e.target.value) === LOST) {
       lost = await askLostReason(LOST_REASONS);
       if (!lost) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
     }
-    await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost);
+    // 完了(13)にするときは、出荷・請求・入金・申請情報の取りこぼしを確認（止めずに確認だけ。設計 §6 W）
+    if (isCompleting(currentCase.status, e.target.value)) {
+      const warnings = completionWarnings({ shipments: shipmentsCache, subsidy: subsidyCache });
+      const msg = completionConfirmText(warnings);
+      if (msg && !confirm(msg)) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
+      warnNote = completionActivityNote(warnings);
+    }
+    await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote);
     currentCase.status = Number(e.target.value);
     renderLostReason(currentCase);
     renderNextStep(); // 次の一手を即座に更新
@@ -1652,7 +1704,8 @@ onAuthStateChanged(auth, async (user) => {
 
   // 申請情報購読
   onSnapshot(doc(db, "subsidyApplications", caseId), (snap) => {
-    renderSubsidy(snap.exists() ? snap.data() : null);
+    subsidyCache = snap.exists() ? snap.data() : null;
+    renderSubsidy(subsidyCache);
   });
 
   // タイムライン購読
@@ -1685,6 +1738,7 @@ onAuthStateChanged(auth, async (user) => {
   onSnapshot(shipQ, (snap) => {
     shipmentsCache = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
     renderShippingTab(shipmentsCache);
+    renderShipDupBanner(shipmentsCache);
     renderNextStep(); // 次の一手2行目（お金の流れ）を同じデータで更新
   }, (err) => {
     console.warn("shipments subscribe:", err.message || err);

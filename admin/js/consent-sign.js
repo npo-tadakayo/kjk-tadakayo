@@ -6,6 +6,7 @@
 // ・表示する条文は依頼発行時に焼き込まれた全文（document フィールド）。
 //   壊れていたら現行版で代替せず、エラーにする（承諾していない文面に署名させない）
 
+import "/js/emu.js"; // ローカルのエミュレーター接続（localhost かつ ?emu=1 のときだけ。本番では何もしない）
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, doc, getDoc, updateDoc, serverTimestamp,

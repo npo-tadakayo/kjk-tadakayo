@@ -178,7 +178,9 @@ await check(G, "role 未設定の登録者は cases に書けない（従来ど�
 
 // 練習生: 本番は読み書きとも不可
 const denied = ["cases/c1", "shipments/s1", "quotes/q1", "offices/o1", "appConfig/main", "partners/p1@example.com",
-  "partnerOrders/po1", "supportBadges/b1", "supportEvaluations/e1"];
+  "partnerOrders/po1", "supportBadges/b1", "supportEvaluations/e1",
+  // 2026-10-21 CRM改善で増えたコレクション（統合マージで追加）
+  "bankTxns/t1", "bankConfig/presets", "_notifyLog/assign_x"];
 for (const p of denied) {
   await check(G, `trainee は ${p} を読めない`, false, () => getDoc(doc(prod(TRAINEE), p)));
   await check(G, `trainee は ${p} に書けない`, false, () => setDoc(doc(prod(TRAINEE), p), { name: "x" }));
@@ -241,6 +243,14 @@ await check(P, "users は staff でも書けない", false, () => setDoc(doc(pra
 await check(P, "users は trainee でも書けない", false, () => setDoc(doc(practice(TRAINEE), "users", TRAINEE), { role: "admin", active: true }));
 await check(P, "users を一覧できない", false, () => getDocs(collection(practice(STAFF), "users")));
 await check(P, "users の下のサブコレクションにも書けない", false, () => setDoc(doc(practice(STAFF), "users", STAFF, "x", "y"), { a: 1 }));
+// 2026-10-21 統合マージ: CRM改善の新しいコレクションも練習DBで使える（入金明細の取り込み・設定）。_notifyLog だけは閉じる
+await check(P, "trainee は練習DBの bankTxns に書ける", true, () => setDoc(doc(practice(TRAINEE), "bankTxns/h1"), { amount: 1000 }));
+await check(P, "trainee は練習DBの bankConfig に書ける", true, () => setDoc(doc(practice(TRAINEE), "bankConfig/presets"), { a: 1 }));
+await check(P, "staff は練習DBの appConfig を読める", true, () => getDoc(doc(practice(STAFF), "appConfig/settings")));
+await check(P, "練習DBの _notifyLog は staff でも読めない", false, () => getDoc(doc(practice(STAFF), "_notifyLog/x")));
+await check(P, "練習DBの _notifyLog は staff でも書けない", false, () => setDoc(doc(practice(STAFF), "_notifyLog/x"), { a: 1 }));
+await check(P, "練習DBの _notifyLog を一覧できない", false, () => getDocs(collection(practice(STAFF), "_notifyLog")));
+
 // 練習DBのルールが本番DBに効いていない（同じエミュレータ・同じプロジェクトで、本番DBでは拒否される）
 await check(P, "【分離】本番DBでは trainee は cases を読めない", false, () => getDoc(doc(prod(TRAINEE), "cases/c1")));
 await check(P, "【分離】本番DBでは trainee は cases に書けない", false, () => setDoc(doc(prod(TRAINEE), "cases/p-leak"), newCase));

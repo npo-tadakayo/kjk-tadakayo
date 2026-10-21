@@ -3,7 +3,7 @@ import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, query, orderBy, onSnapshot,
-  doc, getDoc, updateDoc, addDoc, serverTimestamp }
+  doc, getDoc, getDocs, where, updateDoc, addDoc, serverTimestamp }
   from "/js/fs.js";
 import {
   STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS_SHORT, PHASES, LOST,
@@ -13,6 +13,9 @@ import {
 } from "/js/constants.js";
 import { askLostReason } from "/js/case-detail-util.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
+// 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
+import { completionWarnings } from "/js/case-complete-check.js";
+import { isCompleting, completionConfirmText, completionActivityNote } from "/js/screen-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -218,13 +221,35 @@ async function changeStatus(id, newStatus) {
   } else if (prev === LOST) {
     patch.lostReason = null; patch.lostReasonNote = null;
   }
+  // 完了(13)にするときは、この案件の出荷と申請情報を読んで取りこぼしを確認（止めずに確認だけ）。
+  // キャンセルならカードの位置・セレクトの表示を元に戻して何もしない
+  let warnNote = "";
+  if (isCompleting(prev, newStatus)) {
+    let warnings;
+    try {
+      const [shipSnap, saSnap] = await Promise.all([
+        getDocs(query(collection(db, "shipments"), where("caseId", "==", id))),
+        getDoc(doc(db, "subsidyApplications", id)),
+      ]);
+      warnings = completionWarnings({
+        shipments: shipSnap.docs.map((d) => ({ _id: d.id, ...d.data() })),
+        subsidy: saSnap.exists() ? saSnap.data() : null,
+      });
+    } catch (e) {
+      warnings = [`出荷・申請情報を読み込めず、確認できませんでした（${e.message || e}）`];
+    }
+    const msg = completionConfirmText(warnings);
+    if (msg && !confirm(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${msg}`)) { renderBoard(); return; }
+    warnNote = completionActivityNote(warnings);
+    patch.completedAt = serverTimestamp();
+  }
   try {
     await updateDoc(doc(db, "cases", id), patch);
     await addDoc(collection(db, "activities"), {
       caseId: id, type: "memo", occurredAt: serverTimestamp(),
       userId: currentUser.uid, userName: currentUser.displayName || currentUser.email,
       subject: `ステータス変更 ${STATUS_LABELS[prev]} → ${STATUS_LABELS[newStatus]}`,
-      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : ""), attachmentUrls: [],
+      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : ""), attachmentUrls: [],
     });
     toast(`#${c.caseNumber} ${c.officeName} → ${STATUS_LABELS[newStatus]}`);
   } catch (e) {

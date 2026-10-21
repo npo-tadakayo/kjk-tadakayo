@@ -1,3 +1,4 @@
+import "/js/emu.js"; // ローカルのエミュレーター接続（localhost かつ ?emu=1 のときだけ。本番では何もしない）
 import { doc, getDoc, getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { setupModeUi } from "/js/mode.js";
 
@@ -23,7 +24,10 @@ export function showAccessDenied(email, msg, detail){
       <i class="ti ti-lock" style="font-size:44px;color:#9a8e78" aria-hidden="true"></i>
       <div style="font-size:17px;font-weight:700">${(msg||"アクセス権限がありません")}</div>
       <div style="font-size:13px;color:#6a5e48;max-width:440px;line-height:1.7">
-        ${detail ? String(detail).replace(/</g,"&lt;") : `このアカウント（${String(email||"").replace(/</g,"&lt;")}）は<strong>ユーザー登録がありません</strong>。<br>
+        ${detail ? String(detail).replace(/</g,"&lt;")
+          : msg
+          ? `このアカウント（${String(email||"").replace(/</g,"&lt;")}）では、この画面を使えません。<br>必要なときは管理者に依頼してください。`
+          : `このアカウント（${String(email||"").replace(/</g,"&lt;")}）は<strong>ユーザー登録がありません</strong>。<br>
         管理者にユーザー登録（ロール付与）を依頼してください。`}
       </div>
       <a href="/index.html" style="font-size:13px;color:#3a6e9e">別のアカウントでログインし直す</a>

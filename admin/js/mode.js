@@ -26,6 +26,7 @@ export const PRACTICE_CLEANUP_COLLECTIONS = [
   "inventoryMovements", "purchaseOrders", "partnerOrders", "stockTransfers", "locations",
   "products", "partners", "consentRequests", "documentChecklists", "supportChecklists",
   "supportBadges", "supportEvaluations", "subsidyApplications", "notDuplicates", "practiceSent",
+  "bankTxns", // 入金明細の取り込み記録（2026-10-21 CRM改善）。bankConfig は列割り当ての共有設定なので消さない
 ];
 
 // 全タブ共通の localStorage を正とする。使えない環境（プライベートウィンドウ等）だけ sessionStorage を見る

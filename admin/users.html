@@ -27,7 +27,7 @@
       <div id="main" style="display:none">
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">ここに登録された @tadakayo.jp ユーザーのみログインできます。未登録のユーザーはアクセスできません。</p>
         <div class="card"><div class="table-wrap">
-          <table><thead><tr><th>氏名</th><th>メール</th><th>ロール</th><th>状態</th><th></th></tr></thead>
+          <table><thead><tr><th>氏名</th><th>メール</th><th>ロール</th><th>状態</th><th>Chat通知</th><th></th></tr></thead>
           <tbody id="usersBody"></tbody></table>
           <div id="usersEmpty" class="empty-state" style="display:none"><i class="ti ti-users" aria-hidden="true"></i><p>ユーザーがいません</p></div>
         </div></div>
@@ -57,6 +57,9 @@
               <option value="false">停止</option>
             </select></div>
         </div>
+        <div class="form-group"><label class="form-label" for="uChatId">Google Chat のユーザーID（数字）</label>
+          <input class="form-control" id="uChatId" type="text" inputmode="numeric" placeholder="例: 123456789012345678901">
+          <div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">担当が決まったときの Chat 通知でメンションに使います。空欄なら通知は飛びません（数字5〜30桁）。</div></div>
         <div id="uError" style="font-size:13px;color:var(--color-danger);margin-top:6px;display:none"></div>
       </div>
       <div class="modal-footer">

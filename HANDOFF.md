@@ -3,6 +3,27 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-10-21 CRM改善（全項目を実装・未コミット・本番未反映）
+
+- **統合マージ（10/21）**: main（テストモード・Node 22）を crm-ship-request に取り込み、両方が共存するように直した（push 前・司令塔の確認待ち）。
+  requireStaff が練習生（trainee）も拒否（rejectTrainee は notifyShipment だけに残す・aiAssist も対象に）／通知トリガーは `database:"(default)"` を明示＝練習DBでは動かない／
+  代役に staffAcceptQuote・previewDailyFollowup を追加、notifyShipment・reviseQuote の代役を依頼済（requested）に対応／bank-import.js を fs.js 経由に／
+  練習DBのルールで _notifyLog を閉じる／emu.js が練習DBもエミュレーターにつなぐ／練習の初期データに依頼済の出荷を1件追加（出荷5件）。
+
+- 設計 `docs/CRM改善_設計_20261021.md`（§9 判断16点は次田さん決定済み・§12 実装後の変更点）。出荷の二段階化（案B）・在庫バグ3件・担当通知・日次まとめの担当別化・署名完了通知・電話受注の受注確定・完了の警告・重複警告・入金明細CSV取り込み・権限（appConfig管理者のみ・requireStaff）・マニュアル。
+- 検証: 単体テスト14本・ルールのテスト（エミュレーター）31/31・26/26・E2E 81項目すべて合格。Codex レビュー3回・独立レビュー1回の指摘は修正済み。
+- **本番前に要るもの（次田さんの承認）**: ①コミット・push ②fn-ai-sa に roles/datastore.viewer（付けないと AI アシスタントが止まる）③fn-batch-sa に roles/eventarc.eventReceiver・トリガーの region と Firestore のロケーションの確認 ④Functions を先に `--only "functions:…"` で列挙して反映 → previewDailyFollowup で文面確認 → Hosting ⑤利用者に Chat ID を入れる（chat_write.py の who で23人分取得可）⑥銀行の入金明細CSVを1つ預かる
+- crm スキル（Claude）で担当を変えるときも assignedBy・assignedAt を書かないと担当通知が出ない（スキル側は未対応）。
+- 業務フロー図（改修後）: `docs/CRM業務フロー図_改修後_20261021.md/.html`、PDF（A3）は 00_outbox/CRM業務フロー図_改修後_20261021/。
+
+## 2026-10-21 CRM対応ゼロ化プロジェクトの途中経過
+
+- 台帳 `docs/CRM対応ゼロ化_台帳.md`（未コミット・ブランチ `crm-ship-request`）の **§N に「実施済み／未実施」を一覧**にした。続きはここから。
+- 済み: チャットで決まった担当14件＋#288 をCRM反映／島袋さんをCRM利用者に追加／連絡リスト作り直し（新URLは台帳）／連絡係3名に編集権限／Chat 読み取り・投稿の道具（`_tools/chat_read.py`・`chat_write.py`）
+- 未了の中心: 申込済み6件の残り（#252・#254・#255〜#257）／お詫び後・担当未割当の残り／しんあい8件／出荷の二段階化（案B）の実装
+- **再開の先頭は #252 日本フレンズ（東京都世田谷区）。案件を出すときは場所を先頭に、担当・調整先の選択肢に「Chat 投稿で調整を依頼」を入れる**
+- Chat への投稿は文面を見せてから `--send`（実際の送信はまだ1通もしていない）
+
 ## 2026-10-19〜20 の対応（PM打ち合わせの決定を受けたCRM改修・本番反映済み・main `53c5413`）
 
 | # | 何 | 状態 |

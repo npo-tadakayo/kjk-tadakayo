@@ -7,6 +7,7 @@ import { getFirestore, getProdFirestore, collection, query, orderBy, onSnapshot,
 import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
 import { matchAssignee, bindPrefSelect, ASSIGNEE_ME } from "/js/assignee-filter.js";
+import { todoCounts } from "/js/ship-flow.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -74,6 +75,10 @@ function renderTodo() {
   // 遷移先が覚えている担当（別の人など）より、ホームで見ている範囲を優先させるため、全員分でも明示する
   const me = mineOnly() ? "assignee=me" : "assignee=all";
   const withMe = (href) => href + (href.includes("?") ? "&" : "?") + me;
+  // 出荷の件数は ship-flow.js の todoCounts（状態の分け方を供給管理と同じにする・2026-10-21）
+  const shipData = shipPending ? null : todoShipmentsV;
+  const shipTc = shipData && !shipError ? todoCounts(shipData) : null;
+  const shipRow = (key) => shipError ? { state: "error" } : !shipTc ? { state: "loading" } : { state: "ok", count: shipTc[key] };
   const rows = [
     { icon: "ti-inbox", label: "新しく届いた問い合わせ", href: "/cases.html?status=1",
       ...countRow(allTodo, todoCasesError, (c) => c.status === 1) },
@@ -81,14 +86,17 @@ function renderTodo() {
       ...countRow(allTodo, todoCasesError, (c) => ENGAGED.includes(c.status) && !c.assignedUserId) },
     { icon: "ti-users", label: "伴走支援待ち", href: "/cases.html?status=7",
       ...countRow(todoCasesV, todoCasesError, (c) => c.status === 7) },
-    { icon: "ti-truck-delivery", label: "出荷の下書き（確定が必要）", href: "/supply.html?tab=shipments",
-      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "draft") },
+    { icon: "ti-file-pencil", label: "出荷の下書き（依頼が必要）", href: "/supply.html?tab=shipments",
+      ...shipRow("draft") },
+    // 出荷指示を出してセンターの発送を待っているもの。発送されたら「発送済にする」を押す
+    { icon: "ti-truck-delivery", label: "出荷依頼中（センターの発送待ち）", href: "/supply.html?tab=shipments",
+      ...shipRow("requested") },
     { icon: "ti-receipt", label: "発送済で請求書を出していない", href: "/supply.html?tab=shipments",
-      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "shipped") },
+      ...shipRow("unbilled") },
     { icon: "ti-cash", label: "請求済で入金待ち", href: "/supply.html?tab=shipments",
-      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "invoiced") },
+      ...shipRow("unpaid") },
     { icon: "ti-receipt-2", label: "入金済で領収証を出していない", href: "/supply.html?tab=shipments",
-      ...countRow(shipPending ? null : todoShipmentsV, shipError, (s) => s.status === "paid" && !s.receiptIssuedAt) },
+      ...shipRow("noReceipt") },
   ];
   // 新しく届いた問い合わせ・担当が決まっていない案件は、まだ誰の担当でもないので全員分のまま
   const shared = (href) => href.includes("assigned=none") || href.includes("status=1");

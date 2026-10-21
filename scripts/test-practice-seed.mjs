@@ -23,7 +23,7 @@ const entries = (c) => Object.entries(seed[c]);
 // ① 件数
 eq(Object.keys(seed.offices).length, 12, "事業所12");
 eq(Object.keys(seed.cases).length, 12, "案件12");
-eq(Object.keys(seed.shipments).length, 4, "出荷4");
+eq(Object.keys(seed.shipments).length, 5, "出荷5（2026-10-21 依頼済を追加）");
 eq(Object.keys(seed.partners).length, 1, "認定事業者1");
 // 見積は「3つの場面（1事業所・同一法人複数・改版済み）」を、改版の2版を含め5件で持つ
 eq(Object.keys(seed.quotes).length, 5, "見積5件（3つの場面）");
@@ -133,7 +133,8 @@ eq(extractPracticeSettings({ chatWebhookUrl: "https://chat.googleapis.com/x" }),
 
 // ⑤ shipments の caseId が seed の案件を指す／状態の内訳
 for (const s of vals("shipments")) ok(seed.cases[s.caseId], `出荷の caseId が案件にある ${s.soNumber}`);
-eq(vals("shipments").map((s) => s.status).sort(), ["draft", "invoiced", "paid", "shipped"], "出荷は draft/shipped/invoiced/paid");
+eq(vals("shipments").map((s) => s.status).sort(), ["draft", "invoiced", "paid", "requested", "shipped"], "出荷は draft/requested/shipped/invoiced/paid");
+{ const r = vals("shipments").find((s) => s.status === "requested"); ok(r.requestSeq === 1 && r.requestedByEmail && r.shipNotifiedAt, "依頼済は依頼の記録（requestSeq・依頼した人・出荷指示の投稿済み）を持つ"); }
 for (const s of vals("shipments")) ok(s.items.length > 0 && s.items.every((i) => i.sku && i.qty > 0), "出荷に明細がある");
 const paid = vals("shipments").find((s) => s.status === "paid");
 eq(paid.payments[0].amount, paid.items.reduce((a, i) => a + i.unitPrice * i.qty, 0), "入金済は請求額と入金額が一致");

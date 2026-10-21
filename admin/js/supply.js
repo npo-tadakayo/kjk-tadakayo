@@ -3,7 +3,7 @@ import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, orderBy, onSnapshot,
-  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion, arrayRemove }
+  addDoc, updateDoc, setDoc, deleteDoc, runTransaction, serverTimestamp, increment, arrayUnion, arrayRemove, deleteField }
   from "/js/fs.js";
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
@@ -16,6 +16,14 @@ import { parseOrderFile } from "/js/partner-order-import.js";
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
 import { PREFECTURES } from "/js/area.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
+// 出荷の状態・ボタン・在庫の扱いの判定は ship-flow.js が正本（2026-10-21 出荷の二段階化）
+import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stockDeducted, isLocked,
+  canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
+  netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG } from "/js/ship-flow.js";
+// 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
+import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
+import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, invoicePatchOf, paymentRemovalOf, VIEWER_LOCK_SELECTOR } from "/js/supply-rules.js";
+import { initBankImport } from "/js/bank-import.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -34,6 +42,7 @@ let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
 let partnerOrdersCache = []; // 受注一覧（出荷の更新時に再描画するため保持）
+let viewerMode = false;      // 閲覧のみ（viewer）。applyViewerMode が文言で拾えないボタンを自前で止めるため
 let shipDeepLinkTried = false; // ?so= の該当行スクロールは最初の描画で1回だけ試す（onSnapshotで何度も再描画されるため）
 function ordererList(){
   return (Array.isArray(appSettings.poOrderers) && appSettings.poOrderers.length)
@@ -851,16 +860,27 @@ async function createShipmentDraftFromPO(o){
     shipDate:today(), createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
   await updateDoc(doc(db,"purchaseOrders",o._id),{ shipmentId:ref.id });
 }
-// ===== 「発送済にする」の共通部品（2026-10-19 CRM改修 #4・#6・#7） =====
-// 3つの経路（下書きの確定・出荷の直接作成・認定事業者の受注から出荷）で同じものを使う。
-//   ・出荷日（既定は今日）／出荷元の保管場所（在庫を使う出荷のみ）／レターパックの種類 を確認・入力する
-//   ・押した人（shippedBy）と、支払期限の新ルールの印（dueRule:'net14'＝請求書の発行日＋14日）を書く
-//     → dueRule はここで初めて付く。すでに発送済み・請求済みの出荷には付かないので期限は変わらない
-//   ・発送済になった直後に、出荷指示を投稿する（notifyShipment。投稿先が未設定・停止中・失敗でも発送済の操作は止めない）
+// ===== 出荷の二段階化（2026-10-21・案B。元は 2026-10-19 CRM改修 #4・#6・#7 の「発送済にする」の共通部品） =====
+// 下書き(draft) ─「出荷を依頼する」→ 依頼済(requested) ─「発送済にする」→ 発送済(shipped)
+//   ・「出荷を依頼する」: 希望出荷日・出荷元（必須）・レターパックの種類を確認 → requested にして出荷指示を投稿する。
+//      在庫は動かさない（不足は警告だけ）。記録: requestedBy/ByEmail/At
+//   ・「発送済にする」: 発送日・出荷元（変えてよい）・追跡番号（任意）を確認 → shipped にして在庫を引き落とす
+//      （トランザクションで「依頼済のままか」「在庫が足りるか」を確かめ、不足なら止める）。出荷指示は投稿しない。
+//      押した人（shippedBy）と、支払期限の新ルールの印（dueRule:'net14'＝請求書の発行日＋14日）を書く
+//   ・「すでに発送済（記録のみ）」: 下書きから依頼を経ずに shipped へ。在庫は引く・出荷指示は送らない（skipped）
+//   ・「依頼を取り消す」: requested → draft。出荷指示の投稿の印を消す（消さないと再依頼で投稿されない）
+// 経路は3つ（下書きから・出荷の直接登録・認定事業者の受注から）で、どれも依頼の段階を通る（直送も通す・§9 決定6）。
+// 状態ごとに押せるボタン・在庫の扱いは ship-flow.js が正本。
 const LETTERPACK_TYPE_LABEL = { light:"レターパックライト（青）", plus:"レターパックプラス（赤）" };
 function shippedStampPatch(){
   return { shippedBy: currentUser.displayName||currentUser.email, shippedByEmail: currentUser.email||"",
     shippedAt: serverTimestamp(), dueRule: "net14" };
+}
+// requestSeq … 依頼の番号（依頼のたびに1増やす）。notifyShipment は投稿の結果を書くとき、ロックを取ったときと同じ番号か確かめる
+// （送信中に依頼を取り消して依頼し直した場合に、古い送信が「投稿済み」を書き戻して再依頼の投稿が止まるのを防ぐ・Codex 指摘4）
+function requestedStampPatch(){
+  return { requestedBy: currentUser.displayName||currentUser.email, requestedByEmail: currentUser.email||"",
+    requestedAt: serverTimestamp(), requestSeq: increment(1) };
 }
 function letterPackPatch(v){ return (v==="light"||v==="plus") ? { letterPackType:v } : {}; }
 // 出荷指示を投稿して、結果を一言で返す（画面のトーストに足す）。投稿の可否で処理を止めない
@@ -881,7 +901,7 @@ async function postShipNotice(shipmentId, opts){
     return `出荷指示を投稿できませんでした（${e.message||e}）。出荷の行の「出荷指示を再送」でやり直せます`;
   }
 }
-// 「出荷指示を送らない（記録のみ）」を選んだときに出荷へ書く印。再送ボタンからは後で送れる
+// 「すでに発送済（記録のみ）」のときに出荷へ書く印（出荷指示を送っていない）。再送ボタンからは後で送れる
 function noNoticePatch(){
   return { shipNotifyStatus: "skipped", shipNotifySkippedBy: currentUser.displayName||currentUser.email,
     shipNotifySkippedAt: serverTimestamp() };
@@ -893,7 +913,7 @@ async function deliveredHint(s){
   try{
     const cs = await getDoc(doc(db,"cases",s.caseId));
     const st = cs.exists() ? Number(cs.data().status) : 0;
-    if(st >= 8 && st !== 4) return "この案件はすでに伴走支援が済んでいます。カードリーダーが届いていれば、出荷指示は送らないでください（二重に送るのを防ぐため、チェックを入れてあります）";
+    if(st >= 8 && st !== 4) return "この案件はすでに伴走支援が済んでいます。カードリーダーが届いていれば、ここで依頼せず、一覧の「すでに発送済（記録のみ）」を使ってください（出荷指示を二重に送るのを防ぐため）";
   }catch(_){}
   return null;
 }
@@ -908,25 +928,45 @@ async function resendShipNotice(s){
   toast(await postShipNotice(s._id, { resend: true }));
 }
 
-// 発送済にする前の確認ダイアログ。OK なら {shipDate, originLocationId, letterPackType}、やめたら null
-let shipDoneCtx = null; // { resolve, items, usesStock }
-function askShipDetails({ title, summaryHtml, usesStock, locId, date, letterPackType, items, noNotice, noNoticeHint }){
+// 依頼・発送済・記録のみの前の確認ダイアログ（3つで共通）。
+// OK なら {shipDate, originLocationId, letterPackType, trackingNumber}、やめたら null
+//   mode: "request" … 出荷を依頼する（日付は希望出荷日・出荷元は必須・在庫不足は警告だけ・追跡番号は聞かない）
+//         "ship"    … 発送済にする（日付は発送日・出荷元は変えてよい・在庫不足なら止める・追跡番号は任意）
+//         "record"  … すでに発送済（記録のみ）（"ship" と同じ確認。出荷指示は送らない）
+// 以前の「出荷指示を送らない」チェックは廃止した（送らない場合は「すでに発送済（記録のみ）」を使う・2026-10-21）
+const SHIP_DIALOG = {
+  request: { title:"出荷を依頼する", dateLabel:"希望出荷日", button:"出荷を依頼する",
+    note:"「出荷を依頼する」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、依頼の記録だけ残ります）。在庫はまだ引き落としません（センターが発送したのを確認して「発送済にする」を押したときに引き落とします）。" },
+  ship: { title:"発送済にする", dateLabel:"発送日", button:"発送済にする",
+    note:"センターが発送したのを確認してから押してください。在庫を引き落とし、請求の起点になります。出荷指示は投稿しません（依頼のときに投稿済みです）。" },
+  record: { title:"すでに発送済（記録のみ）", dateLabel:"発送日", button:"発送済として記録",
+    note:"すでに届いている・手渡し済みなどの出荷を、依頼を経ずに発送済として記録します。在庫を引き落とします。出荷指示は送りません。" },
+};
+let shipDoneCtx = null; // { resolve, items, usesStock, mode }
+function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint }){
+  const m = SHIP_DIALOG[mode] ? mode : "ship";
+  const cfg = SHIP_DIALOG[m];
   return new Promise((resolve)=>{
     if(shipDoneCtx && shipDoneCtx.resolve) shipDoneCtx.resolve(null);
-    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock };
-    document.getElementById("shipDoneTitle").textContent = title || "発送済にする";
+    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock, mode: m };
+    document.getElementById("shipDoneTitle").textContent = title || cfg.title;
     document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
+    document.getElementById("shipDoneDateLabel").textContent = cfg.dateLabel;
     document.getElementById("shipDoneDate").value = date || today();
     document.getElementById("shipDoneLp").value = (letterPackType==="light"||letterPackType==="plus") ? letterPackType : "";
+    // 追跡番号は発送済にするとき・記録のみのときだけ（任意）
+    document.getElementById("shipDoneTrackWrap").style.display = m==="request" ? "none" : "";
+    document.getElementById("shipDoneTrack").value = trackingNumber || "";
     const needLoc = !!usesStock && stockItems(items).length>0;
     document.getElementById("shipDoneOriginWrap").style.display = needLoc ? "" : "none";
     if(needLoc) fillLocationSelect(document.getElementById("shipDoneOrigin"), locId);
-    document.getElementById("shipDoneStockNote").textContent = usesStock ? "" : "直送のため、自社在庫は動きません。";
+    document.getElementById("shipDoneStockNote").textContent = usesStock ? "" : "直送（AB Circleから直接）のため、自社在庫は動きません。";
+    document.getElementById("shipDoneNote").textContent = cfg.note;
+    document.getElementById("shipDoneBtnLabel").textContent = cfg.button;
     document.getElementById("shipDoneError").style.display = "none";
-    // 出荷指示を送らない（記録のみ）。伴走支援が済んだ案件など、すでに届いている出荷は既定でチェック（2026-10-20）
-    document.getElementById("shipDoneNoNotice").checked = !!noNotice;
-    const nh = document.getElementById("shipDoneNoNoticeHint");
-    nh.textContent = noNoticeHint || ""; nh.style.display = noNoticeHint ? "block" : "none";
+    // 伴走支援が済んだ案件など、すでに届いている可能性があるときの注意（依頼のときだけ出す）
+    const nh = document.getElementById("shipDoneHint");
+    nh.textContent = hint || ""; nh.style.display = hint ? "block" : "none";
     updateShipDoneHint();
     document.getElementById("shipDoneModal").classList.add("open");
   });
@@ -935,8 +975,9 @@ function updateShipDoneHint(){
   if(!shipDoneCtx || !shipDoneCtx.usesStock) return;
   const its = stockItems(shipDoneCtx.items);
   const locId = document.getElementById("shipDoneOrigin").value;
+  const verb = shipDoneCtx.mode==="request" ? "発送済にしたときに引き落とします（いまは動かしません）" : "引き落とします";
   document.getElementById("shipDoneStockNote").textContent = its.length
-    ? `${locationName(locId)||"保管場所未選択"} の在庫から ${its.map(it=>`${it.sku} × ${it.qty}`).join("・")} を引き落とします。`
+    ? `${locationName(locId)||"保管場所未選択"} の在庫から ${its.map(it=>`${it.sku} × ${it.qty}`).join("・")} を${verb}。`
     : "在庫を使う品目はありません。";
 }
 function closeShipDone(result){
@@ -946,55 +987,145 @@ function closeShipDone(result){
 }
 function doShipDone(){
   if(!shipDoneCtx) return;
+  const m = shipDoneCtx.mode, cfg = SHIP_DIALOG[m];
   const err = document.getElementById("shipDoneError"); err.style.display = "none";
-  const fail = (m)=>{ err.textContent = m; err.style.display = "block"; };
+  const fail = (msg)=>{ err.textContent = msg; err.style.display = "block"; };
   const shipDate = document.getElementById("shipDoneDate").value;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail("出荷日を入れてください");
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail(`${cfg.dateLabel}を入れてください`);
   const its = shipDoneCtx.usesStock ? stockItems(shipDoneCtx.items) : [];
   let originLocationId = "";
   if(its.length){
+    // 依頼のときも出荷元は必須（センターが迷わないように・§9 決定7）。発送済の画面で変えられる
     originLocationId = document.getElementById("shipDoneOrigin").value;
     if(!originLocationId) return fail("出荷元の保管場所を選んでください（未登録なら在庫タブから追加できます）");
-    for(const it of its){
-      const p = products.find(x=>x.id===it.sku)||{};
-      if(stockAt(p, originLocationId) < (Number(it.qty)||0))
-        return fail(`在庫が足りません: ${p.name||it.sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${it.qty}）。入荷を登録するか、別の保管場所を選んでください。`);
+    const short = [];
+    for(const [sku, q] of Object.entries(qtyBySku(its))){
+      const p = products.find(x=>x.id===sku)||{};
+      if(stockAt(p, originLocationId) < q) short.push(`${p.name||sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${q}）`);
+    }
+    if(short.length){
+      // 依頼の時点では止めない（在庫は発送済のときに引く）。発送済・記録のみは止める（最終判定はトランザクションの中）
+      if(m!=="request") return fail(`在庫が足りません: ${short.join("、")}。入荷を登録するか、別の保管場所を選んでください。`);
+      if(!confirm(`在庫が足りません: ${short.join("、")}\n依頼は出せますが、「発送済にする」の時点で在庫が必要です（足りないと発送済にできません）。依頼を続けますか？`)) return;
     }
   }
   closeShipDone({ shipDate, originLocationId, letterPackType: document.getElementById("shipDoneLp").value || "",
-    noNotice: document.getElementById("shipDoneNoNotice").checked });
+    trackingNumber: m==="request" ? "" : document.getElementById("shipDoneTrack").value.trim() });
+}
+function shipSummaryHtml(s){
+  return `<div><strong>${esc(s.company||s.partnerName||"")}</strong> ${esc(s.officeName||"")}</div>`
+    + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([s.postal?`〒${s.postal}`:"", s.address||""].filter(Boolean).join(" "))}</div>`;
+}
+function staleMsg(cur){
+  return `この出荷はすでに「${SHIP_STATUS[shipStatusOf(cur)]||cur.status}」です（別の人が先に操作した可能性があります）。画面を更新してください`;
 }
 
-// 出荷の下書き(draft) → 発送済(shipped)に確定。
-// 在庫から出す出荷（Webのお申し込みで自動作成された下書き等）は、ここで在庫を引く。
-// 直送（fulfillment:"direct"）は自社倉庫を通らないので在庫は動かさない。
-async function confirmDraftShipment(s){
-  const usesStock = shipUsedStock(s);
+// 出荷の下書き(draft) → 依頼済(requested)（旧 confirmDraftShipment）。
+// 在庫は動かさない。出荷指示を投稿する。トランザクションで「まだ下書きか」を確かめる（2人が同時に押しても依頼は1回）
+async function requestDraftShipment(s){
+  const usesStock = usesWarehouse(s);
   const hint = await deliveredHint(s);
-  const ans = await askShipDetails({ noNotice: !!hint, noNoticeHint: hint || "",
-    title: `発送済にする（${s.soNumber||""}）`,
-    summaryHtml: `<div><strong>${esc(s.company||s.partnerName||"")}</strong> ${esc(s.officeName||"")}</div>`
-      + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([s.postal?`〒${s.postal}`:"", s.address||""].filter(Boolean).join(" "))}</div>`,
+  const ans = await askShipDetails({ mode:"request", hint: hint||"",
+    title: `出荷を依頼する（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
   });
   if(!ans) return;
   const its = usesStock ? stockItems(s.items) : [];
-  const locId = its.length ? ans.originLocationId : (usesStock ? shipLocationOf(s) : "");
+  const ref = doc(db,"shipments",s._id);
   try{
-    await updateDoc(doc(db,"shipments",s._id),{
-      status:"shipped", shipDate:ans.shipDate, confirmedAt:serverTimestamp(),
-      ...(its.length ? { originLocationId: locId, originLocationName: locationName(locId) } : {}),
-      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(), ...(ans.noNotice ? noNoticePatch() : {}) });
-    for(const it of its){
-      await updateDoc(doc(db,"products",it.sku), stockPatch(locId, -it.qty));
-      await addDoc(collection(db,"inventoryMovements"), movement(it.sku, -it.qty, "shipment", s.soNumber, locId));
-    }
-  }
-  catch(e){ alert(`確定失敗: ${e.message}`); return; }
-  const head = usesStock && its.length ? `${s.soNumber} を発送済に確定し、在庫から引き落としました` : `${s.soNumber} を発送済に確定しました`;
-  if(ans.noNotice){ toast(`${head}。${NO_NOTICE_MSG}`); return; }
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if(nextStatus(shipStatusOf(cur),"request")!=="requested") throw new Error(staleMsg(cur));
+      tx.update(ref, {
+        status:"requested", shipDate:ans.shipDate,
+        ...(its.length ? { originLocationId: ans.originLocationId, originLocationName: locationName(ans.originLocationId) } : {}),
+        ...letterPackPatch(ans.letterPackType), ...requestedStampPatch(), updatedAt: serverTimestamp() });
+    });
+  }catch(e){ alert(`出荷の依頼に失敗しました: ${e.message}`); return; }
+  const head = `${s.soNumber} の出荷を依頼しました（在庫は発送済にしたときに引き落とします）`;
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(s._id)}`);
+}
+
+// 依頼済(requested) → 発送済(shipped)：markShipped ／ 下書き(draft) → 発送済（記録のみ）：recordShippedDirect。
+// 1つのトランザクションで「状態がまだ依頼済（記録のみは下書き）か」「出荷元の在庫が足りるか」を確かめてから、
+// 出荷を発送済にして在庫を引き落とす。2人が同時に押しても2回目は状態の確認で止まる（既存バグ3の修正）。
+// 認定事業者の受注から作った出荷は、受注の状態も「出荷済」にする（§9 決定5）。出荷指示は投稿しない。
+async function shipWithStock(s, action){
+  const mode = action==="recordShipped" ? "record" : "ship";
+  const usesStock = usesWarehouse(s);
+  const ans = await askShipDetails({ mode,
+    title: `${SHIP_DIALOG[mode].title}（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
+    usesStock, locId: shipLocationOf(s), date: mode==="record" ? (s.shipDate||today()) : today(),
+    letterPackType: s.letterPackType, trackingNumber: s.trackingNumber||"", items: s.items,
+  });
+  if(!ans) return;
+  const ref = doc(db,"shipments",s._id);
+  let moved = 0;
+  try{
+    await runTransaction(db, async (tx)=>{
+      moved = 0; // トランザクションは再試行されることがあるので、毎回ここで初期化
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if(nextStatus(shipStatusOf(cur), action)!=="shipped") throw new Error(staleMsg(cur));
+      // 在庫は最新の明細（cur.items）で引く。読み取りは書き込みより前にまとめて済ませる（Firestore トランザクションの決まり）
+      const need = usesWarehouse(cur) ? qtyBySku(cur.items) : {};
+      const skus = Object.keys(need).filter(k=>need[k]>0);
+      const locId = skus.length ? (ans.originLocationId || shipLocationOf(cur)) : "";
+      for(const sku of skus){
+        const p = (await tx.get(doc(db,"products",sku))).data()||{};
+        const have = Number((p.stockByLocation||{})[locId])||0;
+        if(have < need[sku]) throw new Error(`在庫不足: ${p.name||sku}（${locationName(locId)} ${have} / 出荷 ${need[sku]}）。入荷を登録するか、別の保管場所を選んでください`);
+      }
+      const po = cur.partnerOrderId ? await tx.get(doc(db,"partnerOrders",cur.partnerOrderId)) : null;
+      tx.update(ref, {
+        status:"shipped", shipDate:ans.shipDate, confirmedAt:serverTimestamp(),
+        ...(skus.length ? { originLocationId: locId, originLocationName: locationName(locId) } : {}),
+        ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(),
+        ...(ans.trackingNumber ? { trackingNumber: ans.trackingNumber } : {}),
+        ...(action==="recordShipped" ? noNoticePatch() : {}),
+        updatedAt: serverTimestamp() });
+      for(const sku of skus){
+        tx.update(doc(db,"products",sku), stockPatch(locId, -need[sku]));
+        tx.set(doc(collection(db,"inventoryMovements")), movement(sku, -need[sku], "shipment", s.soNumber, locId));
+        moved++;
+      }
+      if(po && po.exists()) tx.update(po.ref, { status:"shipped", updatedAt: serverTimestamp() });
+    });
+  }catch(e){ alert(`発送済にできませんでした: ${e.message}`); return; }
+  const head = `${s.soNumber} を発送済にしました${moved ? "（在庫から引き落としました）" : ""}`;
+  toast(action==="recordShipped" ? `${head}。${NO_NOTICE_MSG}` : head);
+}
+function markShipped(s){ return shipWithStock(s, "markShipped"); }
+function recordShippedDirect(s){ return shipWithStock(s, "recordShipped"); }
+
+// 依頼済(requested) → 下書き(draft)。在庫は動かさない（まだ引いていない）。出荷指示の取り消しは人が連絡する。
+// 出荷指示の投稿の印（shipNotifiedAt/shipNotifyStatus/shipNotifyLockAt）を消す。
+// 消さないと、直して依頼し直したときに notifyShipment が「投稿済み」とみなして投稿しない（functions/index.js notifyShipment）
+async function revertToDraft(s){
+  if(notifyInFlight(s)){ alert(NOTIFY_IN_FLIGHT_MSG); return; }
+  const posted = !!s.shipNotifiedAt;
+  if(!confirm(`出荷 ${s.soNumber} の依頼を取り消して、下書きへ戻します。\n`
+    + (posted ? `出荷指示は ${fmtDT(s.shipNotifiedAt)} に投稿済みです。センターへ取り消しの連絡をしてください（自動では取り消しません）。\n` : "")
+    + `在庫はまだ引き落としていないので動きません。よろしいですか？`)) return;
+  const ref = doc(db,"shipments",s._id);
+  try{
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if(nextStatus(shipStatusOf(cur),"revertToDraft")!=="draft") throw new Error(staleMsg(cur));
+      if(notifyInFlight(cur)) throw new Error(NOTIFY_IN_FLIGHT_MSG); // 送信中は取り消さない（Codex 指摘4）
+      tx.update(ref, {
+        status:"draft", requestRevertedAt: serverTimestamp(), requestRevertedBy: currentUser.displayName||currentUser.email,
+        shipNotifiedAt: deleteField(), shipNotifyStatus: deleteField(), shipNotifyLockAt: deleteField(),
+        updatedAt: serverTimestamp() });
+    });
+  }catch(e){ alert(`依頼の取り消しに失敗しました: ${e.message}`); return; }
+  toast(`${s.soNumber} を下書きへ戻しました${posted ? "。センターへ出荷指示の取り消しを連絡してください" : ""}`);
 }
 
 // ===== 出荷の送料（料金・送料設定 appConfig を優先。デフォルト値・定数は supply-pricing.js） =====
@@ -1109,9 +1240,10 @@ let activePartners = [];
 //     値段を作り直すためのものではない（直送発注から作った出荷は発注時の単価で入っている）
 //   ・請求済・入金済は、請求書を出した後なので金額に関わる欄を触らせない。
 //     送付先の書き間違いだけは直せるようにする（金額が変わらないため）
-//   ・在庫は「差分」だけ動かす。3→5 なら 2台ぶんだけ引く（登録時にすでに3台引いてある）
+//   ・在庫は「差分」だけ動かす。3→5 なら 2台ぶんだけ引く（発送済にしたときにすでに3台引いてある）
+//     下書き・依頼済はまだ在庫を引いていないので、数量を直しても在庫は動かさない（stockDeducted・2026-10-21 既存バグ2）
 let editingShip = null;                 // 修正中の出荷（新規登録なら null）
-function shipIsLocked(s){ return s && (s.status==="invoiced" || s.status==="paid" || s.status==="canceled"); }
+function shipIsLocked(s){ return !!s && isLocked(s); }
 
 // ===== 伴走支援費（電話・紙で受けた案件など、CRMで手作りする出荷の穴埋め・2026-09-14）=====
 // Webからのお申し込みは Cloud Functions（shipmentItemsFromQuote）が「カードリーダー」に加えて
@@ -1314,8 +1446,10 @@ function openShip(existing){
 
   if(!s){
     title.textContent="新規出荷（→認定事業者・事業所）";
-    label.textContent="出荷を登録";
+    label.textContent="登録して出荷を依頼する";
     note.style.display="none";
+    // 既定は「登録して出荷を依頼する」（requested）。すでに届いている出荷だけチェックで発送済として登録（2026-10-21）
+    const already=document.getElementById("shipAlreadyShipped"); if(already) already.checked=false;
     document.getElementById("shipDate").value=today();
     ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone","shipEmail"].forEach(id=>document.getElementById(id).value="");
     typeSel.value="direct"; typeSel.disabled=false;
@@ -1366,8 +1500,11 @@ function openShip(existing){
         + `金額を直す必要がある場合は、入金の記録を取り消して請求をやり直すか、この出荷を削除して作り直してください。`
       : `もともと入っている品番の単価は、登録したときのまま変えません（新しく足した品番だけ今の単価が入ります）。<br>`
         + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「請求先を変える」</strong>から行ってください。`
-        + (shipUsedStock(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。` 
-                            : `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`);
+        // 在庫を動かすかどうかは「すでに引き落としてあるか」（stockDeducted）で決まる。下書き・依頼済はまだ引いていない
+        + (stockDeducted(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。`
+          : !shipUsedStock(s) ? `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`
+          : `<br>この出荷はまだ発送済にしていないため、在庫は引き落としていません。数量を変えても在庫は動きません（発送済にしたときに引き落とします）。`)
+        + (shipStatusOf(s)==="requested" ? `<br><strong>出荷を依頼済みです。</strong>数量・送付先を直したら、保存のあとで出荷指示を再送するか聞きます。` : "");
   }
 
   // 伴走支援費ブロックは事業所へ直接請求する出荷（direct）だけ表示。認定事業者への直送（卸）は対象外
@@ -1386,7 +1523,8 @@ function openShip(existing){
   // 開いてみて「やっぱりこの出荷ごと要らない」となる場面があるので、修正画面からも消せるようにする
   const delBtn=document.getElementById("deleteShipBtn");
   if(delBtn){
-    delBtn.style.display = s ? "" : "none";
+    // 削除できるのは下書きだけ（ship-flow.js の canDelete）。以前は修正画面からなら発送済も消せていた
+    delBtn.style.display = (s && canDelete(s)) ? "" : "none";
     delBtn.onclick = async ()=>{
       const target=editingShip; if(!target) return;
       // 確認ダイアログと在庫の戻しは deleteShipment 側の作法に任せる。キャンセルしたら画面はそのまま
@@ -1439,26 +1577,42 @@ async function saveShip(){
   const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
   if(stockItems(items).length && !originLocationId){
     alert("発送元の保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
-  for(const it of stockItems(items)){ const p=products.find(x=>x.id===it.sku);
-    if(stockAt(p,originLocationId)<it.qty){ const w=document.getElementById("shipStockWarn");
-      w.style.display="block"; w.textContent=`在庫不足: ${p.name}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${it.qty}）`; return; } }
+  // 既定は「登録して出荷を依頼する」（requested・在庫は動かさない・出荷指示を投稿）。
+  // チェック「すでに発送済として登録」のときだけ、従来どおりその場で発送済（在庫を引く・出荷指示は送らない）（2026-10-21）
+  const alreadyShipped=!!(document.getElementById("shipAlreadyShipped")||{}).checked;
+  const short=[];
+  for(const [sku,q] of Object.entries(qtyBySku(items))){ const p=products.find(x=>x.id===sku)||{};
+    if(stockAt(p,originLocationId)<q) short.push(`${p.name||sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${q}）`); }
+  if(short.length){
+    const w=document.getElementById("shipStockWarn"); w.style.display="block"; w.textContent=`在庫不足: ${short.join("、")}`;
+    if(alreadyShipped) return; // 発送済として登録するときは在庫が要る
+    if(!confirm(`在庫が足りません: ${short.join("、")}\n依頼は出せますが、「発送済にする」の時点で在庫が必要です（足りないと発送済にできません）。依頼を続けますか？`)) return;
+  }
   const shippingMethod=document.getElementById("shipMethod").value||"manual";
   const shippingFee=Number(document.getElementById("shipFee").value)||0;
   const shippingLabel=document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"");
   const shipDateIn=document.getElementById("shipDate").value||today();
   const letterPackType=(document.getElementById("shipLetterPack")||{}).value||"";
-  // この登録で発送済になる（下書きを経ない）。押した人・出荷日・出荷元・種類を確認してから登録する（2026-10-19）
+  // 押した人・日付・出荷元・種類を確認してから登録する（2026-10-19）
   const lpText = LETTERPACK_TYPE_LABEL[letterPackType] || "未選択";
-  const stockLine = stockItems(items).length ? `\n出荷元: ${locationName(originLocationId)}（在庫から引き落とします）` : "";
-  if(!confirm(`出荷を登録して「発送済」にします。\n出荷日: ${shipDateIn}${stockLine}\nレターパック: ${lpText}\n登録すると、出荷指示を投稿します。よろしいですか？`)) return;
+  const hasStock = stockItems(items).length>0;
+  const msg = alreadyShipped
+    ? `出荷を「すでに発送済」として登録します（出荷指示は送りません）。\n発送日: ${shipDateIn}`
+      + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫から引き落とします）` : "") + `\nレターパック: ${lpText}\nよろしいですか？`
+    : `出荷を登録して、出荷を依頼します。\n希望出荷日: ${shipDateIn}`
+      + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫は「発送済にする」のときに引き落とします）` : "")
+      + `\nレターパック: ${lpText}\n登録すると、出荷指示を投稿します。よろしいですか？`;
+  if(!confirm(msg)) return;
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
   let newShipId="", soNumber="";
   try{
     soNumber=seqFmt("SH",await nextSeq("shipments"));
-    const newRef = await addDoc(collection(db,"shipments"),{
+    const newRef=doc(collection(db,"shipments"));
+    const data={
       soNumber, shipType, partnerEmail, partnerName,
-      status:"shipped", shippingMethod, shippingFee, shippingLabel,
-      ...letterPackPatch(letterPackType), ...shippedStampPatch(),
+      status: alreadyShipped ? "shipped" : "requested", shippingMethod, shippingFee, shippingLabel,
+      ...letterPackPatch(letterPackType),
+      ...(alreadyShipped ? { ...shippedStampPatch(), ...noNoticePatch(), confirmedAt: serverTimestamp() } : requestedStampPatch()),
       originLocationId, originLocationName: locationName(originLocationId),
       shipDate:shipDateIn,
       postal:document.getElementById("shipPostal").value.trim(),
@@ -1469,20 +1623,43 @@ async function saveShip(){
       email:document.getElementById("shipEmail").value.trim(),
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       ...subsidyPatch(),
-      items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
+      items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email };
+    if(alreadyShipped){
+      // 出荷の作成と在庫の引き落としを1つのトランザクションで（在庫は最新の値で確かめる）
+      const need=qtyBySku(items);
+      await runTransaction(db, async (tx)=>{
+        for(const sku of Object.keys(need)){
+          const p=(await tx.get(doc(db,"products",sku))).data()||{};
+          const have=Number((p.stockByLocation||{})[originLocationId])||0;
+          if(have<need[sku]) throw new Error(`在庫不足: ${p.name||sku}（${locationName(originLocationId)} ${have} / 出荷 ${need[sku]}）`);
+        }
+        tx.set(newRef, data);
+        for(const sku of Object.keys(need)){
+          tx.update(doc(db,"products",sku), stockPatch(originLocationId,-need[sku]));
+          tx.set(doc(collection(db,"inventoryMovements")), movement(sku,-need[sku],"shipment",soNumber,originLocationId));
+        }
+      });
+    }else{
+      await setDoc(newRef, data);
+    }
     newShipId = newRef.id;
-    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(originLocationId,-it.qty));
-      await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,originLocationId)); }
     document.getElementById("shipModal").classList.remove("open");
   }catch(e){ alert(`登録失敗: ${e.message}`); return; } finally{ btn.disabled=false; }
-  const head = `出荷 ${soNumber} を登録しました（${locationName(originLocationId)||"在庫"}から引落）`;
+  if(alreadyShipped){
+    toast(`出荷 ${soNumber} を発送済として登録しました${hasStock?`（${locationName(originLocationId)||"在庫"}から引落）`:""}。${NO_NOTICE_MSG}`);
+    return;
+  }
+  const head = `出荷 ${soNumber} を登録し、出荷を依頼しました（在庫は発送済にしたときに引き落とします）`;
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(newShipId)}`);
 }
 
 // 出荷の修正を保存する。
-// 在庫は「登録時との差分」だけ動かす。登録時にすでに引いてあるので、
+// 在庫は「発送済にしたときとの差分」だけ動かす。発送済にしたときにすでに引いてあるので、
 // 全量を引き直すと二重に減る（3→5 に直したら引くのは 2台）。
+// 下書き・依頼済はまだ在庫を引いていないので、数量を直しても在庫は動かさない（発送済にしたとき最新の数量で全量を引く）。
+// 以前は下書きでも差分を動かしていたため、確定のときにもう一度全量を引いて二重に減っていた（2026-10-21 既存バグ2）。
+// 判定は ship-flow.js の qtyDelta（stockDeducted が偽なら空）。
 async function saveShipEdit(){
   const s0 = editingShip; if(!s0) return;
   const locked = shipIsLocked(s0);
@@ -1508,12 +1685,11 @@ async function saveShipEdit(){
     patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
-    const before=qtyBySku(s0.items), after=qtyBySku(items);
-    Object.keys({...before,...after}).forEach(sku=>{ delta[sku]=(after[sku]||0)-(before[sku]||0); });
+    delta=qtyDelta(s0, qtyBySku(s0.items), qtyBySku(items));
 
-    // 増やすぶんだけ在庫が要る（在庫を通らない直送はそもそも動かさない）。
+    // 増やすぶんだけ在庫が要る（在庫を引いていない出荷＝下書き・依頼済・直送はそもそも動かさない）。
     // ここは画面上の早めの確認。最終判定は下のトランザクション内で最新在庫を読んで行う
-    if(shipUsedStock(s0)){
+    {
       for(const sku of Object.keys(delta)){
         if(delta[sku]<=0) continue;
         const p=products.find(x=>x.id===sku)||{};
@@ -1550,9 +1726,9 @@ async function saveShipEdit(){
       if(a!==b) throw new Error("他の人が先にこの出荷を変更しています。画面を更新してから直してください");
       delta={}; moved=0; // トランザクションは再試行されることがあるので、毎回ここで初期化
       if(items){
-        const before=qtyBySku(cur.items), after=qtyBySku(items);
-        Object.keys({...before,...after}).forEach(sku=>{ delta[sku]=(after[sku]||0)-(before[sku]||0); });
-        if(shipUsedStock(cur)){
+        // いまの状態（cur）で判定する。開いている間に発送済になっていたら、そこからの差分を動かす
+        delta=qtyDelta(cur, qtyBySku(cur.items), qtyBySku(items));
+        {
           // 読み取りは書き込みより前にまとめて済ませる（Firestore トランザクションの決まり）
           for(const sku of Object.keys(delta)){
             if(delta[sku]<=0) continue;
@@ -1564,7 +1740,7 @@ async function saveShipEdit(){
       }
       tx.update(shipRef, patch);
       // 在庫の差分を反映（増やしたら引く／減らしたら戻す）。何が動いたか履歴にも残す
-      if(items && shipUsedStock(cur)){
+      if(items){
         for(const sku of Object.keys(delta)){
           const d=delta[sku]; if(!d) continue;
           tx.update(doc(db,"products",sku), stockPatch(shipLocationOf(cur), -d));
@@ -1578,8 +1754,18 @@ async function saveShipEdit(){
     toast(locked
       ? `出荷 ${s0.soNumber} の送付先を直しました`
       : `出荷 ${s0.soNumber} を修正しました${moved?"（在庫も差分を調整）":""}`);
-  }catch(e){ alert(`修正の保存に失敗しました: ${e.message}`); }
-  finally{ btn.disabled=false; }
+  }catch(e){ alert(`修正の保存に失敗しました: ${e.message}`); btn.disabled=false; return; }
+  btn.disabled=false;
+  // 依頼済の出荷の数量・送付先を直したら、センターが古い内容で動かないよう出荷指示の再送を聞く
+  if(needsResendPrompt(s0, { ...s0, ...patch })){
+    const q = s0.shipNotifiedAt
+      ? `出荷 ${s0.soNumber} の出荷指示は ${fmtDT(s0.shipNotifiedAt)} に投稿済みです（直す前の内容）。\n直した内容で出荷指示を再送しますか？`
+      : `出荷 ${s0.soNumber} の出荷指示はまだ投稿されていません。\n直した内容で出荷指示を投稿しますか？`;
+    if(confirm(q)){
+      toast("出荷指示を投稿しています...");
+      toast(await postShipNotice(s0._id, { resend: true }));
+    }
+  }
 }
 
 // 案件（事業所の申し込み）→ 直接出荷フォームに取り込み
@@ -1588,12 +1774,15 @@ async function prefillShipFromCase(caseId){
     const cs=await getDoc(doc(db,"cases",caseId)); if(!cs.exists()){ alert("案件が見つかりません"); return; }
     const c=cs.data();
     const tab=document.querySelector('.tab[data-tab="shipments"]'); if(tab) tab.click();
-    // Web申込などで既にこの案件の出荷下書きがあれば、それを開く（二重作成の防止・計画書 §4.4）
-    const drafts=await getDocs(query(collection(db,"shipments"),where("caseId","==",caseId),where("status","==","draft")));
+    // Web申込などで既にこの案件の出荷下書き・依頼済の出荷があれば、それを開く（二重作成の防止・計画書 §4.4）。
+    // 依頼済（requested）も「まだ発送していない生きた出荷」なので同じ扱い（2026-10-21）
+    const drafts=await getDocs(query(collection(db,"shipments"),where("caseId","==",caseId),where("status","in",["draft","requested"])));
     if(!drafts.empty){
-      const d=drafts.docs[0];
+      const d=drafts.docs.find(x=>x.data().status==="draft") || drafts.docs[0];
       openShip({_id:d.id,...d.data()});
-      toast(`この案件の出荷下書き ${d.data().soNumber||""} を開きました（新しく作らず、こちらを確認・確定してください）`);
+      toast(d.data().status==="requested"
+        ? `この案件の出荷 ${d.data().soNumber||""} はすでに依頼済みです（新しく作らず、こちらを確認してください）`
+        : `この案件の出荷下書き ${d.data().soNumber||""} を開きました（新しく作らず、こちらを確認して出荷を依頼してください）`);
       return;
     }
     let office={};
@@ -1630,35 +1819,51 @@ async function prefillShipFromCase(caseId){
   }catch(e){ alert(`取り込み失敗: ${e.message}`); }
 }
 
-// 直送（ABサークル → 認定事業者）の出荷は、そもそも自社在庫を引いていない。
-// 削除のときに在庫を戻すと、実在しない在庫が増えてしまう（直送1件で最大200台の水増しになる）。
-// 在庫を引いたかどうかは shipType ではなく fulfillment で決まる（同ファイル「出荷種別の変更」の注記を参照）。
-//   fulfillment:"direct"    … 直送発注から自動生成。在庫を通らない → 戻さない
-//   fulfillment:"warehouse" … 出荷モーダルから登録。自社在庫から引いた → 戻す
-//   未設定（古いデータ）    … 出荷モーダル経由しかなかった頃のもの → 戻す（従来どおり）
-function shipUsedStock(s){ return (s.fulfillment || "warehouse") !== "direct"; }
+// 自社の倉庫を通る出荷か（発送元の欄・「自社在庫から発送」のバッジ用）。ship-flow.js の usesWarehouse。
+//   fulfillment:"direct"    … 直送発注から自動生成。在庫を通らない
+//   fulfillment:"warehouse" … 出荷モーダルから登録。自社在庫から出す
+//   未設定（古いデータ・Web申込の下書き）… 自社在庫から出す（従来どおり）
+// ⚠️ 在庫を「戻す・差分を動かす」かどうかはこれではなく stockDeducted で決める（下書き・依頼済はまだ引いていない）。
+//   以前は削除・数量修正でもこれを使っていたため、Web申込の下書きを消すと引いていない在庫が戻っていた（2026-10-21 既存バグ1・2）
+function shipUsedStock(s){ return usesWarehouse(s); }
 
+// 削除できるのは下書きだけ（ship-flow.js の canDelete）。下書きはまだ在庫を引いていないので在庫は戻さない。
+// 状態はトランザクションの中で確かめ直す（開いている間に別の人が依頼・発送済にしていたら消さない）
 async function deleteShipment(s){
-  const restores = shipUsedStock(s);
-  const msg = restores
-    ? `出荷 ${s.soNumber}（${s.officeName}）を削除します。\n引き落とした在庫は元に戻します。よろしいですか？`
-    : `出荷 ${s.soNumber}（${s.officeName}）を削除します。\nこれは直送（ABサークルから認定事業者へ直接）の出荷なので、`
-      + `自社在庫は動きません。よろしいですか？`;
+  if(!canDelete(s)){
+    alert(shipStatusOf(s)==="requested"
+      ? `出荷 ${s.soNumber} は出荷を依頼済みのため削除できません。先に「依頼を取り消す」で下書きへ戻してください。`
+      : `出荷 ${s.soNumber} は${SHIP_STATUS[shipStatusOf(s)]||""}のため削除できません。取り消すときは「キャンセルにする」を使ってください。`);
+    return false;
+  }
+  const restores = stockDeducted(s); // 下書きは常に false（念のため判定は正本に任せる）
+  const msg = `出荷 ${s.soNumber}（${s.officeName}）を削除します。\n`
+    + (restores ? `引き落とした在庫は元に戻します。` : `下書きのため在庫は引き落としていません（在庫は動きません）。`)
+    + `よろしいですか？`;
   if(!confirm(msg)) return false;
   try{
-    if(restores){
-      const backTo = shipLocationOf(s);
-      for(const it of stockItems(s.items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
-        await addDoc(collection(db,"inventoryMovements"), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo)); }
-    }
-    await deleteDoc(doc(db,"shipments",s._id));
-    toast(restores ? `出荷 ${s.soNumber} を削除し、在庫を戻しました` : `出荷 ${s.soNumber} を削除しました（直送のため在庫は動かしていません）`);
+    const ref=doc(db,"shipments",s._id);
+    await runTransaction(db, async (tx)=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷はすでに削除されています");
+      const cur=snap.data();
+      if(!canDelete(cur)) throw new Error(`この出荷は「${SHIP_STATUS[shipStatusOf(cur)]||cur.status}」になっています。画面を更新してください`);
+      if(stockDeducted(cur)){
+        const backTo = shipLocationOf(cur);
+        for(const it of stockItems(cur.items)){
+          tx.update(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
+          tx.set(doc(collection(db,"inventoryMovements")), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo));
+        }
+      }
+      tx.delete(ref);
+    });
+    toast(restores ? `出荷 ${s.soNumber} を削除し、在庫を戻しました` : `出荷 ${s.soNumber} を削除しました（在庫は動かしていません）`);
     return true;
   }catch(e){ alert(`削除失敗: ${e.message}`); return false; }
 }
 
-const SHIP_STATUS = { draft:"下書き", shipped:"発送済", invoiced:"請求済", paid:"入金済", canceled:"キャンセル" };
-const SHIP_STATUS_BADGE = { draft:2, shipped:7, invoiced:9, paid:3, canceled:4 };
+// 表示名・バッジは ship-flow.js（依頼済 requested を含む）。このファイルでは従来の名前で参照する
+const SHIP_STATUS = SHIP_STATUS_LABEL;
 
 // ===== 出荷のキャンセル（2026-09-14 追加）=====
 // 「この出荷を削除」は下書きだけに絞ったので、発送済・請求済を取り消すときはこちらを使う。
@@ -1666,14 +1871,24 @@ const SHIP_STATUS_BADGE = { draft:2, shipped:7, invoiced:9, paid:3, canceled:4 }
 // 在庫を戻す作法は deleteShipment に合わせ、stockPatch/movement 経由・逐次 updateDoc で行う。
 const CANCEL_REASONS = ["事業所の都合","重複登録","誤登録","その他"];
 let cancelTargetShip = null;
-function cancelShipUsesStock(s){ return s.status!=="draft" && shipUsedStock(s); }
-function openCancelShipModal(s){
+// 在庫を戻すのは、すでに引き落としてある出荷（発送済・請求済・入金済かつ自社在庫から）だけ。
+// 依頼済はまだ引いていないので戻さない（戻すと水増しになる・2026-10-21）
+function cancelShipUsesStock(s){ return stockDeducted(s); }
+// opts: { reason, note } … 重複の解消（「こちらを残す」）から開くときに理由「重複登録」を選んだ状態にする
+function openCancelShipModal(s, opts){
+  opts = opts || {};
+  if(!canCancel(s)){
+    alert(netPaidOf(s)>0 ? `出荷 ${s.soNumber}：${CANCEL_BLOCKED_BY_PAYMENT}` : `出荷 ${s.soNumber} は${SHIP_STATUS[shipStatusOf(s)]||""}のためキャンセルにできません`);
+    return; }
   cancelTargetShip = s;
   document.getElementById("cancelShipInfo").innerHTML =
     `<strong>${esc(s.soNumber)}</strong>（${esc(s.officeName||s.partnerName||"")}）／現在の状態: ${esc(SHIP_STATUS[s.status]||s.status)}`;
   let stockMsg;
   if(s.status==="draft"){
     stockMsg = "下書きのため在庫は動きません。";
+  } else if(s.status==="requested"){
+    stockMsg = "まだ発送済にしていないため、在庫は引き落としていません（戻しません）。<br>"
+      + "<strong>出荷指示はすでに投稿済みです。</strong>センターへ取り消しの連絡をしてください（自動では取り消しません）。";
   } else if(!shipUsedStock(s)){
     stockMsg = "直送のため在庫は動きません。";
   } else {
@@ -1686,36 +1901,76 @@ function openCancelShipModal(s){
   document.getElementById("cancelShipStockNote").innerHTML = stockMsg;
   const reasonSel = document.getElementById("cancelReason");
   reasonSel.innerHTML = CANCEL_REASONS.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
-  document.getElementById("cancelNote").value = "";
+  if(opts.reason && CANCEL_REASONS.includes(opts.reason)) reasonSel.value = opts.reason;
+  document.getElementById("cancelNote").value = opts.note || "";
   document.getElementById("cancelShipError").style.display = "none";
   document.getElementById("cancelShipModal").classList.add("open");
 }
 function closeCancelShipModal(){
   document.getElementById("cancelShipModal").classList.remove("open");
   cancelTargetShip = null;
+  dupCancelCtx = null; // 閉じたら重複の解消の続きもやめる（1件ずつ人が確かめる）
+}
+// ===== 下書きの重複の解消（2026-10-21 設計 §6）=====
+// 「こちらを残す」= 同じ案件のほかの下書き・依頼済を、既存のキャンセルの画面で理由「重複登録」にして1件ずつキャンセルする。
+// 🔴 削除はしない（記録を残す）。複数あれば、1件キャンセルするたびに次の1件の画面を開く。
+let dupCancelCtx = null; // { keepSo, queue: 出荷[] }
+function keepDuplicate(keepId){
+  const view = lastDupView;
+  const keep = shipments.find(x=>x._id===keepId);
+  if(!keep || !view) return;
+  const others = othersToCancel(view, keepId);
+  if(!others.length){ toast("キャンセルにする重複の相手がありません"); return; }
+  const first = others[0];
+  const keepSo = keep.soNumber||"";
+  openCancelShipModal(first, { reason:"重複登録", note:`重複（${keepSo} を残す）` });
+  dupCancelCtx = { keepSo, queue: others.slice(1) };
+}
+function openNextDupCancel(ctx){
+  if(!ctx || !ctx.queue.length) return;
+  // 最新の状態で開き直す（そのあいだに発送済・キャンセル済になったものは飛ばす）
+  const queue = ctx.queue.map(q=>shipments.find(x=>x._id===q._id)||q).filter(q=>canCancel(q) && ["draft","requested"].includes(shipStatusOf(q)));
+  if(!queue.length) return;
+  openCancelShipModal(queue[0], { reason:"重複登録", note:`重複（${ctx.keepSo} を残す）` });
+  dupCancelCtx = { keepSo: ctx.keepSo, queue: queue.slice(1) };
 }
 async function doCancelShipment(){
   const s = cancelTargetShip; if(!s) return;
   const err = document.getElementById("cancelShipError"); err.style.display = "none";
   const reason = document.getElementById("cancelReason").value;
   const note = document.getElementById("cancelNote").value.trim();
-  const usesStock = cancelShipUsesStock(s);
+  let usesStock = cancelShipUsesStock(s);
   const btn = document.getElementById("doCancelShipBtn"); btn.disabled = true;
   try{
-    await updateDoc(doc(db,"shipments",s._id), {
-      status: "canceled", statusBeforeCancel: s.status,
-      canceledAt: serverTimestamp(), canceledBy: currentUser.displayName||currentUser.email,
-      cancelReason: reason, cancelNote: note,
-    });
-    if(usesStock){
-      const backTo = shipLocationOf(s);
-      for(const it of stockItems(s.items)){
-        await updateDoc(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
-        await addDoc(collection(db,"inventoryMovements"), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo));
+    // 状態の確かめ・キャンセル・在庫の戻しを1つのトランザクションで行う
+    // （開いている間に別の人が発送済にしていた／先にキャンセルしていた、で在庫を戻し損ねる・二重に戻すのを防ぐ）
+    const ref = doc(db,"shipments",s._id);
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if(shipStatusOf(cur)!==shipStatusOf(s) || !nextStatus(shipStatusOf(cur),"cancel"))
+        throw new Error(`この出荷は「${SHIP_STATUS[shipStatusOf(cur)]||cur.status}」になっています。画面を更新してください`);
+      // 開いている間に入金が記録された場合も止める（返金していない入金を残したままキャンセルにしない・Codex 指摘2）
+      if(netPaidOf(cur)>0) throw new Error(CANCEL_BLOCKED_BY_PAYMENT);
+      usesStock = cancelShipUsesStock(cur);
+      tx.update(ref, {
+        status: "canceled", statusBeforeCancel: shipStatusOf(cur),
+        canceledAt: serverTimestamp(), canceledBy: currentUser.displayName||currentUser.email,
+        cancelReason: reason, cancelNote: note, updatedAt: serverTimestamp(),
+      });
+      if(usesStock){
+        const backTo = shipLocationOf(cur);
+        for(const it of stockItems(cur.items)){
+          tx.update(doc(db,"products",it.sku), stockPatch(backTo, it.qty));
+          tx.set(doc(collection(db,"inventoryMovements")), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo));
+        }
       }
-    }
+    });
+    const dupNext = dupCancelCtx; // 閉じると消えるので先に控える
     closeCancelShipModal();
-    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）`);
+    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）${dupNext&&dupNext.queue.length?`。続けて重複の残り ${dupNext.queue.length}件を確かめます`:""}`);
+    openNextDupCancel(dupNext);
   }catch(e){ err.textContent = `キャンセルに失敗: ${e.message}`; err.style.display = "block"; }
   finally{ btn.disabled = false; }
 }
@@ -1828,12 +2083,8 @@ function scrollToShipmentFromUrl(){
   row.style.backgroundColor = "var(--color-warning-soft)";
   setTimeout(()=>{ row.style.backgroundColor = ""; }, 3000);
 }
-// 出荷指示の投稿状況（2026-10-19 #4）。新ルール以降の出荷（dueRule:'net14'）か、投稿を試みた出荷だけに出す。
-// それより前の出荷は出荷指示の仕組みが無かったので「未投稿」と出さない
-function shipNotifyShown(s){
-  const st=s.status||"shipped";
-  return (st==="shipped"||st==="invoiced"||st==="paid") && (!!s.shipNotifiedAt || s.dueRule==="net14" || !!s.shipNotifyStatus);
-}
+// 出荷指示の投稿状況（2026-10-19 #4）。出すかどうかは ship-flow.js の shipNotifyShown（依頼済は必ず出す。
+// 発送済以降は新ルール以降の出荷か、投稿を試みた出荷だけ。それより前の出荷は仕組みが無かったので「未投稿」と出さない）
 function shipNotifyHtml(s){
   if(!shipNotifyShown(s)) return "";
   if(s.shipNotifiedAt) return `<div style="font-size:12px;color:var(--color-ink-muted)">出荷指示：投稿済 ${esc(fmtDT(s.shipNotifiedAt))}</div>`;
@@ -1944,6 +2195,9 @@ async function saveTrackNumber(){
 let caseOwners = {};   // caseId → assignedUserId
 let casesForOwners = []; // 担当の選択肢を作るための案件（担当の id と氏名だけ使う）
 let ownersState = "loading"; // 担当情報（案件）の読み込み状態: loading / ok / error
+let caseShipmentIds = {}; // caseId → cases.shipmentId（下書きの重複で「残す候補」にする・2026-10-21）
+let dupOnly = false;      // サマリーの「⚠ 下書きの重複」を押したら重複している行だけに絞る
+let lastDupView = null;   // 最後に描いた重複の情報（「こちらを残す」で使う）
 const SHIP_SORTS = {
   createdDesc: null, // Firestore の並び（createdAt の新しい順）のまま
   shipDateDesc: (a,b)=>String(b.shipDate||"").localeCompare(String(a.shipDate||"")),
@@ -1969,16 +2223,23 @@ function renderShipmentsView(){
     return;
   }
   let list=shipments.filter(s=>matchAssignee(caseOwners[s.caseId], asg, currentUser?.email));
+  // 下書きの重複は担当の絞り込みのあとで数える（同じ案件の出荷は同じ担当なので組が割れない）
+  const dv = dupView(findDuplicateDrafts(list, caseShipmentIds));
+  lastDupView = dv;
+  if(dupOnly && !dv.count) dupOnly = false; // 解消し終えたら絞り込みを外す
+  list = filterDupOnly(list, dv, dupOnly);
   if(cmp) list=[...list].sort(cmp);
-  renderShipments(list);
+  renderShipments(list, dv);
 }
 
-function renderShipments(ships){
+function renderShipments(ships, dv){
+  dv = dv || dupView([]);
   const body=document.getElementById("shipBody"); const empty=document.getElementById("shipEmpty");
   empty.style.display = ships.length?"none":"block";
   // サマリー（未請求 / 請求済・未入金 / 入金済）
   const active = ships.filter(s=>s.status!=="canceled");
   const drafts = active.filter(s=>s.status==="draft");
+  const requested = active.filter(s=>s.status==="requested");
   const unbilled = active.filter(s=>s.status==="shipped");
   const billed = active.filter(s=>s.status==="invoiced");
   const paid = active.filter(s=>s.status==="paid");
@@ -1986,7 +2247,11 @@ function renderShipments(ships){
   const overdue = unpaid.filter(s=>overdueDays(s)>0);
   const sumBox=document.getElementById("shipSummary");
   if(sumBox) sumBox.innerHTML = [
-    drafts.length?`<div class="alert-chip info"><i class="ti ti-file-pencil"></i><div><div class="alert-num">${drafts.length}</div><div class="alert-label">直送・下書き（要確定）</div></div></div>`:"",
+    // 下書きの重複（2026-10-21 §6）。押すと重複している行だけに絞る（もう一度押すと戻る）
+    dv.count?`<button type="button" class="alert-chip warn dup-filter" aria-pressed="${dupOnly}" style="cursor:pointer;font:inherit;text-align:left${dupOnly?";outline:2px solid var(--color-warning)":""}" title="${dupOnly?"押すと全件の表示に戻ります":"押すと重複している出荷だけを表示します"}"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><div class="alert-num">${dv.count}件</div><div class="alert-label">⚠ 下書きの重複${dupOnly?"（絞り込み中・押すと戻る）":"（押すと絞り込み）"}</div></div></button>`:"",
+    drafts.length?`<div class="alert-chip info"><i class="ti ti-file-pencil"></i><div><div class="alert-num">${drafts.length}</div><div class="alert-label">出荷の下書き（依頼が必要）</div></div></div>`:"",
+    // 依頼済＝出荷指示を出してセンターの発送を待っているもの。発送されたら「発送済にする」を押す（2026-10-21）
+    requested.length?`<div class="alert-chip warn"><i class="ti ti-truck-loading"></i><div><div class="alert-num">${requested.length}</div><div class="alert-label">出荷依頼中（センターの発送待ち）</div></div></div>`:"",
     `<div class="alert-chip warn"><i class="ti ti-package-export"></i><div><div class="alert-num">${unbilled.length}</div><div class="alert-label">未請求（発送済）</div></div></div>`,
     `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(unpaid.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">未集金・残額（税込 ${unpaid.length}件）</div></div></div>`,
     overdue.length?`<div class="alert-chip danger"><i class="ti ti-alarm"></i><div><div class="alert-num">${yen(overdue.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">うち支払期限超過（${overdue.length}件）</div></div></div>`:"",
@@ -2016,6 +2281,18 @@ function renderShipments(ships){
         : ` <span class="badge badge-7">AB Circleから直送</span>`);
     const st=s.status||"shipped";
     const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${SHIP_STATUS[st]||st}</span>`;
+    // 下書きの重複（同じ案件に下書き・依頼済が2件以上）。残す候補＝案件に結びついている出荷（cases.shipmentId）
+    const dup = dv.byShip.get(s._id);
+    const dupBadge = dup
+      ? ` <span class="badge badge-1" title="同じ案件に、まだ発送していない出荷が${dup.group.length}件あります">重複</span>`
+        + (dup.keepId===s._id ? ` <span class="badge badge-3" title="案件に結びついている出荷です">おすすめ</span>` : "")
+      : "";
+    const keepBtn = dup && !viewerMode
+      ? `<button class="btn btn-secondary keep-dup" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="同じ案件のほかの出荷を、理由「重複登録」で1件ずつキャンセルにします（削除はしません）"><i class="ti ti-circle-check"></i>こちらを残す${dup.keepId===s._id?"（おすすめ）":""}</button>`
+      : "";
+    // 在庫の目安（下書き・依頼済で自社在庫から出すものだけ。引き落としはしない）
+    const adviceTxt = stockAdviceShown(s) ? stockAdvice(s.items, products, locations).text : "";
+    const adviceHtml = adviceTxt ? `<div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">${esc(adviceTxt)}</div>` : "";
     const billName = billToOf(s);
     // 入金・残額・支払期限（請求済以降のみ表示）
     const done=paidSum(s), remain=payRemain(s), od=overdueDays(s), due=dueDateOf(s);
@@ -2057,22 +2334,38 @@ function renderShipments(ships){
     const notifyBtn = shipNotifyShown(s) ? `<button class="btn btn-secondary resend-notify" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-send"></i>${s.shipNotifiedAt?"出荷指示をもう一度投稿":"出荷指示を再送"}</button>` : "";
     const editBtn = `<button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${shipIsLocked(s)?"請求済のため送付先のみ修正できます":"数量・送付先・送料を修正"}"><i class="ti ti-edit"></i>送付先・数量を直す</button>`;
     const typeBtn = `<button class="btn btn-secondary type-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="出荷種別（請求先）を変更"><i class="ti ti-switch-horizontal"></i>請求先を変える</button>`;
-    // 「この出荷を削除」は下書きだけ（2026-09-14）。発送済以降は取り消したい場合キャンセルへ誘導する
-    const delBtn = `<button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>この出荷を削除</button>`;
-    // 「キャンセルにする」は draft/shipped/invoiced のみ（paid は返金フロー、canceled は既にキャンセル済）
-    const cancelBtn = `<button class="btn btn-secondary cancel-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="記録を残したまま在庫を戻してキャンセルにします"><i class="ti ti-ban"></i>キャンセルにする</button>`;
+    // 状態ごとに出してよい操作は ship-flow.js の shipActions が正本（削除は下書きだけ・キャンセルは入金済とキャンセル済以外）
+    const acts = shipActions(s);
+    const delBtn = acts.includes("delete") ? `<button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>この出荷を削除</button>` : "";
+    const cancelBtn = acts.includes("cancel") ? `<button class="btn btn-secondary cancel-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${st==="requested"?"記録を残したままキャンセルにします（在庫はまだ引いていないので戻しません）":"記録を残したまま在庫を戻してキャンセルにします"}"><i class="ti ti-ban"></i>キャンセルにする</button>` : "";
     if(st==="draft"){
-      // 流れの順: 発送済にする →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → キャンセルにする → この出荷を削除
-      lifeBtns = `<button class="btn btn-primary confirm-draft-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>発送済にする</button>`
+      // 流れの順: 出荷を依頼する →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → すでに発送済（記録のみ）→ キャンセルにする → この出荷を削除
+      lifeBtns = `<button class="btn btn-primary request-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-send"></i>出荷を依頼する</button>`
+        + keepBtn
         + docInvoice + docLetterpack + docShipnote + docRefund
-        + editBtn + typeBtn + cancelBtn + delBtn;
+        + editBtn + typeBtn
+        // すでに届いている出荷（伴走支援が済んだ案件など）だけに使う小さなボタン。依頼を経ずに発送済へ・出荷指示は送らない
+        + `<button class="btn btn-secondary record-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="すでに届いている出荷を、出荷指示を送らずに発送済として記録します（在庫は引き落とします）"><i class="ti ti-check"></i>すでに発送済（記録のみ）</button>`
+        + cancelBtn + delBtn;
+    } else if(st==="requested"){
+      // 流れの順: 発送済にする → 出荷指示を再送 →（帳票）→ 送付先・数量を直す → 請求先を変える → 依頼を取り消す → キャンセルにする
+      // 削除は出さない（出荷指示を投稿済みのため。取り消してから下書きで削除する）
+      lifeBtns = `<button class="btn btn-primary mark-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="センターが発送したのを確認してから押してください（在庫を引き落とします）"><i class="ti ti-truck-delivery"></i>発送済にする</button>`
+        + keepBtn
+        + notifyBtn
+        + docLetterpack + docShipnote + docInvoice + docRefund
+        + editBtn + typeBtn
+        + `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`
+        + cancelBtn;
     } else if(st==="shipped"){
       // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → キャンセルにする
-      // 発送済の「次の一手」は請求済にする＝赤（下書きの「発送済にする」・請求済の「入金を記録する」と同じ扱い・2026-09-14）
+      // 発送済の「次の一手」は請求済にする＝赤（下書きの「出荷を依頼する」・請求済の「入金を記録する」と同じ扱い・2026-09-14）
       lifeBtns = `<button class="btn btn-primary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>請求済にする</button>`
         + docInvoice
         + (s.shipNotifiedAt ? "" : notifyBtn) + trackBtn
         + editBtn + docLetterpack + docShipnote + docRefund + (s.shipNotifiedAt ? notifyBtn : "")
+        // 請求前に入金を記録した出荷（銀行明細の取り込みなど）は、入金の履歴を開いて確かめ・取り消せる。状態は変えない（Codex 指摘1）
+        + (acts.includes("payHistory") ? `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴（${payList(s).length}件）</button>` : "")
         + typeBtn + cancelBtn;
     } else if(st==="invoiced"){
       // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → キャンセルにする
@@ -2103,10 +2396,10 @@ function renderShipments(ships){
     // data-so: 深いリンク（?so=SH-2026-0013）で該当行を見つけてスクロールするための目印
     // canceled は行全体を薄くして「終わった記録」だと分かるようにする（既存の muted 変数・opacity のみ・新規色は使わない）
     return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
-      <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}</div></td>
+      <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}${dupBadge}</div></td>
       <td>${esc(s.shipDate||"")}</td>
       <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
-      <td style="font-size:12px">${summary}</td>
+      <td style="font-size:12px">${summary}${adviceHtml}</td>
       <td>
         <!-- ボタンが増えて右にはみ出し、削除が画面外で押せなくなっていた（2026-09-01）。
              横スクロールに頼らず、収まらなければ折り返して必ず全部見えるようにする。 -->
@@ -2119,6 +2412,11 @@ function renderShipments(ships){
   document.querySelectorAll(".del-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) deleteShipment(s);
   }));
+  // 下書きの重複: サマリーで絞り込み・行の「こちらを残す」
+  document.querySelectorAll("#shipSummary .dup-filter").forEach(b=>b.addEventListener("click",()=>{
+    dupOnly = !dupOnly; renderShipmentsView();
+  }));
+  document.querySelectorAll(".keep-dup").forEach(b=>b.addEventListener("click",()=>keepDuplicate(b.dataset.id)));
   document.querySelectorAll(".cancel-ship").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) openCancelShipModal(s);
   }));
@@ -2138,8 +2436,18 @@ function renderShipments(ships){
   document.querySelectorAll(".resend-notify").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) resendShipNotice(s);
   }));
-  document.querySelectorAll(".confirm-draft-ship").forEach(b=>b.addEventListener("click",()=>{
-    const s=ships.find(x=>x._id===b.dataset.id); if(s) confirmDraftShipment(s);
+  // 出荷の二段階化（2026-10-21）: 依頼する → 発送済にする ／ 記録のみ ／ 依頼を取り消す
+  document.querySelectorAll(".request-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) requestDraftShipment(s);
+  }));
+  document.querySelectorAll(".mark-shipped").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) markShipped(s);
+  }));
+  document.querySelectorAll(".record-shipped").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) recordShippedDirect(s);
+  }));
+  document.querySelectorAll(".revert-draft").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) revertToDraft(s);
   }));
   // 請求済にする → 確認ダイアログ（経理への報告を送るか選ぶ）。過入金の充当提案はダイアログ側で行う
   document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",()=>{
@@ -2381,7 +2689,8 @@ async function savePayments(s, list, msg, refunds){
     paymentAmount:net,                          // 旧フィールドは純額で同期（集計・請求書との互換）
     refundAmount:rsum,
     paidAt: remain<=0 ? lastDate : "",
-    status: remain<=0 ? "paid" : "invoiced",
+    // 発送済（未請求）の出荷は状態を変えない（請求済にする・経理への報告を飛ばさない。supply-rules の applyBankPayments と同じ）
+    status: shipStatusOf(s)==="shipped" ? "shipped" : (remain<=0 ? "paid" : "invoiced"),
     updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
   document.getElementById("payModal").classList.remove("open");
   payingShip=null;
@@ -2438,9 +2747,23 @@ async function deletePayment(idx){
   const s=payingShip; if(!s) return;
   const list=payList(s).slice();
   const p=list[idx]; if(!p) return;
-  if(!confirm(`${p.date||""} の入金 ${yen(Number(p.amount)||0)} を取り消します。よろしいですか？`)) return;
-  list.splice(idx,1);
-  try{ await savePayments(s, list, "入金の記録を取り消しました"); }
+  if(!confirm(`${p.date||""} の入金 ${yen(Number(p.amount)||0)} を取り消します。よろしいですか？`
+    + (p.bankTxnId ? "\n\n入金明細から記録した入金です。取り消すと、その明細はもう一度取り込めるようになります。" : ""))) return;
+  // 入金明細から記録した入金は、取り込み記録 bankTxns/{bankTxnId} も同じ tx で消す（2026-10-21 レビュー指摘）。
+  // 残すと「取込済み」と判定され、取り消した明細を取り込み直せなかった
+  try{
+    await runTransaction(db, async (tx)=>{
+      const ref = doc(db,"shipments",s._id);
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("出荷が見つかりません");
+      const { patch, bankTxnId } = paymentRemovalOf({ _id:s._id, ...snap.data() }, p, today());
+      tx.update(ref, { ...patch, updatedAt:serverTimestamp(), updatedBy:currentUser.displayName||currentUser.email });
+      if(bankTxnId) tx.delete(doc(db,"bankTxns",bankTxnId));
+    });
+    document.getElementById("payModal").classList.remove("open");
+    payingShip=null;
+    toast(p.bankTxnId ? "入金の記録を取り消しました（この明細はもう一度取り込めます）" : "入金の記録を取り消しました");
+  }
   catch(e){ alert(`取消に失敗: ${e.message}`); }
 }
 
@@ -2755,6 +3078,7 @@ async function doInvoiceReport(){
   try{
     // 1) まず請求済にする（報告が失敗しても請求済の記録は残す）。後追い報告のときは状態を変えない
     let cur;
+    let paidOnInvoice = false; // 請求前に全額入金されていて、請求済にした時点で入金済になったか
     if(invReportOnly){
       cur = { ...s };
     }else{
@@ -2762,8 +3086,19 @@ async function doInvoiceReport(){
       const invoicedAt = issueYmd;
       // 支払期限は請求済にした時点で確定値として保存する（以後、計算の規則が変わっても請求書の記載とずれない）
       const dueDate = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
-      await updateDoc(doc(db,"shipments",s._id),{ status:"invoiced", invoicedAt, ...(dueDate?{ dueDate }:{}), updatedAt:serverTimestamp() });
-      cur = { ...s, status:"invoiced", invoicedAt, ...(dueDate?{ dueDate }:{}) };
+      // 請求前に入金明細などで全額入っていた出荷は、請求済にした時点で入金済にする（2026-10-21 レビュー指摘）。
+      // 残額は最新の記録で判定する（画面を開いたあとに入金が記録されている場合があるため tx で読む）
+      const r = await runTransaction(db, async (tx)=>{
+        const ref = doc(db,"shipments",s._id);
+        const snap = await tx.get(ref);
+        if(!snap.exists()) throw new Error("出荷が見つかりません");
+        const latest = { _id:s._id, ...snap.data() };
+        const out = invoicePatchOf(latest, { invoicedAt, dueDate, today: today() });
+        tx.update(ref, { ...out.patch, updatedAt:serverTimestamp() });
+        return { latest, ...out };
+      });
+      paidOnInvoice = r.paid;
+      cur = { ...r.latest, ...r.patch };
     }
 
     // 2) 経理へ報告（PDFはブラウザで生成 → 関数がStorage保存・メール添付・Chat投稿）
@@ -2808,6 +3143,8 @@ async function doInvoiceReport(){
     invReportShip = null;
     if(warn.length) toast(`経理への報告に一部失敗しました: ${warn[0]}`);
     else if(wasReportOnly) toast("経理へ報告しました");
+    else if(paidOnInvoice && send) toast("請求済にして経理へ報告しました。全額入金済みのため「入金済」にしました");
+    else if(paidOnInvoice) toast("請求済にしました（経理への報告なし）。全額入金済みのため「入金済」にしました");
     else if(send) toast("請求済にして経理へ報告しました");
     else toast("請求済にしました（経理への報告なし）");
     if(warn.length) console.warn("経理報告の警告:", warn);
@@ -2828,15 +3165,20 @@ function renderPartnerOrders(orders){
     const sum=(o.items||[]).map(i=>itemLine(i, products)).join("／ ");
     const sh=o.shipping||{};
     const opts=Object.entries(PO_STATUS).map(([k,v])=>`<option value="${k}" ${o.status===k?"selected":""}>${v}</option>`).join("");
-    const shipBtn = o.status==="shipped"
-      ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
-      : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
     // この受注に紐づく出荷の請求・入金状況（受注一覧からも入金確認できるように）
     const rel=shipments.filter(s=>s.partnerOrderId===o._id && s.status!=="canceled");
+    // ひも付く生きた出荷（キャンセル以外）があるときは「出荷へ」を出さない（同じ受注から出荷が2つできるのを防ぐ・2026-10-21）
+    const relLabel = rel.length ? (SHIP_STATUS[shipStatusOf(rel[0])]||"") : "";
+    const shipBtn = rel.length
+      ? `<span style="font-size:12px;color:${rel.some(s=>s.status==="draft"||s.status==="requested")?"var(--color-ink-muted)":"var(--color-success)"}">出荷 ${esc(relLabel)}</span>`
+      : o.status==="shipped"
+      ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
+      : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
     const relRemain=rel.reduce((a,s)=>a+payRemain(s),0);
     const relOverdue=rel.some(s=>isUnpaid(s)&&overdueDays(s)>0);
     const payCell = !rel.length ? `<span style="font-size:12px;color:var(--color-ink-muted)">—</span>`
-      : rel.some(s=>s.status==="shipped") && relRemain===0 ? `<span style="font-size:12px;color:var(--color-ink-muted)">未請求</span>`
+      // 依頼済（センターの発送待ち）も、まだ請求していないので未請求として出す（2026-10-21）
+      : rel.some(s=>s.status==="shipped"||s.status==="requested"||s.status==="draft") && relRemain===0 ? `<span style="font-size:12px;color:var(--color-ink-muted)">未請求</span>`
       : relRemain>0
         ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(relRemain)}${relOverdue?"（期限超過）":""}</div><div style="font-size:12px;color:var(--color-ink-muted)">${rel.map(s=>esc(s.soNumber)).join(", ")}</div>`
         : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(rel.reduce((a,s)=>a+netPaid(s),0))}</div><div style="font-size:12px;color:var(--color-ink-muted)">${rel.map(s=>esc(s.soNumber)).join(", ")}</div>`;
@@ -2944,7 +3286,10 @@ async function runImport(){
   }finally{ btn.disabled = false; }
 }
 
-// 受注（認定事業者）→ 出荷（直送）へ変換
+// 受注（認定事業者）→ 出荷へ変換。ほかの経路と同じく「出荷を依頼する」として登録する（2026-10-21・§9 決定5・6）。
+//   ・出荷は依頼済(requested)で作り、出荷指示を投稿する。在庫は動かさない（発送済にしたときに引く）
+//   ・受注の状態は、依頼の時点で「受注確定」(confirmed)、出荷を「発送済にする」で「出荷済」(shipped)（markShipped が書く）
+//   ・同じ受注にひも付く生きた出荷（キャンセル以外）があれば、新しく作らない
 async function shipFromOrder(o){
   const sh=o.shipping||{};
   const items=(o.items||[]).map(it=>{
@@ -2953,10 +3298,18 @@ async function shipFromOrder(o){
   }).filter(it=>it.qty>0);
   if(!items.length){ alert("発注内容が空です"); return; }
   if(stockItems(items).length && !defaultLocationId()){ alert("保管場所が登録されていません。先に在庫タブで追加してください"); return; }
-  // 出荷日・出荷元・レターパックの種類を確認してから登録する（在庫不足の確認もダイアログ側で行う・2026-10-19）
-  const ans = await askShipDetails({
-    title: `受注から出荷する（${o.partnerName||o.partnerEmail||""}）`,
-    summaryHtml: `<div>受注（${esc(o.partnerName||o.partnerEmail||"")}）を直送出荷として登録し、発送済にします。</div>`
+  try{
+    const ex=await getDocs(query(collection(db,"shipments"),where("partnerOrderId","==",o._id)));
+    const live=ex.docs.filter(d=>d.data().status!=="canceled");
+    if(live.length){
+      alert(`この受注にはすでに出荷 ${live.map(d=>d.data().soNumber||"").join("・")}（${SHIP_STATUS[shipStatusOf(live[0].data())]||""}）があります。出荷一覧で確認してください。`);
+      return;
+    }
+  }catch(e){ alert(`既存の出荷を確認できませんでした: ${e.message}`); return; }
+  // 希望出荷日・出荷元・レターパックの種類を確認してから登録する（在庫不足は警告だけ・依頼の確認ダイアログ）
+  const ans = await askShipDetails({ mode:"request",
+    title: `受注から出荷を依頼する（${o.partnerName||o.partnerEmail||""}）`,
+    summaryHtml: `<div>受注（${esc(o.partnerName||o.partnerEmail||"")}）を出荷として登録し、出荷を依頼します。</div>`
       + `<div><strong>送付先</strong>　${esc(sh.company||"")} ${esc(sh.officeName||"")}</div>`
       + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([sh.postal?`〒${sh.postal}`:"", sh.address||""].filter(Boolean).join(" "))}</div>`,
     usesStock: true, locId: defaultLocationId(), date: today(), letterPackType: "", items,
@@ -2969,21 +3322,18 @@ async function shipFromOrder(o){
     const packs=Math.max(1,Math.ceil(items.reduce((a,i)=>a+i.qty,0)/3));
     const newRef = await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
-      status:"shipped", partnerOrderId:o._id,
+      status:"requested", partnerOrderId:o._id,
       originLocationId: fromLoc, originLocationName: locationName(fromLoc),
       shippingMethod:"letterpack", shippingFee:taxExcl(packs*letterpackFee()), shippingLabel:`送料（レターパック ${packs}通）`,
       shipDate:ans.shipDate, postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
       ...(o.desiredDeliveryDate ? { desiredDeliveryDate:o.desiredDeliveryDate } : {}),
-      ...letterPackPatch(ans.letterPackType), ...shippedStampPatch(), ...(ans.noNotice ? noNoticePatch() : {}),
+      ...letterPackPatch(ans.letterPackType), ...requestedStampPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     newShipId = newRef.id;
-    for(const it of stockItems(items)){ await updateDoc(doc(db,"products",it.sku), stockPatch(fromLoc,-it.qty));
-      await addDoc(collection(db,"inventoryMovements"), movement(it.sku,-it.qty,"shipment",soNumber,fromLoc)); }
-    await updateDoc(doc(db,"partnerOrders",o._id),{status:"shipped",updatedAt:serverTimestamp()});
+    await updateDoc(doc(db,"partnerOrders",o._id),{status:"confirmed",updatedAt:serverTimestamp()});
   }catch(e){ alert(`出荷登録失敗: ${e.message}`); return; }
-  const head = `受注を出荷登録しました（${soNumber}）`;
-  if(ans.noNotice){ toast(`${head}。${NO_NOTICE_MSG}`); return; }
+  const head = `受注から出荷を依頼しました（${soNumber}・在庫は発送済にしたときに引き落とします）`;
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(newShipId)}`);
 }
@@ -3165,12 +3515,24 @@ async function sendGuideMail(){
   finally{ btn.disabled=false; btn.innerHTML=orig; }
 }
 
+// 閲覧のみ（viewer）: 文言で拾えない操作ボタンをクラスで止める（あとから描かれる行にも効かせる）。
+// 属性しか変えないので MutationObserver（childList）が自分を呼び直すことはない
+function lockViewerButtons(){
+  const run=()=>document.querySelectorAll(VIEWER_LOCK_SELECTOR).forEach(b=>{
+    if(b.disabled) return;
+    b.disabled=true; b.setAttribute("aria-disabled","true");
+    b.title="閲覧のみの権限では操作できません"; b.style.opacity="0.45"; b.style.pointerEvents="none";
+  });
+  run();
+  new MutationObserver(run).observe(document.body,{ childList:true, subtree:true });
+}
 // ===== 初期化 =====
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   const myRole = await gateRole(db,user);
   if(!myRole) return;
-  applyViewerMode(myRole);
+  viewerMode = applyViewerMode(myRole);
+  if(viewerMode) lockViewerButtons();
   currentUser=user;
   document.getElementById("userEmail").textContent=user.displayName||user.email;
   document.getElementById("logoutBtn").addEventListener("click",()=>signOut(auth).then(()=>location.href="/index.html"));
@@ -3189,6 +3551,11 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeShipBtn").addEventListener("click",closeShip);
   document.getElementById("cancelShipBtn").addEventListener("click",closeShip);
   document.getElementById("saveShipBtn").addEventListener("click",saveShip);
+  // 新規登録の「すでに発送済として登録」に合わせて保存ボタンの文言を変える（2026-10-21）
+  document.getElementById("shipAlreadyShipped")?.addEventListener("change",(e)=>{
+    if(editingShip) return;
+    document.getElementById("saveShipLabel").textContent = e.target.checked ? "発送済として登録" : "登録して出荷を依頼する";
+  });
   document.getElementById("shipFee").addEventListener("input",updateShipTotal);
   document.getElementById("shipType").addEventListener("change",(e)=>{
     document.getElementById("shipPartnerWrap").style.display = e.target.value==="dropship"?"":"none";
@@ -3272,6 +3639,8 @@ onAuthStateChanged(auth, async (user)=>{
     onSnapshot(collection(db,"cases"),(snap)=>{
       casesForOwners=snap.docs.map(d=>({_id:d.id,assignedUserId:d.data().assignedUserId||null,assignedUserName:d.data().assignedUserName||null}));
       caseOwners=Object.fromEntries(casesForOwners.map(c=>[c._id,c.assignedUserId]));
+      // 下書きの重複で「残す候補」にする出荷（案件に結びついている shipmentId）
+      caseShipmentIds=Object.fromEntries(snap.docs.filter(d=>d.data().shipmentId).map(d=>[d.id,d.data().shipmentId]));
       ownersState="ok";
       fillAssigneeSelect(asgSel, casesForOwners, currentUser?.email);
       renderShipmentsView();
@@ -3317,6 +3686,8 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeCancelShipBtn").addEventListener("click",closeCancelShipModal);
   document.getElementById("cancelCancelShipBtn").addEventListener("click",closeCancelShipModal);
   document.getElementById("doCancelShipBtn").addEventListener("click",doCancelShipment);
+  // 入金明細の取り込み（2026-10-21 §7）。閲覧のみの人はボタンを押せない
+  initBankImport({ db, getShipments: ()=>shipments, getUser: ()=>currentUser, toast, isViewer: viewerMode });
   // 請求済にする＋経理へ報告モーダル
   document.getElementById("closeInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));
   document.getElementById("cancelInvReportBtn").addEventListener("click",()=>document.getElementById("invReportModal").classList.remove("open"));

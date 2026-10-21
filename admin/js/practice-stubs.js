@@ -139,6 +139,74 @@ async function nextQuoteNumber() {
   return `EST-${year}-${String(n).padStart(4, "0")}`;
 }
 
+// functions/accept-flow.js の subsidyQtyFromItems と同じ（補助対象の台数。BT 以外は USB に数える）
+function subsidyQtyFromItems(items, btSku) {
+  const list = Array.isArray(items) ? items : [];
+  const sum = (arr) => arr.reduce((a, i) => a + (Number(i && i.subsidyQty) || 0), 0);
+  return { bt: sum(list.filter((i) => i && i.sku === btSku)), usb: sum(list.filter((i) => i && i.sku !== btSku)) };
+}
+
+// ===== 電話・メールの受注確定（staffAcceptQuote）の判定。functions/accept-rules.js・accept-flow.js と同じ =====
+// 本番を変えたらここも合わせる（scripts/test-practice-mode.mjs が文言の一致を一部検査する）
+const STAFF_ACCEPT_CHANNELS = { phone: "電話", email: "メール", fax: "FAX", other: "その他" };
+const CHANNEL_LABEL = { phone: "電話", email: "メール", fax: "FAX", other: "その他の方法" };
+const PAY_LABELS = { after: "伴走支援の後にお支払い", before: "先にお支払い（前払い）" };
+const YMD = /^(\d{4})-(\d{2})-(\d{2})$/;
+function isValidYmd(v) {
+  const m = YMD.exec(String(v || ""));
+  if (!m) return false;
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).toISOString().slice(0, 10) === v;
+}
+function jstYmdOf(v) {
+  if (v == null || v === "") return "";
+  let ms;
+  if (typeof v.toMillis === "function") ms = v.toMillis();
+  else if (v instanceof Date) ms = v.getTime();
+  else if (typeof v === "number") ms = v;
+  else if (typeof v === "string" && YMD.test(v)) return v;
+  else ms = Date.parse(v);
+  return Number.isFinite(ms) ? new Date(ms + 9 * 3600e3).toISOString().slice(0, 10) : "";
+}
+function checkStaffAccept({ quote, siblings, kase, shipments, receivedDate, todayYmd, acceptedName, channel }) {
+  const ng = (code, message) => ({ ok: false, code, message });
+  if (!quote) return ng("quote_not_found", "見積もりが見つかりません");
+  if (quote.status === "accepted") return ng("already_accepted", "この見積もりはすでに受注確定（お申し込み済み）です");
+  if (quote.status !== "issued") return ng("not_issued", "この見積もりは受注確定にできません（発行中の見積もりではありません）");
+  const myVer = Number(quote.version) || 0;
+  if ((siblings || []).some((x) => x && x.id !== quote.id && (Number(x.version) || 0) > myVer)) return ng("old_version", "新しい版の見積もりがあります。最新の版で受注確定にしてください");
+  if (!isValidYmd(receivedDate)) return ng("invalid_received_date", "受付日を正しく入れてください（YYYY-MM-DD）");
+  if (receivedDate > todayYmd) return ng("future_received_date", "受付日が未来の日付になっています");
+  const until = jstYmdOf(quote.validUntil);
+  if (until && receivedDate > until) return ng("expired", `受付日（${receivedDate}）が見積もりの有効期限（${until}）を過ぎています`);
+  if (!String(acceptedName || "").trim()) return ng("no_name", "申込者のお名前を入れてください");
+  if (!Object.prototype.hasOwnProperty.call(STAFF_ACCEPT_CHANNELS, channel)) return ng("invalid_channel", "受付方法（電話・メール・FAX・その他）を選んでください");
+  if (!kase) return ng("case_not_found", "案件が見つかりません");
+  const live = (shipments || []).filter((x) => x && (x.status || "shipped") !== "canceled");
+  if (live.length) {
+    const pre = live.every((x) => x.status === "draft" || x.status === "requested");
+    const nos = live.map((x) => x.soNumber).filter(Boolean).join("・");
+    return pre
+      ? ng("draft_exists", `この案件にはすでに出荷の下書き・依頼${nos ? `（${nos}）` : ""}があります。重複していないか確かめてください`)
+      : ng("shipped_exists", `この案件はすでに発送済みの出荷${nos ? `（${nos}）` : ""}があります。受注確定は二重になります`);
+  }
+  return { ok: true };
+}
+// 案件の状態: 1・2 → 3／4（失注）・13（完了）→ 再申込として 3 に戻す／それ以外は据え置き（accept-flow.js caseStatusOnAccept）
+function caseStatusOnAccept(status) {
+  const st = Number(status) || 1;
+  if (st === 4 || st === 13) return { status: 3, reopenedFrom: st };
+  if (st === 1 || st === 2) return { status: 3, reopenedFrom: null };
+  return { status: null, reopenedFrom: null };
+}
+function jstMidnightMs(ymd) {
+  if (!isValidYmd(ymd)) return null;
+  const m = YMD.exec(ymd);
+  return Date.UTC(+m[1], +m[2] - 1, +m[3]) - 9 * 3600e3;
+}
+function reopenLabel(from) {
+  return Number(from) === 4 ? "再申込で再開（失注から）" : Number(from) === 13 ? "再申込で再開（完了から）" : "";
+}
+
 export const PRACTICE_STUBS = {
   // AI アシスタント（Vertex AI）は動かさない
   async aiAssist({ task }) {
@@ -204,7 +272,8 @@ export const PRACTICE_STUBS = {
     const snap = await getDoc(ref);
     if (!snap.exists()) return { posted: false, reason: "not-found" };
     const s = snap.data();
-    if (!["shipped", "invoiced", "paid"].includes(s.status)) return { posted: false, reason: "not-shipped" };
+    // 本番（functions/index.js の NOTIFY_STATUSES）と同じ: 依頼済（requested）以降が対象。下書き・キャンセルは止める（2026-10-21 出荷の二段階化）
+    if (!["requested", "shipped", "invoiced", "paid"].includes(s.status)) throw fail("出荷を依頼していない出荷（下書き・キャンセル）は投稿できません");
     if (s.shipNotifiedAt && !resend) return { posted: false, reason: "already" };
     const u = me();
     const now = serverTimestamp();
@@ -349,6 +418,10 @@ export const PRACTICE_STUBS = {
     if (shipmentId) {
       const sh = await getDoc(doc(db(), "shipments", shipmentId));
       shipStatus = sh.exists() ? (sh.data().status || null) : null;
+      // 依頼済（requested）も止める（本番の reviseQuote と同じ・2026-10-21 出荷の二段階化）
+      if (sh.exists() && shipStatus === "requested") {
+        throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧で「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。センターへの取り消しの連絡もお願いします。`);
+      }
       if (sh.exists() && shipStatus !== "draft") {
         throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
       }
@@ -385,7 +458,9 @@ export const PRACTICE_STUBS = {
     });
     if (shipmentId && shipStatus === "draft") {
       b.update(doc(db(), "shipments", shipmentId), {
-        items: shipmentItemsFromQuote(P, { items, amounts }), quoteId: quoteRef.id, estNo, updatedAt: now, updatedBy: u.email,
+        items: shipmentItemsFromQuote(P, { items, amounts }), quoteId: quoteRef.id, estNo,
+        subsidyCategory: planKey || null, subsidyQty: subsidyQtyFromItems(items, P.SKU.BT),
+        updatedAt: now, updatedBy: u.email,
       });
     }
     const before = (base.items || []).map((i) => `${i.sku}×${(Number(i.subsidyQty) || 0) + (Number(i.extraQty) || 0)}`).join("・");
@@ -407,6 +482,128 @@ export const PRACTICE_STUBS = {
     }
     showPracticeNotice(mailed ? `見積もりを改版しました。変更のメールは送っていません（宛先 ${base.contactEmail}）` : "見積もりを改版しました（練習用のデータです）");
     return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft") };
+  },
+
+  // 電話・メール・FAX で受けた申込を受注確定にする（functions/index.js の staffAcceptQuote と同じ記録・2026-10-21）。
+  // 確認メール・Chat は送らない。戻り値の形は本物と同じ {ok, results:[{quoteId, shipmentId, soNumber}], partial, errors, mailed, mailError}
+  async staffAcceptQuote(d) {
+    const { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = d;
+    if (!quoteId || typeof quoteId !== "string") throw fail("quoteId は必須です");
+    const name = String(acceptedName || "").trim().slice(0, 100);
+    if (!name) throw fail("申込者のお名前を入れてください");
+    if (!Object.prototype.hasOwnProperty.call(STAFF_ACCEPT_CHANNELS, channel)) throw fail("受付方法（電話・メール・FAX・その他）を選んでください");
+    if (!isValidYmd(receivedDate)) throw fail("受付日を正しく入れてください（YYYY-MM-DD）");
+    if (preferredDate && !isValidYmd(preferredDate)) throw fail("希望日を正しく入れてください（YYYY-MM-DD）");
+    const payKey = payMethod === "before" ? "before" : "after";
+    const memo = String(note || "").trim().slice(0, 1000);
+    const extra = Array.isArray(groupQuoteIds) ? groupQuoteIds.filter((x) => typeof x === "string" && x && x !== quoteId) : [];
+    const ids = [quoteId, ...new Set(extra)];
+    if (ids.length > 20) throw fail("一度に受注確定にできるのは20件までです");
+    const pre = await Promise.all(ids.map(async (id) => { const x = await getDoc(doc(db(), "quotes", id)); return x.exists() ? { id: x.id, ...x.data() } : null; }));
+    if (!pre[0]) throw fail("見積もりが見つかりません");
+    if (pre.length > 1) {
+      if (pre.some((q) => !q)) throw fail("見積もりが見つかりません");
+      const gid = pre[0].groupId || null;
+      if (!gid) throw fail("この見積もりはグループ（同じ法人の一括見積もり）ではありません。ほかの見積もりと一緒には受注確定にできないので、1件ずつ受注確定にしてください");
+      if (pre.some((q) => (q.groupId || null) !== gid)) throw fail("同じグループ（同じ法人の一括見積もり）ではない見積もりが含まれています");
+    }
+    const P = await loadPricing();
+    const u = me();
+    const done = [], errors = [];
+    for (const pq of pre) {
+      try {
+        let office = null;
+        if (pq.officeId) { const od = await getDoc(doc(db(), "offices", pq.officeId)); if (od.exists()) office = od.data(); }
+        const dl = {
+          company: pq.corpName || office?.corpName || "", officeName: pq.officeName || office?.officeName || "",
+          postalCode: office?.postalCode || "", address: office?.address || "", contactName: pq.contactName || "", phone: office?.phone || "",
+        };
+        const shipList = await getDocs(query(collection(db(), "shipments"), where("caseId", "==", pq.caseId)));
+        const sibList = await getDocs(query(collection(db(), "quotes"), where("caseId", "==", pq.caseId)));
+        const r = await runTransaction(db(), async (tx) => {
+          const qRef = doc(db(), "quotes", pq.id);
+          const qs = await tx.get(qRef);
+          if (!qs.exists()) throw fail("見積もりが見つかりません");
+          const q = { id: qs.id, ...qs.data() };
+          const caseRef = doc(db(), "cases", String(q.caseId));
+          const cs = await tx.get(caseRef);
+          const kase = cs.exists() ? cs.data() : null;
+          const chk = checkStaffAccept({
+            quote: q, siblings: sibList.docs.map((x) => ({ id: x.id, ...x.data() })), kase,
+            shipments: shipList.docs.map((x) => ({ id: x.id, ...x.data() })),
+            receivedDate, todayYmd: todayJst(), acceptedName: name, channel,
+          });
+          if (!chk.ok) throw fail(chk.message);
+          const cRef = doc(db(), "_counters", "shipments");
+          const c = await tx.get(cRef);
+          const n = (c.exists() ? c.data().value : 0) + 1;
+          const soNumber = `SH-${todayJst().slice(0, 4)}-${String(n).padStart(4, "0")}`;
+          const now = serverTimestamp();
+          const shipRef = doc(collection(db(), "shipments"));
+          tx.set(cRef, { value: n });
+          tx.set(shipRef, {
+            soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "", caseId: q.caseId,
+            caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
+            company: dl.company, officeName: dl.officeName, postal: dl.postalCode, address: dl.address,
+            contactName: dl.contactName, phone: dl.phone, items: shipmentItemsFromQuote(P, q),
+            subsidyCategory: q.plan || null, subsidyQty: subsidyQtyFromItems(q.items, P.SKU.BT),
+            preferredDate: preferredDate || "", payMethod: payKey, orderNote: memo,
+            shippingMethod: "manual", shippingFee: 0, shippingLabel: "", shipDate: todayJst(),
+            createdAt: now, createdBy: `staff（${CHANNEL_LABEL[channel] || "その他の方法"}の申込）: ${u.email}`,
+          });
+          tx.update(qRef, {
+            status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
+            acceptedBy: name, payMethod: payKey, delivery: dl,
+            acceptedVia: "staff", acceptedChannel: channel, acceptedReceivedDate: receivedDate,
+            acceptedByStaff: u.email, agreedName: name, agreedPolicy: null,
+          });
+          const stp = caseStatusOnAccept(kase && kase.status);
+          const cu = { updatedAt: now, shipmentId: shipRef.id, payMethod: payKey, orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: u.email };
+          if (stp.status != null) cu.status = stp.status;
+          if (stp.reopenedFrom) Object.assign(cu, { reopenedFrom: stp.reopenedFrom, reopenedAt: now });
+          if (!(kase && kase.orderedAt)) cu.orderedAt = Timestamp.fromMillis(jstMidnightMs(receivedDate));
+          tx.update(caseRef, cu);
+          const re = reopenLabel(stp.reopenedFrom);
+          tx.set(doc(collection(db(), "activities")), {
+            caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
+            subject: `${CHANNEL_LABEL[channel] || "その他の方法"}で受けたお申し込みを受注確定にしました（${q.estNo || "見積"}・出荷 ${soNumber}${re ? `・${re}` : ""}）`,
+            body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[channel]}\n受付日: ${receivedDate}\n支払方法: ${PAY_LABELS[payKey]}\n`
+              + `出荷 ${soNumber} の下書きを作成\n` + (stp.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`)
+              + (preferredDate ? `ご希望日: ${preferredDate}\n` : "") + (memo ? `メモ: ${memo}\n` : ""),
+            attachmentUrls: [],
+          });
+          return { q, soNumber, shipRefId: shipRef.id, caseContactEmail: (kase && kase.contactEmail) || "" };
+        });
+        done.push({ ...r, quoteId: pq.id });
+      } catch (e) {
+        errors.push({ quoteId: pq.id, code: e.code || "error", message: e.message || String(e) });
+      }
+    }
+    if (!done.length) throw fail(errors.map((e) => e.message).join("／"));
+    let mailed = false, mailError = null;
+    const to = String(done[0].caseContactEmail || done[0].q.contactEmail || "").trim();
+    if (sendMail && !to) mailError = "宛先のメールアドレスが案件にも見積もりにも登録されていないため、確認メールは送っていません";
+    if (sendMail && to) {
+      for (const r of done) await activity(r.q.caseId, "gmail_sent", `メール送信: 【NPO法人タダカヨ】お申し込みを受け付けました（${r.q.estNo}）`, `${PRACTICE_NOTE}\n宛先: ${to}（受注確定の確認メール）`);
+      await logSent("staffAccept", { to, quoteIds: done.map((r) => r.quoteId), channel });
+      mailed = true;
+    }
+    await logSent("staffAcceptChat", { quoteIds: done.map((r) => r.quoteId), channel });
+    showPracticeNotice(mailed ? `受注確定にしました。確認メール・Chat は送っていません（宛先 ${to}）` : "受注確定にしました。Chat の通知は送っていません");
+    return {
+      ok: true, results: done.map((r) => ({ quoteId: r.quoteId, shipmentId: r.shipRefId, soNumber: r.soNumber })),
+      partial: errors.length > 0, errors, mailed, mailError,
+    };
+  },
+
+  // 日次まとめのプレビュー（設定画面・管理者）。本物は本番の案件を読んで本文を作る。
+  // 練習中は本番のデータを読まないので、練習であることを示す本文だけを返す（形は本物と同じ {overall, assignees}）
+  async previewDailyFollowup() {
+    showPracticeNotice("日次まとめのプレビューは練習中は本番のデータを読みません");
+    return {
+      overall: "（練習モード）日次まとめのプレビューは、本番の案件データから作ります。練習中は本番のデータを読まないため表示しません。\n本番モードに戻ってから押してください。毎朝の投稿も本番の案件だけが対象で、練習用のデータは載りません。",
+      assignees: [],
+    };
   },
 
   // アクセス解析の手動更新（GA4 の取り込み）
