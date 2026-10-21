@@ -270,3 +270,22 @@ console.log(`OK test-ship-flow: ${n}件 全件合格`);
   assert.equal(needsResendPrompt({ ...before, status: "draft" }, { ...before, status: "draft", shipDate: "2026-10-25" }), false);
   console.log("OK test-ship-flow 追加: 希望出荷日の変更で再送を確認");
 }
+
+// ===== 2026-10-21 レターパックの初期値はプラス（赤）=====
+{
+  const { letterPackOrDefault, DEFAULT_LETTERPACK } = await import("../admin/js/ship-flow.js");
+  const { readFileSync } = await import("node:fs");
+  assert.equal(DEFAULT_LETTERPACK, "plus");
+  assert.equal(letterPackOrDefault(undefined), "plus");
+  assert.equal(letterPackOrDefault(""), "plus");
+  assert.equal(letterPackOrDefault("light"), "light");   // ライトを選んで保存したものはそのまま
+  assert.equal(letterPackOrDefault("plus"), "plus");
+  const html = readFileSync(new URL("../admin/supply.html", import.meta.url), "utf8");
+  assert.equal((html.match(/<option value="plus" selected>/g) || []).length, 2); // 新規登録・発送の確認の2か所
+  const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
+  assert.match(sup, /shipDoneLp"\)\.value = letterPackOrDefault\(letterPackType\)/);
+  assert.match(sup, /lpSel\.value=DEFAULT_LETTERPACK/);
+  const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
+  assert.match(lp, /let type = letterPackOrDefault\(s\.letterPackType\)/);
+  console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
+}

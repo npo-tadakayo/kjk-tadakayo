@@ -8,6 +8,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "/js/fs.js";
+import { letterPackOrDefault } from "/js/ship-flow.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -116,7 +117,7 @@ onAuthStateChanged(auth, async (user) => {
     if (s.soNumber) document.getElementById("backBtn").href = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber)}`;
     document.title = `宛名 ${s.soNumber || ""} — タダカヨ CRM`;
 
-    let type = (s.letterPackType === "light" || s.letterPackType === "plus") ? s.letterPackType : "";
+    let type = letterPackOrDefault(s.letterPackType); // 未設定はプラス（赤）・2026-10-21
     const draw = () => {
       setTheme(type);
       document.getElementById("body").innerHTML = renderLabel(s, senders[Number(sel.value) || 0], type);

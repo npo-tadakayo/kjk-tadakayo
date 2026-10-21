@@ -19,7 +19,7 @@ import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-
 // 出荷の状態・ボタン・在庫の扱いの判定は ship-flow.js が正本（2026-10-21 出荷の二段階化）
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stockDeducted, isLocked,
   canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
-  netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG } from "/js/ship-flow.js";
+  netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, letterPackOrDefault, DEFAULT_LETTERPACK } from "/js/ship-flow.js";
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
 import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
 import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, invoicePatchOf, paymentRemovalOf, VIEWER_LOCK_SELECTOR } from "/js/supply-rules.js";
@@ -953,7 +953,7 @@ function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, lett
     document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
     document.getElementById("shipDoneDateLabel").textContent = cfg.dateLabel;
     document.getElementById("shipDoneDate").value = date || today();
-    document.getElementById("shipDoneLp").value = (letterPackType==="light"||letterPackType==="plus") ? letterPackType : "";
+    document.getElementById("shipDoneLp").value = letterPackOrDefault(letterPackType); // 未設定はプラス（赤）
     // 追跡番号は発送済にするとき・記録のみのときだけ（任意）
     document.getElementById("shipDoneTrackWrap").style.display = m==="request" ? "none" : "";
     document.getElementById("shipDoneTrack").value = trackingNumber || "";
@@ -1546,7 +1546,7 @@ function openShip(existing){
   const lpw=document.getElementById("shipLetterPackWrap");
   if(lpw) lpw.style.display = s ? "none" : "";
   const lpSel=document.getElementById("shipLetterPack");
-  if(lpSel && !s) lpSel.value="";
+  if(lpSel && !s) lpSel.value=DEFAULT_LETTERPACK; // 初期値はプラス（赤）・2026-10-21
 
   document.getElementById("shipModal").classList.add("open");
 }
