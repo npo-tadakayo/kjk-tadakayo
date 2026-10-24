@@ -9,7 +9,7 @@
 //   - 判定・採点・更新値の組み立ては learning-core.js（scripts/test-learning-core.mjs）
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, getProdFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, collection, query, where, serverTimestamp }
+import { getFirestore, getProdFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, runTransaction, collection, query, where, serverTimestamp }
   from "/js/fs.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { setPracticeMode } from "/js/mode.js";
@@ -43,10 +43,20 @@ let playing = null;       // { stepId, videoId, video, last: { maxPos, at } }
 async function save(r) {
   if (!r || r.error || !r.patch) return false;
   try {
-    await setDoc(doc(prod, "learningProgress", me.email), { ...r.patch, updatedAt: serverTimestamp() }, { merge: true });
+    // サーバーの最新の記録を読んで、達成が減らない形に直してから書く（ほかのタブの合格を古い状態で消さない）
+    const ref = doc(prod, "learningProgress", me.email);
+    let merged = null;
+    await runTransaction(prod, async (tx) => {
+      const snap = await tx.get(ref);
+      const cur = snap.exists() ? snap.data() : {};
+      const g = L.guardPatch(cur, r.patch);
+      tx.set(ref, { ...g, updatedAt: serverTimestamp() }, { merge: true });
+      merged = L.mergePatch(cur, g);
+    });
     // 書けてから画面の状態に入れる（失敗したのに「済」に見えて、やり直せなくなるのを防ぐ）。
-    // r.next ではなく patch を今の progress に重ねる（待っている間に増えた視聴位置を消さない）
-    progress = L.mergePatch(progress, r.patch);
+    // 手元にだけある視聴位置（まだ保存していない分）は残す
+    progress = L.mergePatch(merged, { videos: Object.fromEntries(Object.entries(progress?.videos || {})
+      .filter(([id, v]) => (Number(v?.maxPos) || 0) > (Number(merged?.videos?.[id]?.maxPos) || 0))) });
     return true;
   } catch (e) {
     console.warn("[learning] save failed", e);

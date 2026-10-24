@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { STEPS, PRACTICE_TASKS, READY_STEPS, PLEDGE_ITEMS, findStep } from "../admin/js/learning-catalog.js";
 import { findVideo } from "../admin/js/video-catalog.js";
 import { QUIZZES } from "../admin/js/learning-quiz.js";
+import * as L from "../admin/js/learning-core.js";
 import {
   toMs, fmtDate, isVideoDone, videoPercent, nextVideoRecord, shouldSaveVideo,
   shuffledOrder, shuffleChoices, gradeQuiz, passRuleText,
@@ -402,11 +403,28 @@ t("評価シート・バッジ台帳・マニュアル・ルールのつなぎ",
 t("保存は書けてから画面に入れる・古い動画の読み込みを捨てる（Codex 指摘 2026-10-24）", () => {
   const js = src("../admin/js/learning.js");
   const body = js.slice(js.indexOf("async function save("), js.indexOf("function states()"));
-  assert.ok(body.indexOf("await setDoc(") < body.indexOf("progress = L.mergePatch(progress, r.patch)"), "保存の前に progress を書き換えている");
+  assert.ok(body.indexOf("runTransaction(") > 0 && body.indexOf("runTransaction(") < body.indexOf("progress = L.mergePatch(merged"), "保存の前に progress を書き換えている");
+  assert.match(body, /L\.guardPatch\(cur, r\.patch\)/);
   assert.ok(!/progress = r\.next/.test(body), "失敗しても r.next を入れている");
   assert.match(js, /const seq = \+\+playSeq;/);
   assert.match(js, /if \(seq !== playSeq\)/);
   assert.match(js, /if \(!ok\) \{ p\.last = prev; return; \}/);
+});
+
+t("guardPatch: 古いタブからの保存で達成が巻き戻らない", () => {
+  const server = { quizzes: { S1: { best: 100, attempts: 2, passedAt: 1000, lastScore: 100 } }, videos: { "L-A": { maxPos: 150, duration: 150, doneAt: 900 } },
+    practice: { items: { firstContact: true, visitDate: true }, passedAt: null }, pledgeAt: 1100, startedAt: 500 };
+  const stale = { quizzes: { S1: { best: 60, attempts: 1, passedAt: null, lastScore: 60, lastAt: 2000 } }, videos: { "L-A": { maxPos: 30, duration: 150, doneAt: null } },
+    practice: { items: { firstContact: false, visitDate: false, preCheck: true }, checkedAt: 2000, passedAt: null }, startedAt: 1900, lastAt: 2000 };
+  const g = L.guardPatch(server, stale);
+  assert.equal(g.quizzes.S1.best, 100); assert.equal(g.quizzes.S1.passedAt, 1000); assert.equal(g.quizzes.S1.attempts, 3); assert.equal(g.quizzes.S1.lastScore, 60);
+  assert.equal(g.videos["L-A"].maxPos, 150); assert.equal(g.videos["L-A"].doneAt, 900);
+  assert.equal(g.practice.items.firstContact, true); assert.equal(g.practice.items.preCheck, true);
+  assert.equal(g.pledgeAt, 1100); assert.equal(g.startedAt, 500); assert.equal(g.lastAt, 2000);
+  // サーバーが空なら patch のまま（はじめての保存）
+  const first = L.guardPatch({}, { quizzes: { S2: { best: 83, attempts: 1, passedAt: 3000 } }, startedAt: 3000 });
+  assert.equal(first.quizzes.S2.passedAt, 3000); assert.equal(first.quizzes.S2.attempts, 1); assert.equal(first.startedAt, 3000);
+  assert.ok(!("pledgeAt" in first));
 });
 
 console.log(`test-learning-core: ${n} 件 OK`);

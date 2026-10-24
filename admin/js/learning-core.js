@@ -361,6 +361,47 @@ export function applyPractice(progress, me, judged, now, quizzes = {}) {
   return finish(progress, { practice }, me, now, quizzes);
 }
 
+// ---------- 保存の直前に、サーバーの最新の記録と照らし合わせる（複数タブ対策・Codex 指摘 2026-10-24） ----------
+const earliest = (a, b) => { const x = toMs(a), y = toMs(b); return x == null ? (y == null ? null : b) : (y == null ? a : (y < x ? b : a)); };
+/**
+ * patch（手元の古い状態から作った更新）を、サーバーの最新の記録 server に対して「達成が減らない」形に直す。
+ * 合格・見終わり・約束・OJTに入れますの日時は消さない（早い方を残す）。最高点・視聴位置は大きい方。
+ * 回数はサーバーの回数に足す。練習課題は一度できたら「できた」のまま。
+ */
+export function guardPatch(server, patch) {
+  const sv = server || {};
+  const out = { ...(patch || {}) };
+  if (patch?.videos) {
+    out.videos = {};
+    for (const [id, r] of Object.entries(patch.videos)) {
+      const o = sv.videos?.[id] || {};
+      out.videos[id] = { ...r, maxPos: Math.max(Number(o.maxPos) || 0, Number(r?.maxPos) || 0), doneAt: earliest(o.doneAt, r?.doneAt) };
+    }
+  }
+  if (patch?.quizzes) {
+    out.quizzes = {};
+    for (const [k, r] of Object.entries(patch.quizzes)) {
+      const o = sv.quizzes?.[k] || {};
+      out.quizzes[k] = { ...r, best: Math.max(Number(o.best) || 0, Number(r?.best) || 0),
+        attempts: (Number(o.attempts) || 0) + 1, passedAt: earliest(o.passedAt, r?.passedAt) };
+    }
+  }
+  if (patch?.practice) {
+    const o = sv.practice || {}, r = patch.practice;
+    const items = {};
+    for (const t of PRACTICE_TASKS) items[t.key] = o.items?.[t.key] === true || r.items?.[t.key] === true;
+    const all = PRACTICE_TASKS.every((t) => items[t.key]);
+    out.practice = { ...r, items, passedAt: earliest(o.passedAt, r.passedAt) ?? (all ? r.checkedAt ?? null : null) };
+  }
+  for (const k of ["pledgeAt", "startedAt", "readyForOjtAt"]) {
+    if (k in out || toMs(sv[k]) != null) {
+      const v = earliest(sv[k], out[k]);
+      if (v == null) delete out[k]; else out[k] = v;
+    }
+  }
+  return out;
+}
+
 // ---------- 一覧・評価シートの1行 ----------
 /** 最後に進んだ日時（lastAt が無い古い文書は中の日時から拾う） */
 export function lastProgressAt(progress) {
