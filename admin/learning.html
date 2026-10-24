@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>育成コース — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .doc{max-width:960px;}
+    .doc [hidden]{display:none !important;}
+    .ls-sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+    .ls-next{display:flex;gap:12px;align-items:flex-start;background:#fff;border:2px solid var(--color-primary,#c02828);border-radius:12px;padding:14px 16px;margin:0 0 16px;}
+    .ls-next i{font-size:22px;color:var(--color-primary,#c02828);flex:0 0 auto;margin-top:2px;}
+    .ls-next .k{font-size:12px;color:var(--color-ink-muted);}
+    .ls-next .v{font-size:15px;font-weight:700;line-height:1.6;overflow-wrap:anywhere;}
+    .ls-solo{display:flex;gap:12px;align-items:center;background:#e8f5ec;border-left:4px solid #3d7a2a;border-radius:8px;padding:12px 14px;margin:0 0 16px;font-size:14px;line-height:1.7;}
+    .ls-solo i{font-size:28px;color:#3d7a2a;}
+    .ls-meter{display:flex;gap:4px;margin:0 0 6px;}
+    .ls-meter span{flex:1;height:8px;border-radius:4px;background:#e9e3d8;}
+    .ls-meter span.done{background:#3d7a2a;}
+    .ls-meter span.current{background:var(--color-primary,#c02828);}
+    .ls-meter span.optional{background:repeating-linear-gradient(45deg,#e9e3d8,#e9e3d8 4px,#f6f2ea 4px,#f6f2ea 8px);}
+    .ls-meter-t{font-size:12.5px;color:var(--color-ink-muted);margin:0 0 16px;}
+    .ls-steps{display:flex;flex-direction:column;gap:10px;}
+    .ls-step{background:#fff;border:1px solid var(--color-line);border-radius:12px;overflow:hidden;}
+    .ls-step.is-current{border-color:var(--color-primary,#c02828);box-shadow:0 0 0 1px var(--color-primary,#c02828) inset;}
+    .ls-head{display:flex;align-items:center;gap:12px;width:100%;min-height:56px;padding:12px 14px;background:none;border:0;text-align:left;cursor:pointer;font:inherit;color:inherit;}
+    .ls-head:hover{background:#fbf9f6;}
+    .ls-head:focus-visible{outline:3px solid #c02828;outline-offset:-3px;}
+    .ls-no{flex:0 0 34px;height:34px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;background:#efe9df;color:var(--color-ink);}
+    .ls-step.is-done .ls-no{background:#3d7a2a;color:#fff;}
+    .ls-step.is-current .ls-no{background:var(--color-primary,#c02828);color:#fff;}
+    .ls-ht{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1;}
+    .ls-title{font-weight:700;font-size:15px;}
+    .ls-sub{font-size:12.5px;color:var(--color-ink-muted);}
+    .ls-state{flex:0 0 auto;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;background:#f3efe8;color:var(--color-ink-muted);white-space:nowrap;}
+    .ls-step.is-done .ls-state{background:#e8f5ec;color:#2f6420;}
+    .ls-step.is-current .ls-state{background:#fdf2f2;color:#9b1f1f;}
+    .ls-chev{flex:0 0 auto;color:var(--color-ink-muted);transition:transform .15s;}
+    .ls-head[aria-expanded="true"] .ls-chev{transform:rotate(180deg);}
+    .ls-body{padding:4px 16px 16px;border-top:1px solid var(--color-line);}
+    .ls-body p{font-size:13.5px;line-height:1.8;margin:10px 0;}
+    .ls-h4{font-size:13px;font-weight:700;margin:16px 0 8px;display:flex;align-items:center;gap:6px;}
+    .ls-vlist{display:flex;flex-direction:column;gap:8px;}
+    .ls-v{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--color-line);border-radius:10px;padding:8px 10px;}
+    .ls-v .vt{flex:1;min-width:160px;font-size:13.5px;}
+    .ls-v .vt small{display:block;color:var(--color-ink-muted);font-size:12px;}
+    .ls-v .vs{font-size:12px;font-weight:700;white-space:nowrap;}
+    .ls-v .vs.done{color:#2f6420;}
+    .ls-v .btn{min-height:44px;}
+    .ls-player{background:#111;border-radius:8px;padding:8px;margin:8px 0 0;}
+    .ls-player .vp-video{display:block;width:100%;max-height:60vh;background:#000;border-radius:6px;}
+    .ls-player .vp-loading,.ls-player .vp-error{color:#fff;font-size:13px;padding:40px 0;text-align:center;}
+    .ls-player .vp-error{color:#ffd8d8;}
+    .ls-note{font-size:12.5px;color:var(--color-ink-muted);background:#faf7f2;border-radius:8px;padding:8px 12px;line-height:1.7;margin:10px 0;}
+    .ls-warn{font-size:13px;background:#fff7e0;border-left:4px solid #c99a00;border-radius:6px;padding:10px 12px;line-height:1.7;margin:10px 0;}
+    .ls-ok{color:#2f6420;font-weight:700;}
+    .ls-quiz{border:1px solid var(--color-line);border-radius:10px;padding:12px;margin:8px 0 0;}
+    .ls-q{margin:0 0 14px;padding:0;border:0;}
+    .ls-q legend{font-size:14px;font-weight:700;line-height:1.7;margin:0 0 6px;padding:0;}
+    .ls-q legend .tag{font-size:11px;font-weight:700;background:#fdf2f2;color:#9b1f1f;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:1px;}
+    .ls-c{display:flex;align-items:flex-start;gap:8px;min-height:44px;padding:10px 12px;border:1px solid var(--color-line);border-radius:8px;margin:0 0 6px;cursor:pointer;font-size:13.5px;line-height:1.6;}
+    .ls-c input{margin-top:4px;flex:0 0 auto;width:18px;height:18px;}
+    .ls-c.right{border-color:#3d7a2a;background:#eef7ef;}
+    .ls-c.wrong{border-color:#c02828;background:#fdf2f2;}
+    .ls-why{font-size:12.5px;line-height:1.7;margin:4px 0 0;padding:6px 10px;border-radius:6px;background:#faf7f2;}
+    .ls-result{font-size:14px;font-weight:700;margin:6px 0 10px;}
+    .ls-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 0;}
+    .ls-tasks{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px;}
+    .ls-tasks li{display:flex;gap:8px;align-items:flex-start;font-size:13.5px;line-height:1.6;}
+    .ls-tasks li i{margin-top:3px;flex:0 0 auto;}
+    .ls-tasks li.ok i{color:#2f6420;}
+    .ls-tasks li.ng i{color:#9a8e78;}
+    .ls-tasks small{display:block;color:var(--color-ink-muted);font-size:12px;}
+    .ls-pledge{margin:6px 0;padding-left:1.4em;font-size:13.5px;line-height:1.8;}
+    .ls-trainer{margin-top:28px;}
+    .ls-trainer h2{font-family:"Noto Serif JP",serif;font-size:18px;margin:0 0 6px;}
+    .ls-tbl{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;border:1px solid var(--color-line);border-radius:12px;overflow:hidden;}
+    .ls-tbl th,.ls-tbl td{padding:10px 12px;border-bottom:1px solid var(--color-line);text-align:left;vertical-align:middle;}
+    .ls-tbl th{font-size:12px;color:var(--color-ink-muted);font-weight:600;background:#faf7f2;}
+    .ls-tbl .who small{display:block;color:var(--color-ink-muted);font-size:12px;overflow-wrap:anywhere;}
+    .ls-tbl .btn{min-height:44px;}
+    .ls-detail td{background:#fbf9f6;}
+    .ls-mini{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px 16px;}
+    @media (max-width:900px){.ls-mini{grid-template-columns:minmax(0,1fr);}}
+    .ls-mini li{font-size:12.5px;display:flex;gap:6px;align-items:flex-start;line-height:1.6;}
+    .ls-mini li i{margin-top:3px;flex:0 0 auto;}
+    .ls-mini li span{min-width:0;overflow-wrap:anywhere;}
+    .ls-chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e8f5ec;color:#2f6420;white-space:nowrap;}
+    .ls-chip.no{background:#f3efe8;color:var(--color-ink-muted);}
+    .ls-chip.badge{background:#fff1c9;color:#6b4e00;}
+    @media (max-width:640px){
+      .ls-tbl thead{display:none;}
+      .ls-tbl,.ls-tbl tbody,.ls-tbl tr,.ls-tbl td{display:block;width:100%;}
+      .ls-tbl tr{border-bottom:1px solid var(--color-line);padding:8px 0;}
+      .ls-tbl td{border:0;padding:4px 12px;}
+      .ls-tbl td[data-k]::before{content:attr(data-k)"：";color:var(--color-ink-muted);font-size:12px;}
+      .ls-body{padding:4px 12px 14px;}
+      .ls-head{padding:12px 10px;gap:10px;}
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">育成コース</h1></div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+
+      <div class="doc" id="doc" style="display:none">
+        <p class="page-intro">新しく伴走支援に入る方が、独り立ちまでの7つのステップを順に進める画面です。STEP1〜5 はひとりで進められます（動画を最後まで見て、確認テストに合格）。STEP1〜5 が済むと「OJTに入れます」になり、STEP7 の OJT でトレーナーが評価シートをつけます。</p>
+
+        <div id="solo" class="ls-solo" hidden></div>
+        <div class="ls-next" role="status" aria-live="polite">
+          <i class="ti ti-flag-3" aria-hidden="true"></i>
+          <div><div class="k">次にやること</div><div class="v" id="nextAction">—</div></div>
+        </div>
+        <div class="ls-meter" id="meter" aria-hidden="true"></div>
+        <p class="ls-meter-t" id="meterText"></p>
+
+        <div class="ls-steps" id="steps"></div>
+
+        <section class="ls-trainer" id="trainerSec" hidden aria-labelledby="trainerTitle">
+          <h2 id="trainerTitle">受講中の方の進み具合（トレーナー・管理者）</h2>
+          <p style="font-size:13px;color:var(--color-ink-muted);line-height:1.7;margin:0 0 10px">「OJTに入れます」の方から、OJT（支援先での評価シート）の割当てを組んでください。行の「見る」で、その方のステップごとの状態を開けます。</p>
+          <div id="trainerBody"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100;max-width:calc(100vw - 32px)"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/learning.js" type="module"></script>
+</body>
+</html>

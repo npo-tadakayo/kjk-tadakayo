@@ -29,6 +29,7 @@
   ];
   var HELP = [
     ["/manual.html", "ti-book-2", "マニュアル"],
+    ["/learning.html", "ti-school", "育成コース"],
     ["/videos.html", "ti-video", "動画マニュアル"],
     ["/engineering.html", "ti-notebook", "エンジニアノート"],
   ];

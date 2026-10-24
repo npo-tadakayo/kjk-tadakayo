@@ -45,8 +45,14 @@ for p in range(4):
 # 事業所向け「伴走支援のご案内」（共有ドライブに正本が無いので制作フォルダの完成品。字幕は timeline.json から作る）
 _annai = KIBAN / "動画_事業所向け_伴走支援のご案内_20261013"
 FILES["guide-annai"] = (_annai / "out.mp4", _annai / "timeline.json")
-# --only の短い呼び名（u5・g0・annai）
-ALIAS = {**{f"u{n}": f"crm-u{n}" for n in range(1, 11)}, **{f"g{p}": f"guide-part{p}" for p in range(4)}, "annai": "guide-annai"}
+# 育成コース STEP1 の新しい動画（2026-10-24）。ご案内と同じく制作フォルダの完成品・字幕は timeline.json から作る
+_intro = KIBAN / "動画_育成_伴走支援者になるまで_20261024"
+FILES["learn-intro"] = (_intro / "out.mp4", _intro / "timeline.json")
+_pledge = KIBAN / "動画_育成_伴走支援者の約束_20261024"
+FILES["learn-pledge"] = (_pledge / "out.mp4", _pledge / "timeline.json")
+# --only の短い呼び名（u5・g0・annai・intro・pledge）
+ALIAS = {**{f"u{n}": f"crm-u{n}" for n in range(1, 11)}, **{f"g{p}": f"guide-part{p}" for p in range(4)},
+         "annai": "guide-annai", "intro": "learn-intro", "pledge": "learn-pledge"}
 
 
 def ts(sec: float) -> str:
@@ -84,7 +90,7 @@ def timeline_to_vtt(tl: dict) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", nargs="*", help="名前（crm-u5 / u5・guide-part0 / g0・annai）。省略で全部")
+    ap.add_argument("--only", nargs="*", help="名前（crm-u5 / u5・guide-part0 / g0・annai・intro・pledge）。省略で全部")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     names = [ALIAS.get(x, x) for x in a.only] if a.only else list(FILES)

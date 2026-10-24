@@ -71,10 +71,22 @@ async function grant() {
     await addDoc(collection(db, "supportBadges"), { ...r.grant, createdAt: serverTimestamp() });
     $("gReason").value = ""; $("gUser").value = "";
     toast("付与しました");
+    showRoleNote(r.grant);
   } catch (e) {
     err.textContent = "付与に失敗しました（時間をおいて再試行）"; err.style.display = "inline";
     console.error("[badges] grant failed", e);
   }
+}
+
+// 付与した人が練習生ロールのままなら、ロールの変更を案内する（自動では変えない。ロールの変更は管理者の操作のまま・2026-10-24 育成コース）
+// 練習生は本番を見られないので、スタッフにしないと独り立ちしても案件を担当できない。
+function showRoleNote(g) {
+  const el = $("gRoleNote");
+  const u = users.find((x) => x._id === g.userId);
+  if (!u || u.role !== "trainee") { el.style.display = "none"; return; }
+  el.innerHTML = `<i class="ti ti-alert-triangle" aria-hidden="true"></i> ${esc(g.userName)}さんは、ロールが「練習生」のままです。ユーザー管理でロールを「スタッフ」に変えてください（練習生のままでは本番の案件を見られません）。<a href="/users.html">ユーザー管理を開く</a>`;
+  el.style.display = "block";
+  toast(`${g.userName}さんのロールは「練習生」のままです。ユーザー管理でロールを「スタッフ」に変えてください。`);
 }
 
 function downloadCsv() {
