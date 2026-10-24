@@ -674,13 +674,22 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   let learning = { id: "", data: null, loaded: false };
   function renderLearningLine() {
     const el = $("sc-eval-learning");
-    if (!el || !evaluationEligible(perf)) return;
+    if (!el) return;
+    if (!evaluationEligible(perf)) { el.style.display = "none"; return; }
+    const neutral = (text) => { el.textContent = text; el.style.display = "block"; el.style.background = "var(--color-bg-subtle, #faf7f2)"; };
     if (learning.id !== perf.performerId) {
+      // 受講者が変わったら、前の人の状態をすぐ消す（読み終わるまで別の人の「OJTに入れます」が見えないように）
       const id = perf.performerId;
       learning = { id, data: null, loaded: false };
+      neutral("育成コースの進み具合を読み込んでいます…");
       getDoc(doc(getProdFirestore(db.app), "learningProgress", id))
         .then((d) => { if (learning.id === id) { learning = { id, data: d.exists() ? d.data() : null, loaded: true }; renderLearningLine(); } })
-        .catch((e) => { console.warn("[supportChecklist] learningProgress", e.message); });
+        .catch((e) => {
+          console.warn("[supportChecklist] learningProgress", e.message);
+          if (learning.id !== id) return;
+          learning = { id: "", data: null, loaded: false }; // 次に描くときに読み直す
+          neutral("育成コースの進み具合を読めませんでした（評価の保存には影響しません）。");
+        });
       return;
     }
     if (!learning.loaded) return;
