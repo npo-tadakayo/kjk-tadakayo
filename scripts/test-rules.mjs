@@ -61,6 +61,7 @@ const TRAINEE = "trainee@tadakayo.jp";
 const LEGACY = "legacy@tadakayo.jp"; // role 未設定の既存登録者（今までどおり登録済み扱いのはず）
 const UNREG = "unreg@tadakayo.jp"; // users に登録が無い @tadakayo.jp
 const OUTSIDER = "someone@gmail.com";
+const WAREHOUSE = "warehouse@tadakayo.jp"; // 2026-10-24 倉庫（role=warehouse）。練習生と同じく本番DBを直接読めない
 
 // ---- 結果の集計 ----
 const results = { 本番DB: [], 練習DB: [], Storage: [] };
@@ -109,6 +110,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
     [VIEWER]: { role: "viewer", active: true },
     [TRAINEE]: { role: "trainee", active: true },
     [LEGACY]: { active: true },
+    [WAREHOUSE]: { role: "warehouse", active: true, locationIds: ["L1"] },
   };
   for (const [email, data] of Object.entries(users)) await setDoc(doc(db, "users", email), data);
   const seed = [
@@ -211,6 +213,32 @@ await check(G, "trainee も consentRequests を get できる（URLを知る人�
 await check(G, "trainee も products を読める（認証済みなら誰でも＝従来どおり）", true, () => getDoc(doc(prod(TRAINEE), "products/sku1")));
 await check(G, "trainee は products に書けない", false, () => setDoc(doc(prod(TRAINEE), "products/sku1"), { name: "x" }));
 
+// 倉庫（2026-10-24 docs/倉庫メニュー_設計_20261024.md §9.1）: 本番DBは自分の users だけ。他は Callable（warehouse*）経由
+const whDenied = ["cases/c1", "shipments/s1", "quotes/q1", "offices/o1", "products/sku1", "appConfig/main", "partners/p1@example.com",
+  "partnerOrders/po1", "supportBadges/b1", "supportEvaluations/e1", "bankTxns/t1", "_notifyLog/assign_x", "locations/L1", "inventoryMovements/m1"];
+for (const p of whDenied) {
+  await check(G, `warehouse は ${p} を読めない`, false, () => getDoc(doc(prod(WAREHOUSE), p)));
+  await check(G, `warehouse は ${p} に書けない`, false, () => setDoc(doc(prod(WAREHOUSE), p), { name: "x" }));
+}
+for (const c of ["cases", "shipments", "quotes", "offices", "products", "consentRequests", "leadTokens", "users"]) {
+  await check(G, `warehouse は ${c} を一覧できない`, false, () => getDocs(collection(prod(WAREHOUSE), c)));
+}
+await check(G, "warehouse は自分の users を読める", true, () => getDoc(doc(prod(WAREHOUSE), "users", WAREHOUSE)));
+await check(G, "warehouse は他人の users を読めない", false, () => getDoc(doc(prod(WAREHOUSE), "users", STAFF)));
+await check(G, "warehouse は自分の role・locationIds を書き換えられない", false, () =>
+  updateDoc(doc(prod(WAREHOUSE), "users", WAREHOUSE), { role: "staff", locationIds: ["L1", "L2"] }));
+await check(G, "warehouse は自分の onboardingDismissedAt を書ける（本人の例外は従来どおり）", true, () =>
+  updateDoc(doc(prod(WAREHOUSE), "users", WAREHOUSE), { onboardingDismissedAt: serverTimestamp() }));
+await check(G, "warehouse も consentRequests を get できる（URLを知る人＝未認証と同じ）", true, () => getDoc(doc(prod(WAREHOUSE), "consentRequests/tok1")));
+// 倉庫を足しても staff・viewer・admin・role 未設定・パートナー向けの商品閲覧は従来どおり
+await check(G, "staff は shipments を読める（倉庫追加後も従来どおり）", true, () => getDoc(doc(prod(STAFF), "shipments/s1")));
+await check(G, "staff は shipments に書ける（倉庫追加後も従来どおり）", true, () => setDoc(doc(prod(STAFF), "shipments/new-staff"), { name: "x" }));
+await check(G, "staff は products を読める（従来どおり）", true, () => getDoc(doc(prod(STAFF), "products/sku1")));
+await check(G, "viewer は products を読める（従来どおり）", true, () => getDoc(doc(prod(VIEWER), "products/sku1")));
+await check(G, "role 未設定の登録者は offices を読める（従来どおり）", true, () => getDoc(doc(prod(LEGACY), "offices/o1")));
+await check(G, "users の無い認証済み（パートナー等）は products を読める（従来どおり）", true, () => getDoc(doc(prod("p1@example.com"), "products/sku1")));
+await check(G, "未登録の @tadakayo.jp も products を読める（従来どおり）", true, () => getDoc(doc(prod(UNREG), "products/sku1")));
+
 // 未登録・未認証
 await check(G, "未登録の @tadakayo.jp は cases を読めない", false, () => getDoc(doc(prod(UNREG), "cases/c1")));
 await check(G, "未登録の @tadakayo.jp は cases に書けない", false, () => setDoc(doc(prod(UNREG), "cases/x"), newCase));
@@ -295,6 +323,17 @@ await check(S, "trainee は訪問写真を置けない", false, () => uploadStri
 await check(S, "trainee は報告書を置けない", false, () => uploadString(ref(st(TRAINEE), "reports/t.pdf"), "x"));
 await check(S, "trainee は書類を置けない", false, () => uploadString(ref(st(TRAINEE), "documents/c1/t.pdf"), "x"));
 await check(S, "trainee は追跡番号の写真を置けない", false, () => uploadString(ref(st(TRAINEE), "shipments/s1/tracking/t.jpg"), "x", "raw", img));
+
+// 倉庫（2026-10-24）: 練習生と同じく職員向けファイルは読めない・置けない。training/ だけ読める
+for (const [k, p] of Object.entries(files)) {
+  if (k === "training") continue;
+  await check(S, `warehouse は ${p} を読めない`, false, () => getMetadata(ref(st(WAREHOUSE), p)));
+}
+await check(S, "warehouse は training/（動画マニュアル）を読める", true, () => getMetadata(ref(st(WAREHOUSE), files.training)));
+await check(S, "warehouse は訪問写真を置けない", false, () => uploadString(ref(st(WAREHOUSE), "sessions/sess1/photos/w.jpg"), "x", "raw", img));
+await check(S, "warehouse は報告書を置けない", false, () => uploadString(ref(st(WAREHOUSE), "reports/w.pdf"), "x"));
+await check(S, "warehouse は書類を置けない", false, () => uploadString(ref(st(WAREHOUSE), "documents/c1/w.pdf"), "x"));
+await check(S, "warehouse は追跡番号の写真を置けない", false, () => uploadString(ref(st(WAREHOUSE), "shipments/s1/tracking/w.jpg"), "x", "raw", img));
 
 for (const [k, p] of Object.entries(files)) {
   await check(S, `staff は ${p} を読める（従来どおり）`, true, () => getMetadata(ref(st(STAFF), p)));

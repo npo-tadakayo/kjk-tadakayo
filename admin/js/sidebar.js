@@ -14,6 +14,7 @@
     { title: "お金と物品", items: [
       ["/supply.html?tab=shipments", "ti-truck-delivery", "出荷・請求・入金"],
       ["/supply.html?tab=inventory", "ti-building-warehouse", "在庫・発注"],
+      ["/warehouse.html", "ti-package", "倉庫"],
       ["/partner-admin.html", "ti-certificate", "認定事業者"],
       ["/pricing.html", "ti-coin", "料金・送料"],
       ["/simulator.html", "ti-calculator", "売上シミュレーター"],
@@ -27,6 +28,15 @@
       ["/badges.html", "ti-award", "伴走支援者バッジ"],
     ]},
   ];
+  // 倉庫の人（role=warehouse）には「倉庫」だけを出す（2026-10-24 倉庫メニュー §9.1）。
+  // ロールは role.js の gateRole が window.crmRole に入れて renderCrmNav() を呼び直す。最初の描画は前回の控えを使う
+  var WAREHOUSE_GROUPS = [
+    { title: "倉庫", items: [["/warehouse.html", "ti-building-warehouse", "倉庫"]] },
+  ];
+  function currentRole() {
+    if (window.crmRole) return window.crmRole;
+    try { return localStorage.getItem("crmRole") || ""; } catch (e) { return ""; }
+  }
   var HELP = [
     ["/manual.html", "ti-book-2", "マニュアル"],
     ["/videos.html", "ti-video", "動画マニュアル"],
@@ -61,12 +71,15 @@
     if (!el) return;
     var path = location.pathname;
     var html = "";
-    GROUPS.forEach(function (g) {
+    var wh = currentRole() === "warehouse";
+    (wh ? WAREHOUSE_GROUPS : GROUPS).forEach(function (g) {
       html += '<div class="nav-section">' + g.title + '</div>';
       g.items.forEach(function (it) { html += link(it, path); });
     });
-    html += '<div class="nav-divider-line"></div>';
-    HELP.forEach(function (it) { html += link(it, path); });
+    if (!wh) {
+      html += '<div class="nav-divider-line"></div>';
+      HELP.forEach(function (it) { html += link(it, path); });
+    }
     el.innerHTML = html;
   }
 

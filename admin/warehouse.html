@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>倉庫 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .wh-top { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); margin-bottom:var(--space-4); }
+    .wh-top label { font-size:13px; font-weight:700; }
+    .wh-top select { min-height:44px; font-size:15px; min-width:0; max-width:100%; }
+    .wh-counts { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+    .wh-counts .badge { font-size:13px; }
+    .wh-tabs { overflow-x:auto; }
+    .wh-tabs .tab { font-size:14px; white-space:nowrap; }
+    .wh-card { margin-bottom:var(--space-4); }
+    .wh-card .card-body { display:flex; flex-direction:column; gap:var(--space-3); overflow-wrap:anywhere; }
+    .wh-head { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2); }
+    .wh-pick { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; margin:-8px 0 -8px -8px; cursor:pointer; }
+    .wh-pick input { width:22px; height:22px; accent-color:var(--color-primary); }
+    .wh-so { font-size:16px; font-weight:700; }
+    .wh-dest { font-size:15px; line-height:1.6; }
+    .wh-meta { font-size:13px; color:var(--color-ink-muted); line-height:1.6; }
+    .wh-items { margin:0; padding-left:1.2em; font-size:15px; line-height:1.7; }
+    .wh-issue { background:#FFF4C2; border:1px solid #C99A00; color:#2C2416; border-radius:8px; padding:8px 12px; font-size:13px; line-height:1.6; }
+    .wh-actions { display:flex; flex-wrap:wrap; gap:var(--space-2); }
+    .wh-actions .btn { min-height:44px; font-size:15px; flex:1 1 150px; justify-content:center; }
+    .wh-stock { width:100%; border-collapse:collapse; font-size:15px; }
+    .wh-stock th, .wh-stock td { padding:10px 8px; border-bottom:1px solid var(--color-line); text-align:left; }
+    .wh-stock td.num, .wh-stock th.num { text-align:right; white-space:nowrap; }
+    .wh-radio { display:flex; align-items:center; gap:10px; min-height:44px; font-size:15px; cursor:pointer; }
+    .wh-radio input { width:20px; height:20px; accent-color:var(--color-primary); }
+    .modal .form-control, .modal select.form-control { min-height:44px; font-size:16px; }
+    .modal-footer .btn { min-height:44px; }
+    .wh-err { color:var(--color-danger); font-size:13px; margin:8px 0 0; display:none; }
+    .wh-empty { text-align:center; color:var(--color-ink-muted); padding:var(--space-6) var(--space-4); font-size:15px; }
+    .wh-loading { opacity:.5; pointer-events:none; }
+    @media (max-width: 480px) { .wh-top select { width:100%; } }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">倉庫</h1>
+      </div>
+      <p class="page-intro">出荷の依頼を見て、発送または受け渡しをしたら「済」にします。出せないときは「出荷できない」で依頼した人に知らせます。</p>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+      <div id="main" style="display:none">
+        <div class="wh-top">
+          <label for="locSelect">保管場所</label>
+          <select id="locSelect" class="form-control" style="width:auto"></select>
+          <div class="wh-counts" id="counts" aria-live="polite"></div>
+          <button class="btn btn-secondary" id="reloadBtn" type="button" style="min-height:44px"><i class="ti ti-refresh" aria-hidden="true"></i>更新</button>
+        </div>
+        <div class="tabs wh-tabs" role="tablist">
+          <button class="tab active" type="button" role="tab" data-tab="requested" aria-selected="true">出荷の依頼</button>
+          <button class="tab" type="button" role="tab" data-tab="done" aria-selected="false">発送済・受け渡し済（30日）</button>
+          <button class="tab" type="button" role="tab" data-tab="stock" aria-selected="false">在庫</button>
+        </div>
+        <div class="tab-content active" id="tab-requested"></div>
+        <div class="tab-content" id="tab-done"></div>
+        <div class="tab-content" id="tab-stock"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 発送済にする -->
+  <div class="modal-overlay" id="shipModal" role="dialog" aria-modal="true" aria-labelledby="shipTitle">
+    <div class="modal"><div class="modal-header"><h2 id="shipTitle">発送済にする</h2>
+      <button class="btn btn-secondary" data-close="shipModal" type="button" aria-label="閉じる" style="min-height:44px;min-width:44px"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="shipInfo" class="wh-meta" style="margin:0 0 12px"></p>
+        <div class="form-group"><label class="form-label" for="shipDate">発送日</label><input class="form-control" id="shipDate" type="date"></div>
+        <div class="form-group"><label class="form-label" for="shipTracking">追跡番号（わかれば）</label><input class="form-control" id="shipTracking" type="text" maxlength="100" inputmode="numeric" autocomplete="off"></div>
+        <div class="form-group"><label class="form-label" for="shipLp">レターパックの種類</label>
+          <select class="form-control" id="shipLp"><option value="">指定なし</option><option value="light">レターパックライト（青）</option><option value="plus">レターパックプラス（赤）</option></select></div>
+        <p class="wh-err" id="shipErr" role="alert"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-close="shipModal" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="shipOk" type="button"><i class="ti ti-truck-delivery" aria-hidden="true"></i>発送済にする</button></div>
+    </div>
+  </div>
+
+  <!-- 受け渡し済にする -->
+  <div class="modal-overlay" id="handModal" role="dialog" aria-modal="true" aria-labelledby="handTitle">
+    <div class="modal"><div class="modal-header"><h2 id="handTitle">受け渡し済にする</h2>
+      <button class="btn btn-secondary" data-close="handModal" type="button" aria-label="閉じる" style="min-height:44px;min-width:44px"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="handInfo" class="wh-meta" style="margin:0 0 12px"></p>
+        <div class="form-group"><label class="form-label" for="handDate">受け渡し日</label><input class="form-control" id="handDate" type="date"></div>
+        <p class="wh-err" id="handErr" role="alert"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-close="handModal" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="handOk" type="button"><i class="ti ti-hand-grab" aria-hidden="true"></i>受け渡し済にする</button></div>
+    </div>
+  </div>
+
+  <!-- 出荷できない -->
+  <div class="modal-overlay" id="rejModal" role="dialog" aria-modal="true" aria-labelledby="rejTitle">
+    <div class="modal"><div class="modal-header"><h2 id="rejTitle">出荷できない</h2>
+      <button class="btn btn-secondary" data-close="rejModal" type="button" aria-label="閉じる" style="min-height:44px;min-width:44px"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="rejInfo" class="wh-meta" style="margin:0 0 12px"></p>
+        <fieldset style="border:0;padding:0;margin:0 0 12px"><legend class="form-label">理由</legend><div id="rejReasons"></div></fieldset>
+        <div class="form-group"><label class="form-label" for="rejNote">くわしい内容（「その他」のときは必ず書く）</label><textarea class="form-control" id="rejNote" maxlength="500" rows="3"></textarea></div>
+        <p class="wh-meta" style="margin:0">押すと、依頼した人にチャットで知らせます。依頼は「依頼済」のまま残ります。</p>
+        <p class="wh-err" id="rejErr" role="alert"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-close="rejModal" type="button">キャンセル</button>
+        <button class="btn btn-danger" id="rejOk" type="button"><i class="ti ti-alert-triangle" aria-hidden="true"></i>出荷できないと知らせる</button></div>
+    </div>
+  </div>
+
+  <!-- 追跡番号の直し -->
+  <div class="modal-overlay" id="fixModal" role="dialog" aria-modal="true" aria-labelledby="fixTitle">
+    <div class="modal"><div class="modal-header"><h2 id="fixTitle">追跡番号を直す</h2>
+      <button class="btn btn-secondary" data-close="fixModal" type="button" aria-label="閉じる" style="min-height:44px;min-width:44px"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="fixInfo" class="wh-meta" style="margin:0 0 12px"></p>
+        <div class="form-group"><label class="form-label" for="fixTracking">追跡番号</label><input class="form-control" id="fixTracking" type="text" maxlength="100" inputmode="numeric" autocomplete="off"></div>
+        <p class="wh-err" id="fixErr" role="alert"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-close="fixModal" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="fixOk" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>直す</button></div>
+    </div>
+  </div>
+
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;display:none;z-index:200;max-width:92vw"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/warehouse.js" type="module"></script>
+</body>
+</html>

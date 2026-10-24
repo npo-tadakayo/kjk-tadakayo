@@ -289,3 +289,28 @@ console.log(`OK test-ship-flow: ${n}件 全件合格`);
   assert.match(lp, /let type = letterPackOrDefault\(s\.letterPackType\)/);
   console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
 }
+
+// ===== 2026-10-24 送付方法「持ち出し」（倉庫メニュー §9.2）=====
+{
+  const F = await import("../admin/js/ship-flow.js");
+  const pick = { status: "shipped", deliveryMode: "pickup" };
+  assert.equal(F.isPickup({ deliveryMode: "pickup" }), true);
+  assert.equal(F.isPickup({ deliveryMode: "ship" }), false);
+  assert.equal(F.isPickup({}), false);                 // 未設定は発送
+  assert.equal(F.isPickup(null), false);
+  assert.equal(F.shipStatusLabelOf(pick), "受け渡し済");
+  assert.equal(F.shipStatusLabelOf({ status: "shipped" }), "発送済");
+  assert.equal(F.shipStatusLabelOf({ status: "invoiced", deliveryMode: "pickup" }), "請求済");
+  assert.equal(F.shipStatusLabelOf({ status: "requested", deliveryMode: "pickup" }), "依頼済");
+  assert.equal(F.markShippedLabel({ deliveryMode: "pickup" }), "受け渡し済にする");
+  assert.equal(F.markShippedLabel({}), "発送済にする");
+  assert.equal(F.recordShippedLabel({ deliveryMode: "pickup" }), "すでに受け渡し済（記録のみ）");
+  assert.equal(F.recordShippedLabel({}), "すでに発送済（記録のみ）");
+  const pa = F.primaryAction({ status: "requested", deliveryMode: "pickup" });
+  assert.equal(pa.key, "markShipped");                 // 遷移・在庫は発送済と同じ
+  assert.equal(pa.label, "受け渡し済にする");
+  assert.equal(F.primaryAction({ status: "requested" }).label, "発送済にする");
+  assert.equal(F.nextStatus("requested", "markShipped"), "shipped");
+  assert.equal(F.stockDeducted(pick), true);
+  console.log("OK test-ship-flow 追加: 持ち出し");
+}
