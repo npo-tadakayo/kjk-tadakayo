@@ -367,6 +367,13 @@ async function judge() {
 }
 
 // ---------- 画面の操作 ----------
+function focusEl(sel) {
+  const el = document.querySelector(sel);
+  if (!el) return false;
+  if (!el.matches("button, input, a, [tabindex]")) el.setAttribute("tabindex", "-1");
+  el.focus({ preventScroll: false });
+  return true;
+}
 document.addEventListener("click", async (e) => {
   const t = e.target.closest("button");
   if (!t || !$("doc").contains(t)) return;
@@ -379,9 +386,15 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (t.dataset.play) { play(t.dataset.step, t.dataset.play); return; }
-  if (t.dataset.quizStart) { startQuiz(t.dataset.quizStart); renderStepParts(stepOfQuiz(t.dataset.quizStart)); return; }
-  if (t.dataset.quizClose) { delete quizState[t.dataset.quizClose]; renderStepParts(stepOfQuiz(t.dataset.quizClose)); return; }
-  if (t.dataset.quizGrade) { t.disabled = true; await gradeQuiz(t.dataset.quizGrade, stepOfQuiz(t.dataset.quizGrade)); t.disabled = false; return; }
+  // 描き直すと押したボタンが消えるので、キーボードで続けられるよう次に使う所へフォーカスを移す（独立検証の所見）
+  if (t.dataset.quizStart) { const k = t.dataset.quizStart; startQuiz(k); renderStepParts(stepOfQuiz(k)); focusEl(`input[data-quiz="${k}"]`); return; }
+  if (t.dataset.quizClose) { const k = t.dataset.quizClose; delete quizState[k]; renderStepParts(stepOfQuiz(k)); focusEl(`[data-quiz-start="${k}"]`); return; }
+  if (t.dataset.quizGrade) {
+    const k = t.dataset.quizGrade;
+    t.disabled = true; await gradeQuiz(k, stepOfQuiz(k)); t.disabled = false;
+    focusEl(`#rest-${stepOfQuiz(k)} .ls-result`) || focusEl(`[data-quiz-grade="${k}"]`);
+    return;
+  }
   if (t.hasAttribute("data-pledge")) {
     t.disabled = true;
     const r = L.applyPledge(progress, me, Date.now(), QUIZZES);
