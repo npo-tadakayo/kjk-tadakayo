@@ -320,8 +320,10 @@ async function gradeQuiz(key, stepId) {
   }
   if (res.status !== "graded") return;
   qs.result = res;
-  await save(L.applyQuiz(progress, me, key, res, Date.now(), QUIZZES));
+  const ok = await save(L.applyQuiz(progress, me, key, res, Date.now(), QUIZZES));
+  if (!ok) qs.result = null; // 保存できなかったら、答えはそのままで「答え合わせ」に戻して送り直してもらう
   refresh();
+  if (!ok) { const m = $(`qmsg-${key}`); if (m) m.textContent = "結果を保存できませんでした。通信状態をご確認のうえ、もう一度「答え合わせ」を押してください。"; return; }
   const sec = $(`rest-${stepId}`)?.querySelector(".ls-result");
   if (sec) sec.scrollIntoView({ behavior: "smooth", block: "center" });
 }
@@ -346,8 +348,14 @@ async function judge() {
       if (dc.exists()) documentChecklists[c._id] = dc.data();
     }));
     lastJudge = L.judgePractice({ email: me.email, cases, activities, supportChecklists, documentChecklists });
-    await save(L.applyPractice(progress, me, lastJudge, Date.now(), QUIZZES));
+    const ok = await save(L.applyPractice(progress, me, lastJudge, Date.now(), QUIZZES));
     refresh();
+    if (!ok) {
+      // 保存できなかったことを隠さない（練習のデータはログアウトで消えるので、ここで送り直してもらう）
+      const m = $("pmsg");
+      if (m) m.textContent = "判定の結果を保存できませんでした。ログアウトせずに、もう一度「判定する」を押してください。";
+      return;
+    }
     toast(L.practicePassed(progress) ? "6つの課題がすべてできました（STEP5 済）" : `判定しました（できた課題 ${PRACTICE_TASKS.filter((t) => progress.practice.items[t.key]).length}／6）`);
   } catch (e) {
     console.warn("[learning] judge failed", e);
