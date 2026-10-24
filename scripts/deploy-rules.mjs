@@ -106,7 +106,7 @@ function parseArgs(argv) {
       case "--check": opts.check = true; break;
       case "--live": opts.live = true; break;
       case "--rollback": opts.rollback = next(); break;
-      case "--account": opts.account = next(); break;
+      case "--account": opts.account = next(); opts.accountGiven = true; break;
       case "-h":
       case "--help": usage(); process.exit(0); break;
       default: die(`不明な引数: ${a}`);
@@ -345,7 +345,10 @@ async function main() {
 
   if (opts.live) checkCommitted(t.file);
 
-  ACCESS_TOKEN = (await getAccessTokenViaAdc()) ?? getAccessToken(opts.account);
+  // --account を明示したときはその主体で動かす（ADC は別の主体のことがある）
+  ACCESS_TOKEN = opts.accountGiven ? null : await getAccessTokenViaAdc();
+  const authLabel = ACCESS_TOKEN ? "ADC" : `gcloud ユーザー認証（${opts.account}）`;
+  ACCESS_TOKEN ??= getAccessToken(opts.account);
   const releaseId = t.releaseId ?? (await findStorageRelease(project));
 
   const before = await getRelease(project, releaseId);
@@ -357,6 +360,7 @@ async function main() {
   log(`  release        : ${releaseId}`);
   log(`  いまの本番     : ${rulesetId(before.rulesetName)}（${before.updateTime ?? "更新日時不明"}）`);
   log(`  手元のコミット : ${git(["rev-parse", "--short", "HEAD"])}`);
+  log(`  認証           : ${authLabel}`);
   log("──────────────────────────────────────────────");
 
   // --- check: 差分を見るだけ ---------------------------------------------
