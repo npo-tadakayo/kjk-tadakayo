@@ -313,3 +313,59 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   if (!p3.reuse || p3.reuse.id !== "d3") throw new Error("shipType 未設定（direct 扱い）の依頼済を使い直していない");
   console.log("OK test-functions-wiring 追加: dropship の下書きは使い直さない");
 }
+
+// ===== 2026-10-24 事業所の編集・統合（設計 docs/顧客情報の修正メニュー_設計_20261024.md §7）=====
+{
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
+  const blockOf = (name) => {
+    const i = src.indexOf(`exports.${name} = onCall(`);
+    if (i < 0) throw new Error(`${name}: exports.${name} = onCall( が無い`);
+    const j = src.indexOf("\nexports.", i + 10);
+    return src.slice(i, j < 0 ? undefined : j);
+  };
+  for (const name of ["updateOffice", "mergeOffices", "unmergeOffice"]) {
+    const b = blockOf(name);
+    if (!/region: "asia-northeast1"/.test(b)) throw new Error(`${name}: region が asia-northeast1 でない`);
+    if (!/serviceAccount: SA_BATCH/.test(b)) throw new Error(`${name}: Firestore を読み書きできる SA（SA_BATCH）でない`);
+    if (!/await requireStaff\(request, \{ allow: "editor" \}\)/.test(b)) throw new Error(`${name}: requireStaff(editor) が無い`);
+    // 認可を最初に（入力を見る前に）
+    if (b.indexOf("requireStaff") > b.indexOf("request.data")) throw new Error(`${name}: requireStaff より前に入力を読んでいる`);
+  }
+  // 判定は office-merge.mjs（正本 admin/js/office-merge.js のコピー）を import() で使う
+  if (!/import\("\.\/office-merge\.mjs"\)/.test(src)) throw new Error("office-merge.mjs を import() していない");
+  const mb = blockOf("mergeOffices");
+  for (const col of ["cases", "quotes", "shipments", "leadTokens"]) {
+    if (!new RegExp(`"${col}"`).test(src.slice(src.indexOf("OFFICE_MOVE_COLLECTIONS ="), src.indexOf("OFFICE_MOVE_COLLECTIONS =") + 120))) throw new Error(`付け替え対象に ${col} が無い`);
+  }
+  if (!/om\.checkMerge\(from, to, fromId, toId\)/.test(mb)) throw new Error("mergeOffices: checkMerge を使っていない");
+  if (!/mergeStatus: "running"/.test(mb) || !/mergeStatus: "done"/.test(mb)) throw new Error("mergeOffices: running → done の段取りが無い");
+  // 取り消し用の記録は事業所の文書ではなくサブコレクション mergeLog に（文書の上限 1MiB を超えないように）
+  if (!/collection\("mergeLog"\)/.test(mb) || !/snapshots/.test(mb)) throw new Error("mergeOffices: 取り消し用の記録（mergeLog）が無い");
+  if (/mergedRefs|mergedCaseSnapshots/.test(mb)) throw new Error("mergeOffices: 記録を事業所の文書に入れている");
+  // 作業中の印（同じ事業所への操作を1つずつ）
+  if (!/lockOffices\(\[fromId, toId\], "merge"/.test(mb)) throw new Error("mergeOffices: from と to に印を取っていない");
+  if (!/finally \{\s*await unlockOffices\(\[fromId, toId\], lockId\)/.test(mb)) throw new Error("mergeOffices: finally で印を外していない");
+  if (!/mergedInto", "==", fromId/.test(mb)) throw new Error("mergeOffices: from へ統合中の処理を確かめていない");
+  if (/consentRequests/.test(mb)) throw new Error("mergeOffices: 承諾書に触れている");
+  const ub = blockOf("unmergeOffice");
+  if (!/om\.pickRestorable\(ids, cur, toId\)/.test(ub)) throw new Error("unmergeOffice: いまも残す側を指すものだけ戻していない");
+  if (!/f\.mergeStatus !== "done"/.test(ub)) throw new Error("unmergeOffice: done 以外を断っていない");
+  if (!/t && t\.mergedInto/.test(ub)) throw new Error("unmergeOffice: 統合先がさらに統合済みのときに断っていない");
+  if (!/om\.canRestoreTo\(to, wrote\)/.test(ub)) throw new Error("unmergeOffice: to が編集されていないときだけ戻す判定が無い");
+  if (!/lockOffices\(\[fromId, toId\], "unmerge"/.test(ub)) throw new Error("unmergeOffice: 印を取っていない");
+  const eb = blockOf("updateOffice");
+  if (!/om\.validatePatch\(patch\)/.test(eb)) throw new Error("updateOffice: validatePatch を使っていない");
+  if (!/om\.buildAliases\(/.test(eb)) throw new Error("updateOffice: 旧名を aliases に足していない");
+  if (!/lockOffices\(\[officeId\], "update"/.test(eb)) throw new Error("updateOffice: 印を取っていない");
+  if (!/const o = datas\[officeId\]/.test(eb)) throw new Error("updateOffice: 印を取った中で読んだ値で案件を直していない");
+  // findActiveCase は完全一致を先に・無ければ aliases
+  const fa = src.slice(src.indexOf("async function findActiveCase"), src.indexOf("async function issueLeadToken"));
+  if (!/om\.nameMatchesOffice\(officeName, c\.officeName, office\)/.test(fa)) throw new Error("findActiveCase: aliases で一致を見ていない");
+  if (fa.indexOf("exact") > fa.indexOf("nameMatchesOffice")) throw new Error("findActiveCase: 完全一致より先に aliases を見ている");
+  // 見積もり作成は mergedInto をたどって残る側に読み替えてから officeId を使う
+  const cq = src.slice(src.indexOf("async function createOrUpdateMitsumoriQuote"), src.indexOf("exports.webhookMitsumori"));
+  const iRes = cq.indexOf("resolveMergedIdAsync"), iUse = cq.indexOf("const quoteData");
+  if (iRes < 0 || iRes > iUse) throw new Error("createOrUpdateMitsumoriQuote: officeId を使う前に統合先へ読み替えていない");
+  console.log("OK test-functions-wiring 追加: 事業所の編集・統合（3つの Callable・findActiveCase・見積もり作成）");
+}

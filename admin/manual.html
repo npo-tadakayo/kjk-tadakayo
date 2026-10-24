@@ -230,7 +230,7 @@
 </div>
 <div class="sec" id="s-offices" data-toc="事業所ごとに案件を探す（サイドバー「事業所」）"><h3>事業所ごとに案件を探す（サイドバー「事業所」） <span class="chip new">10/19 追加</span></h3>
 
-<p>左メニューの <kbd>事業所</kbd> では、<strong>事業所ごとに案件をまとめて</strong>見られます。<strong>読み取り専用</strong>で、ここから内容を書き換えることはありません。</p>
+<p>左メニューの <kbd>事業所</kbd> では、<strong>事業所ごとに案件をまとめて</strong>見られます。<strong>案件の中身はここでは変わりません</strong>。事業所名の直しや重複のまとめは、次の「事業所を直す・まとめる」を見てください。</p>
 <div class="step"><span class="n">1</span><div>左メニューの <kbd>事業所</kbd> を開く。上の検索欄で<strong>事業所名・法人名・住所</strong>を入れる、または<strong>都道府県</strong>で絞る</div></div>
 <div class="step"><span class="n">2</span><div>一覧の行（法人名・事業所名・都道府県・市区町村・案件数・最新の案件のステータス・最終更新日）を押すと、その事業所の案件を見られる</div></div>
 <ul>
@@ -238,6 +238,26 @@
   <li>事業所マスターに登録がない案件は「<strong>（マスター未登録）</strong>」として、事業所名でまとめて表示されます</li>
 </ul>
 <figure class="shot"><img src="/images/manual/offices-list.png" alt="事業所の一覧（検索欄と都道府県の絞り込み）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>事業所の一覧（検索欄と都道府県の絞り込み）</figcaption></figure>
+
+</div>
+<div class="sec" id="s-office-edit" data-toc="事業所を直す・重複した事業所をまとめる・取り消す"><h3>事業所を直す・重複した事業所をまとめる・取り消す <span class="chip new">10/24 追加</span></h3>
+
+<p>左メニューの <kbd>事業所</kbd> の各行の右端にある <kbd>…</kbd> から行います（<strong>閲覧のみの方には出ません</strong>）。</p>
+<div class="step"><span class="n">1</span><div><strong>直す：</strong><kbd>…</kbd> → <kbd>編集</kbd>。事業所名・法人名・住所・電話・郵便番号を直して「保存する」。名前を変えると「この事業所の案件 N 件の表示名も変わります」と出て、案件の表示名も一緒に直ります</div></div>
+<div class="step"><span class="n">2</span><div><strong>まとめる：</strong>残したい事業所の <kbd>…</kbd> → <kbd>ほかの事業所と統合</kbd>。「名前が同じ」「電話が同じ」「住所が同じ」の候補から相手を選ぶ（検索でも選べます）</div></div>
+<div class="step"><span class="n">3</span><div>左右に並んだ画面で、<strong>左が残る事業所・右が消える事業所</strong>です。逆なら「左右を入れ替える」。項目ごとに残す値を選び、「この内容で統合する」を押す</div></div>
+<div class="step"><span class="n">4</span><div><strong>取り消す：</strong>一覧の上の「統合済みも表示」にチェック → 灰色の行（「〇〇に統合済み」）の <kbd>…</kbd> → <kbd>統合を取り消す</kbd></div></div>
+<ul>
+  <li>一覧の上に「<strong>重複の候補 N組</strong>」と出ます。「重複の候補だけ」にチェックすると、候補のある事業所だけに絞れます</li>
+  <li>統合すると、消える側の<strong>案件・見積もり・出荷が残る側へ移ります</strong>。消える側は削除せず「統合済み」として隠れます</li>
+  <li>取り消すと、統合のとき移したものが元の事業所へ戻ります。<strong>統合のあとで別の事業所へ動かしたものは戻りません</strong></li>
+  <li>すでに発行した見積書・請求書などの宛名は、発行したときのまま変わりません</li>
+  <li>統合で名前が変わるときは、残す側にもとからある案件の事業所名も、選んだ名前に変わります（取り消すと、そのあと直されていなければ元の名前に戻ります）</li>
+  <li>統合の途中で止まってしまった行には「統合が途中で止まっています」と出ます。<kbd>…</kbd> → <kbd>統合を続ける</kbd> で最後まで終わらせられます（この状態では取り消しはできません）</li>
+  <li>ほかの人が同じ事業所を操作している間は「ほかの人がこの事業所を更新中です」と出ます。少し待ってからやり直してください</li>
+  <li>「（マスター未登録）」の行には <kbd>…</kbd> は出ません</li>
+</ul>
+<div class="callout warn"><strong>統合は案件の数が多いほど時間がかかります。</strong>押したあとは画面を閉じずに、完了のメッセージが出るまでお待ちください。途中で止まったときは、同じ操作をもう一度すると続きから終わります。</div>
 
 </div>
 <div class="sec" id="s-consent" data-toc="伴走支援承諾書"><h3>伴走支援承諾書をもらう</h3>
