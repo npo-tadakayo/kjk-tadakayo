@@ -10,6 +10,7 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-aut
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc,
   writeBatch, runTransaction, serverTimestamp, arrayUnion, increment, deleteField, Timestamp }
   from "/js/fs.js";
+import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
 function me() {
@@ -64,6 +65,100 @@ async function activity(caseId, type, subject, body, attachmentUrls) {
 }
 
 function fail(msg) { const e = new Error(msg); e.code = "failed-precondition"; return e; }
+
+// ===== 事業所の編集・統合（updateOffice / mergeOffices / unmergeOffice）の共通部品 =====
+// 本物は functions/index.js の同名の Callable。本番側を変えたらここも合わせる。
+const OFFICE_REF_COLLS = ["cases", "quotes", "shipments", "leadTokens"]; // officeId で事業所を指す4つ
+const OFFICE_EDIT_FIELDS = ["officeName", "corpName", "address", "phone", "postalCode"];
+const OFFICE_CASE_CHUNK = 150;   // 案件は「案件の更新＋対応記録」の2書き込み
+const OFFICE_BATCH_LIMIT = 400;
+const OFFICE_MERGE_MAX_REFS = 5000;
+function oErr(code, msg) { const e = new Error(msg); e.code = code; return e; }
+async function idsByOffice(coll, officeId) {
+  const s = await getDocs(query(collection(db(), coll), where("officeId", "==", officeId)));
+  return s.docs.map((d) => d.id);
+}
+/** 案件の対応記録（本番と同じ文面。type は memo） */
+function officeActivity(batch, caseId, subject, body) {
+  const u = me();
+  batch.set(doc(collection(db(), "activities")), {
+    caseId, type: "memo", occurredAt: serverTimestamp(), userId: u.uid, userName: u.name,
+    subject, body, attachmentUrls: [],
+  });
+}
+// 住所 → 都道府県・市区町村（functions/index.js の regionFromAddress / splitOfficeAddress と同じ。
+// 画面の area.js の parseAddress とは別物なので、本番に合わせてここに写してある）
+function regionFromAddress(addr) {
+  const a = String(addr || "").replace(/^\s*〒?\s*\d{3}-?\d{4}\s*/, "").replace(/\s+/g, "");
+  const m = /^(東京都|北海道|(?:京都|大阪)府|.{2,3}?県)/.exec(a);
+  if (!m) return {};
+  const rest = a.slice(m[1].length);
+  const iShi = rest.indexOf("市"), iGun = rest.indexOf("郡");
+  let city = "";
+  if (iGun > 0 && (iShi < 0 || iGun < iShi)) {
+    const g = /^.+?郡(.+?[町村])/.exec(rest);
+    if (g && !g[1].includes("市")) city = g[1];
+  }
+  if (!city) {
+    const c = /^(.+?市.+?区|.+?[市区町村])/.exec(rest);
+    if (c) city = c[1];
+    if (/^.+?市.+?区$/.test(city) && !/^(札幌|仙台|さいたま|千葉|横浜|川崎|相模原|新潟|静岡|浜松|名古屋|京都|大阪|堺|神戸|岡山|広島|北九州|福岡|熊本)市/.test(city)) {
+      city = city.replace(/^(.+?市).*$/, "$1");
+    }
+  }
+  return { prefecture: m[1], city };
+}
+function splitOfficeAddress(address) {
+  const raw = String(address || "").trim();
+  const r = regionFromAddress(raw);
+  if (!r.prefecture) return { prefecture: "", city: "", addressDetail: raw };
+  const a = raw.replace(/^\s*〒?\s*\d{3}-?\d{4}\s*/, "").replace(/\s+/g, "");
+  const head = r.prefecture + (r.city || "");
+  if (r.city && a.startsWith(head)) return { prefecture: r.prefecture, city: r.city, addressDetail: a.slice(head.length) };
+  return { prefecture: r.prefecture, city: "", addressDetail: a.slice(r.prefecture.length) };
+}
+const OFFICE_ADDR_PARTS = ["prefecture", "city", "addressDetail"];
+const OFFICE_LOCK_MS = 5 * 60 * 1000;
+const OFFICE_LOCK_BUSY = "ほかの人がこの事業所を更新中です。少し待ってからもう一度お試しください";
+function pickOfficeFields(o, fields) {
+  const out = {};
+  for (const f of fields) out[f] = o && o[f] != null ? String(o[f]) : "";
+  return out;
+}
+// 事業所ごとの作業中の印（本物の lockOffices と同じ。5分で切れる）。check は同じトランザクションの中で状態を確かめ、
+// 印と一緒に書く内容 {id: 更新内容} を返してよい
+async function lockOffices(ids, kind, check) {
+  const lockId = newToken();
+  const refs = [...new Set(ids)].sort().map((id) => doc(db(), "offices", id));
+  const datas = await runTransaction(db(), async (tx) => {
+    const snaps = [];
+    for (const r of refs) snaps.push(await tx.get(r));
+    const out = {};
+    for (const sn of snaps) {
+      if (!sn.exists()) { out[sn.id] = null; continue; }
+      const L = sn.data().opLock;
+      const at = L && L.at && typeof L.at.toMillis === "function" ? L.at.toMillis() : 0;
+      if (L && Date.now() - at < OFFICE_LOCK_MS) throw oErr("failed-precondition", OFFICE_LOCK_BUSY);
+      out[sn.id] = sn.data();
+    }
+    const extra = (check ? await check(out, tx) : null) || {};
+    const lock = { id: lockId, kind, by: me().email, at: Timestamp.now() };
+    for (const sn of snaps) if (sn.exists()) tx.update(sn.ref, { ...(extra[sn.id] || {}), opLock: lock });
+    return out;
+  });
+  return { lockId, datas };
+}
+async function unlockOffices(ids, lockId) {
+  for (const id of [...new Set(ids)]) {
+    const ref = doc(db(), "offices", id);
+    try {
+      await runTransaction(db(), async (tx) => {
+        const sn = await tx.get(ref);
+        if (sn.exists() && sn.data().opLock && sn.data().opLock.id === lockId) tx.update(ref, { opLock: deleteField() });
+      });
+    } catch (e) { console.warn("[practice] unlock", e.message); }
+  }
+}
 
 // 価格の計算（公開ページ・Functions と同じ estimate-pricing.js）。ES module から読めないので script で読む
 let pricingPromise = null;
@@ -604,6 +699,310 @@ export const PRACTICE_STUBS = {
       overall: "（練習モード）日次まとめのプレビューは、本番の案件データから作ります。練習中は本番のデータを読まないため表示しません。\n本番モードに戻ってから押してください。毎朝の投稿も本番の案件だけが対象で、練習用のデータは載りません。",
       assignees: [],
     };
+  },
+
+  // 事業所の編集（functions/index.js の updateOffice と同じ記録）。名前を変えたら案件の写しも直す
+  async updateOffice(data) {
+    const { officeId, patch } = data;
+    if (!officeId || typeof officeId !== "string") throw oErr("invalid-argument", "officeId は必須です");
+    const v = validatePatch(patch);
+    if (!v.ok) throw oErr("invalid-argument", v.error);
+    const p = v.patch;
+    const ref = doc(db(), "offices", officeId);
+    const { lockId, datas } = await lockOffices([officeId], "update", (d) => {
+      const cur = d[officeId];
+      if (!cur) throw oErr("not-found", "事業所が見つかりません");
+      if (cur.mergedInto) throw oErr("failed-precondition", "統合済みの事業所は編集できません（残す側の事業所を編集してください）");
+      return null;
+    });
+    try {
+      const o = datas[officeId];
+      const oldName = o.officeName || "", oldCorp = o.corpName || "";
+      const newName = "officeName" in p ? p.officeName : oldName;
+      const newCorp = "corpName" in p ? p.corpName : oldCorp;
+      const nameChanged = newName !== oldName, corpChanged = newCorp !== oldCorp;
+      const u = me();
+      let casesUpdated = 0;
+      if (nameChanged || corpChanged) {
+        const cs = await getDocs(query(collection(db(), "cases"), where("officeId", "==", officeId)));
+        const targets = cs.docs.filter((d) => (d.data().officeName || "") !== newName || (d.data().corpName || "") !== newCorp);
+        for (let i = 0; i < targets.length; i += OFFICE_CASE_CHUNK) {
+          const batch = writeBatch(db());
+          for (const d of targets.slice(i, i + OFFICE_CASE_CHUNK)) {
+            batch.update(d.ref, { officeName: newName, corpName: newCorp, updatedAt: serverTimestamp() });
+            if (nameChanged && (d.data().officeName || "") !== newName) {
+              officeActivity(batch, d.id, `事業所名を変更：${oldName || "（事業所名なし）"} → ${newName}（${u.name}）`,
+                `事業所画面で事業所名を変更したため、この案件の事業所名の表示も変えました（実行者: ${u.name}）。`);
+            }
+          }
+          await batch.commit();
+        }
+        casesUpdated = targets.length;
+      }
+      const upd = { ...p, updatedAt: serverTimestamp(), updatedBy: u.email };
+      if (nameChanged) upd.aliases = buildAliases({ aliases: o.aliases, officeName: oldName }, {}, newName);
+      if ("address" in p && p.address !== String(o.address || "").trim()) Object.assign(upd, splitOfficeAddress(p.address));
+      await updateDoc(ref, { ...upd, opLock: deleteField() });
+      showPracticeNotice(`事業所を直しました（案件 ${casesUpdated} 件の表示名も更新）`);
+      return { ok: true, casesUpdated };
+    } finally {
+      await unlockOffices([officeId], lockId);
+    }
+  },
+
+  // 事業所の統合（from を to にまとめる）。途中で止まっても、同じ fromId・toId でもう一度呼べば続きから終わる
+  // （続きのときは keep を見ない）。取り消し用の記録は offices/{fromId}/mergeLog に分けて残す
+  async mergeOffices(data) {
+    const { fromId, toId, keep } = data;
+    const c0 = checkMerge(null, null, fromId, toId);
+    if (!c0.ok && c0.code === "invalid-argument") throw oErr(c0.code, c0.error);
+    const k = keep == null ? {} : keep;
+    if (typeof k !== "object" || Array.isArray(k)) throw oErr("invalid-argument", "残す値の指定（keep）の形が正しくありません");
+    for (const [f, side] of Object.entries(k)) {
+      if (!OFFICE_EDIT_FIELDS.includes(f)) throw oErr("invalid-argument", `この項目は指定できません: ${f}`);
+      if (side !== "from" && side !== "to") throw oErr("invalid-argument", `${f} の残す側は "from" か "to" で指定してください`);
+    }
+    let total = 0;
+    for (const col of OFFICE_REF_COLLS) total += (await idsByOffice(col, fromId)).length;
+    if (total > OFFICE_MERGE_MAX_REFS) throw oErr("failed-precondition", `付け替える記録が多すぎます（${total}件・上限${OFFICE_MERGE_MAX_REFS}件）。管理者に相談してください`);
+
+    const u = me();
+    const fromRef = doc(db(), "offices", fromId), toRef = doc(db(), "offices", toId);
+    let resumed = false;
+    // この事業所へ統合中の事業所の候補。ブラウザ用 SDK の tx.get() は Query を受け取れないので、
+    // 候補はトランザクションの外で集め、中では1件ずつ文書として読み直して確かめる（Codex 指摘・2026-10-24）
+    const incIds = (await getDocs(query(collection(db(), "offices"), where("mergedInto", "==", fromId)))).docs.map((x) => x.id);
+    const { lockId } = await lockOffices([fromId, toId], "merge", async (d, tx) => {
+      const from = d[fromId], to = d[toId];
+      const chk = checkMerge(from, to, fromId, toId);
+      if (!chk.ok) throw oErr(chk.code, chk.error);
+      const inc = [];
+      for (const id of incIds) inc.push(await tx.get(doc(db(), "offices", id)));
+      if (inc.some((x) => x.exists() && x.data().mergedInto === fromId && x.data().mergeStatus === "running")) {
+        throw oErr("failed-precondition", "この事業所へ統合する処理が途中のままです。先にそちらの統合を完了させてください");
+      }
+      if (chk.resume) { resumed = true; return null; }
+      const kept = resolveKeep(from, to, k);
+      const toUpd = { ...kept, aliases: buildAliases(to, from, kept.officeName), updatedAt: serverTimestamp(), updatedBy: u.email };
+      if (kept.address !== String(to.address || "").trim()) {
+        const fromHasParts = from.prefecture || from.city || from.addressDetail;
+        Object.assign(toUpd, kept.address === String(from.address || "").trim() && fromHasParts
+          ? pickOfficeFields(from, OFFICE_ADDR_PARTS)
+          : splitOfficeAddress(kept.address));
+      }
+      const before = { ...pickOfficeFields(to, [...OFFICE_EDIT_FIELDS, ...OFFICE_ADDR_PARTS]), aliases: Array.isArray(to.aliases) ? to.aliases : [] };
+      const wrote = pickOfficeFields({ ...to, ...toUpd }, [...OFFICE_EDIT_FIELDS, ...OFFICE_ADDR_PARTS]);
+      return {
+        [toId]: toUpd,
+        [fromId]: {
+          mergedInto: toId, mergeStatus: "running", mergedAt: serverTimestamp(), mergedBy: u.email, mergedByName: u.name,
+          archived: true, archivedBeforeMerge: from.archived === true,
+          mergeRunId: newToken(), mergeCounts: { cases: 0, quotes: 0, shipments: 0, leadTokens: 0, toCases: 0 },
+          mergeToBefore: before, mergeWrote: wrote,
+        },
+      };
+    });
+    try {
+      const [fromNow, toNow] = await Promise.all([getDoc(fromRef), getDoc(toRef)]);
+      const F = fromNow.data(), T = toNow.data();
+      const runId = F.mergeRunId;
+      if (!runId) throw oErr("failed-precondition", "統合の記録（mergeRunId）がありません。管理者に相談してください");
+      const fromName = F.officeName || "";
+      const finalName = T.officeName || "", finalCorp = T.corpName || "";
+      const logRef = () => doc(collection(db(), "offices", fromId, "mergeLog"));
+
+      // to にもともとあった案件の写しも直す（名前・法人名が統合で変わったとき）
+      const before = F.mergeToBefore || {};
+      if (F.mergeToBefore && ((before.officeName || "") !== finalName || (before.corpName || "") !== finalCorp)) {
+        const nameChanged = (before.officeName || "") !== finalName;
+        const snap = await getDocs(query(collection(db(), "cases"), where("officeId", "==", toId)));
+        const targets = snap.docs.filter((d) => (d.data().officeName || "") !== finalName || (d.data().corpName || "") !== finalCorp);
+        for (let i = 0; i < targets.length; i += OFFICE_CASE_CHUNK) {
+          const part = targets.slice(i, i + OFFICE_CASE_CHUNK);
+          const batch = writeBatch(db());
+          const snaps = {};
+          for (const d of part) {
+            const c = d.data();
+            snaps[d.id] = { officeName: c.officeName || "", corpName: c.corpName || "" };
+            batch.update(d.ref, { officeName: finalName, corpName: finalCorp, updatedAt: serverTimestamp() });
+            if (nameChanged && (c.officeName || "") !== finalName) {
+              officeActivity(batch, d.id, `事業所名を変更（統合）：${c.officeName || "（事業所名なし）"} → ${finalName}（${u.name}）`,
+                `「${fromName}」との統合で事業所名を「${finalName}」にしたため、この案件の事業所名の表示も変えました（実行者: ${u.name}）。`);
+            }
+          }
+          batch.set(logRef(), { runId, kind: "toCases", ids: part.map((d) => d.id), snapshots: snaps, at: serverTimestamp() });
+          batch.update(fromRef, { "mergeCounts.toCases": increment(part.length) });
+          await batch.commit();
+        }
+      }
+
+      for (let round = 0; round < 3; round++) {
+        let movedAny = false;
+        for (const col of OFFICE_REF_COLLS) {
+          const snap = await getDocs(query(collection(db(), col), where("officeId", "==", fromId)));
+          if (snap.empty) continue;
+          movedAny = true;
+          const chunk = col === "cases" ? OFFICE_CASE_CHUNK : OFFICE_BATCH_LIMIT - 2;
+          for (let i = 0; i < snap.docs.length; i += chunk) {
+            const part = snap.docs.slice(i, i + chunk);
+            const batch = writeBatch(db());
+            const log = { runId, kind: col, ids: part.map((d) => d.id), at: serverTimestamp() };
+            if (col === "cases") log.snapshots = {};
+            for (const d of part) {
+              if (col === "cases") {
+                const c = d.data();
+                log.snapshots[d.id] = { officeName: c.officeName || "", corpName: c.corpName || "" };
+                batch.update(d.ref, { officeId: toId, officeName: finalName, corpName: finalCorp, updatedAt: serverTimestamp() });
+                officeActivity(batch, d.id, `事業所を統合：${fromName || "（事業所名なし）"} → ${finalName}（${u.name}）`,
+                  `重複していた事業所「${fromName}」を「${finalName}」に統合したため、この案件の事業所を付け替えました（実行者: ${u.name}）。`);
+              } else {
+                batch.update(d.ref, { officeId: toId }); // 発行済みの書類の宛名は変えない
+              }
+            }
+            batch.set(logRef(), log);
+            batch.update(fromRef, { [`mergeCounts.${col}`]: increment(part.length) });
+            await batch.commit();
+          }
+        }
+        if (!movedAny) break;
+      }
+      await updateDoc(fromRef, { mergeStatus: "done", mergeDoneAt: serverTimestamp() });
+      const counts = (await getDoc(fromRef)).data().mergeCounts || {};
+      const moved = {};
+      for (const col of OFFICE_REF_COLLS) moved[col] = Number(counts[col]) || 0;
+      showPracticeNotice("事業所を統合しました（「統合を取り消す」で戻せます）");
+      return { ok: true, moved, toCasesRenamed: Number(counts.toCases) || 0, resumed };
+    } finally {
+      await unlockOffices([fromId, toId], lockId);
+    }
+  },
+
+  // 統合の取り消し。統合のあとに別の事業所へ動かしたものは触らない。
+  // 残す側は、統合のあと編集されていなければ統合前に戻す（canRestoreTo）
+  async unmergeOffice(data) {
+    const { fromId } = data;
+    if (!fromId || typeof fromId !== "string") throw oErr("invalid-argument", "fromId は必須です");
+    const fromRef = doc(db(), "offices", fromId);
+    const pre = await getDoc(fromRef);
+    if (!pre.exists()) throw oErr("not-found", "事業所が見つかりません");
+    if (!pre.data().mergedInto) throw oErr("failed-precondition", "この事業所は統合されていません");
+    const toId = String(pre.data().mergedInto);
+    const toRef = doc(db(), "offices", toId);
+    const { lockId, datas } = await lockOffices([fromId, toId], "unmerge", (d) => {
+      const f = d[fromId], t = d[toId];
+      if (!f) throw oErr("not-found", "事業所が見つかりません");
+      if (f.mergedInto !== toId) throw oErr("failed-precondition", "統合の状態が変わりました。画面を読み直してください");
+      if (f.mergeStatus !== "done") throw oErr("failed-precondition", "統合の処理が途中です。もう一度統合を実行して完了させてから取り消してください");
+      if (t && t.mergedInto) throw oErr("failed-precondition", "統合先の事業所がさらに別の事業所に統合されています。先にそちらを取り消してください");
+      return null;
+    });
+    try {
+      const from = datas[fromId], to = datas[toId];
+      const runId = from.mergeRunId;
+      if (!runId) throw oErr("failed-precondition", "取り消しに使う統合の記録がありません（古い形式の統合です）。管理者に相談してください");
+      const fromName = from.officeName || "", fromCorp = from.corpName || "";
+      const toName = to ? (to.officeName || "") : "";
+      const u = me();
+      const logs = await getDocs(query(collection(db(), "offices", fromId, "mergeLog"), where("runId", "==", runId)));
+      const idsOf = {}, snaps = {};
+      for (const kd of [...OFFICE_REF_COLLS, "toCases"]) { idsOf[kd] = []; snaps[kd] = {}; }
+      for (const l of logs.docs) {
+        const L = l.data();
+        if (!idsOf[L.kind]) continue;
+        for (const id of Array.isArray(L.ids) ? L.ids : []) if (typeof id === "string" && id) idsOf[L.kind].push(id);
+        Object.assign(snaps[L.kind], L.snapshots || {});
+      }
+      const readOfficeIds = async (col, ids) => {
+        const cur = new Map(), docs = new Map();
+        for (const id of ids) {
+          const sn = await getDoc(doc(db(), col, id));
+          if (sn.exists()) { cur.set(id, sn.data().officeId); docs.set(id, sn); }
+        }
+        return { cur, docs };
+      };
+      const plan = {};
+      let totalRefs = 0, totalBack = 0, alreadyBack = 0;
+      for (const col of OFFICE_REF_COLLS) {
+        const ids = [...new Set(idsOf[col])];
+        const { cur, docs } = await readOfficeIds(col, ids);
+        const back = pickRestorable(ids, cur, toId);
+        plan[col] = { back, docs };
+        totalRefs += ids.length; totalBack += back.length;
+        alreadyBack += ids.filter((id) => cur.get(id) === fromId).length;
+      }
+      if (totalRefs > 0 && totalBack === 0 && alreadyBack === 0) {
+        throw oErr("failed-precondition", "戻せる案件・書類がありません（統合のあとに、すべて別の事業所へ動いています）。取り消しは行っていません");
+      }
+      const restored = {};
+      for (const col of OFFICE_REF_COLLS) {
+        const { back, docs } = plan[col];
+        const chunk = col === "cases" ? OFFICE_CASE_CHUNK : OFFICE_BATCH_LIMIT;
+        for (let i = 0; i < back.length; i += chunk) {
+          const batch = writeBatch(db());
+          for (const id of back.slice(i, i + chunk)) {
+            const ref = docs.get(id).ref;
+            if (col === "cases") {
+              const sn = snaps.cases[id] || {};
+              batch.update(ref, {
+                officeId: fromId,
+                officeName: typeof sn.officeName === "string" ? sn.officeName : fromName,
+                corpName: typeof sn.corpName === "string" ? sn.corpName : fromCorp,
+                updatedAt: serverTimestamp(),
+              });
+              officeActivity(batch, id, `事業所の統合を取り消し：${toName || "（事業所名なし）"} → ${fromName}（${u.name}）`,
+                `事業所「${fromName}」の「${toName}」への統合を取り消したため、この案件の事業所を元に戻しました（実行者: ${u.name}）。`);
+            } else {
+              batch.update(ref, { officeId: fromId });
+            }
+          }
+          await batch.commit();
+        }
+        restored[col] = back.length;
+      }
+      let toRestored = false, toCasesRestored = 0, note = "";
+      const wrote = from.mergeWrote || null, before = from.mergeToBefore || null;
+      if (to && before && canRestoreTo(to, wrote)) {
+        // 本番（functions/index.js unmergeOffice）と同じ: to の名前を戻すときは、いま to にある案件すべての写しを戻した値にそろえる
+        // （統合で直した案件だけ戻すと、あとから別の統合で入った案件が統合の名前のまま残る）
+        const bName = before.officeName || "", bCorp = before.corpName || "";
+        if (bName !== (wrote.officeName || "") || bCorp !== (wrote.corpName || "")) {
+          const tsnap = await getDocs(query(collection(db(), "cases"), where("officeId", "==", toId)));
+          const backTo = tsnap.docs.filter((d) => (d.data().officeName || "") !== bName || (d.data().corpName || "") !== bCorp);
+          for (let i = 0; i < backTo.length; i += OFFICE_CASE_CHUNK) {
+            const batch = writeBatch(db());
+            for (const d of backTo.slice(i, i + OFFICE_CASE_CHUNK)) {
+              const c = d.data();
+              batch.update(d.ref, { officeName: bName, corpName: bCorp, updatedAt: serverTimestamp() });
+              if ((c.officeName || "") !== bName) {
+                officeActivity(batch, d.id, `事業所名を戻す（統合の取り消し）：${c.officeName || "（事業所名なし）"} → ${bName}（${u.name}）`,
+                  `「${fromName}」との統合を取り消したため、この案件の事業所名の表示を統合前に戻しました（実行者: ${u.name}）。`);
+              }
+            }
+            await batch.commit();
+          }
+          toCasesRestored = backTo.length;
+        }
+        const back = {};
+        for (const f of [...OFFICE_EDIT_FIELDS, ...OFFICE_ADDR_PARTS]) back[f] = before[f] == null ? "" : before[f];
+        await updateDoc(toRef, { ...back, updatedAt: serverTimestamp(), updatedBy: u.email });
+        toRestored = true;
+      } else if (to) {
+        note = "残す側の事業所は統合のあとに編集されているため、事業所名・住所などは統合前に戻していません";
+      }
+      const del = deleteField();
+      await updateDoc(fromRef, {
+        mergedInto: del, mergeStatus: del, mergedAt: del, mergedBy: del, mergedByName: del, mergeDoneAt: del,
+        mergeRunId: del, mergeCounts: del, mergeToBefore: del, mergeWrote: del, archivedBeforeMerge: del,
+        archived: from.archivedBeforeMerge === true ? true : del,
+        unmergedAt: serverTimestamp(), unmergedBy: u.email,
+        lastUnmerge: { toId, runId, mergedAt: from.mergedAt || null, mergedBy: from.mergedBy || null, restored, toRestored },
+        updatedAt: serverTimestamp(),
+      });
+      showPracticeNotice("統合を取り消しました");
+      return { ok: true, restored, toRestored, toCasesRestored, note };
+    } finally {
+      await unlockOffices([fromId, toId], lockId);
+    }
   },
 
   // アクセス解析の手動更新（GA4 の取り込み）

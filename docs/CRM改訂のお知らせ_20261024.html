@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc 3.10.1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>x</title>
+  <style>
+
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+
+ul.task-list[class]{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+font-size: inherit;
+width: 0.8em;
+margin: 0 0.8em 0.2em -1.6em;
+vertical-align: middle;
+}
+.display.math{display: block; text-align: center; margin: 0.5rem auto;}
+</style>
+  <style type="text/css">@page{size:A4;margin:16mm 15mm}
+body{font-family:"Noto Sans JP","Hiragino Sans",sans-serif;font-size:10.5pt;line-height:1.7;color:#222}
+h1{font-size:18pt;border-bottom:3px solid #C0392B;padding-bottom:6px}
+h2{font-size:14pt;margin-top:20px;border-left:5px solid #C0392B;padding-left:8px;break-after:avoid}
+h3{font-size:11.5pt;margin-top:14px;break-after:avoid}
+table{border-collapse:collapse;width:100%;font-size:9.5pt;break-inside:avoid}
+th,td{border:1px solid #bbb;padding:5px 8px;text-align:left;vertical-align:top}th{background:#f3eee6}
+blockquote{margin:10px 0;padding:6px 12px;background:#faf3e4;border-left:4px solid #b45309}
+hr{border:0;border-top:1px solid #ccc;margin:14px 0}
+p,li{break-inside:avoid}
+</style>
+</head>
+<body>
+
+<h1 id="介護情報基盤crm-改訂のお知らせ2026年10月24日">介護情報基盤CRM
+改訂のお知らせ（2026年10月24日）</h1>
+<p>NPO法人タダカヨ　2026年10月24日</p>
+<p>伴走支援担当のみなさまへ。CRMの「事業所」画面で、<strong>事業所の情報を直したり、重複した事業所をひとつにまとめたり</strong>できるようになりました。
+あわせて、伴走支援承諾書の表示を、<strong>送ったと思い込みにくい形</strong>に直しました。操作マニュアル（画面内）にも反映済みです。</p>
+<blockquote>
+<p>いまは本番に出す前の確認中です。出たあと、まず<strong>練習モード</strong>で一度試してから使い始めてください（練習モードでも同じ操作ができ、本番の事業所は変わりません）。</p>
+</blockquote>
+<hr />
+<h2 id="1-なぜ直したか">1. なぜ直したか</h2>
+<p>伴走支援チームの藤田さんから、次の声がありました（10月24日の打ち合わせ）。</p>
+<ul>
+<li><strong>同じ事業所の案件が重複して多い。</strong>
+名前の書き方が少し違うだけで、別の事業所として登録されていた</li>
+<li><strong>承諾書が「送った」ように見えてしまう。</strong>
+署名のURLを作っただけで「依頼済み」と出るため、実際には誰にも送っていないのに送ったと思い込んでしまう</li>
+</ul>
+<hr />
+<h2 id="2-新しくできるようになったこと">2.
+新しくできるようになったこと</h2>
+<h3 id="事業所の情報を直せます">事業所の情報を直せます</h3>
+<p>左メニューの「事業所」で、事業所名・法人名・住所・電話・郵便番号を直せます。
+名前を直すと、その事業所の案件の表示名も一緒に新しくなります（「この事業所の案件
+N 件の表示名も変わります」と出ます）。</p>
+<h3 id="重複した事業所をひとつにまとめられます統合">重複した事業所をひとつにまとめられます（統合）</h3>
+<ul>
+<li>一覧の上に「<strong>重複の候補
+N組</strong>」と出ます。「<strong>重複の候補だけ</strong>」にチェックすると、候補のある事業所だけに絞れます</li>
+<li>名前・電話・住所が同じものを、候補として上に出します</li>
+<li>まとめると、消える側の<strong>案件・見積もり・出荷が、残る側へ移ります</strong>。消える側は削除せず、一覧から隠れるだけです</li>
+<li><strong>間違えたら取り消せます</strong></li>
+</ul>
+<h3 id="承諾書の表示が変わりました">承諾書の表示が変わりました</h3>
+<p>署名の依頼を作っただけの間は、「<strong>依頼方法未決定</strong>」と出ます（署名のURLは作ったが、まだ誰にも送っていない状態です）。</p>
+<table>
+<thead>
+<tr>
+<th>表示</th>
+<th>どんな状態か</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未依頼</td>
+<td>署名の依頼を、まだ作っていない</td>
+</tr>
+<tr>
+<td><strong>依頼方法未決定</strong>（新しい表示）</td>
+<td>URLは作った。まだ誰にも送っていない</td>
+</tr>
+<tr>
+<td>依頼メール送信済み／二次元バーコードで依頼中／署名ページを案内中</td>
+<td>メールを送った・二次元バーコードを表示した・署名ページを開いた、のどれかをした。署名待ち</td>
+</tr>
+<tr>
+<td>署名済み</td>
+<td>事業所が署名した、または紙で取得済みを記録した</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-操作のしかた">3. 操作のしかた</h2>
+<p>どれも、左メニューの「<strong>事業所</strong>」の各行の右端にある「<strong>…</strong>」から始めます。</p>
+<h3 id="事業所の情報を直す">事業所の情報を直す</h3>
+<ol type="1">
+<li>直したい事業所の「…」を押して「<strong>編集</strong>」を選ぶ</li>
+<li>事業所名・法人名・住所・電話・郵便番号を直す</li>
+<li>「保存する」を押す</li>
+</ol>
+<h3 id="重複した事業所をまとめる">重複した事業所をまとめる</h3>
+<ol type="1">
+<li><strong>残したい方</strong>の事業所の「…」を押して「<strong>ほかの事業所と統合</strong>」を選ぶ</li>
+<li>重複の候補から相手を選ぶ（候補にないときは、検索で探せます）</li>
+<li>左右に2つの事業所が並びます。<strong>左が残る事業所、右が消える事業所</strong>です。逆にしたいときは「左右を入れ替える」を押す</li>
+<li>項目ごとに、どちらの内容を残すか選ぶ（片方だけに入っている内容は、そちらが選んであります）</li>
+<li>「この内容で統合する」を押し、確認の画面で内容を見てから「OK」</li>
+<li>「統合しました」と出るまで、画面を閉じずに待つ（案件が多いほど時間がかかります）</li>
+</ol>
+<h3 id="統合を取り消す">統合を取り消す</h3>
+<ol type="1">
+<li>一覧の上の「<strong>統合済みも表示</strong>」にチェックを入れる</li>
+<li>灰色の行（「〇〇に統合済み」）の「…」を押して「<strong>統合を取り消す</strong>」を選ぶ</li>
+<li>統合のときに移したものが、元の事業所へ戻ります。<strong>統合のあとで別の事業所へ動かしたものは戻りません</strong></li>
+</ol>
+<h3 id="統合が途中で止まったとき">統合が途中で止まったとき</h3>
+<p>行に「<strong>統合が途中で止まっています</strong>」と出ます。「…」から「<strong>統合を続ける</strong>」を押すと、最後まで終わります（この状態では、取り消しはできません）。</p>
+<hr />
+<h2 id="4-変わらないこと">4. 変わらないこと</h2>
+<ul>
+<li><strong>すでに発行した見積書・請求書・出荷の記録・承諾書は、発行したときのままです。</strong>
+事業所名を直しても、まとめても、書類の宛名は書き換わりません</li>
+<li>古い名前で届いた問い合わせは、これまでどおり<strong>いまある案件につながります</strong>（名前を直したために、新しい案件が増えることはありません）</li>
+<li>閲覧のみの方は、事業所画面を見るだけです（「…」は出ません）</li>
+</ul>
+<hr />
+<h2 id="5-よくある質問">5. よくある質問</h2>
+<p><strong>Q1. 間違えて統合してしまいました。</strong>
+「統合済みも表示」にチェックを入れ、統合済みの行の「…」から「統合を取り消す」を押してください。統合のとき移した案件などが、元の事業所へ戻ります。ただし、統合のあとで別の事業所へ動かしたものは戻りません。</p>
+<p><strong>Q2. 統合すると、案件はどうなりますか。</strong>
+消える側の案件・見積もり・出荷が、残る側の事業所に移ります。案件の中身は消えません。案件の「対応記録」には、統合したこと（いつ・だれが）が残ります。残す側に、もとからある案件も、事業所名が変わるときは選んだ名前に変わります。</p>
+<p><strong>Q3. 「…」が出ません。</strong>
+閲覧のみの権限だと出ません。編集・統合ができるのは、管理者とスタッフです。必要なときは管理者に相談してください。また、「（マスター未登録）」と書かれた行にも出ません。</p>
+<p><strong>Q4. 「ほかの人がこの事業所を更新中です」と出ました。</strong>
+同じ事業所を、ほかの人が直している・まとめている最中です。少し待ってから、もう一度やり直してください。</p>
+<p><strong>Q5.
+法人と事業所の親子関係（同じ法人の事業所をまとめて見る）はできますか。</strong>
+まだです。次の段階で対応する予定です。いまは、法人名を入れておく（直せる）ところまでです。</p>
+<hr />
+<h2 id="お問い合わせ">お問い合わせ</h2>
+<p>ご不明な点は、伴走支援チームまでお知らせください。</p>
+<p>NPO法人タダカヨ 介護情報基盤伴走支援事業</p>
+</body>
+</html>

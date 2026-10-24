@@ -21,7 +21,7 @@
       <div class="page-header">
         <h1 class="page-title">事業所</h1>
       </div>
-      <p class="page-intro">事業所ごとに案件をまとめて見られます（読み取り専用）。アーカイブ済み・失注・完了の案件も含むので、過去の対応を探すときに使います。行を押すと、その事業所の案件が開きます。</p>
+      <p class="page-intro">事業所ごとに案件をまとめて見られます。アーカイブ済み・失注・完了の案件も含むので、過去の対応を探すときに使います。行を押すと、その事業所の案件が開きます。名前や住所の直し・重複した事業所のまとめは、行の右端の「…」から行えます（閲覧のみの方には出ません）。</p>
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
       <div id="main" style="display:none">
         <div class="filter-bar">
@@ -42,12 +42,19 @@
           </select>
           <span id="countLabel" style="font-size:13px;color:var(--color-ink-muted);white-space:nowrap"></span>
         </div>
+        <div class="filter-bar" id="dupBar" style="align-items:center;gap:var(--space-4)">
+          <span class="badge badge-2" id="dupBadge" style="font-size:12px"></span>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-height:36px">
+            <input type="checkbox" id="dupOnly" style="width:16px;height:16px;accent-color:var(--color-primary)">重複の候補だけ</label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;min-height:36px">
+            <input type="checkbox" id="showMerged" style="width:16px;height:16px;accent-color:var(--color-primary)">統合済みも表示</label>
+        </div>
         <div class="card">
           <div class="table-wrap">
             <table id="officesTable">
               <thead><tr>
                 <th>法人名</th><th>事業所名</th><th>都道府県</th><th>市区町村</th>
-                <th>案件数</th><th>最新の案件のステータス</th><th>最終更新日</th>
+                <th>案件数</th><th>最新の案件のステータス</th><th>最終更新日</th><th id="menuTh"><span class="sr-only" style="position:absolute;left:-9999px">操作</span></th>
               </tr></thead>
               <tbody id="officesBody"></tbody>
             </table>
@@ -57,6 +64,35 @@
       </div>
     </main>
   </div>
+  <!-- 事業所の編集 -->
+  <div class="modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="modal"><div class="modal-header"><h2 id="editTitle">事業所を編集</h2>
+      <button class="btn btn-secondary" id="editCloseBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <div class="form-group"><label class="form-label" for="efOfficeName">事業所名（必須）</label><input class="form-control" id="efOfficeName" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="efCorpName">法人名</label><input class="form-control" id="efCorpName" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="efPostalCode">郵便番号</label><input class="form-control" id="efPostalCode" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="efAddress">住所</label><input class="form-control" id="efAddress" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="efPhone">電話</label><input class="form-control" id="efPhone" type="text" maxlength="200"></div>
+        <p id="efNotice" role="status" style="display:none;font-size:13px;font-weight:700;margin:0"></p>
+        <p id="efError" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin:8px 0 0"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="editCancelBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="editSaveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>保存する</button>
+      </div>
+    </div>
+  </div>
+  <!-- 事業所の統合 -->
+  <div class="modal-overlay" id="mergeModal" role="dialog" aria-modal="true" aria-labelledby="mergeTitle">
+    <div class="modal" style="width:min(820px,95vw)"><div class="modal-header"><h2 id="mergeTitle">ほかの事業所と統合</h2>
+      <button class="btn btn-secondary" id="mergeCloseBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body" id="mergeBody"></div>
+      <div class="modal-footer" id="mergeFooter"></div>
+    </div>
+  </div>
+  <!-- 「…」メニュー -->
+  <div id="rowMenu" role="menu" style="display:none;position:fixed;z-index:101;background:var(--color-surface);border:1px solid var(--color-line);border-radius:var(--radius-md, 8px);box-shadow:0 4px 16px rgba(0,0,0,.15);min-width:200px;padding:4px"></div>
   <div id="toast" role="status" aria-live="polite" aria-atomic="true"
     style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
   <script src="/js/sidebar.js"></script>
