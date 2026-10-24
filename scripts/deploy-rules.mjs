@@ -151,6 +151,12 @@ function git(args) {
 }
 
 function checkCommitted(file) {
+  // 未追跡の新しいファイルは git diff では差分にならないので、HEAD にあることを先に確かめる
+  try {
+    execFileSync("git", ["cat-file", "-e", `HEAD:${file}`], { cwd: ROOT, stdio: "ignore" });
+  } catch {
+    die(`${file} がコミットされていません。コミットしてから出してください（main にない変更を本番に出さないため）。`);
+  }
   try {
     execFileSync("git", ["diff", "--quiet", "HEAD", "--", file], { cwd: ROOT, stdio: "ignore" });
   } catch {
