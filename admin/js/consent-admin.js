@@ -78,7 +78,19 @@ function statusBadge(r) {
     const m = r.signed?.method === "paper" ? "紙" : "オンライン";
     return `<span class="badge" style="background:#E8F3EC;color:#1F7A4F">署名済み（${m}・${fmt(r.signed?.signedAt)}）</span>`;
   }
-  return `<span class="badge" style="background:#FBF3E4;color:#B45309">依頼済み・署名待ち（${fmt(r.createdAt)} 発行）</span>`;
+  // 発行しただけでは「依頼した」ことにならない（2026-10-24 藤田さん指摘）。実際に渡した方法が記録されているときだけ「依頼済み」
+  if (r.mailedAt) return `<span class="badge" style="background:#FBF3E4;color:#B45309">依頼メール送信済み・署名待ち（${fmt(r.mailedAt)} 送信）</span>`;
+  if (r.handedOutAt) return `<span class="badge" style="background:#FBF3E4;color:#B45309">${r.handedOutVia === "qr" ? "二次元バーコードで依頼中" : "署名ページを案内中"}・署名待ち（${fmt(r.handedOutAt)}）</span>`;
+  return `<span class="badge" style="background:#F1EEE7;color:#7d715b">依頼方法未決定（署名URLは${fmt(r.createdAt)}に発行・まだ誰にも送っていません）</span>`;
+}
+
+// 渡し方の記録（メール以外）。表示のためだけの印なので、失敗しても操作は止めない
+async function markHandout(r, via) {
+  if (r.mailedAt || r.handedOutAt) return;
+  try {
+    await updateDoc(doc(ctx.db, "consentRequests", r._id), { handedOutAt: serverTimestamp(), handedOutVia: via });
+    await reload();
+  } catch { /* 表示用の印のみ */ }
 }
 
 function render() {
@@ -108,7 +120,7 @@ function render() {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-secondary" id="consentMailBtn"><i class="ti ti-mail" aria-hidden="true"></i> メールで依頼を送る</button>
           <button class="btn btn-secondary" id="consentQrBtn"><i class="ti ti-qrcode" aria-hidden="true"></i> 二次元バーコードを表示</button>
-          <a class="btn btn-secondary" href="${esc(url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名ページを開く</a>
+          <a class="btn btn-secondary" id="consentOpenLink" href="${esc(url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名ページを開く</a>
           <button class="btn btn-secondary" id="consentCancelBtn" style="margin-left:auto;color:var(--color-danger)">依頼を取り消す</button>
         </div>
         <div id="consentQrWrap" style="display:${openedQrToken === r._id ? "flex" : "none"};flex-direction:column;align-items:center;gap:8px;padding:14px;background:#fff;border:1px solid var(--color-border);border-radius:12px">
@@ -152,7 +164,8 @@ function wire(r, url) {
     try { await navigator.clipboard.writeText(url); ctx.toast("署名ページのURLをコピーしました"); }
     catch { const box = document.getElementById("consentUrlBox"); if (box) { box.select(); document.execCommand("copy"); ctx.toast("URLをコピーしました"); } }
   });
-  on("consentQrBtn", () => { openedQrToken = openedQrToken === r._id ? null : r._id; render(); });
+  on("consentQrBtn", () => { openedQrToken = openedQrToken === r._id ? null : r._id; render(); if (openedQrToken) markHandout(r, "qr"); });
+  on("consentOpenLink", () => markHandout(r, "link"));
   on("consentMailBtn", () => openMailModal(r, url));
   on("consentCancelBtn", async () => {
     if (!confirm("この署名依頼を取り消します。送付済みのURLは開けなくなります。よろしいですか？")) return;
