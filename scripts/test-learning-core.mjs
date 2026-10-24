@@ -399,4 +399,14 @@ t("評価シート・バッジ台帳・マニュアル・ルールのつなぎ",
   assert.match(rules, /"appConfig", "_notifyLog", "learningProgress"\]/);
 });
 
+t("保存は書けてから画面に入れる・古い動画の読み込みを捨てる（Codex 指摘 2026-10-24）", () => {
+  const js = src("../admin/js/learning.js");
+  const body = js.slice(js.indexOf("async function save("), js.indexOf("function states()"));
+  assert.ok(body.indexOf("await setDoc(") < body.indexOf("progress = L.mergePatch(progress, r.patch)"), "保存の前に progress を書き換えている");
+  assert.ok(!/progress = r\.next/.test(body), "失敗しても r.next を入れている");
+  assert.match(js, /const seq = \+\+playSeq;/);
+  assert.match(js, /if \(seq !== playSeq\)/);
+  assert.match(js, /if \(!ok\) \{ p\.last = prev; return; \}/);
+});
+
 console.log(`test-learning-core: ${n} 件 OK`);

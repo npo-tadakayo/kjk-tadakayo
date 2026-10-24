@@ -36,14 +36,17 @@ let badge = null;         // 自分のバッジ（supportBadges。読めなけ�
 let lastJudge = null;     // 今回の画面で押した「判定する」の結果
 const open = new Set();   // 開いているステップ
 const quizState = {};     // { S1: { choices: {問題ID: [{index,text}]}, answers: {}, result } }
+let playSeq = 0;         // 動画の読み込みの通し番号（古い読み込みを捨てるため）
 let playing = null;       // { stepId, videoId, video, last: { maxPos, at } }
 
 // ---------- 保存（本番DB・変わったところだけ merge） ----------
 async function save(r) {
   if (!r || r.error || !r.patch) return false;
-  progress = r.next;
   try {
     await setDoc(doc(prod, "learningProgress", me.email), { ...r.patch, updatedAt: serverTimestamp() }, { merge: true });
+    // 書けてから画面の状態に入れる（失敗したのに「済」に見えて、やり直せなくなるのを防ぐ）。
+    // r.next ではなく patch を今の progress に重ねる（待っている間に増えた視聴位置を消さない）
+    progress = L.mergePatch(progress, r.patch);
     return true;
   } catch (e) {
     console.warn("[learning] save failed", e);
@@ -235,8 +238,9 @@ async function flushVideo(force = true) {
   if (!playing) return;
   const rec = progress?.videos?.[playing.videoId];
   if (L.shouldSaveVideo(playing.last, rec, { force, now: Date.now() })) {
-    playing.last = { maxPos: rec.maxPos, at: Date.now() };
-    await save(L.applyVideo(progress, me, playing.videoId, rec, Date.now(), QUIZZES));
+    const p = playing, prev = p.last;
+    p.last = { maxPos: rec.maxPos, at: Date.now() };
+    if (!(await save(L.applyVideo(progress, me, p.videoId, rec, Date.now(), QUIZZES)))) p.last = prev; // 失敗したら次の機会に送り直す
   }
 }
 
@@ -249,10 +253,21 @@ async function play(stepId, videoId) {
   }
   const box = $(`player-${stepId}`);
   box.hidden = false;
+  // 読み込みのたびに新しい入れ物と通し番号を使う。読み込み中に別の動画を選んだとき、
+  // 古い読み込みが後から終わっても、いまの動画の表示を上書きしない（古い入れ物はもう画面に無い）
+  const seq = ++playSeq;
+  box.innerHTML = "";
+  const slot = document.createElement("div");
+  box.appendChild(slot);
   const startMax = Number(progress?.videos?.[videoId]?.maxPos) || 0;
   playing = { stepId, videoId, video: null, last: { maxPos: startMax, at: Date.now() } };
   renderVids(stepId);
-  const video = await mountVideo(box, videoId, { autoplay: true });
+  const video = await mountVideo(slot, videoId, { autoplay: true });
+  if (seq !== playSeq) {
+    if (video) { try { video.pause(); video.removeAttribute("src"); video.querySelectorAll("source").forEach((x) => x.remove()); video.load(); } catch (_) {} }
+    slot.remove();
+    return;
+  }
   if (!video || !playing || playing.videoId !== videoId) return;
   playing.video = video;
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -262,8 +277,11 @@ async function play(stepId, videoId) {
     const r = L.nextVideoRecord(progress?.videos?.[videoId], video.currentTime, video.duration, now);
     if (!r.changed) return;
     if (L.shouldSaveVideo(playing.last, r.rec, { justDone: r.justDone, now })) {
-      playing.last = { maxPos: r.rec.maxPos, at: now };
-      save(L.applyVideo(progress, me, videoId, r.rec, now, QUIZZES)).then(() => {
+      const p = playing, prev = p.last;
+      p.last = { maxPos: r.rec.maxPos, at: now };
+      progress = L.mergePatch(progress, { videos: { [videoId]: r.rec } }); // 画面の中の視聴位置は先に進める（保存は下で）
+      save(L.applyVideo(progress, me, videoId, r.rec, now, QUIZZES)).then((ok) => {
+        if (!ok) { p.last = prev; return; } // 失敗したら、止めたとき・次の区切りで送り直す
         if (r.justDone) { toast("動画を最後まで見ました（済）"); refresh(); }
       });
       if (!r.justDone) renderVids(stepId);
