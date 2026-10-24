@@ -36,6 +36,7 @@ let badge = null;         // 自分のバッジ（supportBadges。読めなけ�
 let lastJudge = null;     // 今回の画面で押した「判定する」の結果
 const open = new Set();   // 開いているステップ
 const quizState = {};     // { S1: { choices: {問題ID: [{index,text}]}, answers: {}, result } }
+let saved = null;        // サーバーに書けたと確かめた進み具合（画面の progress とは分ける。未保存分の送り直しの基準）
 let playSeq = 0;         // 動画の読み込みの通し番号（古い読み込みを捨てるため）
 let playing = null;       // { stepId, videoId, video, last: { maxPos, at } }
 
@@ -53,6 +54,7 @@ async function save(r) {
       tx.set(ref, { ...g, updatedAt: serverTimestamp() }, { merge: true });
       merged = L.mergePatch(cur, g);
     });
+    saved = merged;
     // 書けてから画面の状態に入れる（失敗したのに「済」に見えて、やり直せなくなるのを防ぐ）。
     // 手元にだけある視聴位置（まだ保存していない分）は残す
     progress = L.mergePatch(merged, { videos: Object.fromEntries(Object.entries(progress?.videos || {})
@@ -269,7 +271,8 @@ async function play(stepId, videoId) {
   box.innerHTML = "";
   const slot = document.createElement("div");
   box.appendChild(slot);
-  const startMax = Number(progress?.videos?.[videoId]?.maxPos) || 0;
+  // 基準は「保存できた位置」。画面にだけある未保存の位置を基準にすると、通信が戻っても送り直さない（Codex 指摘）
+  const startMax = Number(saved?.videos?.[videoId]?.maxPos) || 0;
   playing = { stepId, videoId, video: null, last: { maxPos: startMax, at: Date.now() } };
   renderVids(stepId);
   const video = await mountVideo(slot, videoId, { autoplay: true });
@@ -467,6 +470,7 @@ onAuthStateChanged(auth, async (user) => {
   try {
     const s = await getDoc(doc(prod, "learningProgress", me.email));
     progress = s.exists() ? s.data() : null;
+    saved = progress;
   } catch (e) { console.warn("[learning] progress", e.message); progress = null; }
   // 練習生は本番のバッジ・名簿・設定を読めない（ルール）。読めなければ表示を省く
   let grants = [];

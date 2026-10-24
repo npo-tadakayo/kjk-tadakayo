@@ -409,6 +409,8 @@ t("保存は書けてから画面に入れる・古い動画の読み込みを�
   assert.match(js, /const seq = \+\+playSeq;/);
   assert.match(js, /if \(seq !== playSeq\)/);
   assert.match(js, /if \(!ok\) \{ p\.last = prev; return; \}/);
+  assert.match(js, /const startMax = Number\(saved\?\.videos/, "動画を選び直したときの基準が保存済みの位置でない");
+  assert.match(js, /\n    saved = merged;/);
   assert.match(js, /const ok = await save\(L\.applyPractice/, "練習の判定の保存結果を見ていない");
   assert.match(js, /const ok = await save\(L\.applyQuiz/, "テストの保存結果を見ていない");
   assert.ok(!/^\s*await save\(/m.test(js), "save() の戻り値を見ていない呼び出しがある");
