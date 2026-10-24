@@ -25,12 +25,14 @@ const env = await initializeTestEnvironment({
 
 const ADMIN = "admin@tadakayo.jp", STAFF = "staff@tadakayo.jp", VIEWER = "viewer@tadakayo.jp", OTHER = "other@tadakayo.jp";
 const NOREG = "noreg@tadakayo.jp", PARTNER = "partner@example.jp";
+const WH = "wh@tadakayo.jp"; // 2026-10-24 倉庫（role=warehouse）
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, "users", ADMIN), { role: "admin", active: true, name: "管理" });
   await setDoc(doc(db, "users", STAFF), { role: "staff", active: true, name: "職員" });
   await setDoc(doc(db, "users", VIEWER), { role: "viewer", active: true, name: "閲覧" });
   await setDoc(doc(db, "users", OTHER), { role: "staff", active: true, name: "ほか" });
+  await setDoc(doc(db, "users", WH), { role: "warehouse", active: true, name: "倉庫", locationIds: ["L1"] });
   await setDoc(doc(db, "partners", PARTNER), { active: true });
   await setDoc(doc(db, "leadTokens", "tok1"), { a: 1 });
   await setDoc(doc(db, "supportBadges", "b1"), { a: 1 });
@@ -92,6 +94,20 @@ await t("認定事業者は自分の発注を作れる（従来どおり）", ()
 await t("viewer は案件を読めるが書けない", async () => { await yes(getDoc(doc(as(VIEWER), "cases", "c1"))); await no(updateDoc(doc(as(VIEWER), "cases", "c1"), { status: 3 })); });
 await t("未登録の @tadakayo.jp は案件を読めない", () => no(getDoc(doc(as(NOREG), "cases", "c1"))));
 await t("未認証は案件を読めない", () => no(getDoc(doc(anon(), "cases", "c1"))));
+
+console.log("倉庫（role=warehouse・2026-10-24）: catch-all でも書けない・読めない");
+await t("warehouse は案件を読めない・書けない", async () => { await no(getDoc(doc(as(WH), "cases", "c1"))); await no(updateDoc(doc(as(WH), "cases", "c1"), { status: 3 })); });
+await t("warehouse は出荷・商品・在庫の動き・保管場所に書けない", async () => {
+  const db = as(WH);
+  await no(setDoc(doc(db, "shipments", "s1"), { status: "shipped" }));
+  await no(setDoc(doc(db, "products", "p1"), { stock: 999 }));
+  await no(addDoc(collection(db, "inventoryMovements"), { delta: -1 }));
+  await no(setDoc(doc(db, "locations", "L1"), { name: "x" }));
+});
+await t("warehouse は自分の role・locationIds を書き換えられない", () => no(updateDoc(doc(as(WH), "users", WH), { role: "admin", locationIds: ["L1", "L2"] })));
+await t("warehouse は users を一覧できない", () => no(getDocs(collection(as(WH), "users"))));
+await t("warehouse は自分の users を読める", () => yes(getDoc(doc(as(WH), "users", WH))));
+await t("staff は倉庫の人の users を読める（従来どおり）", () => yes(getDoc(doc(as(STAFF), "users", WH))));
 
 await env.cleanup();
 console.log(`合計: ${pass}/${pass + fail} 合格`);

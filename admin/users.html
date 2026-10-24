@@ -49,6 +49,7 @@
               <option value="admin">管理者</option>
               <option value="staff" selected>スタッフ</option>
               <option value="viewer">閲覧のみ</option>
+              <option value="warehouse">倉庫（warehouse）</option>
               <option value="trainee">練習生（練習モードだけ・本番は見られない）</option>
             </select></div>
           <div class="form-group"><label class="form-label" for="uActive">状態</label>
@@ -56,6 +57,12 @@
               <option value="true" selected>有効</option>
               <option value="false">停止</option>
             </select></div>
+        </div>
+        <!-- 倉庫の人だけ：扱える保管場所（users.locationIds・2026-10-24） -->
+        <div class="form-group" id="uLocationsWrap" style="display:none">
+          <label class="form-label">扱える保管場所</label>
+          <div id="uLocations" style="display:flex;flex-direction:column;gap:6px"></div>
+          <div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">倉庫の人は、ここで選んだ保管場所の出荷依頼・在庫だけを見られます（1つ以上選んでください）。</div>
         </div>
         <div class="form-group"><label class="form-label" for="uChatId">Google Chat のユーザーID（数字）</label>
           <input class="form-control" id="uChatId" type="text" inputmode="numeric" placeholder="例: 123456789012345678901">

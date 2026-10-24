@@ -238,4 +238,15 @@ t("案件詳細の重複候補が未定義の変数を見ない（kase → curre
   assert.ok(!/\bkase\b/.test(cd.replace(/\/\/.*$/gm, "")), "case-detail.js に kase が残っている");
 });
 
+
+// ---- 倉庫ロールの画面ゲート（2026-10-24）----
+t("role.js の isWarehousePath: /warehouse と /warehouse.html だけ倉庫の画面", () => {
+  const src = readFileSync(fileURLToPath(new URL("../admin/js/role.js", import.meta.url)), "utf8");
+  const m = src.match(/export function isWarehousePath\(path\)\{ return (\/.+\/)\.test\(/);
+  assert.ok(m, "isWarehousePath が見つからない");
+  const re = new RegExp(m[1].slice(1, -1));
+  for (const ok of ["/warehouse", "/warehouse.html", "/warehouse/"]) assert.equal(re.test(ok), true, ok);
+  for (const ng of ["/supply.html", "/warehouse-x", "/dashboard", "/", "/admin/warehouse"]) assert.equal(re.test(ng), false, ng);
+});
+
 console.log(`test-screen-wiring: ${n} 件 OK`);

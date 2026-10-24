@@ -317,4 +317,51 @@ await t("閲覧のみ: 供給管理の操作ボタンをクラスで止める（
   assert.match(src, /if\(viewerMode\) lockViewerButtons\(\);/);
 });
 
+// ===== 2026-10-24 送付方法「持ち出し」（倉庫メニュー §9.2・§9.3）の結線 =====
+await t("持ち出し: 依頼・受け渡し・差し戻し表示が supply.js / supply.html につながっている", () => {
+  const js = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  const html = readFileSync(fileURLToPath(new URL("../admin/supply.html", import.meta.url)), "utf8");
+  // 依頼で保存する項目
+  assert.match(js, /deliveryMode:"pickup", pickupByEmail:ans\.pickupByEmail, pickupByName:ans\.pickupByName, pickupDate:ans\.shipDate, shippingMethod:"none"/);
+  assert.match(js, /deliveryMode:"ship", \.\.\.letterPackPatch/);
+  // 受け渡しは発送済と同じトランザクション（shipWithStock）で、受け渡しの記録を書き warehouseIssue を消す
+  assert.match(js, /handedOverAt: serverTimestamp\(\), handedOverByEmail/);
+  assert.match(js, /handedOverByName/);
+  assert.match(js, /warehouseIssue: deleteField\(\), \/\/ 倉庫からの差し戻しは/);
+  assert.match(js, /pickup \? "recordHandover"/);
+  // 依頼の取り消しでも warehouseIssue を消す（持ち出しの項目は残す）
+  const rev = js.slice(js.indexOf("async function revertToDraft"), js.indexOf("// ===== 出荷の送料"));
+  assert.match(rev, /warehouseIssue: deleteField\(\)/);
+  assert.ok(!/pickupBy/.test(rev));
+  // 一覧の行
+  assert.match(js, /倉庫から：\$\{esc\(ISSUE_REASONS\[wi\.reason\]/);
+  assert.match(js, /持ち出し<\/span>/);
+  assert.match(js, /shipStatusLabelOf\(s\)/);
+  assert.match(js, /recordShippedLabel\(s\)/);
+  assert.match(js, /markShippedLabel\(s\)/);
+  // 確認ダイアログ
+  for(const id of ["shipDoneMode", "shipDonePickupBy", "shipDoneLpWrap"]) assert.ok(html.includes(`id="${id}"`), id);
+  assert.match(js, /持ち出す人を選んでください/);
+  // 倉庫・スタッフ・管理者の有効な人だけを持ち出す人の候補にする
+  assert.match(js, /\["admin","staff","warehouse"\]\.includes/);
+});
+
+await t("倉庫ロール: role.js のゲート・サイドバー・練習モード・ユーザー管理", () => {
+  const rd = (f) => readFileSync(fileURLToPath(new URL(`../admin/${f}`, import.meta.url)), "utf8");
+  const role = rd("js/role.js"), side = rd("js/sidebar.js"), mode = rd("js/mode.js"), users = rd("js/users.js"), uh = rd("users.html");
+  assert.match(role, /r\.role === "warehouse"/);
+  assert.match(role, /location\.replace\("\/warehouse"\)/);
+  // 倉庫のゲートは adminOnly の判定より前（倉庫の人が管理者専用画面で「権限なし」を見ないように）
+  assert.ok(role.indexOf('r.role === "warehouse"') < role.indexOf("opts.adminOnly && r.role"));
+  assert.match(mode, /!isTrainee && !isWarehouse/);
+  assert.match(side, /WAREHOUSE_GROUPS/);
+  assert.match(side, /\["\/warehouse\.html", "ti-package", "倉庫"\]/);
+  assert.match(uh, /<option value="warehouse">倉庫（warehouse）<\/option>/);
+  assert.match(uh, /id="uLocations"/);
+  assert.match(users, /locationIds/);
+  assert.match(users, /collection\(db,"locations"\)/);
+  assert.match(uh, /<option value="viewer">/);
+  assert.match(uh, /<option value="trainee">/);
+});
+
 console.log(`OK test-supply-wiring: ${n} 件合格`);

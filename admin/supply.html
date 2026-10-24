@@ -237,12 +237,24 @@
         </div>
         <!-- レターパックの種類と登録のしかた（新規登録のときだけ。宛名印刷ページの色と出荷指示に使う・2026-10-19／二段階化 2026-10-21） -->
         <div class="form-group" id="shipLetterPackWrap">
+          <!-- 送付方法（発送／持ち出し・2026-10-24）。持ち出しは送料を「郵送なし」にし、出荷日の欄を持ち出しの予定日として使う -->
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="shipDeliveryMode">送付方法</label>
+              <select class="form-control" id="shipDeliveryMode">
+                <option value="ship" selected>発送（レターパックなどで送る）</option>
+                <option value="pickup">持ち出し（倉庫から直接持っていく）</option>
+              </select></div>
+            <div class="form-group" id="shipPickupWrap" style="display:none"><label class="form-label" for="shipPickupBy">持ち出す人 <span style="color:red">*</span></label>
+              <select class="form-control" id="shipPickupBy"></select></div>
+          </div>
+          <div id="shipLetterPackRow">
           <label class="form-label" for="shipLetterPack">レターパックの種類</label>
           <select class="form-control" id="shipLetterPack">
             <option value="">未選択（あとで宛名印刷ページで選べます）</option>
             <option value="light">レターパックライト（青）</option>
             <option value="plus" selected>レターパックプラス（赤）</option>
           </select>
+          </div>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「依頼済」になり、出荷指示を投稿します。在庫は、センターが発送したのを確認して「発送済にする」を押したときに引き落とします。</p>
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;margin-top:8px">
             <input type="checkbox" id="shipAlreadyShipped" style="margin-top:3px">
@@ -444,10 +456,22 @@
         <button class="btn btn-secondary" id="closeShipDoneBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
       <div class="modal-body">
         <div id="shipDoneSummary" style="border:1px solid var(--color-line);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.8;margin-bottom:12px"></div>
+        <!-- 送付方法（出荷を依頼するときだけ。持ち出し＝倉庫から直接持っていく・2026-10-24） -->
+        <div class="form-group" id="shipDoneModeWrap" style="display:none">
+          <label class="form-label" for="shipDoneMode">送付方法</label>
+          <select class="form-control" id="shipDoneMode">
+            <option value="ship" selected>発送（レターパックなどで送る）</option>
+            <option value="pickup">持ち出し（倉庫から直接持っていく）</option>
+          </select>
+        </div>
+        <div class="form-group" id="shipDonePickupWrap" style="display:none">
+          <label class="form-label" for="shipDonePickupBy">持ち出す人 <span style="color:red">*</span></label>
+          <select class="form-control" id="shipDonePickupBy"></select>
+        </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="shipDoneDate"><span id="shipDoneDateLabel">出荷日</span> <span style="color:red">*</span></label>
             <input class="form-control" type="date" id="shipDoneDate"></div>
-          <div class="form-group"><label class="form-label" for="shipDoneLp">レターパックの種類</label>
+          <div class="form-group" id="shipDoneLpWrap"><label class="form-label" for="shipDoneLp">レターパックの種類</label>
             <select class="form-control" id="shipDoneLp">
               <option value="">未選択</option>
               <option value="light">レターパックライト（青）</option>
