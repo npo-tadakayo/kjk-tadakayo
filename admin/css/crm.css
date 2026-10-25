@@ -59,8 +59,10 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   display: flex;
   flex-direction: column;
   position: sticky;
-  top: 0;
-  height: 100vh;
+  /* 練習モードの帯（mode.js が高さを --mode-bar-h に入れる）の下から、画面の下までに収める */
+  top: var(--mode-bar-h, 0px);
+  height: calc(100vh - var(--mode-bar-h, 0px));
+  height: calc(100dvh - var(--mode-bar-h, 0px)); /* スマホのアドレスバーの分を除いた高さ（対応していないブラウザは上の 100vh） */
 }
 
 .sidebar-brand {
@@ -92,9 +94,15 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 }
 
 .sidebar-nav {
-  flex: 1;
+  flex: 1 1 auto;
   padding: var(--space-3) 0;
+  /* 画面の高さに収まらないときはメニューだけをスクロールする（ロゴとログアウトは常に見える）。
+     以前はあふれた分が画面の外に出て、縦900px程度の画面で「育成コース」以下に届かなかった（2026-10-25） */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
+.sidebar-brand, .sidebar-footer { flex-shrink: 0; }
 
 .nav-item {
   display: flex;
@@ -1058,7 +1066,7 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
   .layout { display: block; }
   .mobile-header { display: flex; }
   .sidebar {
-    position: fixed; top: 0; left: 0; height: 100vh; width: min(280px, 80vw);
+    position: fixed; top: var(--mode-bar-h, 0px); left: 0; height: calc(100vh - var(--mode-bar-h, 0px)); height: calc(100dvh - var(--mode-bar-h, 0px)); width: min(280px, 80vw);
     transform: translateX(-100%);
     transition: transform .24s cubic-bezier(.4,0,.2,1);
     z-index: 50; box-shadow: 2px 0 16px rgba(0,0,0,.18);
