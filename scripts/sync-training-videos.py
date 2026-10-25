@@ -50,9 +50,15 @@ _intro = KIBAN / "動画_育成_伴走支援者になるまで_20261024"
 FILES["learn-intro"] = (_intro / "out.mp4", _intro / "timeline.json")
 _pledge = KIBAN / "動画_育成_伴走支援者の約束_20261024"
 FILES["learn-pledge"] = (_pledge / "out.mp4", _pledge / "timeline.json")
+# 育成コースの使い方（2026-10-25）。操作動画スキルの modern で作ったので字幕は映像に焼き込み済み → vtt は置かない（None）
+_course = KIBAN / "動画_育成_コースの進め方_20261025"
+FILES["learn-course"] = (_course / "out.mp4", None)
+_trainer = KIBAN / "動画_育成_新人の見守り方_20261025"
+FILES["learn-trainer"] = (_trainer / "out.mp4", None)
 # --only の短い呼び名（u5・g0・annai・intro・pledge）
 ALIAS = {**{f"u{n}": f"crm-u{n}" for n in range(1, 11)}, **{f"g{p}": f"guide-part{p}" for p in range(4)},
-         "annai": "guide-annai", "intro": "learn-intro", "pledge": "learn-pledge"}
+         "annai": "guide-annai", "intro": "learn-intro", "pledge": "learn-pledge",
+         "course": "learn-course", "trainer": "learn-trainer"}
 
 
 def ts(sec: float) -> str:
@@ -90,7 +96,7 @@ def timeline_to_vtt(tl: dict) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--only", nargs="*", help="名前（crm-u5 / u5・guide-part0 / g0・annai・intro・pledge）。省略で全部")
+    ap.add_argument("--only", nargs="*", help="名前（crm-u5 / u5・guide-part0 / g0・annai・intro・pledge・course・trainer）。省略で全部")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     names = [ALIAS.get(x, x) for x in a.only] if a.only else list(FILES)
@@ -100,22 +106,26 @@ def main():
     work = pathlib.Path(tempfile.mkdtemp(prefix="training-"))
     for name in names:
         mp4, sub = FILES[name]
-        if not mp4.exists() or not sub.exists():
+        if not mp4.exists() or (sub is not None and not sub.exists()):
             sys.exit(f"🔴 正本が見つかりません: {mp4} / {sub}")
         out_mp4, out_vtt = work / f"{name}.mp4", work / f"{name}.vtt"
         subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(mp4), "-c", "copy", "-movflags", "+faststart", str(out_mp4)], check=True)
-        if sub.suffix == ".json":
+        if sub is None:
+            vtt = None  # 字幕が映像に焼き込み済み。vtt を付けると画面に字幕が二重に出る
+        elif sub.suffix == ".json":
             vtt = timeline_to_vtt(json.loads(sub.read_text(encoding="utf-8")))
         else:
             vtt = srt_to_vtt(sub.read_text(encoding="utf-8"))
-        out_vtt.write_text(vtt, encoding="utf-8")
-        print(f"{name}: {mp4.name} → {out_mp4.stat().st_size // 1024} KB (faststart) + vtt {vtt.count(' --> ')} 行")
+        if vtt is not None:
+            out_vtt.write_text(vtt, encoding="utf-8")
+        print(f"{name}: {mp4.name} → {out_mp4.stat().st_size // 1024} KB (faststart)" + (f" + vtt {vtt.count(' --> ')} 行" if vtt else "（字幕は焼き込み・vtt なし）"))
         if a.dry_run:
             continue
         subprocess.run(["gcloud", "storage", "cp", str(out_mp4), f"{BUCKET}/", "--content-type=video/mp4",
                         "--cache-control=private, max-age=86400"], check=True)
-        subprocess.run(["gcloud", "storage", "cp", str(out_vtt), f"{BUCKET}/", "--content-type=text/vtt; charset=utf-8",
-                        "--cache-control=private, max-age=86400"], check=True)
+        if vtt is not None:
+            subprocess.run(["gcloud", "storage", "cp", str(out_vtt), f"{BUCKET}/", "--content-type=text/vtt; charset=utf-8",
+                            "--cache-control=private, max-age=86400"], check=True)
     if a.dry_run:
         print(f"（dry-run: 作業フォルダ {work} に残しています）")
     else:
