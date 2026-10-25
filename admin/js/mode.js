@@ -90,6 +90,12 @@ function mountBanner(isTrainee) {
     bar.appendChild(back);
   }
   document.body.insertBefore(bar, document.body.firstChild);
+  // 帯の高さを CSS に渡す。サイドバーは帯の下から画面の下までに収める（crm.css の --mode-bar-h）。
+  // 渡さないと、帯の分だけサイドバーの下（ログアウト）が画面の外に出る（2026-10-25）
+  const setH = () => document.documentElement.style.setProperty("--mode-bar-h", `${bar.offsetHeight}px`);
+  setH();
+  if (typeof ResizeObserver === "function") new ResizeObserver(setH).observe(bar);
+  else window.addEventListener("resize", setH);
 }
 
 /** サイドバーの「練習モードに入る」（本番のとき・練習生以外） */

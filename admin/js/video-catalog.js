@@ -1,10 +1,50 @@
 // admin/js/video-catalog.js — 動画マニュアルの目録（SSOT）
 // 動画本体は Firebase Storage `training/` に置く（storage.rules で @tadakayo.jp だけ読める）。
-// 正本（mp4/srt）は共有ドライブ「TM_介護情報基盤を広め隊/02_マニュアル・ガイドブック/研修動画/CRM操作説明_全7単元/」。
-// 差し替え手順: scripts/sync-training-videos.py（srt→vtt 変換とアップロードをまとめて行う）→ ここの version/duration を直す。
+// 正本（mp4/srt）は共有ドライブ「TM_介護情報基盤を広め隊/02_マニュアル・ガイドブック/研修動画/」
+//   CRM: CRM操作説明_全7単元/ ／ 伴走支援: 研修動画/ 直下のガイドブック PART0〜3（ご案内動画は制作フォルダ。sync スクリプト参照）。
+// 差し替え手順: scripts/sync-training-videos.py（字幕→vtt 変換とアップロードをまとめて行う）→ ここの version/duration を直す。
+// group: "guide"＝伴走支援（ガイドブック）／"crm"＝CRMの使い方。label は画面の見出し（「単元1」「PART0」）、mark は一覧の丸の中の文字。
+// note は再生欄の下の注記（無ければ区分ごとの決まり文句）。notice: true は「改修のお知らせ」（新人の必修にしない。2026-10-24 育成コース）。
 export const VIDEO_STORAGE_PREFIX = "training/";
 
-export const VIDEOS = [
+export const GROUPS = [
+  { id: "guide", title: "伴走支援（ガイドブック）", desc: "介護情報基盤とは何か、支援先で何をどの順に設定するか" },
+  { id: "crm", title: "CRMの使い方", desc: "案件・伴走支援の記録・Web申し込み・発注・請求" },
+];
+
+const GUIDE = [
+  // 育成コースの使い方（2026-10-25・次田さんの声・架空データで撮影。字幕は映像に焼き込み済みなので vtt は置かない）
+  { id: "L-0", label: "進め方", mark: "進", title: "育成コースの進め方（新人の方へ）", duration: "2分27秒", version: "v1.0", updated: "2026-10-25",
+    desc: "育成コースの開き方、次にやること、動画・確認テスト・10の約束、練習モードの判定、OJTに入れます、評価シート、独り立ち", file: "learn-course",
+    roles: ["新人"], note: "新しく伴走支援に入る方が、最初に見る動画です。育成コースの画面の使い方を説明しています（画面は架空のデータです）。" },
+  { id: "L-T", label: "見守り方", mark: "守", title: "新人の見守り方（トレーナー・管理者の方へ）", duration: "1分56秒", version: "v1.0", updated: "2026-10-25",
+    desc: "練習生ロールの設定、受講中の方の一覧、OJTの実施の記録、評価シート（8つの観点）、バッジの付与、スタッフへのロール変更", file: "learn-trainer",
+    roles: ["トレーナー", "管理者"], note: "トレーナーと管理者向けの動画です。新人の方の進み具合の見方から、評価・バッジの付与までを説明しています（画面は架空のデータです）。" },
+  // 育成コース STEP1 の新しい動画（2026-10-24）。長さは仮（mp4 ができたら実測値に直す）
+  { id: "L-A", label: "はじめに", mark: "始", title: "伴走支援者になるまで", duration: "2分30秒", version: "v1.0", updated: "2026-10-24",
+    desc: "独り立ちまでの7つのステップ、見学者・トレーニング生・伴走支援者・トレーナー、OJTと評価シート、報酬とバッジの意味", file: "learn-intro",
+    roles: ["全員"], note: "育成コースの STEP1 で見る動画です。独り立ちまでの道のりと、立場・報酬・バッジの意味を説明しています。" },
+  { id: "L-B", label: "約束", mark: "約", title: "伴走支援者の約束", duration: "3分49秒", version: "v1.0", updated: "2026-10-24",
+    desc: "個人情報・安全・困ったときの止め方。10の約束（承諾書§4〜§7に合わせたもの）", file: "learn-pledge",
+    roles: ["全員"], note: "育成コースの STEP1 で見る動画です。事業所と取り交わす伴走支援承諾書（§4〜§7）に合わせた、伴走支援者が必ず守る10の約束です。" },
+  { id: "G-A", label: "ご案内", mark: "案", title: "事業所向け「伴走支援のご案内」", duration: "3分27秒", version: "v1.0", updated: "2026-10-13",
+    desc: "事業所の方にお送りしている動画。4つの段階、事前に準備するもの、当日のお願い、設定中の注意（証明書の画面で「キャンセル」を押さない）、助成金は後払い", file: "guide-annai",
+    roles: ["全員"], note: "申し込みのあった事業所の方にお送りしている動画です。事業所が何を聞いているかを知っておくために見てください。" },
+  { id: "G0", label: "PART0", mark: "0", title: "まるわかり編", duration: "11分14秒", version: "Ver.2026-1.1", updated: "2026-08-16",
+    desc: "介護情報基盤の3つの層、ケアプーとの関係、公式の手順、導入パターンの診断、助成金、チェックリスト", file: "guide-part0",
+    roles: ["全員"] },
+  { id: "G1", label: "PART1", mark: "1", title: "介護情報基盤ポータル編", duration: "10分18秒", version: "Ver.2026-1.1", updated: "2026-08-16",
+    desc: "STEP 00〜03：初回の利用登録、アプリの利用申請、申請台数の決め方。トークスクリプトとよくある質問", file: "guide-part1",
+    roles: ["全員"] },
+  { id: "G2", label: "PART2", mark: "2", title: "アプリ＋ICカードリーダー編", duration: "5分50秒", version: "Ver.2026-1.1", updated: "2026-08-16",
+    desc: "STEP 04：マイナ資格確認アプリとカードリーダー（閲覧する事業所だけ）", file: "guide-part2",
+    roles: ["全員"] },
+  { id: "G3", label: "PART3", mark: "3", title: "介護WEBサービス編", duration: "11分44秒", version: "Ver.2026-1.1", updated: "2026-08-16",
+    desc: "STEP 05〜10：介護WEBサービスの設定と、ケアプーからの引っ越し", file: "guide-part3",
+    roles: ["全員"] },
+].map((v) => ({ ...v, group: "guide" }));
+
+const CRM = [
   { id: "U1", no: 1, title: "はじめに・全体像", duration: "5分25秒", version: "v1.2", updated: "2026-09-14",
     desc: "何のためのシステムか。5つの段階・13ステータス・4つのメニュー", file: "crm-u1",
     roles: ["全員"] },
@@ -31,11 +71,13 @@ export const VIDEOS = [
     roles: ["全員"] },
   { id: "U9", no: 9, title: "10月の改修のお知らせ", duration: "5分10秒", version: "v1.0", updated: "2026-10-20",
     desc: "2026-10-19 の改修。初期連絡5営業日、Chatの投稿先4つ・通知に地域、発送済にする→出荷指示の投稿、レターパックの宛名印刷（A4）、追跡番号の写真、請求書の発行日と支払期限（発行日から14日）、失注の理由、訪問予定日、事業所の一覧。※2026-10-21 から出荷は「出荷を依頼する」→「発送済にする」の2段階になりました（動画は旧画面）", file: "crm-u9",
-    roles: ["全員"] },
+    roles: ["全員"], notice: true },
   { id: "U10", no: 10, title: "事業所の編集と統合", duration: "4分40秒", version: "v1.0", updated: "2026-10-24",
     desc: "2026-10-24 の改修。事業所画面の「…」から事業所名・法人名・住所を直す、重複した事業所を統合する（取り消し・続きの実行もできる）、重複の候補。伴走支援承諾書の表示（未依頼 → 依頼方法未決定 → 依頼済み・署名待ち → 署名済み）", file: "crm-u10",
     roles: ["全員"] },
-];
+].map((v) => ({ ...v, group: "crm", label: `単元${v.no}`, mark: String(v.no) }));
+
+export const VIDEOS = [...GUIDE, ...CRM];
 
 export function findVideo(id) {
   return VIDEOS.find((v) => v.id === id) || null;

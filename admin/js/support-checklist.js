@@ -14,7 +14,7 @@
 //     supportEvaluations に保存。独り立ち可ならトレーナーがバッジを付与（supportBadges）。
 //     判定・検証の純粋関数は support-evaluation.js（scripts/test-support-evaluation.mjs）
 
-import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp }
+import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp, getProdFirestore }
   from "/js/fs.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
@@ -22,6 +22,8 @@ import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
 import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
 import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvaluation, evaluationId, evaluationEligible,
   buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
+import { evaluationLine } from "./learning-core.js";
+import { QUIZZES } from "./learning-quiz.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -326,6 +328,7 @@ function cardEvaluation() {
       </div>
       <div class="card-body">
         <p id="sc-eval-who" style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px"></p>
+        <p id="sc-eval-learning" role="status" style="display:none;font-size:13px;margin:0 0 12px;padding:8px 12px;border-radius:6px"></p>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">◎ひとりでできる ／ ○助言があればできる ／ △要練習 ／ ×未実施。独り立ち可の基準は「④が◎、ほかが全て○以上、OJTで1回でも合格（OK）」。</p>
         ${rows}
         <div class="form-group">
@@ -652,7 +655,11 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const holder = grants.find((g) => g.userId === perf.performerId);
     const ev = caseEvals.find((e) => e._id === myEvalId());
     if (holder) {
-      el.innerHTML = `<strong>伴走支援者バッジ：付与済み</strong>（${escapeHtml(holder.grantedDate)}／認定：${escapeHtml(holder.grantedByName)}／${holder.basis === "discretion" ? "特別裁量" : "評価シート"}）`;
+      // 練習生ロールのままなら、ロールの変更を案内する（自動では変えない・2026-10-24 育成コース）
+      const u = users().find((x) => x._id === holder.userId);
+      const roleNote = u && u.role === "trainee"
+        ? `<div style="margin-top:6px;color:var(--color-danger)">${escapeHtml(holder.userName)}さんのロールは「練習生」のままです。ユーザー管理でロールを「スタッフ」に変えてください。</div>` : "";
+      el.innerHTML = `<strong>伴走支援者バッジ：付与済み</strong>（${escapeHtml(holder.grantedDate)}／認定：${escapeHtml(holder.grantedByName)}／${holder.basis === "discretion" ? "特別裁量" : "評価シート"}）${roleNote}`;
     } else if (ev && ev.judgement === "independent") {
       el.innerHTML = isTrainer(actorId(), users(), rosterIds)
         ? `<button type="button" class="btn btn-secondary" id="sc-badge-grant" style="min-height:44px"><i class="ti ti-award" aria-hidden="true"></i> ${escapeHtml(ev.traineeName)}さんにバッジを付与する（認定：あなた）</button> <span id="sc-badge-msg" role="alert" style="font-size:13px;color:var(--color-danger)"></span>`
@@ -662,12 +669,44 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     }
   }
 
+  // 受講者の育成コースの進み具合（本番DB learningProgress・2026-10-24）。警告のみで、評価の保存は止めない
+  // （実績のある人・特別裁量の人を締め出さないため。提案書 §3）
+  let learning = { id: "", data: null, loaded: false };
+  function renderLearningLine() {
+    const el = $("sc-eval-learning");
+    if (!el) return;
+    if (!evaluationEligible(perf)) { el.style.display = "none"; return; }
+    const neutral = (text) => { el.textContent = text; el.style.display = "block"; el.style.background = "var(--color-bg-subtle, #faf7f2)"; };
+    if (learning.id !== perf.performerId) {
+      // 受講者が変わったら、前の人の状態をすぐ消す（読み終わるまで別の人の「OJTに入れます」が見えないように）
+      const id = perf.performerId;
+      learning = { id, data: null, loaded: false };
+      neutral("育成コースの進み具合を読み込んでいます…");
+      getDoc(doc(getProdFirestore(db.app), "learningProgress", id))
+        .then((d) => { if (learning.id === id) { learning = { id, data: d.exists() ? d.data() : null, loaded: true }; renderLearningLine(); } })
+        .catch((e) => {
+          console.warn("[supportChecklist] learningProgress", e.message);
+          if (learning.id !== id) return;
+          learning = { id: "", data: null, loaded: false }; // 次に描くときに読み直す
+          neutral("育成コースの進み具合を読めませんでした（評価の保存には影響しません）。");
+        });
+      return;
+    }
+    if (!learning.loaded) return;
+    const holder = grants.find((g) => g.userId === perf.performerId) || null;
+    const line = evaluationLine(learning.data, holder, QUIZZES);
+    el.textContent = line.text;
+    el.style.display = "block";
+    el.style.background = line.warn ? "var(--color-warning-soft, #fff7e0)" : "var(--color-success-soft, #e8f5ec)";
+  }
+
   function renderEval() {
     const card = $("sc-eval-card");
     if (!card) return;
     if (!evaluationEligible(perf)) { card.style.display = "none"; return; } // トレーナーなし・見学・単独は対象外
     card.style.display = "";
     $("sc-eval-who").textContent = `受講者：${perf.performerName}／トレーナー：${perf.trainerName}／実施日：${perf.date}`;
+    renderLearningLine();
     const busy = document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-");
     const ev = caseEvals.find((e) => e._id === myEvalId());
     if (!busy) {

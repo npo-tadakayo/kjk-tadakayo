@@ -3,6 +3,18 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-10-24 伴走支援者の育成コース（PR #10・#11 を main にマージ・**本番反映済み** 2026-10-24 19:47 JST）
+
+- **決まったこと（次田さん 2026-10-24）**: 提案 `docs/伴走支援者育成プログラム_提案_20261024.md` のとおり。7ステップ（はじめに→介護情報基盤→手順→CRM→練習モード→ロールプレイ・見学（任意）→OJT＝評価シート→バッジ＝独り立ち）。約束10項目と相談先（担当トレーナー → PM の Chat）・報告先（その日のうちに PM の Chat ＋次田さん）は確定（`docs/動画B_伴走支援者の約束_項目案_20261024.md`）
+- **作ったもの**: `/learning.html`（育成コース）・`learningProgress/{メール}`（本番DB・本人だけ書ける・練習生も可）・確認テスト30問 `admin/js/learning-quiz.js`・練習課題の自動判定・評価シートに進み具合の1行・バッジ付与後に練習生ならロール変更の案内・動画マニュアルを2区分に（ガイドブック PART0〜3・ご案内・新しい動画2本を追加）
+- **新しい動画2本**（制作フォルダ・Git 管理外）: `06_介護情報基盤事業/動画_育成_伴走支援者になるまで_20261024/`（2分30秒）・`動画_育成_伴走支援者の約束_20261024/`（3分49秒）。次田さんの声（eleven_v4・0.95）。B 冒頭の「タダカヨは」は STT が「戦いは」と誤認したが Gemini の聞き取りは「ただかよは」
+- **検証**: 単体テスト全部・ルールのテスト（エミュレーター 144/144 ほか）・Codex レビュー6回（指摘はすべて修正）・独立検証（8項目合格）
+- **本番反映の記録（2026-10-24・次田さんの「最後まで実施」の指示で実施）**: ① Storage `training/` に動画7本（guide-part0〜3・guide-annai・learn-intro・learn-pledge の mp4/vtt 14ファイル）② firestore.rules を ruleset `253300e2-ffa3-4d29-a81f-b5b771c49224` で反映（直前の ruleset は `7713c823-8279-46e5-a7fe-03110234b1a6`＝戻すときはこれ）。本番のルールとリポジトリが一致することを照合 ③ Hosting admin: プレビュー `learning-1024` で全97ファイル一致を確認 → live（version `6fb51e88a76a0a42`）。live も全97ファイルが main と一致。④ 本番で次田さんのログインのまま育成コース・動画マニュアルを表示し、動画B が Storage から読めること（3:48）を目視で確認
+- **2026-10-25 追加: 育成コースの使い方の動画2本を本番に掲載**（次田さん試聴・了承）: 動画マニュアル「伴走支援ガイド」の先頭に L-0「育成コースの進め方（新人の方へ）」2分27秒・L-T「新人の見守り方（トレーナー・管理者の方へ）」1分56秒（PR #16）。次田さんの声（eleven_v4・0.95）・架空データ（撮影用エミュレーター）・字幕は焼き込みで vtt なし。制作フォルダは `06_介護情報基盤事業/動画_育成_コースの進め方_20261025/`（台本の生成 `build_scenes.py`・撮影 `cap_*.py`・架空データ `seed.cjs`）と `動画_育成_新人の見守り方_20261025/`。Storage `training/learn-course.mp4`・`learn-trainer.mp4`（`sync-training-videos.py --only course trainer`）。Hosting admin は main `b658dfd` の作業フォルダから出した: 版 `21bdf79e1f5d0682`（戻すなら `6fb51e88a76a0a42`）。本番と比べて変わったのは `js/video-catalog.js` だけ（130件のハッシュ照合）。本番で2本とも再生できることを確認。✅ 同日に見つけた不具合（縦の低い画面で左メニューの下〔マニュアル・育成コース・動画マニュアル・ログアウト〕に届かない。スマホのドロワーも）を直して本番反映（PR #18・次田さん確認後）: メニュー（`.sidebar-nav`）だけをスクロール、練習モードの帯の高さを `--mode-bar-h`（mode.js）で引く。Hosting admin 版 `cbfee8c11caf3742`（戻すなら `21bdf79e1f5d0682`）。本番と比べて変わったのは `css/crm.css`・`js/mode.js` だけ。本番（高さ801px）で育成コースまで届き、ログアウトが常に見えることを確認
+- 反映前の確認: 本番の画面（91ファイル）とルールが、反映前の main と完全に一致していた＝今回の分以外は出ていない
+- **当時の手順（記録）**: ① `zsh -ic 'gcp tadakayo && python3 scripts/sync-training-videos.py --only g0 g1 g2 g3 annai intro pledge'`（Storage `training/` へ）② firestore.rules のデプロイ ③ Hosting のプレビュー → 確認 → 本番。倉庫ブランチ（warehouse）も `firestore.rules` の `isRegistered()` を変えている（別の箇所なので衝突しない見込み）
+- **残り**: 単元1・2・7 は9/14の画面のまま（撮り直しは改修が落ち着いてから）。ご案内動画の正本が共有ドライブに無い（制作フォルダの out.mp4 を使用）
+
 ## 2026-10-21 CRM改善（全項目を実装・未コミット・本番未反映）
 
 - **統合マージ（10/21）**: main（テストモード・Node 22）を crm-ship-request に取り込み、両方が共存するように直した（push 前・司令塔の確認待ち）。
@@ -515,6 +527,7 @@ Firebase Auth の認可ドメインを **15件 → 5件**にした。プレビ�
 - **firebase CLI の認証情報が279のものと入れ替わることがある**（2026-08-10 発生・同日復旧済み）: 症状は「`login:list` は `yoshinao-tsukuda@tadakayo.jp` を active と表示するのに、`projects:list` に出るのは tougou-db / voice-memo など**279のプロジェクト**で kjk-tadakayo が無い」→ `hosting:channel:deploy` が「Failed to get Firebase project」で落ちる。**復旧は `firebase login --reauth --account yoshinao-tsukuda@tadakayo.jp`（ブラウザ＝次田さん操作）**。復旧確認は `projects:list` に `kjk-tadakayo (current)` が出ること＋`hosting:channel:list --site kjk-tadakayo` が通ること
   - **回避策は 2026-08-13 にスクリプト化してリポジトリに常設した**（`scripts/deploy-hosting.mjs`・Issue #3 クローズ）。まず `node scripts/deploy-hosting.mjs --target lp --dry-run` で配信対象を確認し、`--channel {名前}` でプレビュー → 確認後に `--live`。以下は同スクリプトが内部でやっていることの説明:
   - gcloud のタダカヨ認証が生きていれば、**Hosting REST API で直接デプロイできる**。`gcloud auth print-access-token --account yoshinao-tsukuda@tadakayo.jp` ＋ ヘッダー `x-goog-user-project: kjk-tadakayo`（これが無いと quota project 未設定で403）。versions作成 → populateFiles → gzipしたファイルをhash単位でアップロード → FINALIZE → releases。⚠️ **firebase.json の headers/redirects は REST では形が違う**（`source`→`glob`、`[{key,value}]`→`{k:v}`、`type`→`statusCode`）。スクリプトは `/private/tmp/.../scratchpad/deploy-hosting.mjs`（セッション破棄で消えるので必要なら repo に移す）
+  - **ルール（firestore.rules／firestore.practice.rules／storage.rules）も 2026-10-25 に道具を常設した**（`scripts/deploy-rules.mjs`）。`--target firestore|practice|storage` に `--check`（本番との差分を見るだけ・差分ありは終了コード2）→ `--live`（コミット済みのものだけ・差分表示 → 5秒の猶予 → ruleset 作成 → release 差し替え → 読み直して一致確認）。完了表示に**直前の ruleset＝戻し先**と `--rollback <rulesetId>` のコマンドが出る。firestore 用の ruleset を storage に当てるような取り違えは止める。⚠ 2DB 配列の firebase.json では CLI の `--only firestore:rules` が何も反映しないので、CLI が復旧してもルールはこちらで出すのが確実
 - **タダカヨの gcloud ユーザー認証が期限切れ**（2026-08-08 時点）。Firestore REST 直叩きの前に `gcloud auth login`（tadakayo 設定）を通す。ADC は 279 アカウント（y.tsukuda@279279.net）のままなので kjk-tadakayo には使えない
 
 ## 再開コマンド

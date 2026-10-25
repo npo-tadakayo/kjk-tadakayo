@@ -40,6 +40,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  deleteDoc,
   collection,
   serverTimestamp,
 } from "firebase/firestore";
@@ -62,6 +63,7 @@ const LEGACY = "legacy@tadakayo.jp"; // role 未設定の既存登録者（今�
 const UNREG = "unreg@tadakayo.jp"; // users に登録が無い @tadakayo.jp
 const OUTSIDER = "someone@gmail.com";
 const WAREHOUSE = "warehouse@tadakayo.jp"; // 2026-10-24 倉庫（role=warehouse）。練習生と同じく本番DBを直接読めない
+const INACTIVE = "inactive@tadakayo.jp"; // users に登録はあるが active=false（育成コースの書き込みを拒否するはず）
 
 // ---- 結果の集計 ----
 const results = { 本番DB: [], 練習DB: [], Storage: [] };
@@ -111,6 +113,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
     [TRAINEE]: { role: "trainee", active: true },
     [LEGACY]: { active: true },
     [WAREHOUSE]: { role: "warehouse", active: true, locationIds: ["L1"] },
+    [INACTIVE]: { role: "staff", active: false },
   };
   for (const [email, data] of Object.entries(users)) await setDoc(doc(db, "users", email), data);
   const seed = [
@@ -128,6 +131,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   ];
   for (const [c, id] of seed) await setDoc(doc(db, c, id), { name: "seed", partnerEmail: "p1@example.com" });
   await setDoc(doc(db, "consentRequests", "tok1"), { status: "pending" });
+  // 育成コースの進み具合（1人1文書・ID はメール）
+  for (const email of [STAFF, VIEWER, TRAINEE]) await setDoc(doc(db, "learningProgress", email), { name: "seed", lastAt: 1 });
 });
 
 // 本番DB のクライアント（rules-unit-testing の認証付きコンテキスト）
@@ -244,6 +249,31 @@ await check(G, "未登録の @tadakayo.jp は cases を読めない", false, () 
 await check(G, "未登録の @tadakayo.jp は cases に書けない", false, () => setDoc(doc(prod(UNREG), "cases/x"), newCase));
 await check(G, "未認証は cases を読めない", false, () => getDoc(doc(prod(null), "cases/c1")));
 await check(G, "@tadakayo.jp 以外は cases を読めない", false, () => getDoc(doc(prod(OUTSIDER), "cases/c1")));
+
+// ---- 育成コースの進み具合（learningProgress・2026-10-24） ----
+const LP = (email) => ["learningProgress", email];
+const lpData = { videos: { "L-A": { maxPos: 10, duration: 150, doneAt: null } }, lastAt: 2 };
+await check(G, "staff は自分の learningProgress を読める", true, () => getDoc(doc(prod(STAFF), ...LP(STAFF))));
+await check(G, "staff は自分の learningProgress を更新できる", true, () => setDoc(doc(prod(STAFF), ...LP(STAFF)), lpData, { merge: true }));
+await check(G, "admin は自分の learningProgress を新しく作れる", true, () => setDoc(doc(prod(ADMIN), ...LP(ADMIN)), lpData));
+await check(G, "viewer も自分の learningProgress は書ける（自分の学習の記録）", true, () => setDoc(doc(prod(VIEWER), ...LP(VIEWER)), lpData, { merge: true }));
+await check(G, "staff は他人の learningProgress に書けない", false, () => setDoc(doc(prod(STAFF), ...LP(VIEWER)), lpData, { merge: true }));
+await check(G, "staff は他人の learningProgress を新しく作れない", false, () => setDoc(doc(prod(STAFF), ...LP("nobody@tadakayo.jp")), lpData));
+await check(G, "staff は他人の learningProgress を読める（トレーナーの一覧）", true, () => getDoc(doc(prod(STAFF), ...LP(TRAINEE))));
+await check(G, "staff は learningProgress を一覧できる", true, () => getDocs(collection(prod(STAFF), "learningProgress")));
+await check(G, "trainee は自分の learningProgress を読める", true, () => getDoc(doc(prod(TRAINEE), ...LP(TRAINEE))));
+await check(G, "trainee は自分の learningProgress を更新できる", true, () => setDoc(doc(prod(TRAINEE), ...LP(TRAINEE)), lpData, { merge: true }));
+await check(G, "trainee は他人の learningProgress を読めない", false, () => getDoc(doc(prod(TRAINEE), ...LP(STAFF))));
+await check(G, "trainee は他人の learningProgress に書けない", false, () => setDoc(doc(prod(TRAINEE), ...LP(STAFF)), lpData, { merge: true }));
+await check(G, "trainee は learningProgress を一覧できない", false, () => getDocs(collection(prod(TRAINEE), "learningProgress")));
+await check(G, "trainee も自分の learningProgress は消せない", false, () => deleteDoc(doc(prod(TRAINEE), ...LP(TRAINEE))));
+await check(G, "staff も自分の learningProgress は消せない", false, () => deleteDoc(doc(prod(STAFF), ...LP(STAFF))));
+await check(G, "admin は他人の learningProgress を消せる", true, () => deleteDoc(doc(prod(ADMIN), ...LP(VIEWER))));
+await check(G, "未登録の @tadakayo.jp は自分の learningProgress を作れない", false, () => setDoc(doc(prod(UNREG), ...LP(UNREG)), lpData));
+await check(G, "未登録の @tadakayo.jp は他人の learningProgress を読めない", false, () => getDoc(doc(prod(UNREG), ...LP(STAFF))));
+await check(G, "無効（active=false）の登録者は自分の learningProgress を作れない", false, () => setDoc(doc(prod(INACTIVE), ...LP(INACTIVE)), lpData));
+await check(G, "@tadakayo.jp 以外は自分のメールの learningProgress も作れない", false, () => setDoc(doc(prod(OUTSIDER), ...LP(OUTSIDER)), lpData));
+await check(G, "未認証は learningProgress を読めない", false, () => getDoc(doc(prod(null), ...LP(STAFF))));
 
 // =====================================================================
 // 練習DB

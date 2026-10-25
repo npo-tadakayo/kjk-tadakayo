@@ -34,7 +34,7 @@ export async function mountVideo(container, id, { autoplay = false } = {}) {
     const { mp4, vtt } = await mediaUrls(v);
     container.innerHTML = `
       <video class="vp-video" controls playsinline preload="metadata" crossorigin="anonymous" ${autoplay ? "autoplay" : ""}
-             aria-label="単元${v.no} ${esc(v.title)}">
+             aria-label="${esc(v.label)} ${esc(v.title)}">
         <source src="${esc(mp4)}" type="video/mp4">
         ${vtt ? `<track kind="subtitles" srclang="ja" label="日本語字幕" src="${esc(vtt)}" default>` : ""}
         お使いのブラウザは動画の再生に対応していません。
@@ -85,7 +85,7 @@ export async function openVideoModal(id) {
   if (!v) return;
   const m = ensureModal();
   lastFocus = document.activeElement;
-  m.querySelector(".vp-title").textContent = `単元${v.no}　${v.title}`;
+  m.querySelector(".vp-title").textContent = `${v.label}　${v.title}`;
   m.querySelector(".vp-meta").textContent = `${v.duration} ／ ${v.version}（${v.updated}）`;
   m.hidden = false;
   document.body.style.overflow = "hidden";
@@ -109,11 +109,11 @@ export function wireVideoButtons(root = document) {
     const v = findVideo(btn.dataset.video);
     if (!v) { btn.hidden = true; return; }
     if (!btn.textContent.trim()) {
-      btn.innerHTML = `<i class="ti ti-player-play" aria-hidden="true"></i> 動画で見る（単元${v.no}・${esc(v.duration)}）`;
+      btn.innerHTML = `<i class="ti ti-player-play" aria-hidden="true"></i> 動画で見る（${esc(v.label)}・${esc(v.duration)}）`;
     }
     btn.classList.add("vp-btn");
     btn.setAttribute("type", "button");
-    btn.setAttribute("aria-label", `動画で見る: 単元${v.no} ${v.title}（${v.duration}）`);
+    btn.setAttribute("aria-label", `動画で見る: ${v.label} ${v.title}（${v.duration}）`);
     btn.addEventListener("click", () => openVideoModal(v.id));
   });
 }

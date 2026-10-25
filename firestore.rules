@@ -153,6 +153,20 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // 育成コースの進み具合（2026-10-24・docs/伴走支援者育成プログラム_提案_20261024.md §4.2）。1人1文書で、ID はメール。
+    // 本人が自分の学習の記録（動画の視聴位置・確認テスト・約束・練習課題の判定）を書く。
+    // 練習生（trainee）も書けるようにするため、isRegistered()（練習生を除く）は使わず、
+    // 「本人で、users/{email} に登録があり active == true」だけを見る。練習生が本番で触れるのはこの文書だけ。
+    // 読めるのは本人と登録スタッフ（トレーナー・管理者が一覧で見るため）。他人の文書は書けない。削除は管理者だけ。
+    // 本人が「済」にできてしまうが、最後の関門はトレーナーが立ち会う OJT（評価シート）なので割り切る（提案書 §4.2）。
+    match /learningProgress/{email} {
+      allow read: if (emailIsTadakayo() && request.auth.token.email == email) || isRegistered();
+      allow create, update: if emailIsTadakayo() && request.auth.token.email == email
+        && exists(/databases/$(database)/documents/users/$(email))
+        && get(/databases/$(database)/documents/users/$(email)).data.active == true;
+      allow delete: if isAdmin();
+    }
+
     // 通知の送信記録（重複送信の防止・追跡用）。書き込みは Functions（Admin SDK）だけ。
     // 読めるのは管理者だけ（2026-10-21）。
     match /_notifyLog/{id} {
@@ -168,7 +182,7 @@ service cloud.firestore {
     //    個別の match で書き込みを「狭く」決めているコレクションは、ここでの書き込みの対象から外す:
     //      users（管理者と本人の onboarding だけ）／leadTokens（Functions だけ）／
     //      supportBadges（訂正・削除は管理者だけ）／supportEvaluations（削除は管理者だけ）／
-    //      appConfig（管理者だけ）／_notifyLog（Functions だけ）
+    //      appConfig（管理者だけ）／_notifyLog（Functions だけ）／learningProgress（本人だけ・削除は管理者だけ。2026-10-24）
     //    bankTxns（入金明細の取り込み記録）・bankConfig（列割り当てのプリセット・名義の学習）は
     //    職員が書くのでここのまま（除外しない）。
     //    読み取りは従来どおり（担当営業の候補などで職員が users を読んでいるため、ここでは変えない）。
@@ -177,7 +191,7 @@ service cloud.firestore {
       // _notifyLog だけは読みも管理者に絞る（ここで読めてしまうと個別 match の「管理者だけ」が素通りになる）
       allow read: if isRegistered() && coll != "_notifyLog";
       allow write: if isEditor()
-        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations", "appConfig", "_notifyLog"]);
+        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations", "appConfig", "_notifyLog", "learningProgress"]);
     }
   }
 }

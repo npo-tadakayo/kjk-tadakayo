@@ -33,6 +33,10 @@
     .vl-desc{font-size:12.5px;color:var(--color-ink-muted);line-height:1.6;}
     .vl-meta{font-size:12px;color:var(--color-ink-muted);}
     .vl-icon{margin-left:auto;align-self:center;color:var(--color-ink-muted);}
+    .vl-group{font-family:"Noto Serif JP",serif;font-size:15px;margin:10px 0 0;display:flex;flex-direction:column;gap:2px;}
+    .vl-group:first-child{margin-top:0;}
+    .vl-group span{font-family:inherit;font-size:12px;font-weight:400;color:var(--color-ink-muted);}
+    .vl-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:#f3efe8;color:var(--color-ink-muted);vertical-align:1px;}
     .callout{border-radius:8px;padding:12px 14px;margin:0 0 16px;font-size:13px;line-height:1.8;}
     .callout.tip{background:#e8f5ec;border-left:4px solid #5a8a3a;}
     .howto{font-size:13px;color:var(--color-ink-muted);line-height:1.8;margin-top:18px;}
@@ -52,9 +56,11 @@
 
       <div class="doc" id="doc" style="display:none">
         <div class="callout tip">
-          <strong>CRM の操作説明を、単元ごとに 3〜6分の動画にしています。</strong>
+          <strong>「伴走支援（ガイドブック）」と「CRMの使い方」の2つに分けて並べています。</strong>
           字幕付きなので音を出せない場所でも見られます（動画右下の「CC」で字幕の表示を切り替え）。
-          はじめての方は <strong>1 → 2 → 7</strong>、発注・出荷を担当する方は <strong>3 → 5</strong>、請求と入金は <strong>4</strong>、管理者は <strong>6</strong>、Web申し込みの流れは <strong>8</strong> をご覧ください。
+          はじめて伴走支援に入る方は、<strong>ご案内 → PART0〜3</strong> で支援先での手順を、<strong>CRM の単元 1 → 2 → 7 → 8</strong> で記録のしかたを見てください。
+          発注・出荷を担当する方は <strong>単元3 → 5</strong>、請求と入金は <strong>単元4</strong>、管理者は <strong>単元6</strong> です。
+          単元9は2026年10月の改修のお知らせで、一部は旧画面です。
           文章で確かめたいときは <a href="/manual.html">マニュアル</a> へ（各手順に「動画で見る」ボタンがあります）。
         </div>
 
@@ -63,15 +69,16 @@
             <div class="ph"><h2 id="playerTitle">—</h2><p id="playerMeta"></p></div>
             <div id="player"></div>
             <div class="pf">
-              <span style="color:var(--color-ink-muted)">画面はすべてサンプルデータです。実在の事業所・担当者は写っていません。</span>
+              <span id="playerNote" style="color:var(--color-ink-muted)"></span>
               <span id="playerNext" hidden style="margin-left:auto"></span>
             </div>
           </section>
-          <nav class="vl" id="videoList" aria-label="単元の一覧"></nav>
+          <nav class="vl" id="videoList" aria-label="動画の一覧"></nav>
         </div>
 
         <p class="howto">
-          動画の正本は共有ドライブ「TM_介護情報基盤を広め隊 › 02_マニュアル・ガイドブック › 研修動画 › CRM操作説明_全7単元」にあります。
+          動画の正本は共有ドライブ「TM_介護情報基盤を広め隊 › 02_マニュアル・ガイドブック › 研修動画」にあります（CRM は「CRM操作説明_全7単元」、ガイドブックは「研修動画」の直下）。
+          ガイドブックの本体（PDF）も同じ「02_マニュアル・ガイドブック」にあります。
           ここに出ているのはそのコピーで、差し替えは開発担当が行います（エンジニアノート参照）。
         </p>
       </div>

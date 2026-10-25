@@ -372,6 +372,10 @@
     .news-points li { font-size:14px; line-height:1.9; margin-bottom:4px; }
     .news-refs { font-size:13px; line-height:1.9; color:#6a5e48; }
     .news-refs a { color:#3a6e9e; }
+    /* 2026-10-24 追加: PHPの脆弱性（2026-10-21公表）の影響なしの短い掲示。くわしくはフッターの #site-safety */
+    .news-mini { display:flex; gap:10px; align-items:flex-start; background:#fff; border:1px solid #E8DFC8; border-radius:12px; padding:14px 18px; margin-bottom:16px; font-size:14px; line-height:1.8; }
+    .news-mini time { flex-shrink:0; font-weight:700; color:#6a5e48; }
+    .news-mini a { color:#3a6e9e; }
     @media (max-width: 640px) {
       .news-table th, .news-table td { display:block; width:auto; border-bottom:none; padding:2px 0; }
       .news-table td { padding-bottom:10px; border-bottom:1px solid #EFE7D4; }
@@ -997,6 +1001,10 @@
     .footer-links a { font-size: 13px; color: rgba(255,255,255,0.6); }
     .footer-links a:hover { color: #fff; }
     .footer-copy { font-size: 12px; width: 100%; margin-top: 8px; }
+    .site-safety { width: 100%; border-top: 1px solid rgba(255,255,255,0.15); padding-top: 14px; font-size: 12px; line-height: 1.8; }
+    .site-safety-title { font-weight: 700; color: #fff; margin-bottom: 4px; }
+    .site-safety ul { margin: 0; padding-left: 1.2em; }
+    .site-safety-note { margin-top: 4px; color: rgba(255,255,255,0.6); }
 
     /* ======== RESPONSIVE ======== */
     @media (max-width: 1024px) {
@@ -1202,6 +1210,11 @@
        掲載終了時はこの <section id="news"> ごと削除してよい。 -->
   <section id="news" class="news-section section" aria-labelledby="news-heading">
     <div class="container">
+      <!-- PHPの脆弱性（2026-10-21公表）について。2026-10-24 次田さん指示。ケアプーのポータルと同じ趣旨 -->
+      <p class="news-mini">
+        <time datetime="2026-10-24">2026/10/24</time>
+        <span>このサイトは <strong>PHP（ピーエイチピー）を使用していません</strong>。2026年10月21日に公表された PHP の重大な脆弱性（CVE-2026-109618／CVE-2026-109619）の影響は受けません（<a href="#site-safety">くわしくはページの一番下へ</a>）。</span>
+      </p>
       <div class="news-card">
         <span class="news-status" data-news-state="archive">
           <i class="ti ti-player-play" aria-hidden="true"></i>アーカイブ公開中
@@ -2914,6 +2927,16 @@
         <p class="footer-copy">
           © 2026 NPO法人タダカヨ　|　本LPに記載の助成金情報は2026年7月時点のものです。最新情報は介護情報基盤ポータル（国保中央会）でご確認ください。
         </p>
+        <!-- PHPの脆弱性（2026-10-21公表）について。2026-10-24 次田さん指示。確認内容: リポジトリに PHP 0件・配信は Firebase Hosting・フォームの送信先は Cloud Functions（Node.js 22） -->
+        <div class="site-safety" id="site-safety">
+          <p class="site-safety-title">このサイトの安全について（2026年10月24日 確認）</p>
+          <ul>
+            <li>このサイトは、PHP（ピーエイチピー）というしくみを使用していません。2026年10月21日に公表された PHP の重大な脆弱性の影響は受けません。</li>
+            <li>お問い合わせ・お見積もりのフォームも、PHP を使わないしくみ（Google のクラウド）で動いています。</li>
+            <li>このサイトは、Google のサービス（Firebase Hosting）から配信しています。</li>
+          </ul>
+          <p class="site-safety-note">参考：対象の脆弱性は CVE-2026-109618／CVE-2026-109619（PHP 公式の発表 2026年10月21日）</p>
+        </div>
       </div>
     </div>
   </footer>
