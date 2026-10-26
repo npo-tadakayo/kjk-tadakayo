@@ -11,7 +11,8 @@ import { getFunctions, httpsCallable }
   from "/js/fn.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
-import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason } from "/js/case-detail-util.js";
+import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
+  officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -62,26 +63,55 @@ function inquiryIntentBadge(intent) {
   return `<span class="badge ${cls}">ご希望: ${escHtml(label)}</span>`;
 }
 
-function renderCaseHeader(c) {
-  document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
-  document.getElementById("caseNumber").textContent = `案件 #${c.caseNumber || "—"}`;
-  document.getElementById("caseTitle").textContent = c.officeName || "（事業所名未登録）";
-
+// 見出しの1行（法人・担当者・電話・メール・住所・流入元・ご希望）。
+// 住所は後から読むので、読み終えたらこの行だけ描き直す（ステータス・訪問予定日の入力は触らない）
+function renderCaseMeta(c) {
   const metaEl = document.getElementById("caseMeta");
   metaEl.innerHTML = [
     c.corpName ? `<span class="case-meta-item"><i class="ti ti-building" aria-hidden="true"></i>${escHtml(c.corpName)}</span>` : "",
     c.contactName ? `<span class="case-meta-item"><i class="ti ti-user" aria-hidden="true"></i>${escHtml(c.contactName)}</span>` : "",
     c.contactPhone ? `<span class="case-meta-item"><i class="ti ti-phone" aria-hidden="true"></i>${escHtml(c.contactPhone)}</span>` : "",
     c.contactEmail ? `<span class="case-meta-item"><i class="ti ti-mail" aria-hidden="true"></i>${escHtml(c.contactEmail)}</span>` : "",
+    officeAddressItem(),
     `<span class="case-meta-item"><i class="ti ti-tag" aria-hidden="true"></i>${SOURCE_LABELS[c.source] || c.source || "—"}</span>`,
     c.inquiryIntent ? `<span class="case-meta-item">${inquiryIntentBadge(c.inquiryIntent)}</span>` : "",
   ].filter(Boolean).join("");
+}
+
+function renderCaseHeader(c) {
+  document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
+  document.getElementById("caseNumber").textContent = `案件 #${c.caseNumber || "—"}`;
+  document.getElementById("caseTitle").textContent = c.officeName || "（事業所名未登録）";
+
+  renderCaseMeta(c);
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
   renderLostReason(c);
   const vd = document.getElementById("visitDateInput");
   if (vd) vd.value = c.visitDate || "";
+}
+
+// 事業所の住所（2026-10-26 前田さんの要望：電話・メールと並べて出す）。
+// undefined＝読み込み中（何も出さない）／""＝未登録（事業所の画面で入れてもらう）
+let officeAddress;
+function officeAddressItem() {
+  if (officeAddress === undefined) return "";
+  if (!officeAddress) {
+    return `<span class="case-meta-item"><i class="ti ti-map-pin" aria-hidden="true"></i><a href="/offices.html">住所未登録（事業所の画面で入力）</a></span>`;
+  }
+  const url = mapsSearchUrl(officeAddress);
+  return `<span class="case-meta-item"><i class="ti ti-map-pin" aria-hidden="true"></i><a href="${escHtml(url)}" target="_blank" rel="noopener" title="Google マップで開く">${escHtml(officeAddress)}</a></span>`;
+}
+async function loadOfficeAddress(c) {
+  if (!c.officeId) { officeAddress = ""; renderCaseMeta(currentCase); return; }
+  try {
+    const snap = await getDoc(doc(db, "offices", c.officeId));
+    officeAddress = snap.exists() ? officeAddressText(snap.data()) : "";
+  } catch (_) {
+    officeAddress = undefined; // 読めないときは出さない（権限・通信の失敗で「未登録」と誤って出さない）
+  }
+  renderCaseMeta(currentCase);
 }
 
 // 失注の理由の表示（ステータス横）。失注でなければ隠す。既存の失注案件は「未記入」。
@@ -1537,6 +1567,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  loadOfficeAddress(currentCase); // 事業所の住所は別に読んで、見出しに足す（待たない）
   renderNextStep(); // 次の一手（まだ shipmentsCache が空でも1行目は出せる。2行目は購読が来てから更新）
   // 伴走支援承諾書カード（事前確認タブの先頭）。メールは既存の sendCaseEmail を流用
   initConsentCard({
