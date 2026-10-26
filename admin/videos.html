@@ -9,9 +9,10 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
   <link rel="stylesheet" href="/css/crm.css">
   <style>
-    .doc{max-width:1100px;}
-    .vp-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:20px;align-items:start;}
+    .doc{max-width:1180px;}
+    .vp-grid{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:20px;align-items:start;}
     @media (max-width:1023px){.vp-grid{grid-template-columns:1fr;}}
+    @media (min-width:1024px){.player-card{position:sticky;top:16px;}}
     .player-card{background:#fff;border:1px solid var(--color-line);border-radius:12px;overflow:hidden;}
     .player-card .ph{padding:14px 18px 8px;}
     .player-card .ph h2{font-family:"Noto Serif JP",serif;font-size:18px;margin:0 0 4px;}
@@ -21,25 +22,41 @@
     #player .vp-loading,#player .vp-error{color:#fff;font-size:13px;padding:60px 0;text-align:center;}
     #player .vp-error{color:#ffd8d8;}
     .player-card .pf{padding:12px 18px 14px;font-size:13px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-    .vl{display:flex;flex-direction:column;gap:8px;}
-    .vl-item{display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;min-height:44px;padding:12px 14px;border-radius:12px;border:1px solid var(--color-line);background:#fff;cursor:pointer;}
+    /* 目的から選ぶ */
+    .vpaths{margin:0 0 14px;}
+    .vpaths-title{font-family:"Noto Serif JP",serif;font-size:15px;margin:0 0 8px;}
+    .vpaths-title span{font-family:inherit;font-size:12px;font-weight:400;color:var(--color-ink-muted);margin-left:8px;}
+    .vpaths-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+    @media (max-width:767px){.vpaths-list{grid-template-columns:repeat(2,minmax(0,1fr));}}
+    .vpath{display:flex;align-items:center;gap:10px;min-height:52px;padding:10px 12px;border-radius:12px;border:1px solid var(--color-line);background:#fff;cursor:pointer;text-align:left;font-size:13.5px;font-weight:600;}
+    .vpath:hover{background:#fbf9f6;}
+    .vpath i{font-size:20px;color:var(--color-primary,#c02828);}
+    .vpath small{display:block;font-weight:400;font-size:11.5px;color:var(--color-ink-muted);}
+    .vpath[aria-pressed="true"]{border-color:var(--color-primary,#c02828);background:#fdf2f2;}
+    .vpath:focus-visible,.vtab:focus-visible{outline:3px solid #c02828;outline-offset:2px;}
+    /* 区分のタブ */
+    .vtabs{display:flex;gap:4px;border-bottom:1px solid var(--color-line);margin:0 0 16px;overflow-x:auto;}
+    .vtab{flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:8px 14px;border:0;border-bottom:3px solid transparent;background:none;cursor:pointer;font-size:14px;color:var(--color-ink-muted);}
+    .vtab[aria-selected="true"]{color:var(--color-ink,#222);font-weight:700;border-bottom-color:var(--color-primary,#c02828);}
+    .vtab .cnt{font-size:11.5px;font-weight:400;color:var(--color-ink-muted);}
+    /* 一覧 */
+    .vl{display:flex;flex-direction:column;gap:6px;}
+    .vl-head{font-size:12.5px;color:var(--color-ink-muted);line-height:1.6;margin:0 0 4px;display:flex;align-items:flex-start;gap:8px;}
+    .vl-head button{margin-left:auto;flex:0 0 auto;}
+    .vl-item{display:flex;align-items:flex-start;gap:12px;text-align:left;width:100%;min-height:44px;padding:10px 12px;border-radius:12px;border:1px solid var(--color-line);background:#fff;cursor:pointer;}
     .vl-item:hover{background:#fbf9f6;}
     .vl-item.active{border-color:var(--color-primary,#c02828);background:#fdf2f2;}
     .vl-item:focus-visible{outline:3px solid #c02828;outline-offset:2px;}
-    .vl-no{flex:0 0 30px;height:30px;border-radius:50%;background:var(--color-primary,#c02828);color:#fff;font-weight:700;font-size:13px;display:inline-flex;align-items:center;justify-content:center;}
+    .vl-no{flex:0 0 28px;height:28px;border-radius:50%;background:var(--color-primary,#c02828);color:#fff;font-weight:700;font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;}
     .vl-item.active .vl-no{background:#8a1c1c;}
     .vl-main{display:flex;flex-direction:column;gap:2px;min-width:0;}
     .vl-title{font-weight:600;font-size:14px;}
-    .vl-desc{font-size:12.5px;color:var(--color-ink-muted);line-height:1.6;}
+    .vl-desc{font-size:12.5px;color:var(--color-ink-muted);line-height:1.6;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;}
+    .vl-item.active .vl-desc{-webkit-line-clamp:unset;display:block;}
     .vl-meta{font-size:12px;color:var(--color-ink-muted);}
     .vl-icon{margin-left:auto;align-self:center;color:var(--color-ink-muted);}
-    .vl-group{font-family:"Noto Serif JP",serif;font-size:15px;margin:10px 0 0;display:flex;flex-direction:column;gap:2px;}
-    .vl-group:first-child{margin-top:0;}
-    .vl-group span{font-family:inherit;font-size:12px;font-weight:400;color:var(--color-ink-muted);}
     .vl-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:#f3efe8;color:var(--color-ink-muted);vertical-align:1px;}
-    .callout{border-radius:8px;padding:12px 14px;margin:0 0 16px;font-size:13px;line-height:1.8;}
-    .callout.tip{background:#e8f5ec;border-left:4px solid #5a8a3a;}
-    .howto{font-size:13px;color:var(--color-ink-muted);line-height:1.8;margin-top:18px;}
+    .howto{font-size:12.5px;color:var(--color-ink-muted);line-height:1.8;margin-top:22px;}
   </style>
 </head>
 <body>
@@ -55,14 +72,12 @@
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
 
       <div class="doc" id="doc" style="display:none">
-        <div class="callout tip">
-          <strong>「伴走支援（ガイドブック）」と「CRMの使い方」の2つに分けて並べています。</strong>
-          字幕付きなので音を出せない場所でも見られます（動画右下の「CC」で字幕の表示を切り替え）。
-          はじめて伴走支援に入る方は、<strong>ご案内 → PART0〜3</strong> で支援先での手順を、<strong>CRM の単元 1 → 2 → 7 → 8</strong> で記録のしかたを見てください。
-          発注・出荷を担当する方は <strong>単元3 → 5</strong>、請求と入金は <strong>単元4</strong>、管理者は <strong>単元6</strong> です。
-          単元9は2026年10月の改修のお知らせで、一部は旧画面です。
-          文章で確かめたいときは <a href="/manual.html">マニュアル</a> へ（各手順に「動画で見る」ボタンがあります）。
-        </div>
+        <section class="vpaths" aria-labelledby="vpathsTitle">
+          <h2 id="vpathsTitle" class="vpaths-title">目的から選ぶ <span>押すと、見る順番に並べて表示します</span></h2>
+          <div class="vpaths-list" id="pathList"></div>
+        </section>
+
+        <div class="vtabs" role="tablist" aria-label="動画の区分" id="groupTabs"></div>
 
         <div class="vp-grid">
           <section class="player-card" id="playerCard" aria-labelledby="playerTitle">
@@ -77,6 +92,8 @@
         </div>
 
         <p class="howto">
+          字幕付きなので、音を出せない場所でも見られます（動画右下の「CC」で字幕の表示を切り替え）。
+          文章で確かめたいときは <a href="/manual.html">マニュアル</a> へ（各手順に「動画で見る」ボタンがあります）。<br>
           動画の正本は共有ドライブ「TM_介護情報基盤を広め隊 › 02_マニュアル・ガイドブック › 研修動画」にあります（CRM は「CRM操作説明_全7単元」、ガイドブックは「研修動画」の直下）。
           ガイドブックの本体（PDF）も同じ「02_マニュアル・ガイドブック」にあります。
           ここに出ているのはそのコピーで、差し替えは開発担当が行います（エンジニアノート参照）。
