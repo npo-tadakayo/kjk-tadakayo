@@ -1,6 +1,6 @@
 #!/bin/bash
 # Noto Sans JP 自己ホスト用サブセット生成（タダカヨ・Pマーク: Google CDN非経由）
-# 対外HTML（index.html / mitsumori.html）で使う文字＋かな/英数/記号レンジに絞った
+# 対外HTML（index.html / mitsumori.html / library / terms / permission / 404）で使う文字＋かな/英数/記号レンジに絞った
 # 可変woff2（全ウェイト1ファイル）を fonts/NotoSansJP-subset.woff2 に出力する。
 # ★対外HTMLの文言を追加・変更したら本スクリプトを再実行すること（新しい漢字がフォールバックになるのを防ぐ）。
 #
@@ -18,7 +18,7 @@ USED="${TMPDIR:-/tmp}/tadakayo-used.txt"
 python3 - "$USED" <<'PY'
 import sys
 chars=set()
-for f in ["index.html","mitsumori.html","library.html","terms.html","permission.html"]:
+for f in ["index.html","mitsumori.html","library.html","terms.html","permission.html","404.html"]:
     chars |= set(open(f, encoding="utf-8").read())
 for c in ("\n","\r"): chars.discard(c)
 open(sys.argv[1],"w",encoding="utf-8").write("".join(sorted(chars)))
