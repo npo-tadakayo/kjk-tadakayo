@@ -43,7 +43,7 @@ function renderPaths() {
       <span>${esc(p.title)}<small>${vs.length}本・約${minutes(vs)}分</small></span></button>`;
   }).join("");
   box.querySelectorAll(".vpath").forEach((b) => b.addEventListener("click", () => {
-    if (path === b.dataset.path) { path = null; renderAll(); return; }   // もう一度押すと解除
+    if (path === b.dataset.path) { path = null; tab = byId(current)?.group || tab; syncMode(); return; }   // もう一度押すと解除
     path = b.dataset.path;
     select(findPath(path).ids[0], true);
   }));
@@ -57,7 +57,7 @@ function renderTabs() {
     return `<button type="button" class="vtab" role="tab" id="vt-${g.id}" aria-selected="${on}" aria-controls="videoList" data-tab="${g.id}">
       <i class="ti ${esc(g.icon)}" aria-hidden="true"></i>${esc(g.title)} <span class="cnt">${VIDEOS.filter((v) => v.group === g.id).length}</span></button>`;
   }).join("");
-  box.querySelectorAll(".vtab").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; path = null; renderAll(); }));
+  box.querySelectorAll(".vtab").forEach((b) => b.addEventListener("click", () => { tab = b.dataset.tab; path = null; syncMode(); }));
 }
 
 function renderList() {
@@ -68,7 +68,7 @@ function renderList() {
     list.innerHTML = `<p class="vl-head"><span><strong>${esc(p.title)}</strong>：この順番で見てください（${vs.length}本・約${minutes(vs)}分）</span>
       <button type="button" class="btn btn-secondary" data-clear><i class="ti ti-x" aria-hidden="true"></i> 解除</button></p>`
       + vs.map((v, i) => itemHtml(v, i + 1)).join("");
-    list.querySelector("[data-clear]").addEventListener("click", () => { path = null; renderAll(); });
+    list.querySelector("[data-clear]").addEventListener("click", () => { path = null; tab = byId(current)?.group || tab; syncMode(); });
   } else {
     const g = GROUPS.find((x) => x.id === tab) || GROUPS[0];
     list.innerHTML = `<p class="vl-head">${esc(g.desc)}</p>` + VIDEOS.filter((v) => v.group === g.id).map((v) => itemHtml(v)).join("");
@@ -77,6 +77,24 @@ function renderList() {
 }
 
 function renderAll() { renderPaths(); renderTabs(); renderList(); }
+
+// 表示のしかた（目的／区分）を変えたとき: 一覧・URL・「次は」の案内をまとめてそろえる
+function syncMode() {
+  renderAll();
+  if (current) history.replaceState(null, "", `?v=${current}${path ? `&p=${path}` : ""}`);
+  const el = document.getElementById("playerNext");
+  if (!el.hidden) showNext(byId(current));
+}
+
+// 再生し終わったあとの「次は」の案内（自動再生はしない）
+function showNext(v) {
+  const next = v && nextOf(v);
+  const el = document.getElementById("playerNext");
+  el.hidden = !next;
+  if (!next) { el.innerHTML = ""; return; }
+  el.innerHTML = `次は <button type="button" class="btn btn-secondary" data-next="${next.id}"><i class="ti ti-player-skip-forward" aria-hidden="true"></i> ${esc(next.label)} ${esc(next.title)}（${esc(next.duration)}）</button>`;
+  el.querySelector("[data-next]").addEventListener("click", () => select(next.id, true));
+}
 
 // 次の動画。目的の順番を選んでいればその順、そうでなければ同じ区分の中だけ（区分をまたいで勝手に進めない）
 function nextOf(v) {
@@ -94,7 +112,7 @@ async function select(id, scroll) {
   renderAll();
   document.getElementById("playerTitle").textContent = `${v.label}　${v.title}`;
   document.getElementById("playerMeta").textContent = `${v.duration} ／ ${v.version}（${v.updated}）／ ${v.desc}`;
-  document.getElementById("playerNote").textContent = v.note || (v.group === "crm"
+  document.getElementById("playerNote").textContent = v.note || (v.group === "crm" || v.group === "notice"
     ? "画面はすべてサンプルデータです。実在の事業所・担当者は写っていません。"
     : "伴走支援ガイドブック（介護情報基盤編）に沿った説明です。本体（PDF）は共有ドライブの「02_マニュアル・ガイドブック」にあります。");
   history.replaceState(null, "", `?v=${v.id}${path ? `&p=${path}` : ""}`);
@@ -102,15 +120,7 @@ async function select(id, scroll) {
   if (scroll) document.getElementById("playerCard").scrollIntoView({ behavior: "smooth", block: "start" });
   if (video) {
     // 再生し終わったら次の単元へ案内（自動再生はしない）
-    video.addEventListener("ended", () => {
-      const next = nextOf(v);
-      const el = document.getElementById("playerNext");
-      el.hidden = !next;
-      if (next) {
-        el.innerHTML = `次は <button type="button" class="btn btn-secondary" data-next="${next.id}"><i class="ti ti-player-skip-forward" aria-hidden="true"></i> ${esc(next.label)} ${esc(next.title)}（${esc(next.duration)}）</button>`;
-        el.querySelector("[data-next]").addEventListener("click", () => select(next.id, true));
-      }
-    });
+    video.addEventListener("ended", () => showNext(v));
     document.getElementById("playerNext").hidden = true;
   }
 }
