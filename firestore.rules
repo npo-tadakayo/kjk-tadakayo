@@ -20,11 +20,21 @@ service cloud.firestore {
     // role が未設定の登録者は、これまでどおり登録済み（読める）として扱う。
     // そのため .role ではなく .get('role', '') で読む（無いフィールドを .role で読むと評価エラー＝拒否になり、
     // role 未設定の人の閲覧まで止めてしまう。2026-10-20 ルールテストで確認）。
+    // 2026-10-24 倉庫（docs/倉庫メニュー_設計_20261024.md §9.1）: ロール「倉庫（warehouse）」も練習生と同じく除外する。
+    // 倉庫の人は Firestore を直接読み書きしない（案件・事業所＝個人情報・金額が見えてしまうため）。
+    // 倉庫の画面のデータは Functions の warehouse* だけを通す（サーバーで保管場所の権限を確かめ、要る項目だけ返す）。
+    // 自分の users/{email} は読める（下の users のルールの「本人なら読める」は isRegistered() を経由しない）。
     function isRegistered() {
       return emailIsTadakayo()
         && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
         && userData().active == true
-        && userData().get('role', '') != 'trainee';
+        && !(userData().get('role', '') in ['trainee', 'warehouse']);
+    }
+    // 倉庫の人か（users に登録があり role が warehouse）。products の読み取りから外すのに使う
+    function isWarehouseUser() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.token.email))
+        && userData().get('role', '') == 'warehouse';
     }
     function isAdmin() {
       return isRegistered() && userData().role == 'admin';
@@ -58,8 +68,9 @@ service cloud.firestore {
     }
 
     // 商品マスタ: 認証済みは閲覧可（パートナーのカタログ参照）／編集は登録スタッフ
+    // 倉庫の人は直接読めない（単価が入っているため。倉庫の在庫は warehouseList が台数だけ返す・2026-10-24）
     match /products/{sku} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && !isWarehouseUser();
       allow write: if isEditor();
     }
 

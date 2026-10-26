@@ -7,6 +7,10 @@ rules_version = '2';
 //   練習DBではしない。@tadakayo.jp でメール確認済みのログインなら、誰でも読み書きできる。
 // ・ロール確認は画面が常に本番DBの users/自分 を読んで行う。練習DBには users を置かない
 //   （置いても使われず、ロールを偽装した書き込みの誤解を招くので、読み書きとも閉じる）。
+// ・2026-10-24 倉庫（role "warehouse"）: このルールでは区別できない（上のとおり本番の users を見に行けない）ため、変えない。
+//   練習DBの中身は架空データだけなので、倉庫の人が練習DBを読めても個人情報・本番の金額は漏れない。
+//   倉庫の人は練習モードを使わない（画面は練習モードの切り替えを出さず /warehouse だけに固定・本番の操作は warehouse* の Callable だけ）。
+//   本番DB（firestore.rules）では isRegistered() から倉庫の人を外している。
 service cloud.firestore {
   match /databases/{database}/documents {
     function isTadakayoStaff() {

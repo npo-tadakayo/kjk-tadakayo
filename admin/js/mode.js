@@ -237,14 +237,21 @@ export async function ensureMyPracticeCases(user) {
  */
 export function setupModeUi(role, user) {
   const isTrainee = role?.role === "trainee";
+  const isWarehouse = role?.role === "warehouse"; // 倉庫の人は練習モードを使わない（切り替えを出さない・2026-10-24）
   if (isTrainee && !isPracticeMode()) {
     if (setPracticeMode(true)) { location.reload(); return false; }
+    return "no-storage";
+  }
+  // 倉庫の人は本番だけ。前の人の練習モードの印（crm.mode=practice）がブラウザに残っていたら外して読み込み直す
+  // （練習DBの保管場所が見え、練習DBに書いてしまうため・2026-10-24 ブラウザ検証 B2）。外せなければ止める（読み込み直しを繰り返さない）
+  if (isWarehouse && isPracticeMode()) {
+    if (setPracticeMode(false) && !isPracticeMode()) { location.reload(); return false; }
     return "no-storage";
   }
   onBody(() => {
     if (isPracticeMode()) {
       mountBanner(isTrainee);
-    } else if (!isTrainee) {
+    } else if (!isTrainee && !isWarehouse) {
       mountEnterButton();
     }
   });
