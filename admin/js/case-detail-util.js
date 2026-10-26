@@ -110,3 +110,19 @@ export function askLostReason(reasons) {
     ov.onclick = (e) => { if (e.target === ov) done(null); };
   });
 }
+
+// 案件の見出しに出す事業所の住所（offices/{id}）。address が無ければ都道府県・市区町村・番地から組み立てる。
+// 郵便番号があれば「〒」を付けて先頭に置く。住所が一つも無ければ空文字（画面では「住所未登録」と出す）。
+export function officeAddressText(o) {
+  if (!o) return "";
+  const addr = String(o.address || [o.prefecture, o.city, o.addressDetail].filter(Boolean).join("") || "").trim();
+  if (!addr) return "";
+  const zip = String(o.postalCode || "").trim();
+  return zip ? `〒${zip} ${addr}` : addr;
+}
+
+// 住所から Google マップの検索URL（訪問前に場所を確かめる用）。郵便番号は検索の邪魔になるので外す
+export function mapsSearchUrl(addressText) {
+  const q = String(addressText || "").replace(/^〒\S+\s*/, "").trim();
+  return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : "";
+}
