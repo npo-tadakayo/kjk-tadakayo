@@ -3,13 +3,23 @@
 // 正本（mp4/srt）は共有ドライブ「TM_介護情報基盤を広め隊/02_マニュアル・ガイドブック/研修動画/」
 //   CRM: CRM操作説明_全7単元/ ／ 伴走支援: 研修動画/ 直下のガイドブック PART0〜3（ご案内動画は制作フォルダ。sync スクリプト参照）。
 // 差し替え手順: scripts/sync-training-videos.py（字幕→vtt 変換とアップロードをまとめて行う）→ ここの version/duration を直す。
-// group: "guide"＝伴走支援（ガイドブック）／"crm"＝CRMの使い方。label は画面の見出し（「単元1」「PART0」）、mark は一覧の丸の中の文字。
+// group: "learn"＝はじめての方（L-*）／"guide"＝伴走支援の手順（G*）／"crm"＝CRMの使い方／"notice"＝改修のお知らせ（notice: true）。label は画面の見出し（「単元1」「PART0」）、mark は一覧の丸の中の文字。
 // note は再生欄の下の注記（無ければ区分ごとの決まり文句）。notice: true は「改修のお知らせ」（新人の必修にしない。2026-10-24 育成コース）。
 export const VIDEO_STORAGE_PREFIX = "training/";
 
 export const GROUPS = [
-  { id: "guide", title: "伴走支援（ガイドブック）", desc: "介護情報基盤とは何か、支援先で何をどの順に設定するか" },
-  { id: "crm", title: "CRMの使い方", desc: "案件・伴走支援の記録・Web申し込み・発注・請求" },
+  { id: "learn", title: "はじめての方", icon: "ti-school", desc: "育成コースの進め方・伴走支援者になるまで・10の約束" },
+  { id: "guide", title: "伴走支援の手順", icon: "ti-book", desc: "介護情報基盤とは何か、支援先で何をどの順に設定するか（ガイドブック）" },
+  { id: "crm", title: "CRMの使い方", icon: "ti-device-desktop", desc: "案件・伴走支援の記録・Web申し込み・発注・請求" },
+  { id: "notice", title: "改修のお知らせ", icon: "ti-speakerphone", desc: "画面が変わったときの説明（一部は旧画面）" },
+];
+
+// 目的別のおすすめの順番（2026-10-26 動画ページの整理）。押すとこの順で一覧を出し、「次は」もこの順で案内する
+export const PATHS = [
+  { id: "new", title: "はじめて伴走支援に入る", icon: "ti-route", ids: ["L-0", "L-A", "L-B", "G-A", "G0", "G1", "G2", "G3", "U1", "U2", "U7", "U8"] },
+  { id: "supply", title: "発注・出荷を担当する", icon: "ti-truck", ids: ["U3", "U5"] },
+  { id: "billing", title: "請求・入金を担当する", icon: "ti-receipt", ids: ["U4"] },
+  { id: "admin", title: "管理者・トレーナー", icon: "ti-user-cog", ids: ["U6", "L-T"] },
 ];
 
 const GUIDE = [
@@ -42,7 +52,7 @@ const GUIDE = [
   { id: "G3", label: "PART3", mark: "3", title: "介護WEBサービス編", duration: "11分44秒", version: "Ver.2026-1.1", updated: "2026-08-16",
     desc: "STEP 05〜10：介護WEBサービスの設定と、ケアプーからの引っ越し", file: "guide-part3",
     roles: ["全員"] },
-].map((v) => ({ ...v, group: "guide" }));
+].map((v) => ({ ...v, group: v.id.startsWith("L-") ? "learn" : "guide" }));
 
 const CRM = [
   { id: "U1", no: 1, title: "はじめに・全体像", duration: "5分25秒", version: "v1.2", updated: "2026-09-14",
@@ -75,9 +85,13 @@ const CRM = [
   { id: "U10", no: 10, title: "事業所の編集と統合", duration: "4分40秒", version: "v1.0", updated: "2026-10-24",
     desc: "2026-10-24 の改修。事業所画面の「…」から事業所名・法人名・住所を直す、重複した事業所を統合する（取り消し・続きの実行もできる）、重複の候補。伴走支援承諾書の表示（未依頼 → 依頼方法未決定 → 依頼済み・署名待ち → 署名済み）", file: "crm-u10",
     roles: ["全員"] },
-].map((v) => ({ ...v, group: "crm", label: `単元${v.no}`, mark: String(v.no) }));
+].map((v) => ({ ...v, group: v.notice ? "notice" : "crm", label: `単元${v.no}`, mark: String(v.no) }));
 
 export const VIDEOS = [...GUIDE, ...CRM];
+
+export function findPath(id) {
+  return PATHS.find((p) => p.id === id) || null;
+}
 
 export function findVideo(id) {
   return VIDEOS.find((v) => v.id === id) || null;
