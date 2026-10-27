@@ -943,12 +943,12 @@ const SHIP_DIALOG = {
     note:"すでに届いている・手渡し済みなどの出荷を、依頼を経ずに発送済として記録します。在庫を引き落とします。出荷指示は送りません。" },
 };
 let shipDoneCtx = null; // { resolve, items, usesStock, mode }
-function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint }){
+function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, shippingMethod }){
   const m = SHIP_DIALOG[mode] ? mode : "ship";
   const cfg = SHIP_DIALOG[m];
   return new Promise((resolve)=>{
     if(shipDoneCtx && shipDoneCtx.resolve) shipDoneCtx.resolve(null);
-    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock, mode: m };
+    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock, mode: m, shippingMethod: shippingMethod||"" };
     document.getElementById("shipDoneTitle").textContent = title || cfg.title;
     document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
     document.getElementById("shipDoneDateLabel").textContent = cfg.dateLabel;
@@ -978,7 +978,9 @@ function updateShipDoneLpNotice(){
   if(!el) return;
   const w=document.getElementById("shipDoneOriginWrap");
   const origin=(w && w.style.display!=="none") ? (document.getElementById("shipDoneOrigin").value||"") : "";
-  const letterPack=!!document.getElementById("shipDoneLp").value;
+  // レターパックの種類は常に初期値（プラス）が入るので、配送方法がゆうパック・郵送なし（手渡し・持参）のときは出さない
+  const method=(shipDoneCtx && shipDoneCtx.shippingMethod) || "";
+  const letterPack=!!document.getElementById("shipDoneLp").value && method!=="yupack" && method!=="none";
   const msg=lpPickupNotice({ originLocationId:origin, defaultLocationId:defaultLocationId(), letterPack });
   el.textContent=msg; el.style.display=msg?"block":"none";
 }
@@ -1040,6 +1042,7 @@ async function requestDraftShipment(s){
   const ans = await askShipDetails({ mode:"request", hint: hint||"",
     title: `出荷を依頼する（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
+    shippingMethod: s.shippingMethod,
   });
   if(!ans) return;
   const its = usesStock ? stockItems(s.items) : [];
@@ -1072,6 +1075,7 @@ async function shipWithStock(s, action){
     title: `${SHIP_DIALOG[mode].title}（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: mode==="record" ? (s.shipDate||today()) : today(),
     letterPackType: s.letterPackType, trackingNumber: s.trackingNumber||"", items: s.items,
+    shippingMethod: s.shippingMethod,
   });
   if(!ans) return;
   const ref = doc(db,"shipments",s._id);
