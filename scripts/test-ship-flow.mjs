@@ -5,7 +5,7 @@ import {
   shipStatusOf, usesWarehouse, stockDeducted, isLocked, canDelete, canCancel,
   nextStatus, notifyOnTransition, deductsOnTransition, shipNotifyShown, primaryAction, shipActions,
   qtyDelta, needsResendPrompt, shipStepsDone, todoCounts, paymentsOf, netPaidOf, CANCEL_BLOCKED_BY_PAYMENT,
-  notifyInFlight, NOTIFY_IN_FLIGHT_MSG,
+  notifyInFlight, NOTIFY_IN_FLIGHT_MSG, LP_PICKUP_NOTICE, lpPickupNotice,
 } from "../admin/js/ship-flow.js";
 
 let n = 0;
@@ -287,5 +287,16 @@ console.log(`OK test-ship-flow: ${n}件 全件合格`);
   assert.match(sup, /lpSel\.value=DEFAULT_LETTERPACK/);
   const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
   assert.match(lp, /let type = letterPackOrDefault\(s\.letterPackType\)/);
-  console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
+  // ===== レターパックの注意（滋賀以外の保管場所） =====
+t(() => {
+  const base = { defaultLocationId: "shiga", letterPack: true };
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "okinawa" }), LP_PICKUP_NOTICE);   // 滋賀以外 × レターパック → 注意
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "shiga" }), "");                    // 滋賀 → 出さない
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "okinawa", letterPack: false }), ""); // レターパックでなければ出さない
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "" }), "");                         // 出荷元が未選択なら出さない
+  assert.equal(lpPickupNotice({ originLocationId: "okinawa", defaultLocationId: "", letterPack: true }), ""); // 既定が無ければ判定しない
+  assert.match(LP_PICKUP_NOTICE, /持ち出し/);
+});
+
+console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
 }

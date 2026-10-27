@@ -280,6 +280,8 @@
             <option value="none">郵送なし（手渡し・持参）</option>
           </select>
           <p id="shipOriginHint" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></p>
+          <!-- 滋賀以外の保管場所 × レターパック の注意（止めない・2026-10-27） -->
+          <div id="shipLpNotice" role="status" class="callout" style="display:none;font-size:12.5px;margin:8px 0 0;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)"></div>
         </div>
         <div class="form-row" id="yupackWrap" style="display:none">
           <div class="form-group"><label class="form-label" for="shipYuSize">ゆうパック サイズ</label>
@@ -465,6 +467,7 @@
           <label class="form-label" for="shipDoneOrigin">出荷元の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="shipDoneOrigin"></select>
         </div>
+        <div id="shipDoneLpNotice" role="status" class="callout" style="display:none;font-size:12.5px;margin:0 0 10px;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)"></div>
         <p id="shipDoneStockNote" style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px"></p>
         <p id="shipDoneNote" style="font-size:12px;color:var(--color-ink-muted);margin:0"></p>
         <div id="shipDoneError" role="alert" style="font-size:13px;color:var(--color-danger);margin-top:8px;display:none"></div>
