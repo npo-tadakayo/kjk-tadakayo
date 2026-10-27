@@ -213,3 +213,12 @@ export const DEFAULT_LETTERPACK = "plus";
 export function letterPackOrDefault(v) {
   return v === "light" || v === "plus" ? v : DEFAULT_LETTERPACK;
 }
+
+// レターパックの注意（2026-10-27 次田さん決定）。滋賀（既定の保管場所・ロジスティックセンター）以外の保管場所のものは、
+// 基本的に倉庫から持ち出す（郵送しない）。ただし郵送することが全くないわけではないので、レターパックは選べるままにし、
+// 止めずに注意だけ出す。letterPack は「レターパックで送る選択になっているか」。
+export const LP_PICKUP_NOTICE = "この保管場所のものは、基本的に倉庫からの持ち出しです。郵送でよいか確認してください";
+export function lpPickupNotice({ originLocationId, defaultLocationId, letterPack }) {
+  if (!letterPack || !originLocationId || !defaultLocationId) return "";
+  return originLocationId === defaultLocationId ? "" : LP_PICKUP_NOTICE;
+}
