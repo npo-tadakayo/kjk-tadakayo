@@ -47,7 +47,7 @@ _annai = KIBAN / "動画_事業所向け_伴走支援のご案内_20261013"
 FILES["guide-annai"] = (_annai / "ばんそう支援の進み方とお願い_v1.1.mp4", _annai / "ばんそう支援の進み方とお願い_v1.1.srt")  # 2026-10-26 v1.1（音量調整済みの完成品＋srt）
 # 育成コース STEP1 の新しい動画（2026-10-24）。ご案内と同じく制作フォルダの完成品・字幕は timeline.json から作る
 _intro = KIBAN / "動画_育成_伴走支援者になるまで_20261024"
-FILES["learn-intro"] = (_intro / "out.mp4", _intro / "timeline.json")
+FILES["learn-intro"] = (_intro / "伴走支援者になるまで_v1.1.mp4", _intro / "伴走支援者になるまで_v1.1.srt")  # 2026-10-27 v1.1（報酬は完了した暦月で算定を追加）
 _pledge = KIBAN / "動画_育成_伴走支援者の約束_20261024"
 FILES["learn-pledge"] = (_pledge / "伴走支援者の約束_v1.1.mp4", _pledge / "伴走支援者の約束_v1.1.srt")  # 2026-10-26 v1.1（約束10の報告先）
 # 育成コースの使い方（2026-10-25）。操作動画スキルの modern で作ったので字幕は映像に焼き込み済み → vtt は置かない（None）
