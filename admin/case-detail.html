@@ -114,6 +114,18 @@
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="visitDateInput">訪問予定日</label>
               <input class="form-control" type="date" id="visitDateInput" style="width:auto;min-width:150px">
             </div>
+            <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+              <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="visitTimeFromInput">訪問の時刻</label>
+              <input class="form-control" type="time" id="visitTimeFromInput" aria-label="開始時刻" style="width:auto;min-width:110px">
+              <span aria-hidden="true">〜</span>
+              <input class="form-control" type="time" id="visitTimeToInput" aria-label="終了時刻" style="width:auto;min-width:110px">
+              <label class="sr-only" for="visitFormatSelect" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">訪問の形式</label>
+              <select class="form-control" id="visitFormatSelect" style="width:auto;min-width:110px">
+                <option value="">形式（未選択）</option>
+                <option value="onsite">対面</option>
+                <option value="online">オンライン</option>
+              </select>
+            </div>
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="referralSelect">紹介元</label>
               <select class="form-control" id="referralSelect" style="width:auto;min-width:180px">

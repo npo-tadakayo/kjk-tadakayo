@@ -13,6 +13,7 @@ import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
   officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
+import { visitSummary } from "/js/schedule-core.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -90,6 +91,19 @@ function renderCaseHeader(c) {
   renderLostReason(c);
   const vd = document.getElementById("visitDateInput");
   if (vd) vd.value = c.visitDate || "";
+  renderVisitExtras(c);
+}
+
+// 訪問の時刻・形式（visitTimeFrom / visitTimeTo "HH:MM"・visitFormat "onsite"|"online"）。日付が空なら無効
+function renderVisitExtras(c, force = false) {
+  const hasDate = !!c.visitDate;
+  [["visitTimeFromInput", c.visitTimeFrom], ["visitTimeToInput", c.visitTimeTo], ["visitFormatSelect", c.visitFormat]].forEach(([id, v]) => {
+    const el = document.getElementById(id);
+    if (!el || (!force && el === document.activeElement)) return;
+    el.value = v || "";
+    el.disabled = !hasDate;
+    el.title = hasDate ? "" : "先に訪問予定日を入れてください";
+  });
 }
 
 // 事業所の住所（2026-10-26 前田さんの要望：電話・メールと並べて出す）。
@@ -126,12 +140,60 @@ function renderLostReason(c) {
 // ===== 訪問予定日（visitDate: "YYYY-MM-DD" の文字列） =====
 // 担当営業と同じ作法で、誰がいつ何日に変えたかをタイムラインに残す。
 async function saveVisitDate(value) {
+  await flushVisitLog(); // 保留中の時刻・形式の記録を先に書く（記録の順序を保つ）
   const v = value || null;
-  const prev = currentCase.visitDate || "未設定";
-  await updateDoc(doc(db, "cases", caseId), { visitDate: v, updatedAt: serverTimestamp() });
-  currentCase.visitDate = v;
-  await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${prev}`);
+  const before = visitSnapshot();
+  // 日付を消したら時刻・形式も外す（日付の無い時刻だけが残らないように）
+  const upd = v ? { visitDate: v, updatedAt: serverTimestamp() }
+    : { visitDate: null, visitTimeFrom: null, visitTimeTo: null, visitFormat: null, updatedAt: serverTimestamp() };
+  await updateDoc(doc(db, "cases", caseId), upd);
+  const { updatedAt: _u, ...patch } = upd;
+  Object.assign(currentCase, patch);
+  renderVisitExtras(currentCase, true);
+  await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${before.visitDate || "未設定"}`);
   showToast(v ? `訪問予定日を ${v} にしました` : "訪問予定日を未設定にしました");
+}
+
+function visitSnapshot() {
+  return {
+    visitDate: currentCase.visitDate || "", visitTimeFrom: currentCase.visitTimeFrom || "",
+    visitTimeTo: currentCase.visitTimeTo || "", visitFormat: currentCase.visitFormat || "",
+  };
+}
+
+// 時刻・形式の変更。保存はその都度、活動記録は最後の変更から約2秒まとめて1件にする
+// （開始→終了→形式と続けて入れても記録が増えない）。変更前は最初の変更前、変更後は最後の値。
+const VISIT_LOG_DELAY_MS = 2000;
+let pendingVisitLog = null; // { before, timer }
+
+async function flushVisitLog() {
+  const p = pendingVisitLog;
+  if (!p) return;
+  pendingVisitLog = null;
+  clearTimeout(p.timer);
+  const after = visitSnapshot();
+  if (JSON.stringify(p.before) === JSON.stringify(after)) return; // 元に戻したときは記録しない
+  try {
+    await logActivity(`訪問予定を変更 → ${visitSummary(after)}`, `変更前: ${visitSummary(p.before)}`);
+  } catch (e) { console.warn("visit log:", e.message); }
+}
+window.addEventListener("pagehide", () => { flushVisitLog(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushVisitLog(); });
+
+async function saveVisitExtras() {
+  const before = pendingVisitLog ? pendingVisitLog.before : visitSnapshot();
+  const from = document.getElementById("visitTimeFromInput").value || "";
+  let to = document.getElementById("visitTimeToInput").value || "";
+  const fmt = document.getElementById("visitFormatSelect").value || "";
+  if (!from) to = ""; // 開始が無いのに終了だけは持たない
+  if (from && to && to <= from) throw new Error("終了時刻は開始時刻より後にしてください");
+  const patch = { visitTimeFrom: from || null, visitTimeTo: to || null, visitFormat: fmt || null };
+  await updateDoc(doc(db, "cases", caseId), { ...patch, updatedAt: serverTimestamp() });
+  Object.assign(currentCase, patch);
+  if (!from) document.getElementById("visitTimeToInput").value = ""; // 開始を消したら終了も外れる
+  if (pendingVisitLog) clearTimeout(pendingVisitLog.timer);
+  pendingVisitLog = { before, timer: setTimeout(flushVisitLog, VISIT_LOG_DELAY_MS) };
+  showToast(`訪問予定を ${visitSummary(visitSnapshot())} にしました`);
 }
 
 // ===== 担当営業（assignedUserId / assignedUserName） =====
@@ -1626,6 +1688,21 @@ onAuthStateChanged(auth, async (user) => {
     } finally {
       inp.disabled = false;
     }
+  });
+
+  // 訪問の時刻・形式の変更（保存＋タイムラインに記録）
+  // ・保存は直列化する（並行しても、毎回「そのとき欄にある最新の値」で書くので後の値が先の値で上書きされない）
+  // ・欄は無効化も描き直しもしない（保存中に次の欄を入力できる）。失敗したときだけ、失敗した欄を保存済みの値へ戻す
+  const VISIT_FIELD = { visitTimeFromInput: "visitTimeFrom", visitTimeToInput: "visitTimeTo", visitFormatSelect: "visitFormat" };
+  let visitSaveChain = Promise.resolve();
+  Object.keys(VISIT_FIELD).forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", (e) => {
+      const el = e.target;
+      visitSaveChain = visitSaveChain.then(() => saveVisitExtras()).catch((err) => {
+        alert(`訪問の時刻・形式の保存に失敗しました: ${err.message || err}`);
+        el.value = currentCase[VISIT_FIELD[id]] || "";
+      });
+    });
   });
 
   // 紹介元の変更（値は id を保存。表示名は保存しない）

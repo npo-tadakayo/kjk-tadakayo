@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>予定（訪問カレンダー） — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- サイドバー -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="app-name">タダカヨ CRM</div>
+        <div class="app-sub">介護情報基盤伴走支援</div>
+      </div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer">
+        <div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button">
+          <i class="ti ti-logout" aria-hidden="true"></i>ログアウト
+        </button>
+      </div>
+    </aside>
+
+    <!-- メインコンテンツ -->
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">予定（訪問カレンダー）</h1>
+      </div>
+      <p class="page-intro">伴走支援の訪問予定を、日・週・月で見渡します。表示専用です。日付・時刻は案件詳細の「訪問予定日」で入れます。</p>
+
+      <div class="sch-toolbar">
+        <div class="sch-nav" role="group" aria-label="表示する期間を動かす">
+          <button type="button" class="btn btn-ghost" id="prevBtn" aria-label="前へ"><i class="ti ti-chevron-left" aria-hidden="true"></i>前へ</button>
+          <button type="button" class="btn btn-ghost" id="todayBtn">今日</button>
+          <button type="button" class="btn btn-ghost" id="nextBtn" aria-label="次へ">次へ<i class="ti ti-chevron-right" aria-hidden="true"></i></button>
+        </div>
+        <h2 class="sch-title" id="schTitle" aria-live="polite"></h2>
+        <div class="sch-views" role="group" aria-label="表示の切り替え">
+          <button type="button" class="btn btn-ghost" data-view="day">日</button>
+          <button type="button" class="btn btn-ghost" data-view="week">週</button>
+          <button type="button" class="btn btn-ghost" data-view="month">月</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <select id="assigneeFilter" aria-label="担当者で絞り込み">
+          <option value="">担当：全員</option>
+          <option value="__me">担当：自分の予定だけ</option>
+          <option value="__none">担当：未割当</option>
+        </select>
+        <select id="prefFilter" aria-label="都道府県で絞り込み">
+          <option value="">すべての都道府県</option>
+        </select>
+      </div>
+
+      <div class="sch-legend" aria-label="色の凡例">
+        <span class="sch-chip sch-upcoming"><i class="ti ti-clock" aria-hidden="true"></i>これから（受注確定〜伴走支援待ち）</span>
+        <span class="sch-chip sch-done"><i class="ti ti-circle-check" aria-hidden="true"></i>済み（伴走支援実施済以降）</span>
+        <span class="sch-chip sch-check"><i class="ti ti-alert-circle" aria-hidden="true"></i>要確認（新規受信・確認中など）</span>
+        <span class="sch-legend-note"><i class="ti ti-building" aria-hidden="true"></i>対面　<i class="ti ti-video" aria-hidden="true"></i>オンライン　（失注は表示しません）</span>
+      </div>
+
+      <div class="sch-counts" id="schCounts" aria-live="polite"></div>
+
+      <div id="loadingEl" class="loading">
+        <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 読み込み中...
+      </div>
+
+      <div id="schBody" style="display:none"></div>
+    </main>
+  </div>
+
+  <!-- トースト -->
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+       style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100;"></div>
+
+  <script src="/js/sidebar.js"></script>
+
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/schedule.js" type="module"></script>
+</body>
+</html>

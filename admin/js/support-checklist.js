@@ -493,7 +493,26 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       if (el.type === "checkbox") el.checked = !!v;
       else el.value = v == null ? "" : v;
     });
+    fillOnsiteDefaults();
     renderPhotos();
+  }
+
+  // 当日タブの訪問日・時刻・場所は、保存済みの値が空のときだけ案件の値を初期表示する（二重入力を減らす）。
+  // 保存済みの値は上書きしない。ここで表示しただけの値は保存しない（入力欄を触ったときに初めて保存される）
+  function fillOnsiteDefaults() {
+    const c = opts.getCase ? opts.getCase() : null;
+    if (!c) return;
+    const defaults = {
+      visitDate: c.visitDate || "",
+      visitTimeFrom: c.visitTimeFrom || "",
+      visitTimeTo: c.visitTimeTo || "",
+      visitPlace: c.visitFormat === "online" ? "online" : (c.visitFormat === "onsite" ? "office" : ""),
+    };
+    document.querySelectorAll("#tab-onsite [data-path]").forEach((el) => {
+      if (el === document.activeElement || !(el.dataset.path in defaults)) return;
+      if (getByPath(state.onsite, el.dataset.path)) return; // 保存済み
+      el.value = defaults[el.dataset.path];
+    });
   }
 
   function renderPhotos() {
@@ -885,5 +904,5 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { fillPerfForm(); renderEval(); renderPerfWarn(); } };
+  return { refreshPeople() { fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
 }
