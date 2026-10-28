@@ -2,12 +2,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, getProdFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, setDoc, serverTimestamp }
+import { getFirestore, getProdFirestore, collection, query, orderBy, onSnapshot, doc, getDoc, getDocs, setDoc, serverTimestamp }
   from "/js/fs.js";
 import { STATUS_LABELS, STATUS_COLORS, SOURCE_LABELS, PHASES, LOST, ENGAGED_STATUSES, DEADLINE, daysUntilDeadline, resolveDeadline, deadlineLabel }
   from "/js/constants.js";
 import { matchAssignee, bindPrefSelect, ASSIGNEE_ME } from "/js/assignee-filter.js";
 import { todoCounts } from "/js/ship-flow.js";
+import { todayYmdJst, todayVisitsSummary, buildUserNames, timeLabel, FORMAT_LABELS } from "/js/schedule-core.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -245,6 +246,40 @@ function render(cases) {
   renderTrend(cases);
 }
 
+// ===== 今日の訪問カード（cases の購読結果から作る。追加の読み込みは users の1回だけ）=====
+let usersList = [];
+let visitCases = null;   // 最後に描いた案件（日付が変わったときに、読み直さずに描き直すため）
+let visitDay = "";       // 最後に描いた JST の日付
+// ホームを開いたまま JST の 0 時を越えても、前日の訪問が残らないようにする（1分ごと・タブに戻ったとき）
+function refreshVisitsIfDayChanged() {
+  if (visitCases && visitDay !== todayYmdJst()) renderVisits(visitCases);
+}
+setInterval(refreshVisitsIfDayChanged, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVisitsIfDayChanged(); });
+function renderVisits(cases) {
+  const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  visitCases = cases;
+  visitDay = todayYmdJst();
+  const r = todayVisitsSummary(cases, visitDay, myEmail, buildUserNames(usersList, cases));
+  document.getElementById("visitTitle").textContent = `今日の訪問 ${r.all}件`;
+  document.getElementById("visitMineLink").style.display = r.mine > 0 ? "" : "none";
+  const body = document.getElementById("visitBody");
+  if (!r.all) {
+    body.innerHTML = `<p class="todo-hint">今日の訪問予定はありません。訪問が決まったら、案件詳細の「訪問予定日」を入れると、ここと「予定」画面に出ます。</p>`;
+    return;
+  }
+  body.innerHTML = `<p class="todo-hint"><strong>あなたの訪問 ${r.mine}件</strong> ／ 全体 ${r.all}件</p>
+    <div class="todo-list">${r.rows.map((e) => `
+      <div class="todo-row">
+        <div class="todo-icon"><i class="ti ${e.format === "online" ? "ti-video" : e.format === "onsite" ? "ti-building" : "ti-calendar-event"}" aria-hidden="true"${e.format ? ` title="${FORMAT_LABELS[e.format]}"` : ""}></i></div>
+        <div class="todo-label"><strong style="font-variant-numeric:tabular-nums">${esc(timeLabel(e.timeFrom, e.timeTo))}</strong>
+          ${e.format ? `<span style="font-size:12px;color:var(--color-ink-muted)">（${FORMAT_LABELS[e.format]}）</span>` : ""}
+          <a href="/case-detail.html?id=${esc(e.id)}" data-viewer-ok>${esc([e.corpName, e.officeName].filter(Boolean).join(" ") || "（事業所名なし）")}</a>
+          <span style="font-size:12px;color:var(--color-ink-muted)">${e.mine ? "あなた" : esc(e.assignedUserName || "担当未割当")}</span></div>
+      </div>`).join("")}</div>
+    ${r.more ? `<p class="todo-hint" style="margin-top:8px">ほか ${r.more}件（「カレンダーで見る」で全部見られます）</p>` : ""}`;
+}
+
 onAuthStateChanged(auth, async (user) => {
   if (!user || !user.email?.endsWith("@tadakayo.jp")) { location.href = "/index.html"; return; }
   const myRole = await gateRole(db, user);
@@ -263,6 +298,8 @@ onAuthStateChanged(auth, async (user) => {
   updateDeadlineBanner();
   try { const ss = await getDoc(doc(db, "appConfig", "settings")); if (ss.exists()) { deadline = resolveDeadline(ss.data()); updateDeadlineBanner(); } } catch (_) {}
 
+  // 担当者名の補完用（読めなければ案件の名前だけで補う）
+  try { usersList = (await getDocs(collection(db, "users"))).docs.map((d) => ({ _id: d.id, ...d.data() })); } catch (_) { usersList = []; }
   const q = query(collection(db, "cases"), orderBy("receivedAt", "desc"));
   onSnapshot(q, (snap) => {
     const everyCase = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
@@ -275,8 +312,10 @@ onAuthStateChanged(auth, async (user) => {
     todoCases = cases;
     todoCasesError = false;
     renderTodo();
+    renderVisits(cases);
   }, () => {
     todoCasesError = true;
+    document.getElementById("visitBody").innerHTML = `<p class="todo-hint">今日の訪問を取得できませんでした</p>`;
     renderTodo();
   });
 

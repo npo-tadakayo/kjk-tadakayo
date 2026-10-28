@@ -145,4 +145,32 @@ eq(S.pickAssignee("gone@x", ["", "__me", "__none"]), "", "選択肢に無けれ�
 eq(S.pickAssignee("__me", undefined), "");
 eq(S.parseQuery(S.buildQuery({ view: "day", date: "2026-10-28", assignee: "", pref: "" }), "2026-10-28").assignee, "", "全員に戻すと URL からも担当が消える");
 
+// ホームの「今日の訪問」カード
+{
+  const T = "2026-10-28"; const me2 = "Me@tadakayo.jp";
+  const mk = (n, o) => ({ _id: `t${n}`, caseNumber: n, visitDate: T, status: 7, officeName: `事業所${n}`, ...o });
+  const cs = [
+    mk(1, { visitTimeFrom: "09:00", assignedUserId: "other@tadakayo.jp", assignedUserName: "他の人" }),
+    mk(2, { visitTimeFrom: "15:00", assignedUserId: "me@tadakayo.jp", assignedUserName: "" }),
+    mk(3, { assignedUserId: "me@tadakayo.jp" }),                       // 自分・時刻未定
+    mk(4, { visitTimeFrom: "10:00" }),                                   // 未割当
+    mk(5, { status: 4, assignedUserId: "me@tadakayo.jp" }),             // 失注
+    mk(6, { archived: true }),                                           // 対象外
+    mk(7, { visitDate: "2026-10-29", assignedUserId: "me@tadakayo.jp" }), // 別の日
+  ];
+  const nm = S.buildUserNames([{ _id: "me@tadakayo.jp", name: "自分さん" }], cs);
+  const r = S.todayVisitsSummary(cs, T, me2, nm);
+  eq([r.all, r.mine, r.more], [4, 2, 0], "全体4・自分2（失注・対象外・別の日は除く）");
+  eq(r.rows.map((x) => x.id), ["t2", "t3", "t1", "t4"], "自分の分が先 → 時刻順 → 時刻未定");
+  eq(r.rows.map((x) => x.mine), [true, true, false, false]);
+  eq(r.rows[0].assignedUserName, "自分さん", "名前の補完");
+  eq(r.rows.some((x) => x.assignedUserName.includes("@")), false);
+  const many = Array.from({ length: 8 }, (_, i) => mk(10 + i, { visitTimeFrom: `0${i + 1}:00` }));
+  const r8 = S.todayVisitsSummary(many, T, me2, nm);
+  eq([r8.all, r8.rows.length, r8.more], [8, 5, 3], "5件を超えたら「ほか」");
+  eq(r8.rows.map((x) => x.timeFrom), ["01:00", "02:00", "03:00", "04:00", "05:00"]);
+  eq(S.todayVisitsSummary([], T, me2, nm), { all: 0, mine: 0, rows: [], more: 0 }, "0件");
+  eq(S.todayVisitsSummary(cs, T, "", nm).mine, 0, "ログイン中のメールが取れていないときは自分0件");
+}
+
 console.log(`test-schedule: ${n} checks passed`);

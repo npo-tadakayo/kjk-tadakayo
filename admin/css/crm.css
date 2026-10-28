@@ -1145,6 +1145,8 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
 .sch-office { font-weight: 600; font-size: 14px; color: var(--color-ink); }
 .sch-meta { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); color: var(--color-ink-muted); }
 .sch-meta a, .sch-office a { color: var(--color-primary-dark); }
+/* ホームの「今日の訪問」カードのリンクも同じ濃い赤（白地で 4.5:1 を満たす。--color-primary は 4.35:1） */
+#visitCard .todo-label a { color: var(--color-primary-dark); }
 .sch-prep { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; font-size: 12px; color: var(--color-ink-muted); }
 .sch-prep .badge { font-size: 12px; }
 .sch-gcal { align-self: flex-start; font-size: 12px; }
