@@ -138,4 +138,11 @@ eq(unk.assignedUserName, "担当者（未登録）");
 eq(S.countByAssignee([ev235, unk]).map((r) => r.name), ["次田芳尚", "担当者（未登録）"]);
 eq(S.countByAssignee([unk]).some((r) => r.name.includes("@")), false, "件数のチップにメールが出ない");
 
+// 担当の絞り込みの値（再構築で初期値に引き戻されない）
+eq(S.pickAssignee("", ["", "__me", "__none", "a@x"]), "", "「全員」は全員のまま");
+eq(S.pickAssignee("__me", ["", "__me", "__none"]), "__me");
+eq(S.pickAssignee("gone@x", ["", "__me", "__none"]), "", "選択肢に無ければ全員");
+eq(S.pickAssignee("__me", undefined), "");
+eq(S.parseQuery(S.buildQuery({ view: "day", date: "2026-10-28", assignee: "", pref: "" }), "2026-10-28").assignee, "", "全員に戻すと URL からも担当が消える");
+
 console.log(`test-schedule: ${n} checks passed`);

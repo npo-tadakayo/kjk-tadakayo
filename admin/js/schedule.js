@@ -74,7 +74,7 @@ function eventHtml(ev, { withPrep }) {
       <div class="sch-office"><a href="/case-detail.html?id=${esc(ev.id)}">#${esc(ev.caseNumber || "—")} ${esc(name)}</a></div>
       <div class="sch-meta">${who}${addr}${tel}</div>
       ${withPrep ? `<div class="sch-prep" data-prep="${esc(ev.id)}">${prepHtml(ev.id)}</div>` : ""}
-      <a class="sch-gcal btn btn-ghost" href="${esc(S.googleCalendarUrl(ev))}" target="_blank" rel="noopener"><i class="ti ti-calendar-plus" aria-hidden="true"></i>Googleカレンダーに追加<span class="sr-only">（別タブで開く）</span></a>
+      <a class="sch-gcal btn btn-ghost" data-viewer-ok href="${esc(S.googleCalendarUrl(ev))}" target="_blank" rel="noopener"><i class="ti ti-calendar-plus" aria-hidden="true"></i>Googleカレンダーに追加<span class="sr-only">（別タブで開く）</span></a>
     </article>`;
 }
 
@@ -201,7 +201,10 @@ onAuthStateChanged(auth, async (user) => {
   $("nextBtn").addEventListener("click", () => go({ date: S.shiftDate(state.view, state.date, 1) }));
   $("todayBtn").addEventListener("click", () => go({ date: S.todayYmdJst() }));
   document.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => go({ view: b.dataset.view })));
-  $("assigneeFilter").addEventListener("change", (e) => go({ assignee: e.target.value }, false));
+  $("assigneeFilter").addEventListener("change", (e) => {
+    e.target.dataset.pref = e.target.value;
+    go({ assignee: e.target.value }, false);
+  });
   $("prefFilter").addEventListener("change", (e) => go({ pref: e.target.value }, false));
   $("schBody").addEventListener("click", (e) => {
     const t = e.target.closest("[data-day]");
@@ -211,9 +214,10 @@ onAuthStateChanged(auth, async (user) => {
   });
   window.addEventListener("popstate", () => { state = S.parseQuery(location.search, S.todayYmdJst()); render(); });
 
-  $("assigneeFilter").dataset.pref = state.assignee;
   const refresh = () => {
     rebuildEvents();
+    // 再構築では「いまの絞り込み」を優先する（初期値の URL に引き戻さない）
+    $("assigneeFilter").dataset.pref = state.assignee;
     // 選択肢の名前も予定と同じ表示名にそろえる（メールアドレスを出さない）
     fillAssigneeSelect($("assigneeFilter"), allCases.map((c) => ({
       ...c, assignedUserName: S.assigneeNameOf(c.assignedUserId, c.assignedUserName, userNames) })), user.email);

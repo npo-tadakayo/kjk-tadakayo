@@ -312,3 +312,9 @@ export function latestShipment(shipments) {
   if (!live.length) return null;
   return live.reduce((a, b) => (SHIP_ORDER.indexOf(b.status || "shipped") > SHIP_ORDER.indexOf(a.status || "shipped") ? b : a));
 }
+
+/** 担当の絞り込みの値。選択肢に無い（担当案件が無くなった等）ときだけ「全員」に戻す。選択肢の再構築では、いまの値を優先する */
+export function pickAssignee(wanted, optionValues) {
+  if (!wanted) return "";
+  return (optionValues || []).includes(wanted) ? wanted : "";
+}

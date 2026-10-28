@@ -70,6 +70,7 @@ export function applyViewerMode(role){
 
   const disable = (root) => {
     root.querySelectorAll("button, a.btn, input[type=submit]").forEach((b) => {
+      if(b.hasAttribute("data-viewer-ok")) return; // 書き込みをしない外部リンク等（例: Googleカレンダーに追加）
       const t = (b.textContent || b.value || "").trim();
       if(!t || KEEP_WORDS.test(t) || !WRITE_WORDS.test(t)) return;
       b.disabled = true;

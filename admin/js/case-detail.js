@@ -190,6 +190,7 @@ async function saveVisitExtras() {
   const patch = { visitTimeFrom: from || null, visitTimeTo: to || null, visitFormat: fmt || null };
   await updateDoc(doc(db, "cases", caseId), { ...patch, updatedAt: serverTimestamp() });
   Object.assign(currentCase, patch);
+  if (!from) document.getElementById("visitTimeToInput").value = ""; // 開始を消したら終了も外れる
   if (pendingVisitLog) clearTimeout(pendingVisitLog.timer);
   pendingVisitLog = { before, timer: setTimeout(flushVisitLog, VISIT_LOG_DELAY_MS) };
   showToast(`訪問予定を ${visitSummary(visitSnapshot())} にしました`);
@@ -1690,17 +1691,17 @@ onAuthStateChanged(auth, async (user) => {
   });
 
   // 訪問の時刻・形式の変更（保存＋タイムラインに記録）
-  ["visitTimeFromInput", "visitTimeToInput", "visitFormatSelect"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("change", async (e) => {
+  // ・保存は直列化する（並行しても、毎回「そのとき欄にある最新の値」で書くので後の値が先の値で上書きされない）
+  // ・欄は無効化も描き直しもしない（保存中に次の欄を入力できる）。失敗したときだけ、失敗した欄を保存済みの値へ戻す
+  const VISIT_FIELD = { visitTimeFromInput: "visitTimeFrom", visitTimeToInput: "visitTimeTo", visitFormatSelect: "visitFormat" };
+  let visitSaveChain = Promise.resolve();
+  Object.keys(VISIT_FIELD).forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", (e) => {
       const el = e.target;
-      el.disabled = true;
-      try {
-        await saveVisitExtras();
-      } catch (err) {
+      visitSaveChain = visitSaveChain.then(() => saveVisitExtras()).catch((err) => {
         alert(`訪問の時刻・形式の保存に失敗しました: ${err.message || err}`);
-      } finally {
-        renderVisitExtras(currentCase, true); // 失敗時は保存済みの値に戻す
-      }
+        el.value = currentCase[VISIT_FIELD[id]] || "";
+      });
     });
   });
 
