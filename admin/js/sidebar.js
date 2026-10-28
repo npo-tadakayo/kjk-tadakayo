@@ -9,6 +9,7 @@
       ["/dashboard.html", "ti-chart-bar", "ホーム（今日やること）"],
       ["/cases.html", "ti-layout-list", "案件一覧"],
       ["/kanban.html", "ti-layout-kanban", "カンバン"],
+      ["/schedule.html", "ti-calendar-event", "予定（訪問カレンダー）"],
       ["/offices.html", "ti-building", "事業所"],
     ]},
     { title: "お金と物品", items: [

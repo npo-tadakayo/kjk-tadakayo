@@ -14,6 +14,7 @@ import {
 } from "/js/constants.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, savePref, loadPref } from "/js/assignee-filter.js";
 import { areaOf, REGIONS } from "/js/area.js";
+import { visitFull, FORMAT_LABELS } from "/js/schedule-core.js";
 import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
 
 const app = initializeApp(firebaseConfig);
@@ -303,7 +304,7 @@ function renderCases() {
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
       <td><span class="badge badge-${c.status}"${Number(c.status) === LOST ? ` title="失注の理由: ${escHtml(lostReasonLabel(c))}${c.lostReasonNote ? `（${escHtml(c.lostReasonNote)}）` : ""}"` : ""}>${STATUS_LABELS[c.status] || "—"}</span>${Number(c.status) === LOST ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:2px">${escHtml(lostReasonLabel(c))}</div>` : ""}${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
-      <td>${c.visitDate ? escHtml(c.visitDate.replace(/-/g, "/")) : "—"}</td>
+      <td>${c.visitDate ? escHtml(visitFull(c.visitDate, c.visitTimeFrom)) : "—"}</td>
       <td>${formatDate(c.receivedAt)}</td>
       <td>${formatDate(c.updatedAt)}</td>
     </tr>
@@ -429,7 +430,7 @@ function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
   const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","ご希望","紹介元",
-    "ステータス","失注の理由","担当営業","訪問予定日","補助金区分","想定補助額","受信日時","最終更新"];
+    "ステータス","失注の理由","担当営業","訪問予定日","訪問開始","訪問終了","訪問形式","補助金区分","想定補助額","受信日時","最終更新"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([
@@ -440,6 +441,7 @@ function exportCsv() {
       referralLabel(c.referralSource, appSettings),
       STATUS_LABELS[c.status] || "", Number(c.status) === LOST ? lostReasonLabel(c) + (c.lostReasonNote ? `（${c.lostReasonNote}）` : "") : "",
       c.assignedUserName || "未割当", c.visitDate || "",
+      c.visitTimeFrom || "", c.visitTimeTo || "", FORMAT_LABELS[c.visitFormat] || "",
       c.subsidyCategory || "", c.expectedSubsidyAmount || "",
       fmtFull(c.receivedAt), fmtFull(c.updatedAt),
     ].map(csvCell).join(","));
