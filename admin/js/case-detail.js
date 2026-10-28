@@ -1,3 +1,4 @@
+import { normalizeEmail } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
@@ -1521,7 +1522,7 @@ function aiResultToComposer() {
 // メール送信
 const sendCaseEmailFn = httpsCallable(functions, "sendCaseEmail");
 async function sendMail() {
-  const to = document.getElementById("mailTo").value.trim();
+  const to = normalizeEmail(document.getElementById("mailTo").value);
   const subject = document.getElementById("mailSubject").value.trim();
   const body = document.getElementById("mailBody").value.trim();
   const status = document.getElementById("mailStatus");

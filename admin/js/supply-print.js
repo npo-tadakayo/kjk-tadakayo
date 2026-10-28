@@ -1,3 +1,4 @@
+import { normalizeEmail } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -693,8 +694,8 @@ function setupMailDoc(kind, d, st){
 
   document.getElementById("mailDocSend").onclick = async (e)=>{
     if(!confirmContactFilled(`この${MAIL_DOC_LABEL[kind]}`)) return;
-    const to = document.getElementById("mailDocTo").value.trim();
-    const cc = document.getElementById("mailDocCc").value.trim();
+    const to = normalizeEmail(document.getElementById("mailDocTo").value);
+    const cc = normalizeEmail(document.getElementById("mailDocCc").value);
     const subject = document.getElementById("mailDocSubject").value.trim();
     const body = document.getElementById("mailDocBody").value;
     const err = document.getElementById("mailDocError");

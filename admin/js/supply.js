@@ -1,3 +1,4 @@
+import { normalizeEmail, normalizePhone } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
@@ -1650,8 +1651,8 @@ async function saveShip(){
       company:document.getElementById("shipCompany").value.trim(),
       officeName:office, address:document.getElementById("shipAddress").value.trim(),
       contactName:document.getElementById("shipContact").value.trim(),
-      phone:document.getElementById("shipPhone").value.trim(),
-      email:document.getElementById("shipEmail").value.trim(),
+      phone:normalizePhone(document.getElementById("shipPhone").value),
+      email:normalizeEmail(document.getElementById("shipEmail").value),
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       ...subsidyPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email };
@@ -1704,8 +1705,8 @@ async function saveShipEdit(){
     officeName:office,
     address:document.getElementById("shipAddress").value.trim(),
     contactName:document.getElementById("shipContact").value.trim(),
-    phone:document.getElementById("shipPhone").value.trim(),
-    email:document.getElementById("shipEmail").value.trim(),
+    phone:normalizePhone(document.getElementById("shipPhone").value),
+    email:normalizeEmail(document.getElementById("shipEmail").value),
     updatedAt:serverTimestamp(),
     updatedBy:currentUser.displayName||currentUser.email,
   };
@@ -3458,7 +3459,7 @@ async function savePartner(){
     postal:document.getElementById("prPostal").value.trim(),
     address:document.getElementById("prAddress").value.trim(),
     phone:document.getElementById("prPhone").value.trim(),
-    contactEmail:document.getElementById("prMail").value.trim(),
+    contactEmail:normalizeEmail(document.getElementById("prMail").value),
     contacts,
     updatedAt:serverTimestamp(),
   };
