@@ -3,6 +3,7 @@
 // 編集・統合・統合の取り消しは「…」メニューから（閲覧のみの人には出さない）。書き込みは必ず Callable
 // （updateOffice / mergeOffices / unmergeOffice）経由。画面から offices・cases を直接書かない。
 // officeId の無い案件は事業所名の文字列でまとめ、「（マスター未登録）」として出す。
+import { normalizePhone } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, onSnapshot } from "/js/fs.js";
@@ -201,7 +202,7 @@ function openEdit(id) {
 }
 function editPatch() {
   const o = offices.find((x) => x._id === editId) || {};
-  const vals = { officeName: $("efOfficeName").value, corpName: $("efCorpName").value, postalCode: $("efPostalCode").value, address: $("efAddress").value, phone: $("efPhone").value };
+  const vals = { officeName: $("efOfficeName").value, corpName: $("efCorpName").value, postalCode: $("efPostalCode").value, address: $("efAddress").value, phone: normalizePhone($("efPhone").value) };
   const patch = {};
   Object.keys(vals).forEach((k) => { if (vals[k].trim() !== String(o[k] || "").trim()) patch[k] = vals[k]; });
   return patch;

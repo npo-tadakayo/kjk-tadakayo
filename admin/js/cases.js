@@ -1,3 +1,4 @@
+import { normalizeEmail, normalizePhone } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -490,15 +491,15 @@ async function createCase(user) {
     const corpName = document.getElementById("corpName").value.trim();
     const officeRef = await addDoc(collection(db, "offices"), {
       corpName, officeName,
-      phone: document.getElementById("contactPhone").value.trim(),
+      phone: normalizePhone(document.getElementById("contactPhone").value),
       createdAt: now, updatedAt: now,
     });
     const caseNumber = await getNextCaseNumber();
     const caseRef = await addDoc(collection(db, "cases"), {
       caseNumber, officeId: officeRef.id, officeName, corpName,
       contactName: document.getElementById("contactName").value.trim(),
-      contactEmail: document.getElementById("contactEmail").value.trim(),
-      contactPhone: document.getElementById("contactPhone").value.trim(),
+      contactEmail: normalizeEmail(document.getElementById("contactEmail").value),
+      contactPhone: normalizePhone(document.getElementById("contactPhone").value),
       source: "manual", status: 1, assignedUserId: null, assignedUserName: null,
       referralSource: null, // 紹介元は未設定で作る（案件詳細で選ぶ。決め打ちしない）
       receivedAt: now, updatedAt: now, cardReaders: [],
@@ -540,6 +541,12 @@ onAuthStateChanged(auth, async (user) => {
   applyViewerMode(myRole);
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
+  // 全角で入れたメール・電話は、欄を離れたときに半角へ直して見せる（保存時にも直す）
+  [["contactEmail", normalizeEmail], ["contactPhone", normalizePhone]].forEach(([id, fn]) => {
+    const el = document.getElementById(id);
+    el?.addEventListener("change", () => { const v = fn(el.value); if (v !== el.value) el.value = v; });
+    el?.addEventListener("blur", () => { const v = fn(el.value); if (v !== el.value) el.value = v; });
+  });
   populateStatusFilter();
   // ?status=N（ダッシュボード「今日やること」からの遷移）を既存のステータス絞り込みへ反映
   const urlStatus = urlParams.get("status");

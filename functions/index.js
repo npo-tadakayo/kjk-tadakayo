@@ -12,6 +12,7 @@ const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
 const { GoogleAuth } = require("google-auth-library");
+const { normalizeEmail, normalizePhone } = require("./normalize"); // メール・電話の全角→半角（正本 admin/js/normalize.js）
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（公開ページと同じ計算）
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
@@ -223,8 +224,18 @@ function daysFromNow(n) {
 // 2026-10-24 事業所の編集・統合（設計 §7.2）: 事業所名を直したり統合したりすると、旧名で来た次の問い合わせが
 // 完全一致に掛からず重複が再発する。完全一致が無いときだけ、候補の事業所（offices）を読み、
 // 名前の正規化（空白・括弧の違い）と aliases（旧名・統合で消えた側の名前）でも一致とみなす。
+// 受け取った本文のメール・電話を半角に直す（案件・見積に保存する前・検索キーに使う前に通す。2026-10-28 #377）
+function normalizeContactBody(body) {
+  if (body && typeof body === "object") {
+    if (body.email != null) body.email = normalizeEmail(body.email);
+    if (body.phone != null) body.phone = normalizePhone(body.phone);
+  }
+  return body;
+}
+
 // 完全一致があれば従来と同じ案件を返す（新しい順で最初の完全一致）。
-async function findActiveCase(email, officeName) {
+async function findActiveCase(rawEmail, officeName) {
+  const email = normalizeEmail(rawEmail); // 半角で保存した案件と照合する
   if (!email) return null;
   // 同じメールの案件が多い事業所でも取りこぼさないよう、受信日の新しい順に全件見る
   // （contactEmail の等価 + receivedAt の並べ替えは単一フィールドの複合なので既定インデックスで通る）
@@ -411,7 +422,7 @@ exports.webhookLpInquiry = onRequest(
     if (await appCheckGate(req, res, "webhookLpInquiry")) return;
 
     try {
-      const body = req.body;
+      const body = normalizeContactBody(req.body);
       const now = admin.firestore.FieldValue.serverTimestamp();
       const officeName = body.officeName || body.name || "";
       // ご希望（まず相談したい/見積書がほしい/正式に申込みたい）。不正・欠落は consult 扱い（2026-09-05 MTG §6）。
@@ -590,7 +601,8 @@ function validateMitsumoriOfficeInput(o) {
 async function createOrUpdateMitsumoriQuote(input, groupMeta) {
   const now = admin.firestore.FieldValue.serverTimestamp();
   const officeName = input.officeName || "";
-  const email = input.email || "";
+  const email = normalizeEmail(input.email);
+  input = { ...input, phone: normalizePhone(input.phone) };
 
   const v = validateMitsumoriOfficeInput(input);
   if (!v.ok) return { ok: false, message: v.message };
@@ -759,7 +771,7 @@ exports.webhookMitsumori = onRequest(
     if (await appCheckGate(req, res, "webhookMitsumori")) return;
 
     try {
-      const body = req.body || {};
+      const body = normalizeContactBody(req.body || {});
 
       // ===== 複数事業所（offices[]）経路 =====
       if (Array.isArray(body.offices)) {
@@ -977,8 +989,8 @@ exports.sendQuotePdf = onRequest(
         }
 
         const first = saves[0].q;
-        const to = first.contactEmail || "";
-        const mismatched = saves.some(({ q }) => (q.contactEmail || "") !== to);
+        const to = normalizeEmail(first.contactEmail);
+        const mismatched = saves.some(({ q }) => (normalizeEmail(q.contactEmail)) !== to);
         if (mismatched) console.warn("sendQuotePdf(group): 宛先メールが揃っていません。先頭を採用します。", to);
 
         let mailed = false, mailError = null;
@@ -1037,7 +1049,7 @@ exports.sendQuotePdf = onRequest(
 
       const filename = `${q.estNo}-v${q.version}.pdf`;
       const saved = await storeQuotePdfFile(q.caseId, filename, pdfBase64);
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       let mailed = false, mailError = null;
       if (wantsMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
@@ -1402,7 +1414,7 @@ exports.acceptQuote = onRequest(
         if (newly.length) {
           const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           const first = newly[0].q;
-          const to = first.contactEmail || "";
+          const to = normalizeEmail(first.contactEmail);
           if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
             try {
               const m = acceptMailTextGroup({ items: newly, agreedName: body.agreedName, payKey, preferredDate: body.preferredDate });
@@ -1455,7 +1467,7 @@ exports.acceptQuote = onRequest(
 
       // 事業所へ確認メール
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
           const m = acceptMailText({ q, agreedName, payKey, delivery: d, preferredDate });
@@ -1657,7 +1669,7 @@ exports.reviseQuote = onCall(
       supersedes: base.id, reason: String(reason).trim().slice(0, 500),
       validUntil: daysFromNow(30),   // 改版は新しい見積書なので有効期限を30日振り直す（2026-09-14）
       createdVia: "staff", createdBy: email, createdAt: now,
-      contactEmail: base.contactEmail || "", contactName: base.contactName || "",
+      contactEmail: normalizeEmail(base.contactEmail), contactName: base.contactName || "",
       officeName: base.officeName || "", corpName: base.corpName || "",
       accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
       shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
@@ -1694,7 +1706,7 @@ exports.reviseQuote = onCall(
 
     // 事業所へ変更後の見積もりを知らせる（PDFはこの時点では無いので、金額と変更点をメールで伝える）
     let mailed = false;
-    const to = base.contactEmail || "";
+    const to = normalizeEmail(base.contactEmail);
     if (sendMail !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const diff = calc.totalIncl - (Number(base.amounts?.totalIncl) || 0);
@@ -1737,7 +1749,7 @@ exports.resendQuoteMail = onCall(
     if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
     const q = { id: snap.id, ...snap.data() };
     if (!q.pdfPath) throw new HttpsError("failed-precondition", "この見積もりのPDFは保存されていません（事業所側でPDF作成が完了していない可能性）");
-    const to = (toOverride || q.contactEmail || "").trim();
+    const to = normalizeEmail(toOverride || q.contactEmail);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError("invalid-argument", "宛先メールアドレスが不正です");
     try {
       const [buf] = await admin.storage().bucket(QUOTE_BUCKET).file(q.pdfPath).download();
@@ -1810,7 +1822,7 @@ exports.staffCreateQuote = onCall(
     }
     const corpName = kase.corpName || (office && office.corpName) || "";
     const officeName = kase.officeName || (office && office.officeName) || "";
-    const contactEmail = kase.contactEmail || "";
+    const contactEmail = normalizeEmail(kase.contactEmail);
     const contactName = kase.contactName || "";
 
     const now = admin.firestore.FieldValue.serverTimestamp();
@@ -1916,7 +1928,7 @@ exports.saveQuotePdf = onCall(
     let mailed = false;
     const now = admin.firestore.FieldValue.serverTimestamp();
     if (wantsMail) {
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
           const m = quoteMailText(q);

@@ -2,6 +2,8 @@
 // 13ステータスの数値はそのまま。表示・整理のため 5 フェーズに束ねる。
 // 旧: cases.js / kanban.js / dashboard.js に重複していた定義をここへ集約。
 
+import { normalizeEmail, normalizePhone } from "./normalize.js"; // 重複判定キーに全角のゆれを持ち込まない
+
 export const STATUS_LABELS = {
   1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注",
   5: "担当者決定", 6: "事前準備中", 7: "伴走支援待ち",
@@ -119,8 +121,8 @@ export const ARCHIVE_REASONS = {
 // 重複判定キー（メール／電話の数字のみ／事業所名）。1件が複数キーを持ちうる。
 export function dupKeys(c) {
   const keys = [];
-  const e = (c.contactEmail || "").trim().toLowerCase(); if (e) keys.push("e:" + e);
-  const p = (c.contactPhone || "").replace(/[^0-9]/g, "");  if (p) keys.push("p:" + p);
+  const e = normalizeEmail(c.contactEmail).toLowerCase(); if (e) keys.push("e:" + e);
+  const p = normalizePhone(c.contactPhone).replace(/[^0-9]/g, "");  if (p) keys.push("p:" + p);
   const o = (c.officeName || "").trim();                     if (o) keys.push("o:" + o);
   return keys;
 }

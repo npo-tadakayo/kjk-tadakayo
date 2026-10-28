@@ -8,6 +8,7 @@
 // ・送信は既存の sendCaseEmail（タイムラインに自動記録）
 // ・送付済みかどうかは cases.preGuideMailedAt で持ち、カードに表示する
 
+import { normalizeEmail } from "/js/normalize.js";
 import {
   doc, updateDoc, serverTimestamp,
 } from "/js/fs.js";
@@ -104,7 +105,7 @@ function openModal() {
   document.getElementById("pgClose").addEventListener("click", close);
   document.getElementById("pgCancel").addEventListener("click", close);
   document.getElementById("pgSend").addEventListener("click", async (e) => {
-    const to = document.getElementById("pgTo").value.trim();
+    const to = normalizeEmail(document.getElementById("pgTo").value);
     const subject = document.getElementById("pgSubject").value.trim();
     const body = document.getElementById("pgBody").value;
     if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }
