@@ -248,9 +248,19 @@ function render(cases) {
 
 // ===== 今日の訪問カード（cases の購読結果から作る。追加の読み込みは users の1回だけ）=====
 let usersList = [];
+let visitCases = null;   // 最後に描いた案件（日付が変わったときに、読み直さずに描き直すため）
+let visitDay = "";       // 最後に描いた JST の日付
+// ホームを開いたまま JST の 0 時を越えても、前日の訪問が残らないようにする（1分ごと・タブに戻ったとき）
+function refreshVisitsIfDayChanged() {
+  if (visitCases && visitDay !== todayYmdJst()) renderVisits(visitCases);
+}
+setInterval(refreshVisitsIfDayChanged, 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshVisitsIfDayChanged(); });
 function renderVisits(cases) {
   const esc = (v) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const r = todayVisitsSummary(cases, todayYmdJst(), myEmail, buildUserNames(usersList, cases));
+  visitCases = cases;
+  visitDay = todayYmdJst();
+  const r = todayVisitsSummary(cases, visitDay, myEmail, buildUserNames(usersList, cases));
   document.getElementById("visitTitle").textContent = `今日の訪問 ${r.all}件`;
   document.getElementById("visitMineLink").style.display = r.mine > 0 ? "" : "none";
   const body = document.getElementById("visitBody");
