@@ -318,3 +318,17 @@ export function pickAssignee(wanted, optionValues) {
   if (!wanted) return "";
   return (optionValues || []).includes(wanted) ? wanted : "";
 }
+
+// ---------- ホームの「今日の訪問」カード ----------
+/**
+ * 今日（JST）の訪問のまとめ。表示は「自分の分 → 時刻順 → 時刻未定」で最大 limit 件、残りは more。
+ * 失注・対象外・日付なしは toEvents が除く。担当者名は buildUserNames の対応表で補う。
+ */
+export function todayVisitsSummary(cases, todayYmd, myEmail, userNames, limit = 5) {
+  const today = toEvents(cases, { userNames }).filter((e) => e.date === todayYmd);
+  const mineOf = (e) => matchAssignee(e.assignedUserId, "__me", myEmail);
+  const sorted = sortEvents(today);
+  const ordered = [...sorted.filter(mineOf), ...sorted.filter((e) => !mineOf(e))];
+  const rows = ordered.slice(0, limit).map((e) => ({ ...e, mine: mineOf(e) }));
+  return { all: today.length, mine: sorted.filter(mineOf).length, rows, more: Math.max(0, ordered.length - limit) };
+}
