@@ -300,3 +300,49 @@ t(() => {
 
 console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
 }
+
+// ===== 2026-10-30 台数を目立たせる改修（出荷指示・宛名印刷）=====
+{
+  const { shipQtySummary } = await import("../admin/js/ship-flow.js");
+  const { readFileSync } = await import("node:fs");
+  const R = (sku, name, qty, extra = {}) => ({ sku, name, qty, ...extra });
+  // 1品番・1台
+  let q = shipQtySummary([R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 1)]);
+  assert.equal(q.total, 1);
+  assert.equal(q.detail, "CIR415A × 1");
+  // 伴走支援費・金額調整・在庫を使わない行・0台は数えない
+  q = shipQtySummary([
+    R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 3),
+    R("support-fee", "伴走支援費", 1), R("discount", "金額調整", 1),
+    R("x-1", "サービス", 2, { nonStock: true }), R("cir315a-02", "介護情報基盤 汎用カードリーダ CIR315A（Type-A）", 0),
+  ]);
+  assert.equal(q.total, 3);
+  assert.equal(q.lines.length, 1);
+  // 2品番は品番ごとと合計
+  q = shipQtySummary([R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 2), R("cir315a-02", "介護情報基盤 汎用カードリーダ CIR315A（Type-A）", 1)]);
+  assert.equal(q.total, 3);
+  assert.equal(q.detail, "CIR415A × 2・CIR315A（Type-A） × 1");
+  // 品名が無ければ品番
+  assert.equal(shipQtySummary([R("abc", "", 2)]).detail, "abc × 2");
+  assert.deepEqual(shipQtySummary(undefined), { lines: [], total: 0, detail: "" });
+  // Functions の複製が admin と同じ中身（BEGIN〜END）
+  const pick = (src) => src.split("// BEGIN shipQtySummary\n")[1].split("// END shipQtySummary")[0].replace("export function", "function");
+  const fl = readFileSync(new URL("../admin/js/ship-flow.js", import.meta.url), "utf8");
+  const fn = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
+  assert.equal(pick(fn), pick(fl));
+  // 出荷指示: 見出し・副題・本文2行目・カード先頭に台数
+  assert.match(fn, /const q = shipQtySummary\(s\.items\);/);
+  assert.match(fn, /`🔢 台数: \$\{q\.total\}台（\$\{q\.detail\}）← 箱に入れる前に数えてください`/);
+  assert.match(fn, /— カードリーダー \$\{q\.total\}台`, subtitle: `[^`]*【合計 \$\{q\.total\}台】`/);
+  // 宛名印刷: 宛名枠の台数と梱包の確認（チェック4つ）
+  const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
+  assert.match(lp, /import \{ letterPackOrDefault, shipQtySummary \} from "\/js\/ship-flow\.js"/);
+  assert.match(lp, /class="qtybox"/);
+  assert.match(lp, /data-qty-total>\$\{q\.total\}<small>台<\/small>/);
+  assert.equal((lp.match(/<li><span class="box"/g) || []).length, 4);
+  assert.match(lp, /確認した人：/);
+  const lph = readFileSync(new URL("../admin/letterpack-print.html", import.meta.url), "utf8");
+  assert.match(lph, /\.qtybox\{/);
+  assert.match(lph, /\.pack\{/);
+  console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
+}
