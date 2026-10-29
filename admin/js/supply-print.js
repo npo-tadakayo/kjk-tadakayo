@@ -616,7 +616,7 @@ function buildReportPdf(caseId){
   });
 }
 
-// 助成金申請の手順（A4・8ページ）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
+// 助成金申請の手順（A4・6ページ）に差し込む値。領収証画面に表示中の金額をそのまま読む（ここでは計算しない）
 function subsidyGuideData(d){
   // 請求書から送るとき（領収証の明細欄が無い）は、出荷の明細から A・B を出す（領収証と同じ振り分け: 2026-10-01）
   if(!document.querySelector("#rcptItems tr")){
