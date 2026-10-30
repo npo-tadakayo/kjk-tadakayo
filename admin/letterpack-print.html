@@ -65,6 +65,8 @@
     .item-qty .num{font-size:48pt;font-weight:700;line-height:1.05;}
     .item-qty .num small{font-size:18pt;margin-left:1mm;}
     .item-so{font-size:8pt;color:var(--muted);text-align:right;}
+    /* 収まるかを測るときだけ、画面幅に関係なく印刷と同じ寸法にする（letterpack-print.js fitLabel） */
+    .label.measure{width:125mm !important;height:145mm !important;min-height:0 !important;}
     .cut{margin:6mm 0 4mm;border-top:1px dashed #999;position:relative;text-align:center;}
     .cut span{position:relative;top:-0.8em;background:#fff;padding:0 3mm;font-size:9pt;color:#777;}
     /* 梱包の確認（切り取り線の下・貼らない部分。2026-10-30 台数を目立たせる改修） */

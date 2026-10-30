@@ -349,5 +349,10 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   // A4 の幅（約794px）は max-width:820px にも当たるため、印刷用に寸法を固定し直していること（Codex 指摘 #33）
   assert.match(lph.slice(lph.indexOf('@media print')), /\.label\{width:125mm;height:145mm;min-height:0;\}/);
   assert.match(lph, /\.pack\{/);
+  // 長い宛名は お届け先・ご依頼主 を縮めて枠に収め、収まらなければ警告と印刷前の確認（Codex 指摘 #33）
+  assert.match(lp, /function fitLabel\(\)/);
+  assert.match(lp, /labelFits = fitLabel\(\);/);
+  assert.match(lp, /if \(!labelFits && !confirm\(/);
+  assert.match(lph, /\.label\.measure\{width:125mm !important;height:145mm !important;/);
   console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
 }
