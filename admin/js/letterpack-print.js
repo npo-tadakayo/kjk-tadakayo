@@ -47,7 +47,7 @@ function sendersOf(st){
 
 export function renderLabel(s, sender, type){
   sender = sender || {};
-  const q = shipQtySummary(s.items); // 台数は宛名枠と梱包の確認に大きく出す（2026-10-30）
+  const q = shipQtySummary(s.items); // 台数は宛名枠の品名の欄と梱包の確認に大きく出す（2026-10-30）
   const head = TYPE_LABEL[type] || "レターパック（種類が未選択です）";
   const zip = s.postal ? `〒${esc(s.postal)}` : "〒";
   const person = String(s.contactName || "").trim();
@@ -55,7 +55,7 @@ export function renderLabel(s, sender, type){
   return `
     <div class="label">
       <div class="label-head"><span>${esc(head)}</span><small>宛名ラベル</small></div>
-      <div class="to"><div class="to-grid"><div>
+      <div class="to">
         <div class="sec">お届け先</div>
         <div class="zip">${zip}</div>
         <div class="addr">${esc(s.address || "")}</div>
@@ -64,20 +64,22 @@ export function renderLabel(s, sender, type){
         <div class="name">${person ? esc(person) : "ご担当者"}<span class="sama">様</span></div>
         <div class="tel">TEL ${esc(s.phone || "")}</div>
       </div>
-      <div class="qtybox" aria-label="内容品と台数">
-        <div class="qt-label">内容品・台数</div>
-        <div class="qt-num" data-qty-total>${q.total}<small>台</small></div>
-        <div class="qt-item">カードリーダー<br>${q.lines.map((l)=>`${esc(l.label)}${q.lines.length > 1 ? ` × ${l.qty}` : ""}`).join("<br>")}</div>
-      </div></div></div>
       <div class="from">
         <div class="sec">ご依頼主</div>
         <div>${fromZip}${esc(sender.address || "")}</div>
         <div class="from-name">${esc(sender.name || "")}</div>
         ${sender.phone ? `<div>TEL ${esc(sender.phone)}</div>` : ""}
       </div>
-      <div class="so"><span>出荷番号 <strong>${esc(s.soNumber || "")}</strong></span><span>品名: 介護情報基盤 マイナ資格確認 カードリーダー</span></div>
+      <div class="item">
+        <div class="sec">品名</div>
+        <div class="item-row">
+          <div class="item-name"><b>カードリーダー</b><br>（介護情報基盤 マイナ資格確認用）<br>${q.lines.map((l)=>`${esc(l.label)}${q.lines.length > 1 ? ` × ${l.qty}` : ""}`).join("<br>")}</div>
+          <div class="item-qty" aria-label="台数"><div class="num" data-qty-total>${q.total}<small>台</small></div></div>
+        </div>
+        <div class="item-so">出荷番号 ${esc(s.soNumber || "")}</div>
+      </div>
     </div>
-    <div class="cut"><span>✂ 上の枠を切り取って、レターパックの宛名面に貼ってください</span></div>
+    <div class="cut"><span>✂ 上の枠（縦14.5cm×横12.5cm）を外枠に沿って切り取り、レターパックの宛名面の枠に貼ってください</span></div>
     <div class="pack">
       <div class="pack-title">梱包の確認（貼らない）<span>出荷番号 ${esc(s.soNumber || "")}${s.shipDate ? ` ／ 出荷日 ${esc(s.shipDate)}` : ""}${s.originLocationName ? ` ／ 出荷元 ${esc(s.originLocationName)}` : ""}</span></div>
       <div class="pack-qty">

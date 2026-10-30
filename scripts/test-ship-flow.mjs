@@ -337,12 +337,15 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   // 宛名印刷: 宛名枠の台数と梱包の確認（チェック4つ）
   const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
   assert.match(lp, /import \{ letterPackOrDefault, shipQtySummary \} from "\/js\/ship-flow\.js"/);
-  assert.match(lp, /class="qtybox"/);
+  // 宛名枠は郵便局の依頼で 上から お届け先 → ご依頼主 → 品名（台数）の順（2026-10-30）
+  assert.match(lp, /class="item-qty"/);
+  const iTo = lp.indexOf('<div class="to">'), iFrom = lp.indexOf('<div class="from">'), iItem = lp.indexOf('<div class="item">');
+  assert.ok(iTo > 0 && iTo < iFrom && iFrom < iItem, "宛名枠の並びは お届け先 → ご依頼主 → 品名");
   assert.match(lp, /data-qty-total>\$\{q\.total\}<small>台<\/small>/);
   assert.equal((lp.match(/<li><span class="box"/g) || []).length, 4);
   assert.match(lp, /確認した人：/);
   const lph = readFileSync(new URL("../admin/letterpack-print.html", import.meta.url), "utf8");
-  assert.match(lph, /\.qtybox\{/);
+  assert.match(lph, /\.label\{width:125mm;height:145mm;/); // レターパックの宛名面の枠（縦14.5cm×横12.5cm）
   assert.match(lph, /\.pack\{/);
   console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
 }
