@@ -47,7 +47,7 @@ function sendersOf(st){
 
 export function renderLabel(s, sender, type){
   sender = sender || {};
-  const q = shipQtySummary(s.items); // 台数は宛名枠と梱包の確認に大きく出す（2026-10-30）
+  const q = shipQtySummary(s.items); // 台数は宛名枠の品名の欄と梱包の確認に大きく出す（2026-10-30）
   const head = TYPE_LABEL[type] || "レターパック（種類が未選択です）";
   const zip = s.postal ? `〒${esc(s.postal)}` : "〒";
   const person = String(s.contactName || "").trim();
@@ -55,7 +55,7 @@ export function renderLabel(s, sender, type){
   return `
     <div class="label">
       <div class="label-head"><span>${esc(head)}</span><small>宛名ラベル</small></div>
-      <div class="to"><div class="to-grid"><div>
+      <div class="to">
         <div class="sec">お届け先</div>
         <div class="zip">${zip}</div>
         <div class="addr">${esc(s.address || "")}</div>
@@ -64,20 +64,22 @@ export function renderLabel(s, sender, type){
         <div class="name">${person ? esc(person) : "ご担当者"}<span class="sama">様</span></div>
         <div class="tel">TEL ${esc(s.phone || "")}</div>
       </div>
-      <div class="qtybox" aria-label="内容品と台数">
-        <div class="qt-label">内容品・台数</div>
-        <div class="qt-num" data-qty-total>${q.total}<small>台</small></div>
-        <div class="qt-item">カードリーダー<br>${q.lines.map((l)=>`${esc(l.label)}${q.lines.length > 1 ? ` × ${l.qty}` : ""}`).join("<br>")}</div>
-      </div></div></div>
       <div class="from">
         <div class="sec">ご依頼主</div>
         <div>${fromZip}${esc(sender.address || "")}</div>
         <div class="from-name">${esc(sender.name || "")}</div>
         ${sender.phone ? `<div>TEL ${esc(sender.phone)}</div>` : ""}
       </div>
-      <div class="so"><span>出荷番号 <strong>${esc(s.soNumber || "")}</strong></span><span>品名: 介護情報基盤 マイナ資格確認 カードリーダー</span></div>
+      <div class="item">
+        <div class="sec">品名</div>
+        <div class="item-row">
+          <div class="item-name"><b>カードリーダー</b><br>（介護情報基盤 マイナ資格確認用）<br>${q.lines.map((l)=>`${esc(l.label)}${q.lines.length > 1 ? ` × ${l.qty}` : ""}`).join("<br>")}</div>
+          <div class="item-qty" aria-label="台数"><div class="num" data-qty-total>${q.total}<small>台</small></div></div>
+        </div>
+        <div class="item-so">出荷番号 ${esc(s.soNumber || "")}</div>
+      </div>
     </div>
-    <div class="cut"><span>✂ 上の枠を切り取って、レターパックの宛名面に貼ってください</span></div>
+    <div class="cut"><span>✂ 上の枠（縦14.5cm×横12.5cm）を外枠に沿って切り取り、レターパックの宛名面の枠に貼ってください</span></div>
     <div class="pack">
       <div class="pack-title">梱包の確認（貼らない）<span>出荷番号 ${esc(s.soNumber || "")}${s.shipDate ? ` ／ 出荷日 ${esc(s.shipDate)}` : ""}${s.originLocationName ? ` ／ 出荷元 ${esc(s.originLocationName)}` : ""}</span></div>
       <div class="pack-qty">
@@ -92,6 +94,26 @@ export function renderLabel(s, sender, type){
       </ul>
       <div class="sign"><div>確認した人：</div><div>日付：　　月　　日</div></div>
     </div>`;
+}
+
+// 宛名枠は 145×125mm 固定（overflow:hidden）。住所・法人名・事業所名が長いと品名・台数が切れて印刷されるので、
+// お届け先とご依頼主を収まるまで縮める（最小 70%）。それでも収まらなければ false（警告を出し、印刷前に確認）。Codex 指摘 #33
+function fitLabel(){
+  const el = document.querySelector(".label");
+  if (!el) return true;
+  const parts = el.querySelectorAll(".to, .from");
+  const last = el.querySelector(".item-so");
+  el.classList.add("measure");
+  const fits = () => last.getBoundingClientRect().bottom <= el.getBoundingClientRect().bottom - 2;
+  let z = 1;
+  parts.forEach((x) => { x.style.zoom = ""; });
+  while (!fits() && z > 0.7) {
+    z = Math.round((z - 0.05) * 100) / 100;
+    parts.forEach((x) => { x.style.zoom = String(z); });
+  }
+  const ok = fits();
+  el.classList.remove("measure");
+  return ok;
 }
 
 function setTheme(type){
@@ -122,14 +144,17 @@ onAuthStateChanged(auth, async (user) => {
     if (s.soNumber) document.getElementById("backBtn").href = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber)}`;
     document.title = `宛名 ${s.soNumber || ""} — タダカヨ CRM`;
 
+    let labelFits = true;
     let type = letterPackOrDefault(s.letterPackType); // 未設定はプラス（赤）・2026-10-21
     const draw = () => {
       setTheme(type);
       document.getElementById("body").innerHTML = renderLabel(s, senders[Number(sel.value) || 0], type);
+      labelFits = fitLabel();
       const warn = document.getElementById("warnBox");
       const miss = [!s.postal && "郵便番号", !s.address && "住所", !s.phone && "電話"].filter(Boolean);
       const msgs = [];
       if (!type) msgs.push("レターパックの種類（ライト／プラス）を上で選んでください。選ぶと色が変わり、この出荷に保存されます。");
+      if (!labelFits) msgs.push("宛名（住所・法人名・事業所名）が長く、宛名枠（縦14.5cm×横12.5cm）に収まりません。このまま印刷すると品名・台数が切れます。出荷の「送付先・数量を直す」で短くしてください。");
       if (miss.length) msgs.push(`届け先の${miss.join("・")}が入っていません。出荷の「送付先・数量を直す」で入れてから印刷してください。`);
       warn.innerHTML = msgs.map(esc).join("<br>");
       warn.style.display = msgs.length ? "block" : "none";
@@ -156,6 +181,7 @@ onAuthStateChanged(auth, async (user) => {
     }));
     document.getElementById("printBtn").addEventListener("click", () => {
       if (!type && !confirm("レターパックの種類が未選択です。このまま印刷しますか？")) return;
+      if (!labelFits && !confirm("宛名が宛名枠に収まらず、品名・台数が切れます。このまま印刷しますか？")) return;
       window.print();
     });
   } catch (e) {

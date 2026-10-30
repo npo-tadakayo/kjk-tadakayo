@@ -39,31 +39,37 @@
     .paper{width:210mm;min-height:297mm;margin:16px auto;background:#fff;border:1px solid var(--line);padding:10mm;}
     .loading{text-align:center;padding:60px;color:var(--muted);}
     .warn{max-width:210mm;margin:12px auto 0;padding:10px 14px;border-left:4px solid #c87a1f;background:#fff8ec;font-size:13px;}
-    /* 宛名枠（A4 の上半分に収まる大きさ: 190mm × 約130mm） */
-    .label{border:2.5px solid var(--lp);border-radius:4mm;padding:6mm 8mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .label-head{display:flex;justify-content:space-between;align-items:center;background:var(--lp);color:#fff;margin:-6mm -8mm 5mm;padding:3mm 8mm;border-radius:2.5mm 2.5mm 0 0;font-weight:700;font-size:15pt;letter-spacing:.05em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-    .label-head small{font-size:10pt;font-weight:500;}
-    .sec{display:inline-block;color:var(--lp);border:1.5px solid var(--lp);border-radius:2mm;font-size:10pt;font-weight:700;padding:0 3mm;margin-bottom:2mm;}
-    .to{padding-bottom:4mm;border-bottom:1.5px dashed var(--lp);margin-bottom:4mm;}
-    .zip{font-size:16pt;font-weight:700;letter-spacing:.08em;}
-    .addr{font-size:16pt;line-height:1.45;margin:1mm 0 2mm;word-break:break-all;}
-    .org{font-size:14pt;line-height:1.4;}
-    .name{font-size:22pt;font-weight:700;margin-top:1mm;}
-    .name .sama{font-size:15pt;font-weight:500;margin-left:3mm;}
-    .tel{font-size:13pt;margin-top:2mm;}
-    .from{font-size:11pt;line-height:1.55;}
-    .from .from-name{font-size:12pt;font-weight:700;}
-    .so{display:flex;justify-content:space-between;align-items:flex-end;margin-top:3mm;font-size:10pt;color:var(--muted);}
-    .so strong{color:var(--ink);font-size:12pt;}
+    /* 宛名枠（2026-10-30 縦145mm × 横125mm に変更）。
+       郵便局の依頼: レターパックの宛名面の枠に合わせ、上から お届け先 → ご依頼主 → 品名 の順で並べる（機械で読み取るため）。
+       台数は品名の欄に大きく入れる。中身が多くても枠の大きさは変えない（overflow で切る＝はみ出して他所に掛からない） */
+    .label{width:125mm;height:145mm;overflow:hidden;display:flex;flex-direction:column;border:2px solid var(--lp);border-radius:3mm;padding:3mm 4mm;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .label-head{display:flex;justify-content:space-between;align-items:center;background:var(--lp);color:#fff;margin:-3mm -4mm 2.5mm;padding:1.5mm 4mm;border-radius:1.5mm 1.5mm 0 0;font-weight:700;font-size:11pt;letter-spacing:.05em;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .label-head small{font-size:8pt;font-weight:500;}
+    .sec{display:inline-block;color:var(--lp);border:1.2px solid var(--lp);border-radius:1.5mm;font-size:8pt;font-weight:700;padding:0 2mm;margin-bottom:1mm;}
+    .to{padding-bottom:2.5mm;border-bottom:1.2px dashed var(--lp);margin-bottom:2.5mm;}
+    .zip{font-size:12pt;font-weight:700;letter-spacing:.08em;}
+    .addr{font-size:12pt;line-height:1.35;margin:.5mm 0 1mm;word-break:break-all;}
+    .org{font-size:11pt;line-height:1.35;}
+    .name{font-size:16pt;font-weight:700;margin-top:.5mm;}
+    .name .sama{font-size:11pt;font-weight:500;margin-left:2mm;}
+    .tel{font-size:10.5pt;margin-top:1mm;}
+    .from{font-size:9pt;line-height:1.45;padding-bottom:2.5mm;border-bottom:1.2px dashed var(--lp);margin-bottom:2.5mm;}
+    .from .from-name{font-size:9.5pt;font-weight:700;}
+    /* 品名の欄（枠の残りの高さを使う）。台数を大きく */
+    .item{flex:1;display:flex;flex-direction:column;min-height:0;}
+    .item .sec{align-self:flex-start;}
+    .item-row{flex:1;display:flex;align-items:center;gap:4mm;}
+    .item-name{flex:1;font-size:10pt;line-height:1.4;}
+    .item-name b{font-size:11pt;}
+    .item-qty{flex:0 0 auto;border:2.5px solid var(--ink);border-radius:2.5mm;padding:1mm 4mm;text-align:center;}
+    .item-qty .num{font-size:48pt;font-weight:700;line-height:1.05;}
+    .item-qty .num small{font-size:18pt;margin-left:1mm;}
+    .item-so{font-size:8pt;color:var(--muted);text-align:right;}
+    /* 収まるかを測るときだけ、画面幅に関係なく印刷と同じ寸法にする（letterpack-print.js fitLabel） */
+    .label.measure{width:125mm !important;height:145mm !important;min-height:0 !important;}
     .cut{margin:6mm 0 4mm;border-top:1px dashed #999;position:relative;text-align:center;}
     .cut span{position:relative;top:-0.8em;background:#fff;padding:0 3mm;font-size:9pt;color:#777;}
-    /* 台数（2026-10-30 台数を目立たせる改修）。宛名枠の右上に内容品・台数、切り取り線の下に梱包の確認 */
-    .to-grid{display:grid;grid-template-columns:1fr 46mm;gap:5mm;align-items:start;}
-    .qtybox{border:2.5px solid var(--ink);border-radius:3mm;text-align:center;padding:2mm 2mm 3mm;}
-    .qtybox .qt-label{font-size:10pt;font-weight:700;letter-spacing:.08em;border-bottom:1px solid var(--ink);padding-bottom:1mm;margin-bottom:1mm;}
-    .qtybox .qt-num{font-size:44pt;font-weight:700;line-height:1.05;}
-    .qtybox .qt-num small{font-size:16pt;margin-left:1mm;}
-    .qtybox .qt-item{font-size:9pt;line-height:1.35;}
+    /* 梱包の確認（切り取り線の下・貼らない部分。2026-10-30 台数を目立たせる改修） */
     .pack{border:2.5px solid var(--ink);border-radius:3mm;padding:5mm 6mm;margin-bottom:5mm;}
     .pack-title{font-size:14pt;font-weight:700;margin-bottom:3mm;display:flex;justify-content:space-between;align-items:baseline;gap:4mm;flex-wrap:wrap;}
     .pack-title span{font-size:10pt;font-weight:500;color:var(--muted);}
@@ -77,12 +83,14 @@
     .checks .box{width:8mm;height:8mm;border:2px solid var(--ink);border-radius:1mm;flex:0 0 auto;}
     .sign{display:flex;gap:8mm;margin-top:4mm;font-size:12pt;}
     .sign div{flex:1;border-bottom:1.5px solid var(--ink);padding-bottom:1mm;}
-    @media (max-width: 820px){ .paper{width:auto;min-height:0;margin:12px 16px;padding:16px;} }
+    @media (max-width: 820px){ .paper{width:auto;min-height:0;margin:12px 16px;padding:16px;} .label{width:100%;height:auto;min-height:145mm;} }
     @media print{
       @page{size:A4 portrait;margin:0;}
       .toolbar,.warn,.no-print{display:none !important;}
       body{background:#fff;}
       .paper{margin:0;border:none;width:210mm;min-height:auto;padding:10mm;}
+      /* A4 の幅（約794px）は上の max-width:820px にも当たるので、宛名枠の寸法を印刷用に固定し直す */
+      .label{width:125mm;height:145mm;min-height:0;}
     }
   </style>
 </head>
