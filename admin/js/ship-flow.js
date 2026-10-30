@@ -222,3 +222,22 @@ export function lpPickupNotice({ originLocationId, defaultLocationId, letterPack
   if (!letterPack || !originLocationId || !defaultLocationId) return "";
   return originLocationId === defaultLocationId ? "" : LP_PICKUP_NOTICE;
 }
+
+// 出荷する品の台数のまとめ（2026-10-30 次田さん決定・台数を目立たせる改修）。
+// 出荷指示（functions/index.js の shipQtySummary）と宛名印刷で同じ数え方にする。
+// 伴走支援費・金額調整・在庫を使わない行は数えない。label は品名から「介護情報基盤 汎用カードリーダ」を外した短い名前。
+// ⚠️ functions/index.js に同じ中身を複製している（Functions は CommonJS で ESM を require できないため）。
+//    BEGIN〜END の間を変えたら両方そろえること（scripts/test-ship-flow.mjs が一致を確かめる）。
+// BEGIN shipQtySummary
+export function shipQtySummary(items) {
+  const lines = (Array.isArray(items) ? items : [])
+    .filter((i) => i && !i.nonStock && !["support-fee", "discount"].includes(String(i.sku || "")) && Number(i.qty) > 0)
+    .map((i) => {
+      const name = String(i.name || "").replace(/^介護情報基盤\s*汎用カードリーダー?\s*/, "").trim();
+      return { sku: String(i.sku || ""), label: name || String(i.sku || ""), qty: Number(i.qty) };
+    });
+  const total = lines.reduce((a, l) => a + l.qty, 0);
+  const detail = lines.map((l) => `${l.label} × ${l.qty}`).join("・");
+  return { lines, total, detail };
+}
+// END shipQtySummary

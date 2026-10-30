@@ -2743,7 +2743,24 @@ exports.reportInvoiceToAccounting = onCall(
 const LETTERPACK_LABELS = { light: "レターパックライト（青）", plus: "レターパックプラス（赤）" };
 const NON_SHIP_SKUS = new Set(["support-fee", "discount"]);
 const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"]; // admin/js/ship-flow.js と同じ値
+// 出荷する品の台数のまとめ（2026-10-30・台数を目立たせる改修）。admin/js/ship-flow.js の shipQtySummary と同じ中身
+// （BEGIN〜END の間をそろえる。scripts/test-ship-flow.mjs が一致を確かめる）。
+// BEGIN shipQtySummary
+function shipQtySummary(items) {
+  const lines = (Array.isArray(items) ? items : [])
+    .filter((i) => i && !i.nonStock && !["support-fee", "discount"].includes(String(i.sku || "")) && Number(i.qty) > 0)
+    .map((i) => {
+      const name = String(i.name || "").replace(/^介護情報基盤\s*汎用カードリーダー?\s*/, "").trim();
+      return { sku: String(i.sku || ""), label: name || String(i.sku || ""), qty: Number(i.qty) };
+    });
+  const total = lines.reduce((a, l) => a + l.qty, 0);
+  const detail = lines.map((l) => `${l.label} × ${l.qty}`).join("・");
+  return { lines, total, detail };
+}
+// END shipQtySummary
 function shipmentChatMessage(s, shipmentId, o) {
+  // 台数は見出し・副題・本文の先頭に大きく出す（2026-10-30。1台の指示で3台届いた件を受けて）
+  const q = shipQtySummary(s.items);
   const items = (Array.isArray(s.items) ? s.items : [])
     .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
     .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
@@ -2772,9 +2789,10 @@ function shipmentChatMessage(s, shipmentId, o) {
   const printUrl = `${CRM_BASE_URL}/letterpack-print.html?id=${encodeURIComponent(shipmentId)}`;
   const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const head = o.resend ? "📦 出荷指示（再送）" : "📦 出荷指示";
-  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）
+  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）。台数は2行目
   const text = [
     `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
+    `🔢 台数: ${q.total}台（${q.detail}）← 箱に入れる前に数えてください`,
     ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
     `🖨 レターパックの宛名印刷: ${printUrl}`,
     `👉 CRMの出荷: ${crmUrl}`,
@@ -2784,8 +2802,9 @@ function shipmentChatMessage(s, shipmentId, o) {
     cardsV2: [{
       cardId: `shipment-${shipmentId}`,
       card: {
-        header: { title: o.resend ? "出荷指示（再送）" : "出荷指示", subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}` },
+        header: { title: `${o.resend ? "出荷指示（再送）" : "出荷指示"} — カードリーダー ${q.total}台`, subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}　【合計 ${q.total}台】` },
         sections: [
+          { widgets: [{ decoratedText: { topLabel: "🔢 台数（箱に入れる前に数えてください）", text: `<font color="#C02828"><b>${q.total}台</b></font>　${q.detail}`, wrapText: true } }] },
           { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
           { widgets: [{ buttonList: { buttons: [
             { text: "宛名を印刷（A4）", onClick: { openLink: { url: printUrl } } },

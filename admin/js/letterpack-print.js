@@ -8,7 +8,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "/js/fs.js";
-import { letterPackOrDefault } from "/js/ship-flow.js";
+import { letterPackOrDefault, shipQtySummary } from "/js/ship-flow.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -44,14 +44,10 @@ function sendersOf(st){
   return list;
 }
 
-function itemsMemo(s){
-  return (Array.isArray(s.items) ? s.items : [])
-    .filter((i)=>i && !i.nonStock && !["support-fee","discount"].includes(String(i.sku||"")) && Number(i.qty) > 0)
-    .map((i)=>`${esc(i.sku)}${i.name && i.name!==i.sku ? `（${esc(i.name)}）` : ""} × ${Number(i.qty)}台`).join("<br>");
-}
 
 export function renderLabel(s, sender, type){
   sender = sender || {};
+  const q = shipQtySummary(s.items); // 台数は宛名枠と梱包の確認に大きく出す（2026-10-30）
   const head = TYPE_LABEL[type] || "レターパック（種類が未選択です）";
   const zip = s.postal ? `〒${esc(s.postal)}` : "〒";
   const person = String(s.contactName || "").trim();
@@ -59,7 +55,7 @@ export function renderLabel(s, sender, type){
   return `
     <div class="label">
       <div class="label-head"><span>${esc(head)}</span><small>宛名ラベル</small></div>
-      <div class="to">
+      <div class="to"><div class="to-grid"><div>
         <div class="sec">お届け先</div>
         <div class="zip">${zip}</div>
         <div class="addr">${esc(s.address || "")}</div>
@@ -68,6 +64,11 @@ export function renderLabel(s, sender, type){
         <div class="name">${person ? esc(person) : "ご担当者"}<span class="sama">様</span></div>
         <div class="tel">TEL ${esc(s.phone || "")}</div>
       </div>
+      <div class="qtybox" aria-label="内容品と台数">
+        <div class="qt-label">内容品・台数</div>
+        <div class="qt-num" data-qty-total>${q.total}<small>台</small></div>
+        <div class="qt-item">カードリーダー<br>${q.lines.map((l)=>`${esc(l.label)}${q.lines.length > 1 ? ` × ${l.qty}` : ""}`).join("<br>")}</div>
+      </div></div></div>
       <div class="from">
         <div class="sec">ご依頼主</div>
         <div>${fromZip}${esc(sender.address || "")}</div>
@@ -77,15 +78,19 @@ export function renderLabel(s, sender, type){
       <div class="so"><span>出荷番号 <strong>${esc(s.soNumber || "")}</strong></span><span>品名: 介護情報基盤 マイナ資格確認 カードリーダー</span></div>
     </div>
     <div class="cut"><span>✂ 上の枠を切り取って、レターパックの宛名面に貼ってください</span></div>
-    <div class="memo">
-      <div>梱包用のメモ（貼らない）</div>
-      <table><tbody>
-        <tr><th>出荷番号</th><td>${esc(s.soNumber || "")}</td></tr>
-        <tr><th>出荷日</th><td>${esc(s.shipDate || "")}</td></tr>
-        <tr><th>出荷元</th><td>${esc(s.originLocationName || "")}</td></tr>
-        <tr><th>品目</th><td>${itemsMemo(s) || "—"}</td></tr>
-        <tr><th>種類</th><td>${esc(TYPE_LABEL[type] || "未選択")}</td></tr>
-      </tbody></table>
+    <div class="pack">
+      <div class="pack-title">梱包の確認（貼らない）<span>出荷番号 ${esc(s.soNumber || "")}${s.shipDate ? ` ／ 出荷日 ${esc(s.shipDate)}` : ""}${s.originLocationName ? ` ／ 出荷元 ${esc(s.originLocationName)}` : ""}</span></div>
+      <div class="pack-qty">
+        <div class="big">${q.total}<small>台</small></div>
+        <div class="what"><b>${esc(q.detail || "—")}</b><br>この台数だけ入れてください。ほかの出荷と取り違えないように注意。</div>
+      </div>
+      <ul class="checks">
+        <li><span class="box" aria-hidden="true"></span>箱に入れた台数を数えた（<b>${q.total}台</b>）</li>
+        <li><span class="box" aria-hidden="true"></span>品番が合っている（${esc(q.lines.map((l)=>l.label).join("・") || "—")}）</li>
+        <li><span class="box" aria-hidden="true"></span>宛名の事業所名と出荷番号が、この紙と合っている</li>
+        <li><span class="box" aria-hidden="true"></span>レターパックの種類が合っている（${esc(TYPE_LABEL[type] || "未選択")}）</li>
+      </ul>
+      <div class="sign"><div>確認した人：</div><div>日付：　　月　　日</div></div>
     </div>`;
 }
 
