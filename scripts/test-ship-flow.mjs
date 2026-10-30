@@ -346,6 +346,8 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.match(lp, /確認した人：/);
   const lph = readFileSync(new URL("../admin/letterpack-print.html", import.meta.url), "utf8");
   assert.match(lph, /\.label\{width:125mm;height:145mm;/); // レターパックの宛名面の枠（縦14.5cm×横12.5cm）
+  // A4 の幅（約794px）は max-width:820px にも当たるため、印刷用に寸法を固定し直していること（Codex 指摘 #33）
+  assert.match(lph.slice(lph.indexOf('@media print')), /\.label\{width:125mm;height:145mm;min-height:0;\}/);
   assert.match(lph, /\.pack\{/);
   console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
 }
