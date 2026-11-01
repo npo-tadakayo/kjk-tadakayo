@@ -218,10 +218,18 @@ async function saveLocation(){
     recipient:document.getElementById("locRecipient").value.trim(), phone:document.getElementById("locPhone").value.trim() };
   const v=(id)=>document.getElementById(id).value.trim();
   const sender={ senderName:v("locSenderName"), senderPostal:v("locSenderPostal"), senderAddress:v("locSenderAddress"), senderPhone:v("locSenderPhone") };
-  if(!sender.senderName && (sender.senderPostal||sender.senderAddress||sender.senderPhone)){ document.getElementById("locNameErr").textContent="宛名ラベルのご依頼主を使うときは、ご依頼主の名前を入れてください"; return; }
   const err=document.getElementById("locNameErr");
   if(!name){ err.textContent="保管場所の名前を入力してください"; return; }
   if(!pref){ err.textContent="都道府県を選んでください（ゆうパックの送料が発地で変わるため）"; return; }
+  // 宛名ラベルのご依頼主（warehouse-rules の locationSender と同じ決め方: 郵便番号・住所は組で、ご依頼主の欄 → 保管場所）
+  if(!sender.senderName && (sender.senderPostal||sender.senderAddress||sender.senderPhone)){ err.textContent="宛名ラベルのご依頼主を使うときは、ご依頼主の名前を入れてください"; return; }
+  if(sender.senderName){
+    const own=!!(sender.senderPostal||sender.senderAddress);
+    if(own ? !sender.senderAddress : !addr.address){ err.textContent=own
+      ? "ご依頼主の郵便番号を入れたときは、ご依頼主の住所も入れてください（空欄なら上の郵便番号・住所を使います）"
+      : "ご依頼主の住所を入れてください（ご依頼主の住所か、上の保管場所の住所のどちらか）"; return; }
+    if(!sender.senderPhone){ err.textContent="ご依頼主の電話を入れてください（宛名ラベルに載せる番号）"; return; }
+  }
   const btn=document.getElementById("saveLocationBtn"); btn.disabled=true;
   try{
     if(editingLoc){

@@ -28,16 +28,22 @@ const SENDER_DEFAULT = {
 };
 // 出荷元の保管場所に「宛名ラベルのご依頼主」（locations の senderName・senderPhone・senderPostal・senderAddress）が
 // 入っていれば、それを最優先にする（2026-11-01 次田さん決定。滋賀から出すのにご依頼主が東京・大森になっていた）。
-//   郵便番号・住所は sender* → 保管場所の postal・address の順。電話は senderPhone だけ（保管場所の phone は
-//   納品先＝受け取る方の電話なので使わない）。senderName が空なら null（＝従来どおり設定の差出人）
+//   郵便番号・住所は組で決める: senderPostal か senderAddress のどちらかが入っていればその2つだけ、
+//   両方空のときだけ保管場所の postal・address（別々に混ぜると別の場所の郵便番号と住所が並ぶ・PR #37 レビュー P2-1）。
+//   電話は senderPhone だけ（保管場所の phone は納品先＝受け取る方の電話なので使わない）。
+//   senderName が空、または使える住所が無いときは null（＝従来どおり設定の差出人・P2-2）
 export function locationSender(location) {
   const l = location || {};
   const name = str(l.senderName).trim();
   if (!name) return null;
+  const sp = str(l.senderPostal).trim(), sa = str(l.senderAddress).trim();
+  const own = !!(sp || sa);
+  const address = own ? sa : str(l.address).trim();
+  if (!address) return null;
   return {
     name,
-    postalCode: str(l.senderPostal).trim() || str(l.postal).trim(),
-    address: str(l.senderAddress).trim() || str(l.address).trim(),
+    postalCode: own ? sp : str(l.postal).trim(),
+    address,
     phone: str(l.senderPhone).trim(),
   };
 }
