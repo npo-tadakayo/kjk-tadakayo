@@ -208,8 +208,10 @@ t("持ち出しの依頼は送料を「郵送なし」と同じ 0 円にする�
   const rf = sup.slice(sup.indexOf("function recalcShipFee"), sup.indexOf("function taxInclusiveShipFees"));
   assert.match(rf, /method==='none'\)\{[\s\S]*?feeEl\.value=0; labelEl\.value='郵送なし（手渡し・持参）'/);
   const rq = sup.slice(sup.indexOf("async function requestDraftShipment"), sup.indexOf("// 依頼済(requested) → 発送済"));
-  assert.match(rq, /ans\.deliveryMode==="pickup" && !isLocked\(cur\)\s*\? \{ shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" \}/);
-  assert.match(rq, /shippingMethod:"none", \.\.\.noPostage/);
+  // 送料の区分（shippingMethod）も金額と一緒にだけ変える。請求書の後は区分も金額も触らない（2026-11-01 レビュー指摘）
+  assert.match(rq, /ans\.deliveryMode==="pickup" && !isLocked\(cur\)\s*\? \{ shippingMethod:"none", shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" \}/);
+  assert.match(rq, /pickupDate:ans\.shipDate, \.\.\.noPostage \}/);
+  assert.doesNotMatch(rq, /shippingMethod:"none", \.\.\.noPostage/);
   assert.match(rq, /feeZeroed = ans\.deliveryMode==="pickup" && !isLocked\(cur\) && Number\(cur\.shippingFee\)>0/);
   assert.match(rq, /送料を0円にしました/);
 });

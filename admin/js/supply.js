@@ -970,7 +970,8 @@ async function loadPickupUsers(){
 }
 let shipDoneCtx = null; // { resolve, items, usesStock, mode }
 // allowPickup … 依頼のとき送付方法（発送／持ち出し）を選ばせる。pickupUsers … 持ち出す人の候補
-function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers, shippingMethod }){
+// initialMode / initialPickupBy … 依頼し直すときの前回の送付方法（"ship"|"pickup"）と持ち出す人のメール
+function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers, shippingMethod, initialMode, initialPickupBy }){
   const m = SHIP_DIALOG[mode] ? mode : "ship";
   const cfg = SHIP_DIALOG[m];
   return new Promise((resolve)=>{
@@ -989,9 +990,11 @@ function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, lett
     const modeSel = document.getElementById("shipDoneMode"), pickSel = document.getElementById("shipDonePickupBy");
     const canPick = m==="request" && !!allowPickup;
     document.getElementById("shipDoneModeWrap").style.display = canPick ? "" : "none";
-    modeSel.value = "ship";
+    // 持ち出しの依頼を取り消して依頼し直すとき（倉庫からの差し戻しのあとなど）は、前回の送付方法と持ち出す人から始める（2026-11-01 レビュー指摘）
+    modeSel.value = canPick && initialMode==="pickup" ? "pickup" : "ship";
     pickSel.innerHTML = `<option value="">選んでください</option>` + (pickupUsers||[]).map(u=>
       `<option value="${esc(u.email)}" data-name="${esc(u.name||u.email)}">${esc(u.name||u.email)}</option>`).join("");
+    if(initialPickupBy && [...pickSel.options].some(o=>o.value===initialPickupBy)) pickSel.value = initialPickupBy;
     shipDoneCtx.allowPickup = canPick;
     syncShipDoneMode();
     document.getElementById("shipDoneTrack").value = trackingNumber || "";
@@ -1109,6 +1112,7 @@ async function requestDraftShipment(s){
     title: `出荷を依頼する（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
     allowPickup: canPickup(s), pickupUsers, // 直送は持ち出しにできない（選択肢を出さない）
+    initialMode: isPickup(s) ? "pickup" : "ship", initialPickupBy: s.pickupByEmail || "",
     shippingMethod: s.shippingMethod,
   });
   if(!ans) return;
@@ -1132,8 +1136,9 @@ async function requestDraftShipment(s){
       if(nextStatus(shipStatusOf(cur),"request")!=="requested") throw new Error(staleMsg(cur));
       // 持ち出しは郵送しないので、送料も recalcShipFee の「郵送なし」と同じにする（請求書に送料が残らないように・Codex 指摘2）。
       // 請求書を出した後（isLocked）は金額に触らない
+      // 送料の区分（shippingMethod）も金額と一緒にだけ変える。請求書の後は区分も触らず、区分と金額が食い違わないようにする（2026-11-01 レビュー指摘）
       const noPostage = ans.deliveryMode==="pickup" && !isLocked(cur)
-        ? { shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" } : {};
+        ? { shippingMethod:"none", shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" } : {};
       feeZeroed = ans.deliveryMode==="pickup" && !isLocked(cur) && Number(cur.shippingFee)>0;
       // 持ち出し → 発送: 確認した送料に戻す（いまも持ち出しの印が残っているときだけ）
       const restore = backToShip && isPickup(cur) && !isLocked(cur) ? lpPatch : {};
@@ -1144,7 +1149,7 @@ async function requestDraftShipment(s){
         // 送付方法。持ち出しは持ち出す人・予定日を残し、送料の区分は「郵送なし」にする（レターパックは書かない）。
         // 依頼し直したときに前回の差し戻し（倉庫から「出荷できない」）は消す
         ...(ans.deliveryMode==="pickup"
-          ? { deliveryMode:"pickup", pickupByEmail:ans.pickupByEmail, pickupByName:ans.pickupByName, pickupDate:ans.shipDate, shippingMethod:"none", ...noPostage }
+          ? { deliveryMode:"pickup", pickupByEmail:ans.pickupByEmail, pickupByName:ans.pickupByName, pickupDate:ans.shipDate, ...noPostage }
           : { deliveryMode:"ship", ...letterPackPatch(ans.letterPackType), ...restore }),
         ...requestedStampPatch(), warehouseIssue: deleteField(), updatedAt: serverTimestamp() });
     });
@@ -1166,7 +1171,9 @@ async function shipWithStock(s, action){
   const usesStock = usesWarehouse(s);
   const ans = await askShipDetails({ mode,
     title: `${SHIP_DIALOG[mode].title}（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
-    usesStock, locId: shipLocationOf(s), date: mode==="record" ? (s.shipDate||today()) : today(),
+    usesStock, locId: shipLocationOf(s),
+    // 記録のみは過去の出来事なので、出荷に入っている日付を初期値にする（持ち出しは予定日・2026-11-01 レビュー指摘）
+    date: mode==="record" ? (s.shipDate||today()) : mode==="recordHandover" ? (s.pickupDate||s.shipDate||today()) : today(),
     letterPackType: s.letterPackType, trackingNumber: s.trackingNumber||"", items: s.items,
     shippingMethod: s.shippingMethod,
   });

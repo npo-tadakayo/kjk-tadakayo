@@ -322,7 +322,10 @@ await t("持ち出し: 依頼・受け渡し・差し戻し表示が supply.js /
   const js = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
   const html = readFileSync(fileURLToPath(new URL("../admin/supply.html", import.meta.url)), "utf8");
   // 依頼で保存する項目
-  assert.match(js, /deliveryMode:"pickup", pickupByEmail:ans\.pickupByEmail, pickupByName:ans\.pickupByName, pickupDate:ans\.shipDate, shippingMethod:"none"/);
+  assert.match(js, /deliveryMode:"pickup", pickupByEmail:ans\.pickupByEmail, pickupByName:ans\.pickupByName, pickupDate:ans\.shipDate, \.\.\.noPostage \}/);
+  // 依頼し直すときは前回の送付方法と持ち出す人から始める（2026-11-01 レビュー指摘）
+  assert.match(js, /initialMode: isPickup\(s\) \? "pickup" : "ship", initialPickupBy: s\.pickupByEmail/);
+  assert.match(js, /modeSel\.value = canPick && initialMode==="pickup" \? "pickup" : "ship";/);
   assert.match(js, /deliveryMode:"ship", \.\.\.letterPackPatch/);
   // 受け渡しは発送済と同じトランザクション（shipWithStock）で、受け渡しの記録を書き warehouseIssue を消す
   assert.match(js, /handedOverAt: serverTimestamp\(\), handedOverByEmail/);
