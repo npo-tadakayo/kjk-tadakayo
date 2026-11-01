@@ -17,6 +17,7 @@
 //   ・品番→表示名は products コレクション（doc id = sku）を一度だけ読み込み、name と
 //     connectionLabel(product) を併記する。取得できない品番はそのまま sku を出す
 
+import { normalizeEmail } from "/js/normalize.js";
 import {
   collection, query, where, onSnapshot, getDocs,
 } from "/js/fs.js";
@@ -383,7 +384,7 @@ async function submitRevise() {
 // 金額はここでは計算しない（サーバの staffCreateQuote が計算し、結果をトーストで返す）。
 function openCreate() {
   const kase = ctx.getCase ? ctx.getCase() : {};
-  const contactEmail = (kase?.contactEmail || kase?.email || "").trim();
+  const contactEmail = normalizeEmail(kase?.contactEmail || kase?.email);
   const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
   const host = document.getElementById("reviseModalHost");
   host.innerHTML = `

@@ -1,11 +1,13 @@
-// 助成金申請の手順（A4・8ページ）— 請求書・領収証メールに任意で同封する
+// 助成金申請の手順（A4・6ページ）— 請求書・領収証メールに任意で同封する
 //   2026-09-30 1枚版を作成 → 同日「実際の画面を入れて、枚数が増えてもよい」（次田さん）で8ページに拡張
+//   2026-10-29 次田さん判断で、申請画面・管理メニューなど「画面のスクショ」を外した（文章だけで入力欄を説明する）。
+//   書類の見本（通帳の写し・指定通知書・領収書の書き方）は画面ではないので残す。ページは6ページにまとめ直し。
 //
 // 正本: 国民健康保険中央会「助成金申請の手引き（令和8年度）」令和8年7月版
 //   https://www.kaigo-kiban-portal.jp/assets/pdf/r8_jyoseikin_tebiki.pdf
-// 画面の画像は同手引きからの引用（admin/images/subsidy-guide/ ・ファイル名の pNN が手引きのページ）。
-//   ガイドブック（介護情報基盤編）と同じく「公式マニュアル画面の引用＋出典明記」の方針（2026-08-07 合意）。
-//   手引きが改訂されたら、画像と文面を両方見直すこと（年度・申請期間・振込時期・画面）。
+// 書類見本の画像（p09・p10・p12）は同手引きからの引用（admin/images/subsidy-guide/ ・ファイル名の pNN が手引きのページ）。
+//   画面のスクショ（p14〜p33）は使わない（画像ファイルは残してあるが参照しない。scripts/test-subsidy-guide.mjs が確認）。
+//   手引きが改訂されたら、書類見本と文面を両方見直すこと（年度・申請期間・振込時期・入力欄）。
 //
 // 領収証の金額（対象A・対象B・台数・型名）を差し込み、申請画面の「どの欄に何を入れるか」を示す。
 // 金額はここで計算しない。領収証画面に表示中の値（aIncl / bIncl）をそのまま受け取る。
@@ -15,7 +17,7 @@ function yen(n) { const v = Number(n || 0); return (v < 0 ? "−" : "") + "¥" +
 
 const IMG = "/images/subsidy-guide/";
 const SRC = "国民健康保険中央会「助成金申請の手引き（令和8年度）」";
-const TOTAL = 8;
+const TOTAL = 6;
 
 function fig(file, page, width, alt) {
   return `<figure class="sg-fig" style="width:${width}mm">
@@ -49,7 +51,7 @@ export function renderSubsidyGuideHtml(g) {
       </div>
     </div>
     <div class="sg-to">${to} 様　／　${g.fromInvoice ? `領収証 ${esc(g.rcptNo || "")}（入金確認後にお送りします）` : `同封の領収証 ${esc(g.rcptNo || "")}`}</div>
-    <p class="sg-lead">導入おつかれさまでした。この冊子は、${RC}を使って<strong>介護情報基盤ポータルから助成金を申請する手順</strong>を、実際の画面で説明したものです。上から順に進めれば、1回で申請が終わるように作っています。</p>
+    <p class="sg-lead">導入おつかれさまでした。この冊子は、${RC}を使って<strong>介護情報基盤ポータルから助成金を申請する手順</strong>を、入力する欄ごとに説明したものです。上から順に進めれば、1回で申請が終わるように作っています。</p>
 
     <div class="sg-keys">
       <div><b>申請期間</b>令和8年5月7日〜令和9年3月12日（予定）</div>
@@ -61,20 +63,20 @@ export function renderSubsidyGuideHtml(g) {
     <h2 class="sg-h">申請の流れ</h2>
     <div class="sg-flow">
       <div><span>1</span>書類を4点<br>そろえる<small>P.2〜3</small></div><i>›</i>
-      <div><span>2</span>ポータルで<br>入力する<small>P.4〜6</small></div><i>›</i>
-      <div><span>3</span>書類を添付して<br>申請する<small>P.7</small></div><i>›</i>
-      <div><span>4</span>翌月 審査<br>翌々月末 振込<small>P.8</small></div>
+      <div><span>2</span>ポータルで<br>入力する<small>P.4</small></div><i>›</i>
+      <div><span>3</span>書類を添付して<br>申請する<small>P.5</small></div><i>›</i>
+      <div><span>4</span>翌月 審査<br>翌々月末 振込<small>P.6</small></div>
     </div>
 
     <h2 class="sg-h">あなたの申請で入力する数字（${RC}と同じです）</h2>
     <table class="sg-t sg-amt">
       <thead><tr><th>申請画面の欄</th><th>入れる内容</th><th>領収証のどこか</th><th>頁</th></tr></thead>
-      <tr><td>カードリーダー購入費用（税込の総額）</td><td class="v">${yen(a)}</td><td>カードリーダー費の合計（対象A）</td><td class="c">P.5</td></tr>
-      <tr><td>カードリーダーの台数</td><td class="v">${units} 台</td><td>明細のカードリーダーの数量</td><td class="c">P.5</td></tr>
-      <tr><td>カードリーダーの種類</td><td class="v small">「マイナ資格確認アプリに対応したカードリーダーである」にチェック<br>（${reader}）</td><td>明細の品名</td><td class="c">P.5</td></tr>
-      <tr><td>介護情報基盤との接続サポート費用（税込の総額）</td><td class="v">${yen(b)}</td><td>伴走支援費・接続サポート等経費の合計（対象B）</td><td class="c">P.5</td></tr>
+      <tr><td>カードリーダー購入費用（税込の総額）</td><td class="v">${yen(a)}</td><td>カードリーダー費の合計（対象A）</td><td class="c">P.4</td></tr>
+      <tr><td>カードリーダーの台数</td><td class="v">${units} 台</td><td>明細のカードリーダーの数量</td><td class="c">P.4</td></tr>
+      <tr><td>カードリーダーの種類</td><td class="v small">「マイナ資格確認アプリに対応したカードリーダーである」にチェック<br>（${reader}）</td><td>明細の品名</td><td class="c">P.4</td></tr>
+      <tr><td>介護情報基盤との接続サポート費用（税込の総額）</td><td class="v">${yen(b)}</td><td>伴走支援費・接続サポート等経費の合計（対象B）</td><td class="c">P.4</td></tr>
     </table>
-    <p class="sg-note">総事業費（A＋B）・助成限度額・交付額は画面で自動表示されます。交付額は千円未満切り捨てです。金額は領収書と一致している必要があります。</p>
+    <p class="sg-note">総事業費（A＋B）・助成限度額・交付額は申請画面に自動で表示されます。交付額は千円未満切り捨てです。金額は領収書と一致している必要があります。</p>
 
     <h2 class="sg-h">そろえる書類（4点・写真かスキャンのファイル）</h2>
     <div class="sg-docs">
@@ -84,7 +86,7 @@ export function renderSubsidyGuideHtml(g) {
       <label>□ ④ 介護WEBサービスの「管理メニュー」の画面コピー<small>P.3</small></label>
     </div>
     <div class="sg-toc">
-      <b>もくじ</b>　1 全体像 ／ 2 書類①通帳・サービス種類 ／ 3 書類②領収書・介護WEBの画面コピー ／ 4 申請の開始・基本情報 ／ 5 金額の入力 ／ 6 口座・書類の添付① ／ 7 書類の添付②と申請 ／ 8 申請のあと
+      <b>もくじ</b>　1 全体像 ／ 2 書類①通帳・サービス種類 ／ 3 書類②領収書・介護WEBの画面コピー ／ 4 申請の開始・基本情報・金額の入力 ／ 5 口座・書類の添付・申請 ／ 6 申請のあと
     </div>
     ${foot()}
   </section>`;
@@ -116,124 +118,71 @@ export function renderSubsidyGuideHtml(g) {
     <h2 class="sg-h">③ 領収書の写し — <span class="sg-red">${RC}（PDF）をそのまま使えます</span></h2>
     <p>手引きでは、カードリーダーの<strong>型名（または商品名）・購入台数・金額内訳</strong>と、「接続サポート等経費」などの<strong>用途</strong>が書かれていることが求められています。${RC}は、この形で作っています。「〇〇一式」のような書き方は交付されない場合があります。</p>
     ${fig("p12_ryoshusho.jpg", 12, 184, "領収書の書き方の例")}
-    <div class="sg-two">
-      ${fig("p14_web_menu.jpg", 14, 108, "介護WEBサービスの管理メニュー画面")}
-      <div>
-        <h2 class="sg-h">④ 介護WEBサービスの画面コピー</h2>
-        <ol class="sg-ol">
-          <li>介護WEBサービスに<strong>管理者ユーザ（または一般ユーザ）</strong>でログインします</li>
-          <li>「管理メニュー」画面を表示します</li>
-          <li>画面の右上の<strong>事業所番号と事業所名</strong>が写るように画面コピーを保存します<br><small>Windows は「Windows＋Shift＋S」で範囲を選んで保存できます</small></li>
-        </ol>
-        <p class="sg-warn">事業所ユーザ（KJ始まりのID）の画面は、認められない場合があります。</p>
-      </div>
-    </div>
+    <h2 class="sg-h">④ 介護WEBサービスの画面コピー</h2>
+    <ol class="sg-ol">
+      <li>介護WEBサービスに<strong>管理者ユーザ（または一般ユーザ）</strong>でログインします</li>
+      <li>「管理メニュー」画面を表示します</li>
+      <li>画面の右上の<strong>事業所番号と事業所名</strong>が写るように画面コピーを保存します<br><small>Windows は「Windows＋Shift＋S」で範囲を選んで保存できます</small></li>
+    </ol>
+    <p class="sg-warn">事業所ユーザ（KJ始まりのID）の画面は、認められない場合があります。</p>
     ${foot()}
   </section>`;
 
   const p4 = `
   <section class="sgp">
-    ${head(4, "申請の開始・基本情報")}
+    ${head(4, "申請の開始・基本情報・金額の入力")}
     <h2 class="sg-h">申請画面を開く</h2>
-    <div class="sg-two">
-      ${fig("p15_shinsei_kaishi.jpg", 15, 118, "各種申請から事前確認まで")}
-      <ol class="sg-ol">
-        <li>介護情報基盤ポータルに<strong>ログイン</strong>し、右上の人のマークから<strong>マイページ</strong>を開きます</li>
-        <li>「申請情報」の<strong>「各種申請」</strong>を押します</li>
-        <li>「助成金申請」の<strong>「カードリーダー等の購入及び介護情報基盤との接続サポート等に係る助成金」</strong>を押します</li>
-        <li>事前確認の画面で、下の<strong>「申請する」</strong>を押します</li>
-      </ol>
-    </div>
+    <ol class="sg-ol">
+      <li>介護情報基盤ポータルに<strong>ログイン</strong>し、右上の人のマークから<strong>マイページ</strong>を開きます</li>
+      <li>「申請情報」の<strong>「各種申請」</strong>を押します</li>
+      <li>「助成金申請」の<strong>「カードリーダー等の購入及び介護情報基盤との接続サポート等に係る助成金」</strong>を押します</li>
+      <li>事前確認の画面で、下の<strong>「申請する」</strong>を押します</li>
+    </ol>
     <h2 class="sg-h">基本情報を確かめる</h2>
-    <div class="sg-two">
-      ${fig("p16_kihon.jpg", 16, 118, "申請情報の入力 基本情報")}
-      <div>
-        <p>申請日・介護事業所番号は、はじめから表示されています。</p>
-        <p>介護事業所名称・所在地・電話番号は、ポータルに登録した内容が入っています。<strong>変わっているところがあれば上書き</strong>してください。空欄があれば入力します。</p>
-        ${val("介護事業所名称", esc(g.officeName || "") || "（事業所名）")}
-      </div>
-    </div>
+    <p>申請日・介護事業所番号は、はじめから表示されています。介護事業所名称・所在地・電話番号は、ポータルに登録した内容が入っています。<strong>変わっているところがあれば上書き</strong>してください。空欄があれば入力します。</p>
+    ${val("介護事業所名称", esc(g.officeName || "") || "（事業所名）")}
+    <h2 class="sg-h">助成金情報・カードリーダー購入費用（A）</h2>
+    <p><b>サービス種類コード</b>　補助対象（例: 訪問・通所・短期滞在系）とサービス種類を選びます。複数あるときは「追加する」で足します。</p>
+    ${val("購入額（税込）", yen(a))}
+    ${val("カードリーダーの種類", "「マイナ資格確認アプリに対応したカードリーダーである」にチェック")}
+    ${val("カードリーダーの台数", `${units} 台`)}
+    <h2 class="sg-h">介護情報基盤との接続サポート費用（B）と交付額</h2>
+    ${val("サポート費用（税込）", yen(b))}
+    <p>入力すると、①総事業費（A＋B）②助成限度額 ③選定額（①と②の低い方）④交付額（千円未満切り捨て）が自動で表示されます。備考は任意です。金額や添付書類で補足したいことがあれば書きます。</p>
     ${foot()}
   </section>`;
 
   const p5 = `
   <section class="sgp">
-    ${head(5, "金額の入力")}
-    <h2 class="sg-h">助成金情報・カードリーダー購入費用（A）</h2>
-    <div class="sg-two">
-      ${fig("p17_cardreader.jpg", 17, 118, "助成金情報とカードリーダー購入費用")}
-      <div>
-        <p><b>サービス種類コード</b>　補助対象（例: 訪問・通所・短期滞在系）とサービス種類を選びます。複数あるときは「追加する」で足します。</p>
-        ${val("購入額（税込）", yen(a))}
-        ${val("カードリーダーの種類", "「マイナ資格確認アプリに対応したカードリーダーである」にチェック")}
-        ${val("カードリーダーの台数", `${units} 台`)}
-      </div>
-    </div>
-    <h2 class="sg-h">介護情報基盤との接続サポート費用（B）と交付額</h2>
-    <div class="sg-two">
-      ${fig("p18_support.jpg", 18, 118, "接続サポート費用と交付額")}
-      <div>
-        ${val("サポート費用（税込）", yen(b))}
-        <p>入力すると、①総事業費（A＋B）②助成限度額 ③選定額（①と②の低い方）④交付額（千円未満切り捨て）が自動で表示されます。</p>
-        <p>備考は任意です。金額や添付書類で補足したいことがあれば書きます。</p>
-      </div>
-    </div>
-    ${foot()}
-  </section>`;
-
-  const p6 = `
-  <section class="sgp">
-    ${head(6, "口座・書類の添付①")}
+    ${head(5, "口座・書類の添付・申請")}
     <h2 class="sg-h">口座情報（助成金の振込先）</h2>
-    <div class="sg-two">
-      ${fig("p19_koza.jpg", 19, 118, "口座情報の入力")}
-      <div>
-        <ul class="sg-ul">
-          <li>「銀行口座」か「ゆうちょ銀行」を選びます</li>
-          <li>銀行名・支店名は、名前かコードを入れて候補から選びます</li>
-          <li>口座番号は7桁の半角数字です</li>
-          <li>口座名義はカタカナで入力します</li>
-        </ul>
-        <p class="sg-warn">必ず、添付する通帳の写し（P.2）を見ながら入力してください。</p>
-      </div>
-    </div>
-    <h2 class="sg-h">必要書類の添付①　通帳の写し・サービス種類が分かる書類</h2>
-    <div class="sg-two">
-      ${fig("p21_tenpu1.jpg", 21, 118, "通帳の写しとサービス種類の書類の添付")}
-      <div>
-        <p>「ファイルを選択する」を押してファイルを選ぶか、枠の中へドラッグ＆ドロップします。</p>
-        <ul class="sg-ul">
-          <li>通帳の写し → P.2 の①</li>
-          <li>サービス種類が分かる書類 → P.2 の②</li>
-          <li>ファイルは PDF・JPG・PNG、1つ20MBまで</li>
-        </ul>
-      </div>
-    </div>
-    ${foot()}
-  </section>`;
-
-  const p7 = `
-  <section class="sgp">
-    ${head(7, "書類の添付②と申請")}
-    <h2 class="sg-h">必要書類の添付②　領収書・介護WEBサービスの画面コピー → 申請</h2>
-    <div class="sg-two">
-      ${fig("p22_tenpu2.jpg", 22, 112, "領収書と画面コピーの添付、確認、申請")}
-      <div>
-        <ol class="sg-ol">
-          <li><b>領収書等</b>に、<strong>${RC}（PDF）</strong>を添付します（P.3 の③）</li>
-          <li><b>介護WEBサービスの画面コピー</b>に、P.3 の④で保存した画面を添付します</li>
-          <li>途中で止めるときは「一時保存する」</li>
-          <li>「<strong>確認画面へ進む</strong>」を押し、内容を確かめます</li>
-          <li>いちばん下の「<strong>申請する</strong>」を押すと申請が完了します</li>
-        </ol>
-        <div class="sg-check">
-          <b>申請する前のチェック</b>
-          <label>□ 購入額 ${yen(a)}・台数 ${units} 台・サポート費用 ${yen(b)} が領収証と同じ</label>
-          <label>□ 口座情報が通帳の写しと同じ</label>
-          <label>□ 4つの書類をすべて添付した</label>
-          <label>□ 事業所名・所在地・電話番号が最新</label>
-        </div>
-      </div>
+    <ul class="sg-ul">
+      <li>「銀行口座」か「ゆうちょ銀行」を選びます</li>
+      <li>銀行名・支店名は、名前かコードを入れて候補から選びます</li>
+      <li>口座番号は7桁の半角数字です</li>
+      <li>口座名義はカタカナで入力します</li>
+    </ul>
+    <p class="sg-warn">必ず、添付する通帳の写し（P.2）を見ながら入力してください。</p>
+    <h2 class="sg-h">必要書類の添付　4つの書類を、それぞれの欄に添付します</h2>
+    <p>各欄の「ファイルを選択する」を押してファイルを選ぶか、枠の中へドラッグ＆ドロップします。ファイルは PDF・JPG・PNG、1つ20MBまでです。</p>
+    <ol class="sg-ol">
+      <li><b>通帳の写し</b>　→ P.2 の①</li>
+      <li><b>サービス種類が分かる書類</b>　→ P.2 の②</li>
+      <li><b>領収書等</b>　→ <strong>${RC}（PDF）</strong>（P.3 の③）</li>
+      <li><b>介護WEBサービスの画面コピー</b>　→ P.3 の④で保存した画面</li>
+    </ol>
+    <h2 class="sg-h">確認して申請する</h2>
+    <ol class="sg-ol">
+      <li>途中で止めるときは「一時保存する」を押します</li>
+      <li>「<strong>確認画面へ進む</strong>」を押し、内容を確かめます</li>
+      <li>いちばん下の「<strong>申請する</strong>」を押すと申請が完了します</li>
+    </ol>
+    <div class="sg-check">
+      <b>申請する前のチェック</b>
+      <label>□ 購入額 ${yen(a)}・台数 ${units} 台・サポート費用 ${yen(b)} が領収証と同じ</label>
+      <label>□ 口座情報が通帳の写しと同じ</label>
+      <label>□ 4つの書類をすべて添付した</label>
+      <label>□ 事業所名・所在地・電話番号が最新</label>
     </div>
     <h2 class="sg-h">${RC} PDF の保存のしかた</h2>
     <ol class="sg-ol">
@@ -244,9 +193,9 @@ export function renderSubsidyGuideHtml(g) {
     ${foot()}
   </section>`;
 
-  const p8 = `
+  const p6 = `
   <section class="sgp">
-    ${head(8, "申請のあと")}
+    ${head(6, "申請のあと")}
     <h2 class="sg-h">申請のあとの流れ</h2>
     <div class="sg-timeline">
       <div><b>申請した月</b>申請が受け付けられます</div><i>›</i>
@@ -255,7 +204,6 @@ export function renderSubsidyGuideHtml(g) {
     </div>
     <p class="sg-note">令和9年2月1日〜3月12日（予定）の申請は、結果の通知が3月末まで、振込が4月末までです。</p>
     <h2 class="sg-h">申請した内容を確かめる・直す</h2>
-    ${fig("p33_kakunin.jpg", 33, 184, "申請内容の確認と修正")}
     <p>マイページの「申請一覧」→「受付番号」で内容を確認できます。一定の期間は「申請内容を更新する」から直せます（直し方は新しく申請するときと同じです）。</p>
     <h2 class="sg-h">よくあること</h2>
     <ul class="sg-ul">
@@ -263,11 +211,11 @@ export function renderSubsidyGuideHtml(g) {
       <li><b>対象外のもの</b>　パソコン・タブレット・スマートフォン、中古品・リース品は対象外です</li>
       <li><b>予算</b>　予算に達すると、期間内でも受付が終わることがあります。お早めの申請をおすすめします</li>
     </ul>
-    <div class="sg-help">申請画面で迷ったら、タダカヨがお電話で一緒に進めます。<br>NPO法人タダカヨ（介護情報基盤伴走支援事業）　TEL 050-6872-9884 ／ kjk-staff@tadakayo.jp</div>
-    <div class="sg-src">画面の画像と手順は ${SRC}（令和8年7月版）から引用しています。最新の要件は介護情報基盤ポータルのお知らせで確認してください。</div>
+    <div class="sg-help">申請の入力で迷ったら、タダカヨがお電話で一緒に進めます。<br>NPO法人タダカヨ（介護情報基盤伴走支援事業）　TEL 050-6872-9884 ／ kjk-staff@tadakayo.jp</div>
+    <div class="sg-src">手順は ${SRC}（令和8年7月版）をもとにしています。書類の見本の画像は同手引きからの引用です。最新の要件は介護情報基盤ポータルのお知らせで確認してください。</div>
   </section>`;
 
-  return `<div class="sg">${p1}${p2}${p3}${p4}${p5}${p6}${p7}${p8}</div>`;
+  return `<div class="sg">${p1}${p2}${p3}${p4}${p5}${p6}</div>`;
 }
 
 export const SUBSIDY_GUIDE_STYLE = `
@@ -338,7 +286,7 @@ async function waitImages(root) {
   await Promise.race([Promise.all(each), new Promise((r) => setTimeout(r, 8000))]);
 }
 
-// A4・8ページの PDF（base64）を作る。window.html2pdf が読み込まれている前提（supply-print.html）
+// A4・6ページの PDF（base64）を作る。window.html2pdf が読み込まれている前提（supply-print.html）
 export async function buildSubsidyGuidePdf(g) {
   // 画面をスクロールしたまま作ると、画面外に置いたページが画面位置に引っ張られ、白紙・途中からの PDF になる
   // （2026-10-09 次田さん「表紙の最初のページが途中からしか始まっていない」）。作る間だけ先頭へ戻し、終わったら戻す

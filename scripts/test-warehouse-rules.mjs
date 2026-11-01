@@ -301,8 +301,8 @@ t("練習の代役の whMs は ISO 文字列も読む（ブラウザ検証 B3）
 
 t("senderForLabel は letterpack-print.js の差出人の決め方（sendersOf の1件目）と同じ（Codex 指摘3回目 C）", () => {
   const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
-  const def = lp.slice(lp.indexOf("const SENDER_DEFAULT"), lp.indexOf("const TYPE_LABEL"));
-  const fnSrc = lp.slice(lp.indexOf("function sendersOf(st)"), lp.indexOf("function itemsMemo"));
+  const def = lp.slice(lp.indexOf("const SENDER_DEFAULT"), lp.indexOf("function sendersOf(st)"));
+  const fnSrc = lp.slice(lp.indexOf("function sendersOf(st)"), lp.indexOf("// 宛名枠に収まるか"));
   const sendersOf = new Function(`${def}\n${fnSrc}\nreturn sendersOf;`)();
   const cases = [
     {}, null,

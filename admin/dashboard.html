@@ -101,6 +101,18 @@
           </div>
         </div>
 
+        <!-- 今日の訪問 -->
+        <div id="visitCard" class="card todo-card" style="margin-bottom:20px">
+          <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <strong id="visitTitle">今日の訪問</strong>
+            <span style="display:flex;gap:8px;flex-wrap:wrap">
+              <a class="btn btn-secondary todo-open" data-viewer-ok href="/schedule.html?view=day">カレンダーで見る</a>
+              <a class="btn btn-secondary todo-open" data-viewer-ok id="visitMineLink" href="/schedule.html?view=day&assignee=__me" style="display:none">自分の予定をカレンダーで見る</a>
+            </span>
+          </div>
+          <div class="card-body" id="visitBody"><p class="todo-hint">集計中…</p></div>
+        </div>
+
         <!-- サマリー -->
         <div class="stat-grid" id="statGrid"></div>
 

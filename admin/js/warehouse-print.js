@@ -1,65 +1,27 @@
 // 倉庫の人用の宛名印刷（2026-10-24）。Firestore は読まない。
 // 倉庫の画面が sessionStorage["warehouse.printJob"] に入れた {labels:[W...], sender, locationName} を、
-// letterpack-print.js と同じ体裁（A4 上半分に宛名枠＋梱包メモ）で出荷ごとに1ページ描く。
+// letterpack-print.js と同じ体裁（縦14.5cm×横12.5cm の宛名枠＋梱包の確認）で出荷ごとに1ページ描く。
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "/js/fs.js";
 import { gateRole, showAccessDenied } from "/js/role.js";
 import { letterPackOrDefault } from "/js/ship-flow.js";
+import { renderLabel, fitLabel } from "/js/letterpack-label.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const JOB_KEY = "warehouse.printJob";
-const TYPE_LABEL = { light: "レターパックライト", plus: "レターパックプラス" };
 const ALLOWED_ROLES = ["warehouse", "admin", "staff"];
 
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 
-function itemsMemo(s) {
-  return (Array.isArray(s.items) ? s.items : []).filter((i) => i && Number(i.qty) > 0)
-    .map((i) => `${esc(i.sku)}${i.name && i.name !== i.sku ? `（${esc(i.name)}）` : ""} × ${Number(i.qty)}台`).join("<br>");
-}
-
-export function renderLabel(s, sender, type, locationName) {
-  sender = sender || {};
-  const head = TYPE_LABEL[type] || "レターパック（種類が未選択です）";
-  const zip = s.postalCode ? `〒${esc(s.postalCode)}` : "〒";
-  const person = String(s.contactName || "").trim();
-  const fromZip = sender.postalCode ? `〒${esc(sender.postalCode)} ` : "";
-  return `
-    <div class="paper page lp-${esc(type || "none")}">
-    <div class="label">
-      <div class="label-head"><span>${esc(head)}</span><small>宛名ラベル</small></div>
-      <div class="to">
-        <div class="sec">お届け先</div>
-        <div class="zip">${zip}</div>
-        <div class="addr">${esc(s.address || "")}</div>
-        ${s.company ? `<div class="org">${esc(s.company)}</div>` : ""}
-        ${s.officeName ? `<div class="org">${esc(s.officeName)}</div>` : ""}
-        <div class="name">${person ? esc(person) : "ご担当者"}<span class="sama">様</span></div>
-        <div class="tel">TEL ${esc(s.phone || "")}</div>
-      </div>
-      <div class="from">
-        <div class="sec">ご依頼主</div>
-        <div>${fromZip}${esc(sender.address || "")}</div>
-        <div class="from-name">${esc(sender.name || "")}</div>
-        ${sender.phone ? `<div>TEL ${esc(sender.phone)}</div>` : ""}
-      </div>
-      <div class="so"><span>出荷番号 <strong>${esc(s.soNumber || "")}</strong></span><span>品名: 介護情報基盤 マイナ資格確認 カードリーダー</span></div>
-    </div>
-    <div class="cut"><span>✂ 上の枠を切り取って、レターパックの宛名面に貼ってください</span></div>
-    <div class="memo">
-      <div>梱包用のメモ（貼らない）</div>
-      <table><tbody>
-        <tr><th>出荷番号</th><td>${esc(s.soNumber || "")}</td></tr>
-        <tr><th>出荷日</th><td>${esc(s.shipDate || "")}</td></tr>
-        <tr><th>出荷元</th><td>${esc(locationName || "")}</td></tr>
-        <tr><th>品目</th><td>${itemsMemo(s) || "—"}</td></tr>
-        <tr><th>種類</th><td>${esc(TYPE_LABEL[type] || "未選択")}</td></tr>
-      </tbody></table>
-    </div></div>`;
+// 1出荷＝A4 1ページ。宛名枠と梱包の確認は出荷の宛名印刷（letterpack-print）と同じ部品で描く（2026-11-01 倉庫の統合）。
+// 倉庫のデータは出荷元を持たないので、印刷を頼んだ保管場所の名前を出荷元として入れる
+export function renderPage(s, sender, type, locationName) {
+  const t = type === "light" || type === "plus" ? type : "none";
+  return `<div class="paper page lp-${t}">${renderLabel({ ...s, originLocationName: s.originLocationName || locationName || "" }, sender, type)}</div>`;
 }
 
 function readJob() {
@@ -83,9 +45,16 @@ onAuthStateChanged(auth, async (user) => {
   if (!sender) msgs.push("差出人が設定されていません（管理者に連絡してください）。お届け先だけ印刷します。");
   const bad = job.labels.filter((s) => !s.postalCode || !s.address || !s.phone).map((s) => s.soNumber || "");
   if (bad.length) msgs.push(`届け先の郵便番号・住所・電話のいずれかが空です: ${bad.join("、")}。内容を確かめてから印刷してください。`);
+  $("pages").innerHTML = job.labels.map((s) => renderPage(s, sender, letterPackOrDefault(s.letterPackType), job.locationName)).join("");
+  // 宛名が長くて枠に収まらない出荷（品名・台数が切れる）。出荷の宛名印刷と同じく警告し、印刷前に確認する
+  const overflow = [];
+  document.querySelectorAll("#pages .label").forEach((el, i) => { if (!fitLabel(el)) overflow.push(job.labels[i].soNumber || `${i + 1}件目`); });
+  if (overflow.length) msgs.push(`宛名が長く、宛名枠（縦14.5cm×横12.5cm）に収まりません: ${overflow.join("、")}。このまま印刷すると品名・台数が切れます。依頼した人に、送付先を短くしてもらってください。`);
   $("warnBox").innerHTML = msgs.map(esc).join("<br>");
   $("warnBox").style.display = msgs.length ? "block" : "none";
-  $("pages").innerHTML = job.labels.map((s) => renderLabel(s, sender, letterPackOrDefault(s.letterPackType), job.locationName)).join("");
   $("countMsg").textContent = `${job.labels.length}件`;
-  $("printBtn").addEventListener("click", () => window.print());
+  $("printBtn").addEventListener("click", () => {
+    if (overflow.length && !confirm("宛名が宛名枠に収まらず、品名・台数が切れる出荷があります。このまま印刷しますか？")) return;
+    window.print();
+  });
 });

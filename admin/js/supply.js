@@ -1,3 +1,4 @@
+import { normalizeEmail, normalizePhone } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole, applyViewerMode } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
@@ -20,7 +21,7 @@ import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-
 // 出荷の状態・ボタン・在庫の扱いの判定は ship-flow.js が正本（2026-10-21 出荷の二段階化）
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stockDeducted, isLocked,
   canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
-  netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, letterPackOrDefault, DEFAULT_LETTERPACK,
+  netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
   isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel } from "/js/ship-flow.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
@@ -969,12 +970,12 @@ async function loadPickupUsers(){
 }
 let shipDoneCtx = null; // { resolve, items, usesStock, mode }
 // allowPickup … 依頼のとき送付方法（発送／持ち出し）を選ばせる。pickupUsers … 持ち出す人の候補
-function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers }){
+function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers, shippingMethod }){
   const m = SHIP_DIALOG[mode] ? mode : "ship";
   const cfg = SHIP_DIALOG[m];
   return new Promise((resolve)=>{
     if(shipDoneCtx && shipDoneCtx.resolve) shipDoneCtx.resolve(null);
-    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock, mode: m };
+    shipDoneCtx = { resolve, items: items||[], usesStock: !!usesStock, mode: m, shippingMethod: shippingMethod||"" };
     document.getElementById("shipDoneTitle").textContent = title || cfg.title;
     document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
     document.getElementById("shipDoneDateLabel").textContent = cfg.dateLabel;
@@ -1005,6 +1006,7 @@ function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, lett
     const nh = document.getElementById("shipDoneHint");
     nh.textContent = hint || ""; nh.style.display = hint ? "block" : "none";
     updateShipDoneHint();
+    updateShipDoneLpNotice();
     document.getElementById("shipDoneModal").classList.add("open");
   });
 }
@@ -1022,7 +1024,22 @@ function syncShipDoneMode(){
       : SHIP_DIALOG.request.note;
   }
 }
+// 確認ダイアログ（出荷を依頼する／発送済にする）の注意。出荷元が滋賀以外で、レターパックの種類が入っているとき（2026-10-27）
+function updateShipDoneLpNotice(){
+  const el=document.getElementById("shipDoneLpNotice");
+  if(!el) return;
+  const w=document.getElementById("shipDoneOriginWrap");
+  const origin=(w && w.style.display!=="none") ? (document.getElementById("shipDoneOrigin").value||"") : "";
+  // レターパックの種類は常に初期値（プラス）が入るので、配送方法がゆうパック・郵送なし（手渡し・持参）のときは出さない
+  const method=(shipDoneCtx && shipDoneCtx.shippingMethod) || "";
+  // 持ち出し（倉庫から直接持っていく）を選んでいるときはレターパックを使わないので出さない（2026-11-01 倉庫の統合）
+  const pickup=!!shipDoneCtx && !!shipDoneCtx.allowPickup && document.getElementById("shipDoneMode").value==="pickup";
+  const letterPack=!pickup && !!document.getElementById("shipDoneLp").value && method!=="yupack" && method!=="none";
+  const msg=lpPickupNotice({ originLocationId:origin, defaultLocationId:defaultLocationId(), letterPack });
+  el.textContent=msg; el.style.display=msg?"block":"none";
+}
 function updateShipDoneHint(){
+  updateShipDoneLpNotice();
   if(!shipDoneCtx || !shipDoneCtx.usesStock) return;
   const its = stockItems(shipDoneCtx.items);
   const locId = document.getElementById("shipDoneOrigin").value;
@@ -1092,6 +1109,7 @@ async function requestDraftShipment(s){
     title: `出荷を依頼する（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
     allowPickup: canPickup(s), pickupUsers, // 直送は持ち出しにできない（選択肢を出さない）
+    shippingMethod: s.shippingMethod,
   });
   if(!ans) return;
   if(ans.deliveryMode==="pickup" && !canPickup(s)){ alert("直送（AB Circleから直接）の出荷は持ち出しにできません"); return; }
@@ -1150,6 +1168,7 @@ async function shipWithStock(s, action){
     title: `${SHIP_DIALOG[mode].title}（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
     usesStock, locId: shipLocationOf(s), date: mode==="record" ? (s.shipDate||today()) : today(),
     letterPackType: s.letterPackType, trackingNumber: s.trackingNumber||"", items: s.items,
+    shippingMethod: s.shippingMethod,
   });
   if(!ans) return;
   const ref = doc(db,"shipments",s._id);
@@ -1246,11 +1265,26 @@ function updateShipOriginHint(){
   const pref=locationPref(locId);
   const opt=document.getElementById("shipYupackOpt");
   if(opt) opt.textContent = pref ? `ゆうパック（まとめ・${pref}発）` : "ゆうパック（まとめ）";
+  updateShipLpNotice();
   if(!el) return;
   const m=(document.getElementById("shipMethod")||{}).value||"";
   el.textContent = (m==="yupack" && pref && pref!=="滋賀県")
     ? `※ 送料表は滋賀発の料金です。${pref}発は金額が変わることがあるので、送料欄をご確認ください。`
     : "";
+}
+
+// 滋賀（既定の保管場所）以外から出す出荷で、レターパックを選んでいるときの注意（止めずに表示だけ・2026-10-27）。
+// レターパックを選んでいる＝配送方法が「レターパック」、または配送方法が未指定で種類の欄（新規登録だけ）に種類が入っている
+function updateShipLpNotice(){
+  const el=document.getElementById("shipLpNotice");
+  if(!el) return;
+  const shown=(id)=>{ const w=document.getElementById(id); return !!w && w.style.display!=="none"; };
+  const origin = shown("shipOriginWrap") ? ((document.getElementById("shipOrigin")||{}).value||"") : "";
+  const method=(document.getElementById("shipMethod")||{}).value||"";
+  const lp=(document.getElementById("shipLetterPack")||{}).value||"";
+  const letterPack = method==="letterpack" || (method==="" && shown("shipLetterPackWrap") && lp!=="");
+  const msg=lpPickupNotice({ originLocationId:origin, defaultLocationId:defaultLocationId(), letterPack });
+  el.textContent=msg; el.style.display=msg?"block":"none";
 }
 
 // 配送方法に応じて送料・名目を自動入力（手入力は維持）
@@ -1760,8 +1794,8 @@ async function saveShip(){
       company:document.getElementById("shipCompany").value.trim(),
       officeName:office, address:document.getElementById("shipAddress").value.trim(),
       contactName:document.getElementById("shipContact").value.trim(),
-      phone:document.getElementById("shipPhone").value.trim(),
-      email:document.getElementById("shipEmail").value.trim(),
+      phone:normalizePhone(document.getElementById("shipPhone").value),
+      email:normalizeEmail(document.getElementById("shipEmail").value),
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       ...subsidyPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email };
@@ -1814,8 +1848,8 @@ async function saveShipEdit(){
     officeName:office,
     address:document.getElementById("shipAddress").value.trim(),
     contactName:document.getElementById("shipContact").value.trim(),
-    phone:document.getElementById("shipPhone").value.trim(),
-    email:document.getElementById("shipEmail").value.trim(),
+    phone:normalizePhone(document.getElementById("shipPhone").value),
+    email:normalizeEmail(document.getElementById("shipEmail").value),
     updatedAt:serverTimestamp(),
     updatedBy:currentUser.displayName||currentUser.email,
   };
@@ -3577,7 +3611,7 @@ async function savePartner(){
     postal:document.getElementById("prPostal").value.trim(),
     address:document.getElementById("prAddress").value.trim(),
     phone:document.getElementById("prPhone").value.trim(),
-    contactEmail:document.getElementById("prMail").value.trim(),
+    contactEmail:normalizeEmail(document.getElementById("prMail").value),
     contacts,
     updatedAt:serverTimestamp(),
   };
@@ -3819,6 +3853,7 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeReceiveBtn").addEventListener("click",closeReceiveModal);
   document.getElementById("cancelReceiveBtn").addEventListener("click",closeReceiveModal);
   document.getElementById("shipOrigin").addEventListener("change",updateShipOriginHint);
+  ["shipMethod","shipLetterPack"].forEach(id=>document.getElementById(id).addEventListener("change",updateShipLpNotice));
 
   // 入金の記録モーダル
   document.getElementById("closePayBtn").addEventListener("click",()=>document.getElementById("payModal").classList.remove("open"));
@@ -3851,6 +3886,7 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("doShipDoneBtn").addEventListener("click",doShipDone);
   document.getElementById("shipDoneMode").addEventListener("change",()=>{ syncShipDoneMode(); updateShipDoneHint(); });
   document.getElementById("shipDoneOrigin").addEventListener("change",updateShipDoneHint);
+  document.getElementById("shipDoneLp").addEventListener("change",updateShipDoneLpNotice);
   // 追跡番号の写真（2026-10-19）
   document.getElementById("closeTrackBtn").addEventListener("click",closeTrackModal);
   document.getElementById("cancelTrackBtn").addEventListener("click",closeTrackModal);

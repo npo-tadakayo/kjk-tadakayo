@@ -12,6 +12,7 @@ const { defineSecret } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const { GoogleGenAI } = require("@google/genai");
 const { GoogleAuth } = require("google-auth-library");
+const { normalizeEmail, normalizePhone } = require("./normalize"); // メール・電話の全角→半角（正本 admin/js/normalize.js）
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（公開ページと同じ計算）
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
@@ -226,8 +227,18 @@ function daysFromNow(n) {
 // 2026-10-24 事業所の編集・統合（設計 §7.2）: 事業所名を直したり統合したりすると、旧名で来た次の問い合わせが
 // 完全一致に掛からず重複が再発する。完全一致が無いときだけ、候補の事業所（offices）を読み、
 // 名前の正規化（空白・括弧の違い）と aliases（旧名・統合で消えた側の名前）でも一致とみなす。
+// 受け取った本文のメール・電話を半角に直す（案件・見積に保存する前・検索キーに使う前に通す。2026-10-28 #377）
+function normalizeContactBody(body) {
+  if (body && typeof body === "object") {
+    if (body.email != null) body.email = normalizeEmail(body.email);
+    if (body.phone != null) body.phone = normalizePhone(body.phone);
+  }
+  return body;
+}
+
 // 完全一致があれば従来と同じ案件を返す（新しい順で最初の完全一致）。
-async function findActiveCase(email, officeName) {
+async function findActiveCase(rawEmail, officeName) {
+  const email = normalizeEmail(rawEmail); // 半角で保存した案件と照合する
   if (!email) return null;
   // 同じメールの案件が多い事業所でも取りこぼさないよう、受信日の新しい順に全件見る
   // （contactEmail の等価 + receivedAt の並べ替えは単一フィールドの複合なので既定インデックスで通る）
@@ -431,7 +442,7 @@ exports.webhookLpInquiry = onRequest(
     if (await appCheckGate(req, res, "webhookLpInquiry")) return;
 
     try {
-      const body = req.body;
+      const body = normalizeContactBody(req.body);
       const now = admin.firestore.FieldValue.serverTimestamp();
       const officeName = body.officeName || body.name || "";
       // ご希望（まず相談したい/見積書がほしい/正式に申込みたい）。不正・欠落は consult 扱い（2026-09-05 MTG §6）。
@@ -610,7 +621,8 @@ function validateMitsumoriOfficeInput(o) {
 async function createOrUpdateMitsumoriQuote(input, groupMeta) {
   const now = admin.firestore.FieldValue.serverTimestamp();
   const officeName = input.officeName || "";
-  const email = input.email || "";
+  const email = normalizeEmail(input.email);
+  input = { ...input, phone: normalizePhone(input.phone) };
 
   const v = validateMitsumoriOfficeInput(input);
   if (!v.ok) return { ok: false, message: v.message };
@@ -779,7 +791,7 @@ exports.webhookMitsumori = onRequest(
     if (await appCheckGate(req, res, "webhookMitsumori")) return;
 
     try {
-      const body = req.body || {};
+      const body = normalizeContactBody(req.body || {});
 
       // ===== 複数事業所（offices[]）経路 =====
       if (Array.isArray(body.offices)) {
@@ -997,8 +1009,8 @@ exports.sendQuotePdf = onRequest(
         }
 
         const first = saves[0].q;
-        const to = first.contactEmail || "";
-        const mismatched = saves.some(({ q }) => (q.contactEmail || "") !== to);
+        const to = normalizeEmail(first.contactEmail);
+        const mismatched = saves.some(({ q }) => (normalizeEmail(q.contactEmail)) !== to);
         if (mismatched) console.warn("sendQuotePdf(group): 宛先メールが揃っていません。先頭を採用します。", to);
 
         let mailed = false, mailError = null;
@@ -1057,7 +1069,7 @@ exports.sendQuotePdf = onRequest(
 
       const filename = `${q.estNo}-v${q.version}.pdf`;
       const saved = await storeQuotePdfFile(q.caseId, filename, pdfBase64);
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       let mailed = false, mailError = null;
       if (wantsMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
@@ -1422,7 +1434,7 @@ exports.acceptQuote = onRequest(
         if (newly.length) {
           const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           const first = newly[0].q;
-          const to = first.contactEmail || "";
+          const to = normalizeEmail(first.contactEmail);
           if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
             try {
               const m = acceptMailTextGroup({ items: newly, agreedName: body.agreedName, payKey, preferredDate: body.preferredDate });
@@ -1475,7 +1487,7 @@ exports.acceptQuote = onRequest(
 
       // 事業所へ確認メール
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
           const m = acceptMailText({ q, agreedName, payKey, delivery: d, preferredDate });
@@ -1677,7 +1689,7 @@ exports.reviseQuote = onCall(
       supersedes: base.id, reason: String(reason).trim().slice(0, 500),
       validUntil: daysFromNow(30),   // 改版は新しい見積書なので有効期限を30日振り直す（2026-09-14）
       createdVia: "staff", createdBy: email, createdAt: now,
-      contactEmail: base.contactEmail || "", contactName: base.contactName || "",
+      contactEmail: normalizeEmail(base.contactEmail), contactName: base.contactName || "",
       officeName: base.officeName || "", corpName: base.corpName || "",
       accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
       shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
@@ -1714,7 +1726,7 @@ exports.reviseQuote = onCall(
 
     // 事業所へ変更後の見積もりを知らせる（PDFはこの時点では無いので、金額と変更点をメールで伝える）
     let mailed = false;
-    const to = base.contactEmail || "";
+    const to = normalizeEmail(base.contactEmail);
     if (sendMail !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const diff = calc.totalIncl - (Number(base.amounts?.totalIncl) || 0);
@@ -1757,7 +1769,7 @@ exports.resendQuoteMail = onCall(
     if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
     const q = { id: snap.id, ...snap.data() };
     if (!q.pdfPath) throw new HttpsError("failed-precondition", "この見積もりのPDFは保存されていません（事業所側でPDF作成が完了していない可能性）");
-    const to = (toOverride || q.contactEmail || "").trim();
+    const to = normalizeEmail(toOverride || q.contactEmail);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError("invalid-argument", "宛先メールアドレスが不正です");
     try {
       const [buf] = await admin.storage().bucket(QUOTE_BUCKET).file(q.pdfPath).download();
@@ -1830,7 +1842,7 @@ exports.staffCreateQuote = onCall(
     }
     const corpName = kase.corpName || (office && office.corpName) || "";
     const officeName = kase.officeName || (office && office.officeName) || "";
-    const contactEmail = kase.contactEmail || "";
+    const contactEmail = normalizeEmail(kase.contactEmail);
     const contactName = kase.contactName || "";
 
     const now = admin.firestore.FieldValue.serverTimestamp();
@@ -1936,7 +1948,7 @@ exports.saveQuotePdf = onCall(
     let mailed = false;
     const now = admin.firestore.FieldValue.serverTimestamp();
     if (wantsMail) {
-      const to = q.contactEmail || "";
+      const to = normalizeEmail(q.contactEmail);
       if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
         try {
           const m = quoteMailText(q);
@@ -2751,11 +2763,28 @@ exports.reportInvoiceToAccounting = onCall(
 const LETTERPACK_LABELS = { light: "レターパックライト（青）", plus: "レターパックプラス（赤）" };
 const NON_SHIP_SKUS = new Set(["support-fee", "discount"]);
 const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"]; // admin/js/ship-flow.js と同じ値
+// 出荷する品の台数のまとめ（2026-10-30・台数を目立たせる改修）。admin/js/ship-flow.js の shipQtySummary と同じ中身
+// （BEGIN〜END の間をそろえる。scripts/test-ship-flow.mjs が一致を確かめる）。
+// BEGIN shipQtySummary
+function shipQtySummary(items) {
+  const lines = (Array.isArray(items) ? items : [])
+    .filter((i) => i && !i.nonStock && !["support-fee", "discount"].includes(String(i.sku || "")) && Number(i.qty) > 0)
+    .map((i) => {
+      const name = String(i.name || "").replace(/^介護情報基盤\s*汎用カードリーダー?\s*/, "").trim();
+      return { sku: String(i.sku || ""), label: name || String(i.sku || ""), qty: Number(i.qty) };
+    });
+  const total = lines.reduce((a, l) => a + l.qty, 0);
+  const detail = lines.map((l) => `${l.label} × ${l.qty}`).join("・");
+  return { lines, total, detail };
+}
+// END shipQtySummary
 // 倉庫の画面（2026-10-24）。出荷指示の投稿の末尾に、発送・持ち出しのどちらにも付ける
 const WAREHOUSE_URL = `${CRM_BASE_URL}/warehouse`;
 // o.deliveryMode が "pickup"（持ち出し）なら pickupChatMessage へ。o.pickupMention は持ち出す人のメンション（<users/ID> か「名前さん」）
 function shipmentChatMessage(s, shipmentId, o) {
   if (o && o.deliveryMode === "pickup") return pickupChatMessage(s, shipmentId, o);
+  // 台数は見出し・副題・本文の先頭に大きく出す（2026-10-30。1台の指示で3台届いた件を受けて）
+  const q = shipQtySummary(s.items);
   const items = (Array.isArray(s.items) ? s.items : [])
     .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
     .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
@@ -2784,9 +2813,10 @@ function shipmentChatMessage(s, shipmentId, o) {
   const printUrl = `${CRM_BASE_URL}/letterpack-print.html?id=${encodeURIComponent(shipmentId)}`;
   const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const head = o.resend ? "📦 出荷指示（再送）" : "📦 出荷指示";
-  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）
+  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）。台数は2行目
   const text = [
     `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
+    `🔢 台数: ${q.total}台（${q.detail}）← 箱に入れる前に数えてください`,
     ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
     `🖨 レターパックの宛名印刷: ${printUrl}`,
     `👉 CRMの出荷: ${crmUrl}`,
@@ -2797,8 +2827,9 @@ function shipmentChatMessage(s, shipmentId, o) {
     cardsV2: [{
       cardId: `shipment-${shipmentId}`,
       card: {
-        header: { title: o.resend ? "出荷指示（再送）" : "出荷指示", subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}` },
+        header: { title: `${o.resend ? "出荷指示（再送）" : "出荷指示"} — カードリーダー ${q.total}台`, subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}　【合計 ${q.total}台】` },
         sections: [
+          { widgets: [{ decoratedText: { topLabel: "🔢 台数（箱に入れる前に数えてください）", text: `<font color="#C02828"><b>${q.total}台</b></font>　${q.detail}`, wrapText: true } }] },
           { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
           { widgets: [{ buttonList: { buttons: [
             { text: "宛名を印刷（A4）", onClick: { openLink: { url: printUrl } } },
@@ -2815,6 +2846,7 @@ function shipmentChatMessage(s, shipmentId, o) {
 // 「〇〇さんが △日に取りに行きます」・保管場所・品と数。持ち出す本人にメンションする（メンションは text の中だけで効く）。
 // レターパック・追跡番号・宛名印刷は出さない（郵送しないため）。
 function pickupChatMessage(s, shipmentId, o) {
+  const q = shipQtySummary(s.items); // 台数は発送の指示と同じく先頭に出す（2026-11-01 倉庫の統合で揃えた）
   const items = (Array.isArray(s.items) ? s.items : [])
     .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
     .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
@@ -2835,6 +2867,7 @@ function pickupChatMessage(s, shipmentId, o) {
   const head = o.resend ? "📦 【持ち出し】出荷指示（再送）" : "📦 【持ち出し】出荷指示";
   const text = [
     `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
+    `🔢 台数: ${q.total}台（${q.detail}）← 持ち出す前に数えてください`,
     `${who} が ${s.pickupDate || "（予定日未設定）"} に ${s.originLocationName || "倉庫"} へ取りに行きます`,
     ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
     `👉 CRMの出荷: ${crmUrl}`,
@@ -2845,8 +2878,9 @@ function pickupChatMessage(s, shipmentId, o) {
     cardsV2: [{
       cardId: `shipment-${shipmentId}`,
       card: {
-        header: { title: o.resend ? "【持ち出し】出荷指示（再送）" : "【持ち出し】出荷指示", subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}` },
+        header: { title: `${o.resend ? "【持ち出し】出荷指示（再送）" : "【持ち出し】出荷指示"} — カードリーダー ${q.total}台`, subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}　【合計 ${q.total}台】` },
         sections: [
+          { widgets: [{ decoratedText: { topLabel: "🔢 台数（持ち出す前に数えてください）", text: `<font color="#C02828"><b>${q.total}台</b></font>　${q.detail}`, wrapText: true } }] },
           { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
           { widgets: [{ buttonList: { buttons: [
             { text: "CRMで開く", onClick: { openLink: { url: crmUrl } } },

@@ -9,6 +9,7 @@ import { gateRole, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "/js/fs.js";
 import { letterPackOrDefault } from "/js/ship-flow.js";
+import { renderLabel, fitLabel as fitLabelEl } from "/js/letterpack-label.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -25,7 +26,6 @@ const SENDER_DEFAULT = {
   address: "東京都大田区大森中二丁目1番20-1001号",
   phone: "050-6872-9884",
 };
-const TYPE_LABEL = { light: "レターパックライト", plus: "レターパックプラス" };
 
 function sendersOf(st){
   st = st || {};
@@ -44,50 +44,9 @@ function sendersOf(st){
   return list;
 }
 
-function itemsMemo(s){
-  return (Array.isArray(s.items) ? s.items : [])
-    .filter((i)=>i && !i.nonStock && !["support-fee","discount"].includes(String(i.sku||"")) && Number(i.qty) > 0)
-    .map((i)=>`${esc(i.sku)}${i.name && i.name!==i.sku ? `（${esc(i.name)}）` : ""} × ${Number(i.qty)}台`).join("<br>");
-}
 
-export function renderLabel(s, sender, type){
-  sender = sender || {};
-  const head = TYPE_LABEL[type] || "レターパック（種類が未選択です）";
-  const zip = s.postal ? `〒${esc(s.postal)}` : "〒";
-  const person = String(s.contactName || "").trim();
-  const fromZip = sender.postal ? `〒${esc(sender.postal)} ` : "";
-  return `
-    <div class="label">
-      <div class="label-head"><span>${esc(head)}</span><small>宛名ラベル</small></div>
-      <div class="to">
-        <div class="sec">お届け先</div>
-        <div class="zip">${zip}</div>
-        <div class="addr">${esc(s.address || "")}</div>
-        ${s.company ? `<div class="org">${esc(s.company)}</div>` : ""}
-        ${s.officeName ? `<div class="org">${esc(s.officeName)}</div>` : ""}
-        <div class="name">${person ? esc(person) : "ご担当者"}<span class="sama">様</span></div>
-        <div class="tel">TEL ${esc(s.phone || "")}</div>
-      </div>
-      <div class="from">
-        <div class="sec">ご依頼主</div>
-        <div>${fromZip}${esc(sender.address || "")}</div>
-        <div class="from-name">${esc(sender.name || "")}</div>
-        ${sender.phone ? `<div>TEL ${esc(sender.phone)}</div>` : ""}
-      </div>
-      <div class="so"><span>出荷番号 <strong>${esc(s.soNumber || "")}</strong></span><span>品名: 介護情報基盤 マイナ資格確認 カードリーダー</span></div>
-    </div>
-    <div class="cut"><span>✂ 上の枠を切り取って、レターパックの宛名面に貼ってください</span></div>
-    <div class="memo">
-      <div>梱包用のメモ（貼らない）</div>
-      <table><tbody>
-        <tr><th>出荷番号</th><td>${esc(s.soNumber || "")}</td></tr>
-        <tr><th>出荷日</th><td>${esc(s.shipDate || "")}</td></tr>
-        <tr><th>出荷元</th><td>${esc(s.originLocationName || "")}</td></tr>
-        <tr><th>品目</th><td>${itemsMemo(s) || "—"}</td></tr>
-        <tr><th>種類</th><td>${esc(TYPE_LABEL[type] || "未選択")}</td></tr>
-      </tbody></table>
-    </div>`;
-}
+// 宛名枠に収まるか（お届け先・ご依頼主を縮めて収める。収まらなければ false）。中身は letterpack-label.js
+function fitLabel(){ return fitLabelEl(document.querySelector(".label")); }
 
 function setTheme(type){
   document.body.classList.toggle("lp-light", type === "light");
@@ -117,14 +76,17 @@ onAuthStateChanged(auth, async (user) => {
     if (s.soNumber) document.getElementById("backBtn").href = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber)}`;
     document.title = `宛名 ${s.soNumber || ""} — タダカヨ CRM`;
 
+    let labelFits = true;
     let type = letterPackOrDefault(s.letterPackType); // 未設定はプラス（赤）・2026-10-21
     const draw = () => {
       setTheme(type);
       document.getElementById("body").innerHTML = renderLabel(s, senders[Number(sel.value) || 0], type);
+      labelFits = fitLabel();
       const warn = document.getElementById("warnBox");
       const miss = [!s.postal && "郵便番号", !s.address && "住所", !s.phone && "電話"].filter(Boolean);
       const msgs = [];
       if (!type) msgs.push("レターパックの種類（ライト／プラス）を上で選んでください。選ぶと色が変わり、この出荷に保存されます。");
+      if (!labelFits) msgs.push("宛名（住所・法人名・事業所名）が長く、宛名枠（縦14.5cm×横12.5cm）に収まりません。このまま印刷すると品名・台数が切れます。出荷の「送付先・数量を直す」で短くしてください。");
       if (miss.length) msgs.push(`届け先の${miss.join("・")}が入っていません。出荷の「送付先・数量を直す」で入れてから印刷してください。`);
       warn.innerHTML = msgs.map(esc).join("<br>");
       warn.style.display = msgs.length ? "block" : "none";
@@ -151,6 +113,7 @@ onAuthStateChanged(auth, async (user) => {
     }));
     document.getElementById("printBtn").addEventListener("click", () => {
       if (!type && !confirm("レターパックの種類が未選択です。このまま印刷しますか？")) return;
+      if (!labelFits && !confirm("宛名が宛名枠に収まらず、品名・台数が切れます。このまま印刷しますか？")) return;
       window.print();
     });
   } catch (e) {

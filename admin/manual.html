@@ -131,7 +131,7 @@
           <li><strong>認定事業者</strong>: 認定事業者の一覧・登録、協定書/説明資料の作成</li>
           <li><strong>料金・送料</strong>: 認定事業者への卸価格・レターパック/ゆうパック送料の設定</li>
           <li><strong>伴走支援者バッジ</strong>: 伴走支援のトレーニング評価とバッジの管理</li>
-          <li><strong>動画マニュアル</strong>: CRM操作説明の動画 8本（単元ごと 3〜6分・字幕付き）</li>
+          <li><strong>動画マニュアル</strong>: 育成コース・伴走支援の手順・CRMの使い方の動画（CRMは単元ごと 3〜9分・字幕付き）</li>
           <li><strong>設定</strong>: <strong>Google Chat の投稿先（4つ）</strong>・メール送信元・<strong>助成金の申請期限</strong>・振込先・<strong>紹介元の種類</strong>などの変更</li>
         </ul>
 </div>
@@ -236,10 +236,23 @@
 <p>伴走支援で事業所へ訪問する日が決まったら、案件に<strong>訪問予定日</strong>を入れておくと、一覧とカンバンで予定が見えます。</p>
 <div class="step"><span class="n">1</span><div>案件詳細の「<strong>訪問予定日</strong>」の日付欄で、日付を選ぶ（<strong>選んだ時点で保存</strong>されます。保存ボタンはありません）</div></div>
 <div class="step"><span class="n">2</span><div>画面に「訪問予定日を ○○ にしました」と出る。<strong>誰がいつ変えたか</strong>は対応記録に残る（変更前の日付も一緒に記録）</div></div>
-<div class="step"><span class="n">3</span><div>日付を消して空にすると「未設定」に戻る</div></div>
+<div class="step"><span class="n">3</span><div>日付を消して空にすると「未設定」に戻る（時刻と形式も一緒に外れます）</div></div>
+<div class="step"><span class="n">4</span><div>時間が決まっていれば、その横の「<strong>訪問の時刻</strong>」に開始・終了を入れ、「<strong>対面</strong>」か「<strong>オンライン</strong>」を選ぶ（日付を入れるまでは選べません。どれも任意です）。変更前の内容も対応記録に残ります</div></div>
 <ul>
-  <li><strong>案件一覧</strong>に「訪問予定日」の列が出ます（CSV出力にも入ります）</li>
-  <li><strong>カンバン</strong>のカードには「訪問 月/日」が出ます</li>
+  <li><strong>案件一覧</strong>に「訪問予定日」の列が出ます。時刻があれば「2026/10/28 15:00」のように時刻も出ます（CSV出力には時刻・形式の列も入ります）</li>
+  <li><strong>カンバン</strong>のカードには「訪問 月/日」が出ます（時刻があれば「10/28 15:00」）</li>
+</ul>
+<h4>予定（訪問カレンダー）で見る <span class="chip new">10/28 追加</span></h4>
+<p>左メニューの「<strong>予定（訪問カレンダー）</strong>」で、訪問予定をまとめて見られます。見るだけの画面です。日付や時刻は案件詳細で直します。</p>
+<ul>
+  <li>開くと<strong>今日の予定</strong>が出ます。「日」「週」「月」で切り替え、「前へ」「次へ」「今日」で動かせます。月のマスを押すと、その日の表示に移ります</li>
+  <li>1件ごとに、時刻・担当者・事業所名（押すと案件詳細）・住所（押すとGoogleマップ）・電話（押すと発信）・対面かオンラインかが出ます。時刻が未定の予定は、時刻のある予定の後ろに並びます</li>
+  <li>「日」の表示では<strong>準備の状況</strong>（見積・出荷の状態）も出ます。出発の前に、準備が済んでいるか確かめられます</li>
+  <li>色と印で「これから」「済み」「要確認」を見分けられます。失注の案件は出ません</li>
+  <li>「担当」で「自分の予定だけ」や、ほかの担当者の予定に絞れます。「都道府県」でも絞れます</li>
+  <li>「Googleカレンダーに追加」を押すと、登録画面が別のタブで開きます（終了時刻が無いときは1時間で入ります）</li>
+  <li><strong>ホーム</strong>にも「今日の訪問 N件」のカードが出ます（あなたの分が先頭。6件以上は「ほか N件」）。「カレンダーで見る」でこの画面に移れます</li>
+  <li>当日のチェックリスト（伴走支援タブ）の訪問日・時刻・場所は、<strong>空欄のときだけ</strong>案件の値が最初から入ります（保存済みの値は変わりません）</li>
 </ul>
 <figure class="shot"><img src="/images/manual/case-visit-date.png" alt="案件詳細の訪問予定日の欄と、カンバンのカードに出る「訪問 月/日」" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>案件詳細の訪問予定日の欄と、カンバンのカードに出る「訪問 月/日」</figcaption></figure>
 
@@ -463,6 +476,7 @@
 <div class="step"><span class="n">2</span><div>確認画面で、<strong>希望出荷日</strong>・<strong>出荷元の保管場所</strong>（必須）・<strong>レターパックの種類</strong>（ライト＝青／プラス＝赤）を確認して進める。<strong>在庫が足りないときは注意が出ますが、依頼は進められます</strong></div></div>
 <div class="step"><span class="n">3</span><div>出荷のスペースに、<strong>宛名・住所・電話・品目</strong>と、<strong>宛名印刷のリンク</strong>が入った出荷指示が投稿される（<strong>希望出荷日</strong>と<strong>依頼した人</strong>も載ります）</div></div>
 <div class="step"><span class="n">4</span><div>センターが発送したら、行の <kbd class="pri">発送済にする</kbd> を押す。<strong>発送日</strong>・出荷元（必要なら変更可）・追跡番号（任意）を入れる。<strong>在庫が足りないときは止まります</strong></div></div>
+<div class="callout">出荷元の保管場所が<strong>滋賀（ロジスティックセンター）以外</strong>で、レターパックを選んでいるときは、確認画面に「この保管場所のものは、基本的に倉庫からの持ち出しです。郵送でよいか確認してください」という<strong>注意</strong>が出ます。郵送することが全くないわけではないので、レターパックは選べるままで、<strong>止まりません</strong>（注意の表示だけです）。</div>
 <figure class="shot"><img src="/images/manual/shipment-confirm.png" alt="確認画面（出荷日・出荷元・レターパックの種類。撮影時の画面）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>確認画面（出荷日・出荷元・レターパックの種類。撮影時の画面）</figcaption></figure>
 <figure class="shot"><img src="/images/manual/chat-ship-instruction.png" alt="出荷のスペースに届く出荷指示（宛名・住所・電話・品目・宛名印刷のリンク）" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>出荷のスペースに届く出荷指示（宛名・住所・電話・品目・宛名印刷のリンク）</figcaption></figure>
 <h4 style="font-size:14px;margin:14px 0 4px">すでに届いている出荷は「すでに発送済（記録のみ）」</h4>
@@ -510,7 +524,8 @@
 <div class="step"><span class="n">1</span><div>出荷指示の投稿の<strong>宛名印刷のリンク</strong>を開く（または出荷の行の <kbd>宛名印刷（A4）</kbd> ボタン）。<strong>@tadakayo.jp でログインしている人だけ</strong>見られます</div></div>
 <div class="step"><span class="n">2</span><div>届け先の宛名がプレビューで出る</div></div>
 <div class="step"><span class="n">3</span><div>上で<strong>レターパックの種類</strong>を選ぶ。<kbd>ライト（青）</kbd> と <kbd>プラス（赤）</kbd> で<strong>色が変わる</strong>。選んだ種類はその出荷に保存され、次に開いても同じになる</div></div>
-<div class="step"><span class="n">4</span><div>印刷する（A4）。レターパックに貼る</div></div>
+<div class="step"><span class="n">4</span><div>印刷する（A4）。上の宛名枠（<strong>縦14.5cm×横12.5cm</strong>）を外枠に沿って切り取り、レターパックの宛名面の枠に貼る。宛名枠は郵便局の読み取りに合わせ、上から<strong>お届け先 → ご依頼主 → 品名</strong>の順です <span class="chip new">10/30 変更</span></div></div>
+<div class="step"><span class="n">5</span><div>切り取り線の下の<strong>「梱包の確認」</strong>で、<strong>台数を数えて</strong>チェックを入れ、確認した人と日付を書く（貼らない部分）。宛名枠の<strong>品名の欄</strong>にも台数が大きく出ます <span class="chip new">10/30 追加</span></div></div>
 <ul>
   <li>種類を選んでいないと、「上で選んでください」と案内が出ます</li>
   <li>従来の <kbd>宛名</kbd> ボタン（実物風の宛名・差出人を選べる）も、これまでどおり残っています</li>

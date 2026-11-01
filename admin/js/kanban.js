@@ -11,6 +11,7 @@ import {
   DEADLINE, daysUntilDeadline, daysSince, resolveDeadline, deadlineLabel,
   referralLabel, LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
+import { visitShort } from "/js/schedule-core.js";
 import { askLostReason } from "/js/case-detail-util.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 // 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
@@ -119,7 +120,7 @@ function cardHtml(c, col) {
   const stale = isStale(c);
   const src = SOURCE_LABELS_SHORT[c.source];
   const referral = referralLabel(c.referralSource, appSettings); // 紹介元（流入元とは別）
-  const visit = c.visitDate ? `${Number(c.visitDate.slice(5, 7))}/${Number(c.visitDate.slice(8, 10))}` : "";
+  const visit = visitShort(c.visitDate, c.visitTimeFrom);
   const lostInfo = Number(c.status) === LOST
     ? `<div class="kanban-card-sub" style="font-size:12px;color:var(--color-ink-muted)">理由: ${escHtml(lostReasonLabel(c))}</div>` : "";
   return `
