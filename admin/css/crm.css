@@ -465,6 +465,16 @@ tbody tr { cursor: pointer; }
 .badge-12 { background: #e8f3ec; color: #246b34; } /* アフターフォロー中 */
 .badge-13 { background: #e8f3ec; color: #246b34; } /* 案件完了 */
 
+/* 事業種別のラベル（cases.serviceType・2026-11-01）。ステータスと見分けるため枠線つき・ドットなし。
+   名前が長い（例: 地域密着型介護老人福祉施設入所者生活介護）ので折り返してよい。
+   文字色 #5b4a2e / 背景 #fff8ec のコントラスト比は約 8.1:1、未設定 #6b6255 は白地で約 6.0:1（いずれも WCAG AA 以上） */
+.badge-svc {
+  background: #fff8ec; color: #5b4a2e; border: 1px solid #e3d3b5;
+  white-space: normal; font-weight: 600; line-height: 1.35;
+}
+.badge-svc::before { display: none; }
+.badge-svc-none { background: transparent; color: #6b6255; border-style: dashed; font-weight: 500; }
+
 /* ========== Filter Bar ========== */
 .filter-bar {
   display: flex;

@@ -3,6 +3,7 @@
 // 旧: cases.js / kanban.js / dashboard.js に重複していた定義をここへ集約。
 
 import { normalizeEmail, normalizePhone } from "./normalize.js"; // 重複判定キーに全角のゆれを持ち込まない
+import { differentServiceTypes } from "./service-types.js"; // 同じ事業所の別事業（事業種別が違う）は重複にしない（2026-11-01）
 
 export const STATUS_LABELS = {
   1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注",
@@ -132,6 +133,7 @@ export function pairKey(a, b) { return a < b ? `${a}__${b}` : `${b}__${a}`; }
 
 // 共有キーで連結した重複グループ（union-find）。2件以上のグループのみ返す。
 // dismissed: 「重複ではない」と確定したペアキーの Set。その組は連結しない。
+// 事業種別（serviceType）が両方入っていて違う組も連結しない（1事業＝1案件で意図して分けた案件・2026-11-01）。
 export function computeDuplicateGroups(cases, dismissed) {
   const dis = dismissed || new Set();
   const parent = {};
@@ -139,10 +141,13 @@ export function computeDuplicateGroups(cases, dismissed) {
   cases.forEach((c) => { parent[c._id] = c._id; });
   // 同一キーを持つ案件どうしをペアで連結（「重複ではない」確定の組はスキップ）
   const byKey = {};
+  const byId = {};
+  cases.forEach((c) => { byId[c._id] = c; });
   cases.forEach((c) => dupKeys(c).forEach((k) => { (byKey[k] = byKey[k] || []).push(c._id); }));
   Object.values(byKey).forEach((ids) => {
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
+        if (differentServiceTypes(byId[ids[i]], byId[ids[j]])) continue;
         if (!dis.has(pairKey(ids[i], ids[j]))) parent[find(ids[i])] = find(ids[j]);
       }
     }

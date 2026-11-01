@@ -1,10 +1,10 @@
 import { normalizeEmail } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { gateRole, applyViewerMode } from "/js/role.js";
+import { gateRole, applyViewerMode, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
-  collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch }
+  collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch, runTransaction }
   from "/js/fs.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
@@ -15,6 +15,9 @@ import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
   officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
 import { visitSummary } from "/js/schedule-core.js";
+// 事業種別（cases.serviceType）と「コピーして別の事業種別で作る」（2026-11-01）
+import { serviceTypeOptionsHtml, planHintText, isServiceType, differentServiceTypes } from "/js/service-types.js";
+import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -45,6 +48,8 @@ let isAdmin = false;
 // 統合（mergeInto）は取り消せないので「閲覧のみ（viewer）」には出さない。
 // 完全削除＝管理者のみ／統合＝管理者＋スタッフ（データは消えず対象外になるだけなので削除より1段ゆるい）。
 let canMerge = false;
+// 「コピーして別の事業種別で作る」＝閲覧のみ以外（書き込みはルールの isEditor と同じ範囲）
+let canCopy = false;
 let currentUser = null;
 let supportChecklist = null; // initSupportChecklist の戻り値（refreshPeople）
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
@@ -269,6 +274,89 @@ async function saveReferral(value) {
   showToast(v ? `紹介元を「${referralLabel(v, appSettings)}」にしました` : "紹介元を未設定にしました");
 }
 
+// ===== 事業種別（serviceType・2026-11-01） =====
+// 1事業（事業種別）＝1案件。値は service-types.js の正式名。未設定は null。
+// 「プランの目安」は表示するだけ（subsidyCategory などを自動で書き換えない）。
+function renderServiceTypeSelect() {
+  const sel = document.getElementById("serviceTypeSelect");
+  if (!sel) return;
+  const cur = currentCase?.serviceType || "";
+  sel.innerHTML = serviceTypeOptionsHtml(cur, escHtml);
+  sel.value = cur;
+  const hint = document.getElementById("servicePlanHint");
+  if (hint) hint.textContent = planHintText(cur);
+}
+
+async function saveServiceType(value) {
+  const prev = currentCase.serviceType || "";
+  const v = value || null;
+  if (v && !isServiceType(v) && v !== prev) throw new Error("一覧にない事業種別です");
+  await updateDoc(doc(db, "cases", caseId), { serviceType: v, updatedAt: serverTimestamp() });
+  currentCase.serviceType = v;
+  // 誰がいつ事業種別を変えたか追えるように、担当営業と同じ作法でタイムラインへ記録
+  await logActivity(`事業種別変更 → ${v || "未設定"}`, `変更前: ${prev || "未設定"}`);
+  showToast(v ? `事業種別を「${v}」にしました` : "事業種別を未設定にしました");
+}
+
+// ===== この案件をコピーして、別の事業種別で作る（2026-11-01） =====
+// 案件番号は _counters/cases の連番。既存の新規作成と同じくトランザクションで払い出し、
+// 新しい案件・コピー元とコピー先の対応記録（2件）も同じトランザクションで書く（番号だけ進んで案件が無い、を作らない）。
+function openCopyCaseModal() {
+  const c = currentCase;
+  document.getElementById("copyCaseFrom").innerHTML =
+    `コピー元: <strong>#${escHtml(c.caseNumber || "—")} ${escHtml(c.officeName || "")}</strong>（事業種別: ${escHtml(c.serviceType || "未設定")}）`;
+  const sel = document.getElementById("copyServiceType");
+  sel.innerHTML = serviceTypeOptionsHtml("", escHtml, { emptyLabel: "選んでください" });
+  // コピー元と同じ事業種別は選べないようにする
+  [...sel.options].forEach((o) => { if (o.value && o.value === c.serviceType) o.disabled = true; });
+  sel.value = "";
+  document.getElementById("copyPlanHint").textContent = "";
+  document.getElementById("copyCaseError").style.display = "none";
+  document.getElementById("copyCaseModal").classList.add("open");
+  sel.focus();
+}
+function closeCopyCaseModal() { document.getElementById("copyCaseModal").classList.remove("open"); }
+
+async function copyCaseWithServiceType() {
+  const errEl = document.getElementById("copyCaseError");
+  const serviceType = document.getElementById("copyServiceType").value;
+  const pre = buildCopiedCase(currentCase, { serviceType, caseNumber: 1, now: null }); // 番号を払い出す前に入力だけ確かめる
+  if (!pre.ok) { errEl.textContent = pre.error; errEl.style.display = "block"; return; }
+  const btn = document.getElementById("copyCaseConfirmBtn");
+  btn.disabled = true;
+  try {
+    const src = currentCase;
+    const counterRef = doc(db, "_counters", "cases");
+    const newRef = doc(collection(db, "cases"));
+    const srcActRef = doc(collection(db, "activities"));
+    const newActRef = doc(collection(db, "activities"));
+    const userId = currentUser?.uid || null;
+    const userName = currentUser?.displayName || currentUser?.email || "";
+    const newNumber = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(counterRef);
+      const next = (snap.exists() ? snap.data().value : 0) + 1;
+      const now = serverTimestamp();
+      const built = buildCopiedCase(src, { serviceType, caseNumber: next, now });
+      if (!built.ok) throw new Error(built.error);
+      const texts = copyActivityTexts(src, next, serviceType);
+      tx.set(counterRef, { value: next });
+      tx.set(newRef, built.data);
+      tx.set(srcActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.source.subject, body: texts.source.body, attachmentUrls: [] });
+      tx.set(newActRef, { caseId: newRef.id, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.target.subject, body: texts.target.body, attachmentUrls: [] });
+      return next;
+    });
+    closeCopyCaseModal();
+    showToast(`案件 #${newNumber}（${serviceType}）を作りました`);
+    location.href = `/case-detail.html?id=${newRef.id}`;
+  } catch (e) {
+    errEl.textContent = `作成できませんでした: ${e.message || e}`;
+    errEl.style.display = "block";
+    btn.disabled = false;
+  }
+}
+
 // 対象外バナー・操作ボタンの表示状態
 function renderCaseActions() {
   const c = currentCase;
@@ -291,6 +379,10 @@ function renderCaseActions() {
     if (unarchiveBtn) unarchiveBtn.style.display = "none";
   }
   if (deleteBtn) deleteBtn.style.display = isAdmin ? "" : "none";
+  // コピーは閲覧のみに出さない（文言に「コピー」を含み、role.js の自動無効化の対象外になるため）。
+  // 対象外（統合済み・重複など）の案件からは作らない
+  const copyBtn = document.getElementById("copyCaseBtn");
+  if (copyBtn) copyBtn.style.display = canCopy && !c.archived ? "" : "none";
 }
 
 // 重複候補カード
@@ -814,6 +906,8 @@ async function loadDuplicateCandidates() {
       // ⚠️ 以前は未定義の変数 kase を見ていて ReferenceError になり、候補が常に0件（統合ボタンが出ない）だった（2026-10-21 E2E で発見）
       && !(currentCase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === currentCase.quoteGroupId)
       && dupKeys(c).some((k) => myKeys.has(k))
+      // 同じ事業所の別事業（事業種別が両方入っていて違う）は、1事業＝1案件で意図して分けたので重複候補にしない（2026-11-01）
+      && !differentServiceTypes(currentCase, c)
       && !dismissed.has(pairKey(caseId, c._id)));
 }
 
@@ -835,6 +929,13 @@ const MERGE_FIELDS = [
     id: (c) => String(c.referralSource || "").trim(),
     text: (c) => referralLabel(c.referralSource, appSettings),
     pick: (c) => ({ referralSource: c.referralSource || null }),
+  },
+  // 事業種別（2026-11-01）。重複の統合で両方に違う値が入っていれば、どちらを残すか選ばせる
+  {
+    key: "serviceType", label: "事業種別",
+    id: (c) => String(c.serviceType || "").trim(),
+    text: (c) => String(c.serviceType || "").trim(),
+    pick: (c) => ({ serviceType: c.serviceType || null }),
   },
   ...[["contactName", "担当者名"], ["contactEmail", "メール"], ["contactPhone", "電話"], ["corpName", "法人名"]]
     .map(([f, label]) => ({
@@ -1580,6 +1681,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!myRole) return;
   isAdmin = myRole.role === "admin";
   canMerge = myRole.role === "admin" || myRole.role === "staff";
+  canCopy = !isViewer(myRole);
   currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
@@ -1657,6 +1759,7 @@ onAuthStateChanged(auth, async (user) => {
   }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
+  renderServiceTypeSelect();
   renderCaseActions();
   renderDuplicateCandidates();
 
@@ -1705,6 +1808,33 @@ onAuthStateChanged(auth, async (user) => {
       });
     });
   });
+
+  // 事業種別の変更（保存＋タイムラインに記録）
+  document.getElementById("serviceTypeSelect")?.addEventListener("change", async (e) => {
+    const sel = e.target;
+    const prev = currentCase.serviceType || "";
+    sel.disabled = true;
+    try {
+      await saveServiceType(sel.value);
+      renderServiceTypeSelect(); // 一覧にない値から外れた場合に選択肢を作り直す
+    } catch (err) {
+      sel.value = prev;
+      alert(`事業種別の保存に失敗しました: ${err.message || err}`);
+    } finally {
+      sel.disabled = false;
+    }
+  });
+
+  // この案件をコピーして、別の事業種別で作る
+  document.getElementById("copyCaseBtn")?.addEventListener("click", openCopyCaseModal);
+  document.getElementById("copyCaseCloseBtn")?.addEventListener("click", closeCopyCaseModal);
+  document.getElementById("copyCaseCancelBtn")?.addEventListener("click", closeCopyCaseModal);
+  document.getElementById("copyCaseModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeCopyCaseModal(); });
+  document.getElementById("copyServiceType")?.addEventListener("change", (e) => {
+    document.getElementById("copyPlanHint").textContent = planHintText(e.target.value);
+    document.getElementById("copyCaseError").style.display = "none";
+  });
+  document.getElementById("copyCaseConfirmBtn")?.addEventListener("click", copyCaseWithServiceType);
 
   // 紹介元の変更（値は id を保存。表示名は保存しない）
   document.getElementById("referralSelect")?.addEventListener("change", async (e) => {
