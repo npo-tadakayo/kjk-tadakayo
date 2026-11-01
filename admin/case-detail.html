@@ -132,12 +132,24 @@
                 <option value="">—</option>
               </select>
             </div>
+            <!-- 事業種別（cases.serviceType・2026-11-01）。1事業（事業種別）＝1案件。選択肢は js/service-types.js -->
+            <div style="display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap">
+              <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="serviceTypeSelect">事業種別</label>
+              <select class="form-control" id="serviceTypeSelect" style="width:auto;min-width:200px;max-width:100%">
+                <option value="">未設定</option>
+              </select>
+              <span id="servicePlanHint" style="font-size:12px;color:var(--color-ink-muted)"></span>
+            </div>
             <a class="btn btn-ghost" id="reportBtn" href="#" target="_blank" rel="noopener">
               <i class="ti ti-file-text" aria-hidden="true"></i> 報告書PDF
             </a>
             <a class="btn btn-ghost" id="shipFromCaseBtn" href="#">
               <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷を作成
             </a>
+            <!-- 閲覧のみには出さない（文言に「コピー」を含むため、role.js の自動無効化が効かない。JS で隠す） -->
+            <button class="btn btn-ghost" id="copyCaseBtn" type="button" style="display:none">
+              <i class="ti ti-copy-plus" aria-hidden="true"></i> この案件をコピーして別の事業種別で作る
+            </button>
             <button class="btn btn-ghost" id="archiveBtn" type="button" style="display:none">
               <i class="ti ti-archive" aria-hidden="true"></i> 重複として対象外にする
             </button>
@@ -612,6 +624,43 @@
         <button class="btn btn-secondary" id="archiveCancelBtn2" type="button" onclick="document.getElementById('archiveModal').classList.remove('open')">キャンセル</button>
         <button class="btn btn-primary" id="archiveConfirmBtn" type="button">
           <i class="ti ti-archive" aria-hidden="true"></i>重複として対象外にする
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- この案件をコピーして、別の事業種別で作る モーダル（2026-11-01） -->
+  <div class="modal-overlay" id="copyCaseModal" role="dialog" aria-modal="true" aria-labelledby="copyCaseTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="copyCaseTitle">別の事業種別の案件を作る</h2>
+        <button class="btn btn-secondary" id="copyCaseCloseBtn" type="button" aria-label="閉じる">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
+          助成金は事業種別ごとに申請します。同じ事業所・担当者・連絡先・紹介元・担当営業で、新しい案件を作ります。
+          見積・出荷・請求・入金・対応記録・書類はコピーしません。新しい案件は「確認中」から始まります。
+        </p>
+        <div id="copyCaseFrom" style="font-size:13px;margin-bottom:10px"></div>
+        <!-- コピー元が未設定のときだけ出す。コピー元にも事業種別を入れないと、2件が重複の候補に出るため（2026-11-01 レビュー P1） -->
+        <div class="form-group" id="copySourceTypeGroup" style="display:none">
+          <label class="form-label" for="copySourceType">この案件（コピー元）の事業種別 <span style="color:var(--color-danger)">*</span></label>
+          <select class="form-control" id="copySourceType"></select>
+          <div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この案件はまだ事業種別が未設定です。新しい案件と一緒に、この案件の事業種別も保存します。</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="copyServiceType">新しい案件の事業種別 <span style="color:var(--color-danger)">*</span></label>
+          <select class="form-control" id="copyServiceType"></select>
+          <div id="copyPlanHint" style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"></div>
+        </div>
+        <div id="copyCaseError" role="alert" style="display:none;color:var(--color-danger);font-size:13px"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="copyCaseCancelBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="copyCaseConfirmBtn" type="button">
+          <i class="ti ti-copy-plus" aria-hidden="true"></i>新しい案件を作成する
         </button>
       </div>
     </div>

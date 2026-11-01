@@ -101,6 +101,8 @@ export function billToNameOf(s){
 
 // 請求書（見積書の赤系を踏襲・認定事業者向け／卸価格・税別→税込）
 // st = appConfig/settings ／ opts.issueDate で発行日を上書きできる（既定は当日＝従来の挙動）
+// opts.serviceType: 案件の事業種別（cases.serviceType・2026-11-01）。助成金は事業種別ごとに申請するので、
+//   どの事業の請求かを書面に出す。渡さない・空なら行を出さない（経理報告のPDFなど従来の見た目のまま）。金額の計算には使わない。
 export function renderInvoiceHtml(s, st, opts){
   st = st || {}; opts = opts || {};
   const issueDate = opts.issueDate || new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric"});
@@ -162,6 +164,7 @@ export function renderInvoiceHtml(s, st, opts){
       ${billAddr ? `<div class="meta">${billAddr}</div>` : ""}
       <div class="meta">請求書番号: ${esc(invNo)}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       <div class="meta">納品先: ${esc(s.company?s.company+" / ":"")}${esc(s.officeName||"")}</div>
+      ${opts.serviceType ? `<div class="meta">事業種別: ${esc(opts.serviceType)}</div>` : ""}
       <p style="margin:16px 0 6px">下記のとおりご請求申し上げます。</p>
       <div class="grand">${credit>0?"今回お支払額（税込・充当後）":"ご請求金額（税込）"}　<strong>${yen(payable)}</strong></div>
       <table class="items"><thead><tr><th>品名</th><th style="width:56px">税率</th><th style="width:56px">数量</th><th style="width:104px">単価(${priceUnit})</th><th style="width:116px">金額(${priceUnit})</th></tr></thead>

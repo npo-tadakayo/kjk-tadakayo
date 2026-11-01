@@ -3143,7 +3143,7 @@ async function sendDunning(){
 // Google Chat の Webhook はファイルを添付できない仕様のため、PDFはメールに添付し Chat にはリンクを載せる。
 // 「経理へ報告する」を外せば報告なしで請求済にできる（再発行のときはこちら）。
 let invReportShip = null;
-let invReportCtx = null; // { id, st, salesRepName, invoicedAt } 開いた請求書の描画材料
+let invReportCtx = null; // { id, st, salesRepName, serviceType, invoicedAt } 開いた請求書の描画材料
 let invReportOnly = false; // true = すでに請求済のものを後から報告する（ステータスは変えない）
 async function openInvoiceReport(s, opts){
   invReportShip = s;
@@ -3217,13 +3217,15 @@ async function openInvoiceReport(s, opts){
   // 書面の「担当」は案件の担当営業（無ければ空欄のまま）。
   // ⚠ この関数には送付先担当者の contactName が既にあるので別名にする
   let salesRepName = "";
+  // 事業種別（cases.serviceType・2026-11-01）。印刷画面の請求書（supply-print.js）と同じく、入っていれば書面に出す
+  let serviceType = "";
   if(s.caseId){
-    try{ const cs = await getDoc(doc(db,"cases",s.caseId)); if(cs.exists()) salesRepName = cs.data().assignedUserName || ""; }catch(_){}
+    try{ const cs = await getDoc(doc(db,"cases",s.caseId)); if(cs.exists()){ salesRepName = cs.data().assignedUserName || ""; serviceType = typeof cs.data().serviceType === "string" ? cs.data().serviceType.trim() : ""; } }catch(_){}
   }
   // PDF はこの文脈からその場で作り直す（プレビュー枠の中身を使うと、更新前に押したとき前の案件の請求書が入る・2026-10-09）
-  invReportCtx = { id: s._id, st, salesRepName, invoicedAt };
+  invReportCtx = { id: s._id, st, salesRepName, serviceType, invoicedAt };
   document.getElementById("invReportPreview").innerHTML =
-    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, st, { products, contactName: salesRepName, issueDate: jpYmd(invoicedAt) });
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, st, { products, contactName: salesRepName, serviceType, issueDate: jpYmd(invoicedAt) });
   document.getElementById("invReportError").style.display="none";
   syncInvReportFields();
   document.getElementById("invReportModal").classList.add("open");
@@ -3249,7 +3251,7 @@ function renderInvReportDated(){
     if(bodyEl.value === invReportFill.lastBody){ bodyEl.value = body; invReportFill.lastBody = body; }
   }
   document.getElementById("invReportPreview").innerHTML =
-    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, invReportCtx.st, { products, contactName: invReportCtx.salesRepName, issueDate: jpYmd(invoicedAt) });
+    `<style>${INVOICE_STYLE}</style>` + renderInvoiceHtml({ ...s, invoicedAt, dueDate: due }, invReportCtx.st, { products, contactName: invReportCtx.salesRepName, serviceType: invReportCtx.serviceType, issueDate: jpYmd(invoicedAt) });
 }
 // 「経理へ報告する」のON/OFFで、メール件名・本文・プレビューの表示とボタン名を切り替える
 function syncInvReportFields(){
@@ -3318,7 +3320,7 @@ async function doInvoiceReport(){
       const freshHost = document.createElement("div");
       const pdfInvoicedAt = cur.invoicedAt || invReportCtx.invoicedAt;
       freshHost.innerHTML = renderInvoiceHtml({ ...s, invoicedAt: pdfInvoicedAt, dueDate: dueDateOf({ ...cur, invoicedAt: pdfInvoicedAt }) || "" }, invReportCtx.st,
-        { products, contactName: invReportCtx.salesRepName, issueDate: jpYmd(pdfInvoicedAt) });
+        { products, contactName: invReportCtx.salesRepName, serviceType: invReportCtx.serviceType, issueDate: jpYmd(pdfInvoicedAt) });
       const el = freshHost.querySelector(".inv");
       if(!el) throw new Error("請求書を作れませんでした");
       if(!el.textContent.includes(invNo)) throw new Error(`請求書の番号が一致しません（${invNo}）。いったん閉じて開き直してください`);

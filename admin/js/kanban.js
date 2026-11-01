@@ -12,6 +12,7 @@ import {
   referralLabel, LOST_REASONS, lostReasonLabel,
 } from "/js/constants.js";
 import { visitShort } from "/js/schedule-core.js";
+import { serviceTypeBadge } from "/js/service-types.js"; // 事業種別のラベル（2026-11-01）
 import { askLostReason } from "/js/case-detail-util.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 // 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
@@ -98,7 +99,8 @@ function filteredCases() {
   return assigneeCases().filter((c) => {
     const ms = !search || (c.officeName || "").toLowerCase().includes(search)
       || (c.corpName || "").toLowerCase().includes(search)
-      || (c.contactName || "").toLowerCase().includes(search);
+      || (c.contactName || "").toLowerCase().includes(search)
+      || (c.serviceType || "").toLowerCase().includes(search);
     const mo = !sourceFilter || c.source === sourceFilter;
     return ms && mo;
   });
@@ -127,6 +129,7 @@ function cardHtml(c, col) {
     <div class="kanban-card ${stale ? "stale" : ""}" draggable="true" data-id="${c._id}" data-status="${c.status}">
       <div class="kanban-card-num">#${c.caseNumber || "—"}${src ? " · " + src : ""}</div>
       <div class="kanban-card-office">${escHtml(c.officeName || "—")}</div>
+      <div class="kanban-card-sub" style="margin-top:2px">${serviceTypeBadge(c, escHtml)}</div>
       <div class="kanban-card-sub">${substatusControl(c, col)}</div>
       ${lostInfo}
       <div class="kanban-card-meta">

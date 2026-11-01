@@ -12,7 +12,11 @@ import { STATUS_LABELS, LOST, lostReasonLabel, ARCHIVE_REASONS } from "/js/const
 import { areaOf, parseAddress, PREFECTURES } from "/js/area.js";
 import { matchAnyAssignee, fillAssigneeSelect, bindPrefSelect, loadPref, savePref } from "/js/assignee-filter.js";
 import { getFunctions, httpsCallable } from "/js/fn.js";
-import { EDITABLE_FIELDS, validatePatch, resolveKeep, dupCandidates, dupGroupCount, checkMerge } from "/js/office-merge.js";
+import { EDITABLE_FIELDS, validatePatch, resolveKeep, dupCandidates, dupGroupCount, checkMerge, normName } from "/js/office-merge.js";
+// 事業種別のラベル・事業所の新規登録（2026-11-01）。新規登録の書き込みは office-create.js（追加だけ）
+import { serviceTypeBadge } from "/js/service-types.js";
+import { officeFormFromExisting } from "/js/case-copy.js";
+import { createOffice } from "/js/office-create.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -102,9 +106,10 @@ function statusText(c) {
 
 function caseRows(g) {
   if (!g.cases.length) return `<div style="font-size:13px;color:var(--color-ink-muted)">この事業所の案件はまだありません</div>`;
-  return `<table style="width:100%"><thead><tr><th>案件番号</th><th>ステータス</th><th>担当営業</th><th>受信日</th><th>訪問予定日</th><th></th></tr></thead><tbody>`
+  return `<table style="width:100%"><thead><tr><th>案件番号</th><th>事業種別</th><th>ステータス</th><th>担当営業</th><th>受信日</th><th>訪問予定日</th><th></th></tr></thead><tbody>`
     + g.cases.map((c) => `<tr>
       <td><a href="/case-detail.html?id=${encodeURIComponent(c._id)}"><strong>#${esc(c.caseNumber || "—")}</strong></a></td>
+      <td>${serviceTypeBadge(c, esc)}</td>
       <td><span class="badge badge-${esc(c.status)}">${esc(STATUS_LABELS[c.status] || "—")}</span>${Number(c.status) === LOST ? ` <span style="font-size:12px;color:var(--color-ink-muted)">${esc(lostReasonLabel(c))}</span>` : ""}</td>
       <td>${esc(c.assignedUserName || "未割当")}</td>
       <td>${ymd(ms(c.receivedAt || c.createdAt))}</td>
@@ -142,7 +147,7 @@ function render() {
     if (dupOnly && !(g.office && dupMap[g.office._id])) return false;
     if (pf && (pf === "__none__" ? g.pref : g.pref !== pf)) return false;
     if (!matchAnyAssignee(g.cases.map((c) => c.assignedUserId), asg, myEmail)) return false;
-    return !q || [g.officeName, g.corpName, g.address].some((v) => String(v || "").toLowerCase().includes(q));
+    return !q || [g.officeName, g.corpName, g.address, g.office && g.office.officeCode].some((v) => String(v || "").toLowerCase().includes(q));
   }).sort((a, b) => cmp(a, b) || byName(a, b));
 
   $("countLabel").textContent = `${rows.length}事業所`;
@@ -157,7 +162,7 @@ function render() {
   $("officesBody").innerHTML = rows.map((g) => `
     <tr data-key="${esc(g.key)}" tabindex="0" role="button" aria-expanded="${open.has(g.key)}" style="cursor:pointer${g.office && g.office.mergedInto ? ";opacity:.55" : ""}">
       <td>${esc(g.corpName) || "—"}</td>
-      <td style="font-weight:500">${esc(g.officeName)}${g.registered ? "" : ' <span class="badge badge-2" style="font-size:11px">（マスター未登録）</span>'}${mergedTo(g) ? ` <span class="badge badge-2" style="font-size:11px">${esc(mergedTo(g))}</span>` : ""}${g.office && dupMap[g.office._id] ? ' <span class="badge badge-2" style="font-size:11px">重複の候補</span>' : ""}</td>
+      <td style="font-weight:500">${esc(g.officeName)}${g.registered ? "" : ' <span class="badge badge-2" style="font-size:11px">（マスター未登録）</span>'}${mergedTo(g) ? ` <span class="badge badge-2" style="font-size:11px">${esc(mergedTo(g))}</span>` : ""}${g.office && dupMap[g.office._id] ? ' <span class="badge badge-2" style="font-size:11px">重複の候補</span>' : ""}${g.office && g.office.officeCode ? `<div style="font-size:12px;font-weight:400;color:var(--color-ink-muted)">事業所番号 ${esc(g.office.officeCode)}</div>` : ""}</td>
       <td>${esc(g.pref) || '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>'}</td>
       <td>${esc(g.city) || '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>'}</td>
       <td>${g.cases.length}</td>
@@ -180,7 +185,8 @@ function openMenu(btn) {
   const item = (act, icon, text) => `<button type="button" role="menuitem" data-act="${act}" class="btn" style="display:flex;width:100%;justify-content:flex-start;gap:8px;background:none;min-height:44px"><i class="ti ti-${icon}" aria-hidden="true"></i>${text}</button>`;
   m.innerHTML = o.mergedInto
     ? (o.mergeStatus === "running" ? item("resume", "player-play", "統合を続ける") : item("unmerge", "arrow-back-up", "統合を取り消す"))
-    : item("edit", "pencil", "編集") + item("merge", "git-merge", "ほかの事業所と統合");
+    : item("edit", "pencil", "編集") + item("merge", "git-merge", "ほかの事業所と統合")
+      + item("copyOffice", "copy-plus", "この事業所の情報で新しい事業所を作る");
   m.style.display = "block";
   const r = btn.getBoundingClientRect();
   m.style.top = Math.min(r.bottom + 4, window.innerHeight - m.offsetHeight - 8) + "px";
@@ -226,6 +232,53 @@ async function saveEdit() {
     const n = r.data && r.data.casesUpdated;
     toast(n ? `事業所を直しました（案件 ${n} 件の表示名も更新）` : "事業所を直しました");
   } catch (e) { $("efError").textContent = plainField(errText(e)); $("efError").style.display = "block"; }
+  finally { btn.disabled = false; }
+}
+
+// ===== 事業所の新規登録／この事業所の情報で新しい事業所を作る（2026-11-01） =====
+// どちらも同じ入力画面。コピーのときは法人名・郵便番号・住所・電話を引き継ぎ、事業所名を直してもらう（事業所番号は空）。
+const NF = { corpName: "nfCorpName", officeName: "nfOfficeName", officeCode: "nfOfficeCode", postalCode: "nfPostalCode",
+  prefecture: "nfPrefecture", city: "nfCity", addressDetail: "nfAddressDetail", phone: "nfPhone" };
+let nfSourceId = null; // コピー元の事業所ID（新規登録なら null）
+function openNewOffice(sourceId) {
+  const src = sourceId ? offices.find((x) => x._id === sourceId) : null;
+  nfSourceId = src ? sourceId : null;
+  const init = src ? officeFormFromExisting(src) : {};
+  const prefSel = $(NF.prefecture);
+  prefSel.innerHTML = `<option value="">選んでください</option>` + PREFECTURES.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join("")
+    + (init.prefecture && !PREFECTURES.includes(init.prefecture) ? `<option value="${esc(init.prefecture)}">${esc(init.prefecture)}</option>` : "");
+  Object.entries(NF).forEach(([k, id]) => { $(id).value = init[k] || ""; });
+  $("newOfficeTitle").textContent = src ? "この事業所の情報で新しい事業所を作る" : "事業所を登録";
+  $("nfIntro").textContent = src
+    ? `「${src.officeName || ""}」の法人名・住所・電話を入れてあります。新しい事業所の名前と事業所番号を入れて、違うところを直してください。`
+    : "新しい事業所を登録します。案件は、案件一覧の「新規案件」や案件詳細から作ります。";
+  $("nfError").style.display = "none";
+  setModal("newOfficeModal", true);
+  $(NF.officeName).focus();
+  if (src) $(NF.officeName).select();
+}
+function nfShowError(msg) { $("nfError").textContent = msg; $("nfError").style.display = "block"; }
+async function saveNewOffice() {
+  const input = {};
+  Object.entries(NF).forEach(([k, id]) => { input[k] = $(id).value; });
+  const src = nfSourceId ? offices.find((x) => x._id === nfSourceId) : null;
+  if (src && normName(input.officeName) && normName(input.officeName) === normName(src.officeName)) {
+    nfShowError("コピー元と同じ事業所名です。新しい事業所の名前に直してください");
+    return;
+  }
+  // 同じ名前・同じ事業所番号の事業所がすでにあれば確かめる（止めはしない）
+  const live = offices.filter((o) => !o.mergedInto);
+  const code = String(input.officeCode || "").normalize("NFKC").replace(/[\s-]/g, "");
+  const same = live.find((o) => (code && String(o.officeCode || "") === code)
+    || (normName(input.officeName) && normName(o.officeName) === normName(input.officeName)));
+  if (same && !confirm(`同じ名前か同じ事業所番号の事業所「${same.officeName || ""}」がすでにあります。\nそれでも新しく登録しますか？`)) return;
+  const btn = $("nfSaveBtn"); btn.disabled = true;
+  try {
+    const r = await createOffice(db, input);
+    if (!r.ok) { nfShowError(r.error); return; }
+    setModal("newOfficeModal", false);
+    toast(`事業所「${r.data.officeName}」を登録しました`);
+  } catch (e) { nfShowError(errText(e)); }
   finally { btn.disabled = false; }
 }
 
@@ -354,7 +407,7 @@ onAuthStateChanged(auth, async (user) => {
     const b = e.target.closest("[data-act]"); if (!b) return;
     const id = menuOfficeId, act = b.dataset.act, btn = menuBtn;
     closeMenu(); if (btn) btn.focus();
-    if (act === "edit") openEdit(id); else if (act === "merge") openMerge(id); else if (act === "unmerge") runUnmerge(id); else if (act === "resume") runResume(id);
+    if (act === "edit") openEdit(id); else if (act === "copyOffice") openNewOffice(id); else if (act === "merge") openMerge(id); else if (act === "unmerge") runUnmerge(id); else if (act === "resume") runResume(id);
   });
   $("rowMenu").addEventListener("keydown", (e) => {
     if (e.key === "Escape") { const b = menuBtn; closeMenu(); if (b) b.focus(); return; }
@@ -366,6 +419,11 @@ onAuthStateChanged(auth, async (user) => {
   document.addEventListener("click", (e) => { if (menuBtn && !e.target.closest("#rowMenu") && !e.target.closest(".row-menu-btn")) closeMenu(); });
   ["efOfficeName", "efCorpName"].forEach((id) => $(id).addEventListener("input", updateEditNotice));
   $("editSaveBtn").addEventListener("click", saveEdit);
+  $("newOfficeBtn").style.display = canEdit ? "" : "none";
+  $("newOfficeBtn").addEventListener("click", () => openNewOffice(null));
+  $("nfSaveBtn").addEventListener("click", saveNewOffice);
+  $("nfCancelBtn").addEventListener("click", () => setModal("newOfficeModal", false));
+  $("nfCloseBtn").addEventListener("click", () => setModal("newOfficeModal", false));
   $("editCancelBtn").addEventListener("click", () => setModal("editModal", false));
   $("editCloseBtn").addEventListener("click", () => setModal("editModal", false));
   $("mergeCloseBtn").addEventListener("click", () => setModal("mergeModal", false));
@@ -378,7 +436,7 @@ onAuthStateChanged(auth, async (user) => {
     else if (a === "swap") { [mg.toId, mg.fromId] = [mg.fromId, mg.toId]; renderMerge(); }
     else if (a === "run") runMerge();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { setModal("editModal", false); setModal("mergeModal", false); } });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") { setModal("editModal", false); setModal("mergeModal", false); setModal("newOfficeModal", false); } });
   $("officesBody").addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     const tr = e.target.closest("tr[data-key]"); if (tr && e.target === tr) { e.preventDefault(); toggleRow(tr); }

@@ -20,12 +20,16 @@
     <main class="main-content">
       <div class="page-header">
         <h1 class="page-title">事業所</h1>
+        <!-- 事業所の新規登録（2026-11-01）。閲覧のみには出さない（offices.js の canEdit） -->
+        <button class="btn btn-primary" id="newOfficeBtn" type="button" style="display:none">
+          <i class="ti ti-plus" aria-hidden="true"></i>事業所を登録
+        </button>
       </div>
-      <p class="page-intro">事業所ごとに案件をまとめて見られます。アーカイブ済み・失注・完了の案件も含むので、過去の対応を探すときに使います。行を押すと、その事業所の案件が開きます。名前や住所の直し・重複した事業所のまとめは、行の右端の「…」から行えます（閲覧のみの方には出ません）。</p>
+      <p class="page-intro">事業所ごとに案件をまとめて見られます。アーカイブ済み・失注・完了の案件も含むので、過去の対応を探すときに使います。行を押すと、その事業所の案件が開きます。名前や住所の直し・重複した事業所のまとめ・同じ法人の別の事業所の登録は、行の右端の「…」から行えます。新しい事業所は右上の「事業所を登録」から登録します（どちらも閲覧のみの方には出ません）。</p>
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
       <div id="main" style="display:none">
         <div class="filter-bar">
-          <input type="search" id="searchInput" placeholder="事業所名・法人名・住所で検索..." style="flex:1; min-width:200px;" aria-label="事業所名・法人名・住所で検索">
+          <input type="search" id="searchInput" placeholder="事業所名・法人名・住所・事業所番号で検索..." style="flex:1; min-width:200px;" aria-label="事業所名・法人名・住所・事業所番号で検索">
           <select id="prefFilter" aria-label="都道府県で絞り込み"><option value="">すべての都道府県</option></select>
           <select id="assigneeFilter" aria-label="担当営業で絞り込み（その事業所の案件の担当）">
             <option value="">担当：全員</option>
@@ -80,6 +84,28 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="editCancelBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="editSaveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>保存する</button>
+      </div>
+    </div>
+  </div>
+  <!-- 事業所の新規登録／この事業所の情報で新しい事業所を作る（2026-11-01・同じ入力画面） -->
+  <div class="modal-overlay" id="newOfficeModal" role="dialog" aria-modal="true" aria-labelledby="newOfficeTitle">
+    <div class="modal"><div class="modal-header"><h2 id="newOfficeTitle">事業所を登録</h2>
+      <button class="btn btn-secondary" id="nfCloseBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="nfIntro" style="font-size:13px;color:var(--color-ink-muted);margin:0 0 10px"></p>
+        <div class="form-group"><label class="form-label" for="nfCorpName">法人名</label><input class="form-control" id="nfCorpName" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="nfOfficeName">事業所名（必須）</label><input class="form-control" id="nfOfficeName" type="text" maxlength="200"></div>
+        <div class="form-group"><label class="form-label" for="nfOfficeCode">事業所番号（10桁）</label><input class="form-control" id="nfOfficeCode" type="text" inputmode="numeric" maxlength="20" placeholder="例: 1234567890"></div>
+        <div class="form-group"><label class="form-label" for="nfPostalCode">郵便番号</label><input class="form-control" id="nfPostalCode" type="text" inputmode="numeric" maxlength="10" placeholder="例: 100-0001"></div>
+        <div class="form-group"><label class="form-label" for="nfPrefecture">都道府県</label><select class="form-control" id="nfPrefecture"><option value="">選んでください</option></select></div>
+        <div class="form-group"><label class="form-label" for="nfCity">市区町村</label><input class="form-control" id="nfCity" type="text" maxlength="200" placeholder="例: 千代田区"></div>
+        <div class="form-group"><label class="form-label" for="nfAddressDetail">住所（市区町村より後ろ）</label><input class="form-control" id="nfAddressDetail" type="text" maxlength="200" placeholder="例: 千代田1-1"></div>
+        <div class="form-group"><label class="form-label" for="nfPhone">電話</label><input class="form-control" id="nfPhone" type="tel" maxlength="200"></div>
+        <p id="nfError" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin:8px 0 0"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="nfCancelBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="nfSaveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>登録する</button>
       </div>
     </div>
   </div>

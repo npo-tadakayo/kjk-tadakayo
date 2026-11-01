@@ -106,7 +106,7 @@ function renderLetterpack(s, sender, variant){
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
 // 発行日は「請求済にした日（invoicedAt）」。作り直した日にしない（再送で日付が変わらないように・2026-10-09）
 function jpDateOf(ymd){ const m = String(ymd||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[1]}年${+m[2]}月${+m[3]}日` : ""; }
-function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: jpDateOf(s.invoicedAt) || today, products, contactName }); }
+function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: jpDateOf(s.invoicedAt) || today, products, contactName, serviceType: docServiceType }); }
 
 // 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
@@ -155,12 +155,17 @@ let rcptTaxIncluded = false;
 // 書面の「担当」に出す担当営業。案件から引いて入れる（無ければ空のまま）
 let docContactName = "";
 let docNeedsContact = false;
-async function salesRepOf(s){
-  if(!s || !s.caseId) return "";
+// 書面に出す事業種別（cases.serviceType・2026-11-01）。助成金は事業種別ごとに申請するため、どの事業の請求・領収かを出す。
+// 案件に事業種別が無い・出荷が案件に紐づいていないときは空＝行を出さない（これまでと同じ見た目）
+let docServiceType = "";
+// 担当営業と事業種別を、案件を1回読んで取る
+async function caseInfoOf(s){
+  if(!s || !s.caseId) return { rep: "", serviceType: "" };
   try{
     const cs = await getDoc(doc(db,"cases",s.caseId));
-    return cs.exists() ? (cs.data().assignedUserName || "") : "";
-  }catch(_){ return ""; }
+    const c = cs.exists() ? cs.data() : {};
+    return { rep: c.assignedUserName || "", serviceType: typeof c.serviceType === "string" ? c.serviceType.trim() : "" };
+  }catch(_){ return { rep: "", serviceType: "" }; }
 }
 // 発行するとき、担当営業が空なら知らせる（書面の「担当」欄が空のまま出るため）
 function confirmContactFilled(what){
@@ -227,6 +232,7 @@ function renderReceipt(s, st, saved, contactName){
         </div></div>
       <h1 class="inv-title">領　収　証</h1>
       <div class="to">${esc(toName)} 御中</div>
+      ${docServiceType ? `<div class="meta">事業種別: ${esc(docServiceType)}</div>` : ""}
       <div class="meta">領収証番号: ${esc(rcptNo)}　／　関連請求書番号: ${esc(invoiceNoOf(s))}　／　対応出荷: ${esc(s.soNumber)}（${esc(s.shipDate||"")}）</div>
       ${toAddr ? `<div class="meta">${toAddr}</div>` : ""}
       <div class="grand">領収金額（税込）　<strong id="rcptTotal">${yen(initAmount)}</strong></div>
@@ -824,7 +830,9 @@ onAuthStateChanged(auth, async (user)=>{
       }
       // 書面の「担当」は案件の担当営業を出す（請求書・領収証のみ）
       docNeedsContact = (type==="invoice" || type==="receipt");
-      docContactName = docNeedsContact ? await salesRepOf(d) : "";
+      const ci = docNeedsContact ? await caseInfoOf(d) : { rep: "", serviceType: "" };
+      docContactName = ci.rep;
+      docServiceType = ci.serviceType;
       document.getElementById("body").innerHTML =
         type==="po" ? renderPO(d, settings)
         : type==="invoice" ? renderInvoice(d, settings, docContactName)

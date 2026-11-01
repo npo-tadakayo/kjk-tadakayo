@@ -401,11 +401,13 @@ erDiagram
     string assignedBy "担当を決めた人(メール)"
     timestamp assignedAt "担当を決めた時刻(通知の発火条件)"
     timestamp completedAt "13にした時刻"
+    string serviceType "事業種別(正式名・未設定はnull・2026-11-01)"
+    map copiedFrom "コピー元{caseId,caseNumber}"
   }
   quotes { string estNo int version string plan array items json amounts string status string createdVia string groupId string pdfPath timestamp validUntil }
   leadTokens { string caseId string email timestamp expiresAt array usedFor }
   locations { string name string prefecture bool active }
-  offices { string officeName string corpName string phone }
+  offices { string officeName string corpName string officeCode "事業所番号10桁(2026-11-01)" string postalCode string prefecture string city string addressDetail string address string phone }
   activities { string type string subject timestamp occurredAt }
   sessions { string sessionDate string summary array photoUrls }
   products { string sku string name int stock int wholesale2_10 }
@@ -442,7 +444,7 @@ erDiagram
 | コレクション | 役割 |
 |---|---|
 | `cases` | 案件（問い合わせ〜完了の中心データ） |
-| `offices` | 介護事業所マスタ |
+| `offices` | 介護事業所マスタ。住所は `prefecture`/`city`/`addressDetail` と、それをつなげた `address`。`officeCode`＝介護保険の事業所番号（10桁・2026-11-01〜 事業所画面の新規登録で入る。それ以前の事業所には無い） |
 | `activities` | 対応記録（電話・メール・訪問・メモ・メール送信） |
 | `sessions` | 伴走支援セッション（日付・メモ・写真） |
 | `documentChecklists / subsidyApplications` | 書類チェック・助成金申請情報 |
@@ -641,3 +643,31 @@ stateDiagram-v2
 - 出荷指示の `NOTIFY_STATUSES` を片方だけ変えると、画面は依頼できるのに Function が止める（`failed-precondition`）。
 - `functions/first-contact.mjs` を直接直すと次の同期で消える。正本は admin 側。
 - 日次まとめの祝日表（`JP_HOLIDAYS`）が 2027 年までしか無い。`holidaysCover` が false のときは更新が要る（未登録の年は祝日が平日扱いになり初期連絡の超過が早く出る）。
+
+## §C11 事業種別（cases.serviceType）と「1事業＝1案件」（2026-11-01・第1弾）
+
+**背景**: 助成金は「事業所番号＋サービス種別（1事業）」ごとに申請する。福祉用具の貸与と販売の両方を行う事業所は2事業分になるが、
+1案件に申込み1つしか持てず、2事業目の出荷・請求・入金・領収証が進められなかった（藤田博之さん 10/27）。
+**決定（次田さん 11/01）**: 1事業（事業種別）＝1案件。選択肢は介護保険のサービスの種類の正式名。第1弾は CRM の中（スタッフの画面）だけ。
+お客様の画面（LP の問い合わせ・mitsumori.html・index.html）は第2弾。
+
+| 項目 | 仕様 |
+|---|---|
+| 選択肢の正本 | `admin/js/service-types.js`（import なし・純粋関数）。`SERVICE_TYPES[{name, plan}]` の順で画面に出す。Functions で使うときは first-contact と同じく `.mjs` のコピー＋`check-shared-sync.sh`（第1弾では未使用のためコピーなし） |
+| `cases.serviceType` | 文字列（正式名）。未設定は `null`／項目なし＝画面は「未設定」。**既存データの一括変換はしない** |
+| プランの目安 | 各種別に `plan`（houmon／kyojyu／other＝`estimate-pricing.js` の `PLANS` のキー）。案件詳細に「プランの目安：〇〇」と出すだけで、`subsidyCategory` などを**自動で書き換えない**。根拠は index.html の助成上限額の表と `料金シミュレーション_新案_認定事業所向け.md` の区分①②③（ソースのコメントに記載）。資料に無い **介護予防支援は居宅介護支援に読み替えて houmon（推定）**。**総合事業（訪問型・通所型）は分からないので `plan: null`＝目安を出さない**（レビュー P3）。住宅改修は選択肢に入れていない（要確認） |
+| 案件詳細での変更 | `serviceTypeSelect`。保存＋対応記録「事業種別変更 → X／変更前: Y」（担当営業と同じ作法） |
+| 表示 | 案件一覧（事業所名の下）・カンバン・事業所画面の案件の並び・重複候補の一覧にバッジ（`.badge-svc`、未設定は `.badge-svc-none`）。案件一覧の CSV は最後の列に「事業種別」 |
+| 新規案件 | 案件一覧の「新規案件」で任意に選べる（未設定でも作れる） |
+| コピーして別の事業種別で作る | 案件詳細のボタン（閲覧のみ・対象外の案件には出さない）。`case-copy.js` の `buildCopiedCase` が項目を組み立てる。コピー＝officeId・事業所名・法人名・担当者・メール・電話・紹介元・担当営業。**コピーしない**＝見積・出荷・請求・入金・活動・書類・訪問予定・補助区分。`status` は **2 確認中**（1 だと案件一覧の「初期連絡の超過」に数えられるため）。`source: manual`・`copiedFrom{caseId,caseNumber}`。番号は `_counters/cases` を `runTransaction` で払い出し、**新案件と対応記録2件（元:「コピーして #N を作成（事業種別: …）」／新:「#元 からコピー」）を同じトランザクションで書く**。**コピー元が未設定なら、コピー元の事業種別も選ばせ（必須）、同じトランザクションでコピー元に `serviceType` と対応記録「事業種別変更 → X」を書く**（コピー元はトランザクション内で読み直す）。コピー元とコピー先が同じ種別なら止める（レビュー P1） |
+| 重複の候補 | 同じ事業所の別事業はメール・電話・事業所名が同じになるため、**`serviceType` が両方入っていて違う組と、コピーでつながった組（どちらかの `copiedFrom.caseId` が相手）は重複にしない**（`isDupExcludedPair`＝`differentServiceTypes`＋`isCopyPair`。`computeDuplicateGroups`＝案件一覧の重複チェック／案件詳細の重複候補）。片方が未設定でコピーの関係もなければ従来どおり候補に出る。`computeDuplicateGroups` は union-find なので、**未設定の第三の案件を介して3件が1グループになることはある**（その第三の案件は本当に重複の可能性があるため。「重複ではない」と確定すれば消える）。案件の統合（`MERGE_FIELDS`）に事業種別を追加＝食い違えば残す方を選ぶ |
+| 帳票 | 請求書（`invoice-doc.js` の `renderInvoiceHtml` に `opts.serviceType`）・領収証（`supply-print.js`）に「事業種別: X」。出荷の `caseId` から案件を読む（担当営業と同じ読み込み `caseInfoOf`）。**未設定なら行を出さない**＝従来の見た目。経理報告の請求書PDF（`supply.js` の3か所）も担当営業と同じく案件から `serviceType` を取って渡す＝印刷画面と同じ見た目（レビュー P2）。金額計算（`invoiceTotals` など）は触らない |
+| 事業所の新規登録 | 事業所画面の「事業所を登録」と、「…」メニューの「この事業所の情報で新しい事業所を作る」（同じ入力画面。コピーは法人名・郵便番号・住所・電話を引き継ぎ、事業所名を直してもらう・事業所番号は空）。項目は `corpName/officeName/officeCode/postalCode/prefecture/city/addressDetail/phone`＋`address`（3つをつなげる）。`buildNewOffice` で検証（事業所名必須・事業所番号10桁・郵便番号7桁・200字まで）。書き込みは **`admin/js/office-create.js` の addDoc（追加だけ）**。`offices.js` は「既存の事業所の書き換えは Callable だけ」を保つ（`test-office-ui.mjs`）。同じ名前・同じ事業所番号があれば確認を出す（止めない）。閲覧のみには出さない。郵便番号のハイフン類似文字（ー −  ‐ – など）は半角ハイフンにそろえる。事業所の一覧の事業所名の下に「事業所番号」を出し、検索でも引ける |
+| ルール | cases／offices は catch-all（`isEditor`）で、項目の列挙による制限が無いので**変更なし** |
+| テスト | `node scripts/test-service-types.mjs`（選択肢・目安・コピーの項目・事業所の組み立て・重複の除外・画面の結線の静的検査） |
+
+**既知の制約（第2弾で対応）**
+- **事業所番号（`officeCode`）の修正は画面からできない。** 編集は Callable `updateOffice` の `EDITABLE_FIELDS`（Functions 側）を通るため、第1弾では Functions を出さずに済ませる。直すときは事業所の統合（残す側に正しい番号の事業所を選ぶ）か、Firestore で直接直す。
+- **`findActiveCase`（Functions）は事業種別を見ない。** コピーで同じ事業所・同じメールの案件が2件になったあと、同じメールの再問い合わせ・見積もりが**新しいコピーの方に付くことがある**。第2弾で LP・見積もりツールから事業種別を受け取って解消する。
+
+本番に出すときに要るもの: **hosting（admin）だけ**。rules・Functions の変更なし。
