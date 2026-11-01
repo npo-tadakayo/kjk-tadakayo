@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   SERVICE_TYPES, SERVICE_TYPE_NAMES, PLAN_LABELS, isServiceType, planOfServiceType, planHintText,
-  serviceTypeLabel, serviceTypeBadge, serviceTypeOptionsHtml, differentServiceTypes,
+  serviceTypeLabel, serviceTypeBadge, serviceTypeOptionsHtml, differentServiceTypes, isCopyPair, isDupExcludedPair,
 } from "../admin/js/service-types.js";
 import {
   buildCopiedCase, copyActivityTexts, COPY_INITIAL_STATUS, COPY_FIELDS,
@@ -30,7 +30,10 @@ const EXPECTED = [
 ];
 eq(SERVICE_TYPE_NAMES, EXPECTED, "選択肢の順番・名前");
 eq(new Set(SERVICE_TYPE_NAMES).size, SERVICE_TYPE_NAMES.length, "重複が無い");
-ok(SERVICE_TYPES.every((t) => t.plan in PLAN_LABELS), "plan は houmon/kyojyu/other のどれか");
+ok(SERVICE_TYPES.every((t) => t.plan === null || t.plan in PLAN_LABELS), "plan は houmon/kyojyu/other のどれか、または null（目安なし）");
+eq(SERVICE_TYPES.filter((t) => t.plan === null).map((t) => t.name),
+  ["介護予防・日常生活支援総合事業（訪問型サービス）", "介護予防・日常生活支援総合事業（通所型サービス）"], "目安を出さないのは総合事業の2つだけ");
+ok(!SERVICE_TYPE_NAMES.includes("住宅改修"), "住宅改修は入れていない（要確認）");
 // プランの目安の対応は見積もりの PLANS のキーと一致している
 const pricing = (await import("../functions/estimate-pricing.js")).default;
 eq(Object.keys(PLAN_LABELS).sort(), Object.keys(pricing.PLANS).sort(), "PLAN_LABELS のキー＝見積もりの PLANS");
@@ -44,8 +47,10 @@ for (const [name, plan] of [
   ["特定施設入居者生活介護", "kyojyu"], ["認知症対応型共同生活介護", "kyojyu"], ["介護老人福祉施設", "kyojyu"],
   ["介護老人保健施設", "kyojyu"], ["介護医療院", "kyojyu"], ["地域密着型介護老人福祉施設入所者生活介護", "kyojyu"],
   ["福祉用具貸与", "other"], ["特定福祉用具販売", "other"], ["その他", "other"],
-  ["介護予防・日常生活支援総合事業（訪問型サービス）", "other"],
+  ["介護予防・日常生活支援総合事業（訪問型サービス）", null],
+  ["介護予防・日常生活支援総合事業（通所型サービス）", null],
 ]) eq(planOfServiceType(name), plan, `プランの目安: ${name}`);
+eq(planHintText("介護予防・日常生活支援総合事業（通所型サービス）"), "", "総合事業はプランの目安を出さない");
 eq(planOfServiceType(""), null, "未設定は null");
 eq(planOfServiceType("存在しない種別"), null, "一覧に無い値は null");
 eq(planHintText("福祉用具貸与"), "プランの目安：その他", "目安の表示文");
@@ -126,14 +131,52 @@ const src = {
   eq(d.cardReaders, [], "カードリーダーは空");
 }
 eq(buildCopiedCase(src, { serviceType: "福祉用具貸与", caseNumber: 2, now: null }).ok, false, "同じ事業種別は不可");
-eq(buildCopiedCase(src, { serviceType: "", caseNumber: 2 }).error, "事業種別を選んでください", "事業種別が空は不可");
+eq(buildCopiedCase(src, { serviceType: "", caseNumber: 2 }).error, "新しい案件の事業種別を選んでください", "事業種別が空は不可");
+{
+  const r = buildCopiedCase(src, { serviceType: "特定福祉用具販売", sourceServiceType: "訪問介護", caseNumber: 3 });
+  ok(r.ok && r.setSource === false && r.sourceServiceType === "福祉用具貸与", "コピー元に入っていれば sourceServiceType は無視");
+}
 eq(buildCopiedCase(src, { serviceType: "架空の種別", caseNumber: 2 }).ok, false, "一覧に無い事業種別は不可");
 eq(buildCopiedCase(src, { serviceType: "訪問介護", caseNumber: 0 }).ok, false, "番号が無いと不可");
 eq(buildCopiedCase(null, { serviceType: "訪問介護", caseNumber: 2 }).ok, false, "コピー元が無いと不可");
 {
-  const r = buildCopiedCase({ _id: "X", caseNumber: 5, assignedUserName: "残骸" }, { serviceType: "訪問介護", caseNumber: 6 });
+  const r = buildCopiedCase({ _id: "X", caseNumber: 5, assignedUserName: "残骸" }, { serviceType: "訪問介護", sourceServiceType: "訪問看護", caseNumber: 6 });
   ok(r.ok && r.data.assignedUserId === null && r.data.assignedUserName === null, "担当IDが無ければ氏名も入れない");
   ok(r.data.officeId === null && r.data.referralSource === null, "無い項目は null");
+}
+// ===== コピー元が未設定のとき（独立レビュー P1） =====
+{
+  const unset = { ...src, serviceType: null };
+  eq(buildCopiedCase(unset, { serviceType: "特定福祉用具販売", caseNumber: 9 }).error,
+    "この案件（コピー元）の事業種別を選んでください", "未設定のコピー元はコピー元の事業種別も必須");
+  eq(buildCopiedCase(unset, { serviceType: "特定福祉用具販売", sourceServiceType: "特定福祉用具販売", caseNumber: 9 }).error,
+    "コピー元と同じ事業種別です。別の事業種別を選んでください", "コピー元とコピー先が同じ種別なら止める");
+  eq(buildCopiedCase(unset, { serviceType: "特定福祉用具販売", sourceServiceType: "架空", caseNumber: 9 }).ok, false, "コピー元の種別も一覧の値だけ");
+  const r = buildCopiedCase(unset, { serviceType: "特定福祉用具販売", sourceServiceType: "福祉用具貸与", caseNumber: 9 });
+  ok(r.ok && r.setSource === true && r.sourceServiceType === "福祉用具貸与", "コピー元に書く事業種別を返す");
+  const tx = copyActivityTexts(unset, 9, "特定福祉用具販売", "福祉用具貸与");
+  eq(tx.sourceUpdate.subject, "事業種別変更 → 福祉用具貸与", "コピー元の事業種別の変更も対応記録に残す");
+  ok(tx.target.body.includes("コピー元の事業種別: 福祉用具貸与"), "コピー先のメモにコピー元の種別");
+  eq(copyActivityTexts(src, 9, "訪問介護").sourceUpdate, null, "コピー元に入っていれば変更の記録はない");
+  // 書いたあとの2件は重複にならない（事業種別が違う・コピーでつながっている）
+  const a = { _id: "SRC", ...unset, serviceType: r.sourceServiceType };
+  const b = { _id: "NEW", ...r.data };
+  eq(computeDuplicateGroups([a, b], new Set()).length, 0, "未設定からコピーしても、コピー元とコピー先は重複にならない");
+  // 万一コピー元が未設定のまま残っても、コピーでつながった組は重複にしない
+  eq(computeDuplicateGroups([{ ...a, serviceType: null }, b], new Set()).length, 0, "コピーでつながった組は事業種別が未設定でも重複にしない");
+  ok(isCopyPair(a, b) && isCopyPair(b, a), "isCopyPair は向きによらない");
+  ok(!isCopyPair(a, { _id: "Z", copiedFrom: { caseId: "OTHER" } }), "関係ない案件は isCopyPair でない");
+  ok(isDupExcludedPair({ ...a, serviceType: null }, b), "isDupExcludedPair はコピーの組を外す");
+  // 3件で一部未設定: A（コピー元・貸与）、B（A のコピー・販売）、C（同じ連絡先・未設定の別の問い合わせ）
+  const c = { _id: "C", contactEmail: b.contactEmail, contactPhone: "", officeName: b.officeName };
+  ok(!isDupExcludedPair(a, c) && !isDupExcludedPair(b, c) && isDupExcludedPair(a, b), "3件: A-B は外し、A-C・B-C は候補");
+  const g = computeDuplicateGroups([a, b, c], new Set());
+  eq(g.length, 1, "3件: 未設定の C を介して1つのグループになる（C は本当に重複の可能性があるため）");
+  eq(g[0].map((x) => x._id).sort(), ["C", "NEW", "SRC"], "3件: グループに C が入る");
+  // C を「重複ではない」と確定すれば、A と B だけでは重複にならない
+  eq(computeDuplicateGroups([a, b, c], new Set(["C__SRC", "C__NEW"])).length, 0, "3件: C を重複ではないと確定すれば候補なし");
+  // 3件とも未設定・コピーの関係なしなら従来どおり1グループ
+  eq(computeDuplicateGroups([{ ...a, serviceType: null, copiedFrom: null }, { ...b, serviceType: null, copiedFrom: null }, c], new Set()).length, 1, "全部未設定・コピーなしは従来どおり");
 }
 {
   const t = copyActivityTexts(src, 120, "特定福祉用具販売");
@@ -160,6 +203,9 @@ eq(buildNewOffice({ officeName: " " }).error, "事業所名を入れてくださ
 eq(buildNewOffice({ officeName: "A", officeCode: "12345" }).ok, false, "事業所番号は10桁");
 ok(buildNewOffice({ officeName: "A", officeCode: "" }).ok, "事業所番号は空でもよい");
 eq(buildNewOffice({ officeName: "A", postalCode: "12-34" }).ok, false, "郵便番号の形");
+for (const pc of ["100ー0001", "100−0001", "100‐0001", "100–0001", "１００ー０００１", "100ｰ0001"]) {
+  eq(buildNewOffice({ officeName: "A", postalCode: pc }).data?.postalCode, "100-0001", `郵便番号のハイフン類似文字: ${pc}`);
+}
 eq(buildNewOffice({ officeName: "x".repeat(201) }).ok, false, "200字まで");
 {
   const f = officeFormFromExisting({ corpName: "株式会社テスト", officeName: "テスト貸与", officeCode: "1111111111",
@@ -180,7 +226,10 @@ ok(!/subsidyCategory:\s*plan/.test(cd), "プランの目安で subsidyCategory �
 ok(cdh.includes('id="copyCaseBtn"') && cdh.includes('id="copyCaseModal"'), "コピーのボタンとモーダル");
 ok(/runTransaction\(db,/.test(cd) && /doc\(db, "_counters", "cases"\)/.test(cd), "コピーの番号は _counters/cases をトランザクションで払い出す");
 ok(/canCopy = !isViewer\(myRole\)/.test(cd), "コピーは閲覧のみに出さない");
-ok(/!differentServiceTypes\(currentCase, c\)/.test(cd), "案件詳細の重複候補から別の事業種別を外す");
+ok(/!isDupExcludedPair\(currentCase, c\)/.test(cd), "案件詳細の重複候補から別の事業種別・コピーの組を外す");
+ok(cdh.includes('id="copySourceType"') && /needSource = !c\.serviceType/.test(cd), "コピー元が未設定ならコピー元の事業種別も選ばせる");
+ok(/tx\.get\(srcRef\)/.test(cd) && /tx\.update\(srcRef, \{ serviceType: srcTypeSet/.test(cd), "コピー元の事業種別は同じトランザクションで読み直して書く");
+ok(/texts\.sourceUpdate\.subject/.test(cd), "コピー元の事業種別の変更を対応記録に残す");
 ok(/key: "serviceType", label: "事業種別"/.test(cd), "重複の統合で事業種別の食い違いを選ばせる");
 const cs = rd("admin/js/cases.js"), kb = rd("admin/js/kanban.js"), of = rd("admin/js/offices.js");
 ok(/serviceTypeBadge\(c, escHtml\)/.test(cs), "案件一覧にラベル");
@@ -203,6 +252,16 @@ const sp = rd("admin/js/supply-print.js"), inv = rd("admin/js/invoice-doc.js");
 ok(/docServiceType \? `<div class="meta">事業種別: /.test(sp), "領収証に事業種別（未設定なら出さない）");
 ok(/serviceType: docServiceType/.test(sp), "請求書に事業種別を渡す");
 ok(/opts\.serviceType \? `<div class="meta">事業種別: /.test(inv), "請求書の描画は渡されたときだけ出す");
+{
+  // 経理報告の請求書PDF（supply.js）も印刷画面と同じく事業種別を渡す（独立レビュー P2）
+  const sj = rd("admin/js/supply.js");
+  const calls = sj.match(/renderInvoiceHtml\([^;]*?\);/gs) || [];
+  eq(calls.length, 3, "supply.js の renderInvoiceHtml 呼び出しは3か所");
+  ok(calls.every((c) => /serviceType/.test(c)), "supply.js の請求書PDFすべてに事業種別を渡す");
+  ok(/serviceType = typeof cs\.data\(\)\.serviceType === "string"/.test(sj), "事業種別は担当営業と同じく案件から取る");
+  ok(/invReportCtx = \{ id: s\._id, st, salesRepName, serviceType, invoicedAt \}/.test(sj), "再描画用の文脈にも事業種別を持つ");
+}
+ok(/事業所番号 \$\{esc\(g\.office\.officeCode\)\}/.test(of), "事業所の一覧に事業所番号を表示");
 ok(!/serviceType/.test(inv.slice(inv.indexOf("export function invoiceTotals"), inv.indexOf("export function invoiceTotals") + 3000).split("\nexport function ")[0]), "invoiceTotals は事業種別に触れない");
 
 console.log(`OK test-service-types: ${n} checks passed`);

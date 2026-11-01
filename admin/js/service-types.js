@@ -8,7 +8,7 @@
 //   助成金は「事業所番号＋サービス種別（1事業）」ごとに申請する。福祉用具の貸与と販売の両方を行う事業所は2事業分。
 //   そのため「1事業（事業種別）＝1案件」とし、案件に事業種別を持たせる。値は介護保険のサービスの種類の正式名。
 //
-// plan（助成金のプランの目安）は estimate-pricing.js の PLANS のキー:
+// plan（助成金のプランの目安）は estimate-pricing.js の PLANS のキー（分からないものは null＝目安を出さない）:
 //   houmon＝訪問・通所・短期滞在系（居宅介護支援を含む）／kyojyu＝居住・入所系／other＝その他
 // 目安の根拠（どれもリポジトリ内の資料）:
 //   ・index.html「助成上限額」の表（訪問・通所・短期滞在系／居住・入所系／その他 の対象サービス一覧）
@@ -51,9 +51,10 @@ export const SERVICE_TYPES = [
   { name: "介護老人福祉施設", plan: "kyojyu" },             // 51（介護福祉施設サービス）
   { name: "介護老人保健施設", plan: "kyojyu" },             // 52（介護保健施設サービス）
   { name: "介護医療院", plan: "kyojyu" },                   // 55
-  // 総合事業は資料の3区分の一覧に載っていない（助成の対象か・どの区分かを確かめていない）→ 分からないので other
-  { name: "介護予防・日常生活支援総合事業（訪問型サービス）", plan: "other" },
-  { name: "介護予防・日常生活支援総合事業（通所型サービス）", plan: "other" },
+  // 総合事業は資料の3区分の一覧に載っていない（助成の対象か・どの区分かを確かめていない）。
+  // 誤った目安を出さないよう plan は null＝「プランの目安」を出さない（独立レビュー P3・2026-11-01）
+  { name: "介護予防・日常生活支援総合事業（訪問型サービス）", plan: null },
+  { name: "介護予防・日常生活支援総合事業（通所型サービス）", plan: null },
   { name: "その他", plan: "other" },
 ];
 
@@ -64,7 +65,7 @@ export function isServiceType(name) {
   return typeof name === "string" && SERVICE_TYPE_NAMES.includes(name);
 }
 
-/** 事業種別 → プランの目安のキー（houmon / kyojyu / other）。未設定・一覧に無い値は null */
+/** 事業種別 → プランの目安のキー（houmon / kyojyu / other）。未設定・一覧に無い値・目安が分からない種別（総合事業）は null */
 export function planOfServiceType(name) {
   const t = SERVICE_TYPES.find((x) => x.name === name);
   return t ? t.plan : null;
@@ -104,6 +105,22 @@ export function differentServiceTypes(a, b) {
   const x = a && typeof a.serviceType === "string" ? a.serviceType.trim() : "";
   const y = b && typeof b.serviceType === "string" ? b.serviceType.trim() : "";
   return !!x && !!y && x !== y;
+}
+
+/**
+ * コピーでつながった組か（どちらかの copiedFrom.caseId が相手の ID）。
+ * 「コピーして別の事業種別で作る」で作った案件とコピー元は、意図して分けた案件なので重複の候補にしない。
+ * 案件の ID は _id（画面の一覧の形）か id を見る。
+ */
+export function isCopyPair(a, b) {
+  const idA = a && (a._id || a.id), idB = b && (b._id || b.id);
+  const fromA = a && a.copiedFrom && a.copiedFrom.caseId, fromB = b && b.copiedFrom && b.copiedFrom.caseId;
+  return !!((idB && fromA && fromA === idB) || (idA && fromB && fromB === idA));
+}
+
+/** 重複の候補から外す組か（事業種別が両方入っていて違う／コピーでつながった組） */
+export function isDupExcludedPair(a, b) {
+  return differentServiceTypes(a, b) || isCopyPair(a, b);
 }
 
 /** select の option の HTML（先頭に「未設定」）。いまの値が一覧に無いときも選択肢に残す */

@@ -644,6 +644,12 @@
           見積・出荷・請求・入金・対応記録・書類はコピーしません。新しい案件は「確認中」から始まります。
         </p>
         <div id="copyCaseFrom" style="font-size:13px;margin-bottom:10px"></div>
+        <!-- コピー元が未設定のときだけ出す。コピー元にも事業種別を入れないと、2件が重複の候補に出るため（2026-11-01 レビュー P1） -->
+        <div class="form-group" id="copySourceTypeGroup" style="display:none">
+          <label class="form-label" for="copySourceType">この案件（コピー元）の事業種別 <span style="color:var(--color-danger)">*</span></label>
+          <select class="form-control" id="copySourceType"></select>
+          <div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この案件はまだ事業種別が未設定です。新しい案件と一緒に、この案件の事業種別も保存します。</div>
+        </div>
         <div class="form-group">
           <label class="form-label" for="copyServiceType">新しい案件の事業種別 <span style="color:var(--color-danger)">*</span></label>
           <select class="form-control" id="copyServiceType"></select>

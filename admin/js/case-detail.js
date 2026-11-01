@@ -16,7 +16,7 @@ import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, to
   officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
 import { visitSummary } from "/js/schedule-core.js";
 // 事業種別（cases.serviceType）と「コピーして別の事業種別で作る」（2026-11-01）
-import { serviceTypeOptionsHtml, planHintText, isServiceType, differentServiceTypes } from "/js/service-types.js";
+import { serviceTypeOptionsHtml, planHintText, isServiceType, isDupExcludedPair } from "/js/service-types.js";
 import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
@@ -310,6 +310,13 @@ function openCopyCaseModal() {
   // コピー元と同じ事業種別は選べないようにする
   [...sel.options].forEach((o) => { if (o.value && o.value === c.serviceType) o.disabled = true; });
   sel.value = "";
+  // コピー元が未設定なら、コピー元の事業種別も選んでもらう（同じトランザクションでコピー元にも書く）
+  const srcGroup = document.getElementById("copySourceTypeGroup");
+  const srcSel = document.getElementById("copySourceType");
+  const needSource = !c.serviceType;
+  srcGroup.style.display = needSource ? "" : "none";
+  srcSel.innerHTML = serviceTypeOptionsHtml("", escHtml, { emptyLabel: "選んでください" });
+  srcSel.value = "";
   document.getElementById("copyPlanHint").textContent = "";
   document.getElementById("copyCaseError").style.display = "none";
   document.getElementById("copyCaseModal").classList.add("open");
@@ -320,7 +327,8 @@ function closeCopyCaseModal() { document.getElementById("copyCaseModal").classLi
 async function copyCaseWithServiceType() {
   const errEl = document.getElementById("copyCaseError");
   const serviceType = document.getElementById("copyServiceType").value;
-  const pre = buildCopiedCase(currentCase, { serviceType, caseNumber: 1, now: null }); // 番号を払い出す前に入力だけ確かめる
+  const sourceServiceType = currentCase.serviceType ? "" : document.getElementById("copySourceType").value;
+  const pre = buildCopiedCase(currentCase, { serviceType, sourceServiceType, caseNumber: 1, now: null }); // 番号を払い出す前に入力だけ確かめる
   if (!pre.ok) { errEl.textContent = pre.error; errEl.style.display = "block"; return; }
   const btn = document.getElementById("copyCaseConfirmBtn");
   btn.disabled = true;
@@ -330,17 +338,30 @@ async function copyCaseWithServiceType() {
     const newRef = doc(collection(db, "cases"));
     const srcActRef = doc(collection(db, "activities"));
     const newActRef = doc(collection(db, "activities"));
+    const srcRef = doc(db, "cases", caseId);
+    const srcTypeActRef = doc(collection(db, "activities"));
     const userId = currentUser?.uid || null;
     const userName = currentUser?.displayName || currentUser?.email || "";
+    let srcTypeSet = "";
     const newNumber = await runTransaction(db, async (tx) => {
+      // コピー元はトランザクションの中で読み直す（画面を開いたあとに別の人が事業種別を入れていても、その値で判定する）
+      const srcSnap = await tx.get(srcRef);
+      if (!srcSnap.exists()) throw new Error("コピー元の案件が見つかりません");
+      const fresh = { ...src, ...srcSnap.data(), _id: caseId };
       const snap = await tx.get(counterRef);
       const next = (snap.exists() ? snap.data().value : 0) + 1;
       const now = serverTimestamp();
-      const built = buildCopiedCase(src, { serviceType, caseNumber: next, now });
+      const built = buildCopiedCase(fresh, { serviceType, sourceServiceType, caseNumber: next, now });
       if (!built.ok) throw new Error(built.error);
-      const texts = copyActivityTexts(src, next, serviceType);
+      srcTypeSet = built.setSource ? built.sourceServiceType : "";
+      const texts = copyActivityTexts(fresh, next, serviceType, srcTypeSet);
       tx.set(counterRef, { value: next });
       tx.set(newRef, built.data);
+      if (srcTypeSet) {
+        tx.update(srcRef, { serviceType: srcTypeSet, updatedAt: now });
+        tx.set(srcTypeActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+          subject: texts.sourceUpdate.subject, body: texts.sourceUpdate.body, attachmentUrls: [] });
+      }
       tx.set(srcActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
         subject: texts.source.subject, body: texts.source.body, attachmentUrls: [] });
       tx.set(newActRef, { caseId: newRef.id, type: "memo", occurredAt: now, userId, userName,
@@ -907,7 +928,8 @@ async function loadDuplicateCandidates() {
       && !(currentCase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === currentCase.quoteGroupId)
       && dupKeys(c).some((k) => myKeys.has(k))
       // 同じ事業所の別事業（事業種別が両方入っていて違う）は、1事業＝1案件で意図して分けたので重複候補にしない（2026-11-01）
-      && !differentServiceTypes(currentCase, c)
+      // コピーでつながった組（copiedFrom.caseId が相手）も同じ（レビュー P1）
+      && !isDupExcludedPair(currentCase, c)
       && !dismissed.has(pairKey(caseId, c._id)));
 }
 
@@ -1830,6 +1852,9 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("copyCaseCloseBtn")?.addEventListener("click", closeCopyCaseModal);
   document.getElementById("copyCaseCancelBtn")?.addEventListener("click", closeCopyCaseModal);
   document.getElementById("copyCaseModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeCopyCaseModal(); });
+  document.getElementById("copySourceType")?.addEventListener("change", () => {
+    document.getElementById("copyCaseError").style.display = "none";
+  });
   document.getElementById("copyServiceType")?.addEventListener("change", (e) => {
     document.getElementById("copyPlanHint").textContent = planHintText(e.target.value);
     document.getElementById("copyCaseError").style.display = "none";

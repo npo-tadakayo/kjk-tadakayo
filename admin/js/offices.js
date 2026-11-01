@@ -147,7 +147,7 @@ function render() {
     if (dupOnly && !(g.office && dupMap[g.office._id])) return false;
     if (pf && (pf === "__none__" ? g.pref : g.pref !== pf)) return false;
     if (!matchAnyAssignee(g.cases.map((c) => c.assignedUserId), asg, myEmail)) return false;
-    return !q || [g.officeName, g.corpName, g.address].some((v) => String(v || "").toLowerCase().includes(q));
+    return !q || [g.officeName, g.corpName, g.address, g.office && g.office.officeCode].some((v) => String(v || "").toLowerCase().includes(q));
   }).sort((a, b) => cmp(a, b) || byName(a, b));
 
   $("countLabel").textContent = `${rows.length}事業所`;
@@ -162,7 +162,7 @@ function render() {
   $("officesBody").innerHTML = rows.map((g) => `
     <tr data-key="${esc(g.key)}" tabindex="0" role="button" aria-expanded="${open.has(g.key)}" style="cursor:pointer${g.office && g.office.mergedInto ? ";opacity:.55" : ""}">
       <td>${esc(g.corpName) || "—"}</td>
-      <td style="font-weight:500">${esc(g.officeName)}${g.registered ? "" : ' <span class="badge badge-2" style="font-size:11px">（マスター未登録）</span>'}${mergedTo(g) ? ` <span class="badge badge-2" style="font-size:11px">${esc(mergedTo(g))}</span>` : ""}${g.office && dupMap[g.office._id] ? ' <span class="badge badge-2" style="font-size:11px">重複の候補</span>' : ""}</td>
+      <td style="font-weight:500">${esc(g.officeName)}${g.registered ? "" : ' <span class="badge badge-2" style="font-size:11px">（マスター未登録）</span>'}${mergedTo(g) ? ` <span class="badge badge-2" style="font-size:11px">${esc(mergedTo(g))}</span>` : ""}${g.office && dupMap[g.office._id] ? ' <span class="badge badge-2" style="font-size:11px">重複の候補</span>' : ""}${g.office && g.office.officeCode ? `<div style="font-size:12px;font-weight:400;color:var(--color-ink-muted)">事業所番号 ${esc(g.office.officeCode)}</div>` : ""}</td>
       <td>${esc(g.pref) || '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>'}</td>
       <td>${esc(g.city) || '<span style="color:var(--color-ink-muted);font-size:12px">未登録</span>'}</td>
       <td>${g.cases.length}</td>
