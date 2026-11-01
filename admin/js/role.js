@@ -34,12 +34,22 @@ export function showAccessDenied(email, msg, detail){
     </div>`;
 }
 
+// 倉庫の画面のパスか（cleanUrls で "/warehouse"・直接なら "/warehouse.html"。宛名印刷の /warehouse-print も倉庫の画面）
+export function isWarehousePath(path){ return /^\/warehouse(-print)?(\.html)?\/?$/.test(String(path||"")); }
+
 // ゲート共通処理：登録＋active確認。adminOnly指定時は管理者のみ。
 // 通過したら role情報を返す。拒否時はnullを返す（呼び出し側はreturnする）
 export async function gateRole(db, user, opts){
   opts = opts || {};
   const r = await getMyRole(db, user.email);
   if(!r || !r.active){ showAccessDenied(user.email); return null; }
+  // サイドメニューの出し分け用（sidebar.js は module ではないので window 経由で渡す）。次回の最初の描画のちらつき防止に控えも残す
+  try{ window.crmRole = r.role; localStorage.setItem("crmRole", r.role); }catch(e){}
+  if(typeof window.renderCrmNav === "function") window.renderCrmNav();
+  // 倉庫の人は倉庫の画面だけ（2026-10-24 倉庫メニュー §9.1）。他の画面を開いたら /warehouse へ移す
+  if(r.role === "warehouse"){
+    if(!isWarehousePath(location.pathname)){ location.replace("/warehouse"); return null; }
+  }
   if(opts.adminOnly && r.role !== "admin"){ showAccessDenied(user.email, "この画面は管理者のみ利用できます"); return null; }
   // 練習モード（練習生は常に練習。帯・切替ボタン・ログアウト時の片付け）
   const mode = setupModeUi(r, user);

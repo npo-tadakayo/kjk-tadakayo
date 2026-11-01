@@ -335,8 +335,11 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.match(fn, /`🔢 台数: \$\{q\.total\}台（\$\{q\.detail\}）← 箱に入れる前に数えてください`/);
   assert.match(fn, /— カードリーダー \$\{q\.total\}台`, subtitle: `[^`]*【合計 \$\{q\.total\}台】`/);
   // 宛名印刷: 宛名枠の台数と梱包の確認（チェック4つ）
-  const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
-  assert.match(lp, /import \{ letterPackOrDefault, shipQtySummary \} from "\/js\/ship-flow\.js"/);
+  // 宛名ラベルの部品は letterpack-label.js（2026-11-01 倉庫の宛名印刷と共通化）。印刷ページ側は lpPage
+  const lp = readFileSync(new URL("../admin/js/letterpack-label.js", import.meta.url), "utf8");
+  const lpPage = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
+  assert.match(lp, /import \{ shipQtySummary \} from "\/js\/ship-flow\.js"/);
+  assert.match(lpPage, /import \{ renderLabel, fitLabel as fitLabelEl \} from "\/js\/letterpack-label\.js"/);
   // 宛名枠は郵便局の依頼で 上から お届け先 → ご依頼主 → 品名（台数）の順（2026-10-30）
   assert.match(lp, /class="item-qty"/);
   const iTo = lp.indexOf('<div class="to">'), iFrom = lp.indexOf('<div class="from">'), iItem = lp.indexOf('<div class="item">');
@@ -344,15 +347,48 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.match(lp, /data-qty-total>\$\{q\.total\}<small>台<\/small>/);
   assert.equal((lp.match(/<li><span class="box"/g) || []).length, 4);
   assert.match(lp, /確認した人：/);
-  const lph = readFileSync(new URL("../admin/letterpack-print.html", import.meta.url), "utf8");
+  const lph = readFileSync(new URL("../admin/css/letterpack-label.css", import.meta.url), "utf8");
+  for (const page of ["letterpack-print.html", "warehouse-print.html"]) {
+    assert.match(readFileSync(new URL(`../admin/${page}`, import.meta.url), "utf8"), /<link rel="stylesheet" href="\/css\/letterpack-label\.css">/, page);
+  }
   assert.match(lph, /\.label\{width:125mm;height:145mm;/); // レターパックの宛名面の枠（縦14.5cm×横12.5cm）
   // A4 の幅（約794px）は max-width:820px にも当たるため、印刷用に寸法を固定し直していること（Codex 指摘 #33）
   assert.match(lph.slice(lph.indexOf('@media print')), /\.label\{width:125mm;height:145mm;min-height:0;\}/);
   assert.match(lph, /\.pack\{/);
   // 長い宛名は お届け先・ご依頼主 を縮めて枠に収め、収まらなければ警告と印刷前の確認（Codex 指摘 #33）
-  assert.match(lp, /function fitLabel\(\)/);
-  assert.match(lp, /labelFits = fitLabel\(\);/);
-  assert.match(lp, /if \(!labelFits && !confirm\(/);
+  assert.match(lp, /export function fitLabel\(el\)/);
+  assert.match(lpPage, /labelFits = fitLabel\(\);/);
+  assert.match(lpPage, /if \(!labelFits && !confirm\(/);
+  // 倉庫の宛名印刷も同じ部品で描き、収まらなければ警告と印刷前の確認（2026-11-01）
+  const wp = readFileSync(new URL("../admin/js/warehouse-print.js", import.meta.url), "utf8");
+  assert.match(wp, /import \{ renderLabel, fitLabel \} from "\/js\/letterpack-label\.js"/);
+  assert.match(wp, /if \(!fitLabel\(el\)\)/);
+  assert.match(wp, /if \(overflow\.length && !confirm\(/);
   assert.match(lph, /\.label\.measure\{width:125mm !important;height:145mm !important;/);
   console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
+}
+
+// ===== 2026-10-24 送付方法「持ち出し」（倉庫メニュー §9.2）=====
+{
+  const F = await import("../admin/js/ship-flow.js");
+  const pick = { status: "shipped", deliveryMode: "pickup" };
+  assert.equal(F.isPickup({ deliveryMode: "pickup" }), true);
+  assert.equal(F.isPickup({ deliveryMode: "ship" }), false);
+  assert.equal(F.isPickup({}), false);                 // 未設定は発送
+  assert.equal(F.isPickup(null), false);
+  assert.equal(F.shipStatusLabelOf(pick), "受け渡し済");
+  assert.equal(F.shipStatusLabelOf({ status: "shipped" }), "発送済");
+  assert.equal(F.shipStatusLabelOf({ status: "invoiced", deliveryMode: "pickup" }), "請求済");
+  assert.equal(F.shipStatusLabelOf({ status: "requested", deliveryMode: "pickup" }), "依頼済");
+  assert.equal(F.markShippedLabel({ deliveryMode: "pickup" }), "受け渡し済にする");
+  assert.equal(F.markShippedLabel({}), "発送済にする");
+  assert.equal(F.recordShippedLabel({ deliveryMode: "pickup" }), "すでに受け渡し済（記録のみ）");
+  assert.equal(F.recordShippedLabel({}), "すでに発送済（記録のみ）");
+  const pa = F.primaryAction({ status: "requested", deliveryMode: "pickup" });
+  assert.equal(pa.key, "markShipped");                 // 遷移・在庫は発送済と同じ
+  assert.equal(pa.label, "受け渡し済にする");
+  assert.equal(F.primaryAction({ status: "requested" }).label, "発送済にする");
+  assert.equal(F.nextStatus("requested", "markShipped"), "shipped");
+  assert.equal(F.stockDeducted(pick), true);
+  console.log("OK test-ship-flow 追加: 持ち出し");
 }

@@ -21,6 +21,18 @@ export const SHIP_STATUS_BADGE = { draft: 2, requested: 5, shipped: 7, invoiced:
 // 出荷指示を投稿してよい状態（functions/index.js の NOTIFY_STATUSES と同じ値にしておく）
 export const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"];
 
+// 送付方法が「持ち出し」（倉庫から直接持っていく）か。未設定は発送（2026-10-24 倉庫メニュー §9.2）。
+// 持ち出しでも状態の値は "shipped" のまま（在庫・請求の扱いは発送済と同じ）。表示の言い方だけ「受け渡し済」にする
+export function isPickup(s) { return !!s && s.deliveryMode === "pickup"; }
+// 状態の表示名。持ち出しの発送済だけ「受け渡し済」
+export function shipStatusLabelOf(s) {
+  const st = shipStatusOf(s);
+  return st === "shipped" && isPickup(s) ? "受け渡し済" : SHIP_STATUS_LABEL[st] || st;
+}
+// 「発送済にする」「すでに発送済（記録のみ）」の表示名（持ち出しは受け渡し）
+export function markShippedLabel(s) { return isPickup(s) ? "受け渡し済にする" : "発送済にする"; }
+export function recordShippedLabel(s) { return isPickup(s) ? "すでに受け渡し済（記録のみ）" : "すでに発送済（記録のみ）"; }
+
 // 状態。未設定は古いデータ（下書きの仕組みが無かった頃に登録した発送済の出荷）なので shipped とみなす
 export function shipStatusOf(s) { return (s && s.status) || "shipped"; }
 
@@ -103,7 +115,7 @@ export function primaryAction(s) {
   if (!s) return null;
   const st = shipStatusOf(s);
   if (st === "draft") return { key: "request", label: "出荷を依頼する", icon: "send" };
-  if (st === "requested") return { key: "markShipped", label: "発送済にする", icon: "truck-delivery" };
+  if (st === "requested") return { key: "markShipped", label: markShippedLabel(s), icon: isPickup(s) ? "hand-grab" : "truck-delivery" };
   if (st === "shipped") return { key: "invoice", label: "請求済にする", icon: "file-invoice" };
   if (st === "invoiced") return { key: "pay", label: "入金を記録する", icon: "cash" };
   if (st === "paid") return s.receiptIssuedAt ? null : { key: "receipt", label: "領収証を出す", icon: "receipt-2" };

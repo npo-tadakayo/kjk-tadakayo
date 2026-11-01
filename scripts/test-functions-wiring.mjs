@@ -369,3 +369,98 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   if (iRes < 0 || iRes > iUse) throw new Error("createOrUpdateMitsumoriQuote: officeId を使う前に統合先へ読み替えていない");
   console.log("OK test-functions-wiring 追加: 事業所の編集・統合（3つの Callable・findActiveCase・見積もり作成）");
 }
+
+// ===== 2026-10-24 倉庫（設計 docs/倉庫メニュー_設計_20261024.md §9）=====
+{
+  const { createRequire } = await import("node:module");
+  const { readFileSync } = await import("node:fs");
+  const F3 = createRequire(import.meta.url)("../functions/accept-flow.js");
+  const src = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
+  // roleAllows の表: 倉庫の人は viewer/editor/admin のどれも通らず、"warehouse" だけ通る
+  const roles = { admin: "admin", staff: "staff", none: undefined, empty: "", viewer: "viewer", trainee: "trainee", warehouse: "warehouse", other: "unknown" };
+  const expect = {
+    //            viewer editor admin  warehouse
+    admin:     [true,  true,  true,  true],
+    staff:     [true,  true,  false, true],
+    none:      [true,  true,  false, true],
+    empty:     [true,  true,  false, true],
+    viewer:    [true,  false, false, false],
+    trainee:   [false, false, false, false],
+    warehouse: [false, false, false, true],
+    other:     [true,  true,  false, false], // 不明なロールは従来どおり（viewer/editor は通る）・倉庫は通さない
+  };
+  const allows = ["viewer", "editor", "admin"];
+  for (const [k, role] of Object.entries(roles)) {
+    const u = role === undefined ? { active: true } : { active: true, role };
+    allows.forEach((a, i) => {
+      if (F3.roleAllows(u, a) !== expect[k][i]) throw new Error(`roleAllows(${k}, ${a}) が ${!expect[k][i]}`);
+    });
+    if (F3.roleAllows(u, "warehouse") !== expect[k][3]) throw new Error(`roleAllows(${k}, warehouse) が ${!expect[k][3]}`);
+    for (const a of [...allows, "warehouse"]) if (F3.roleAllows({ ...u, active: false }, a)) throw new Error(`無効な ${k} が ${a} を通る`);
+  }
+  if (F3.roleAllows({ active: true, role: "warehouse", locationIds: ["L1"] }, "editor")) throw new Error("倉庫の人が editor を通る");
+  if (F3.roleAllows(null, "warehouse")) throw new Error("null が warehouse を通る");
+
+  const blockOf = (name) => {
+    const i = src.indexOf(`exports.${name} = onCall(`);
+    if (i < 0) throw new Error(`${name}: exports.${name} = onCall( が無い`);
+    const j = src.indexOf("\nexports.", i + 10);
+    return src.slice(i, j < 0 ? undefined : j);
+  };
+  for (const name of ["warehouseList", "warehouseShip", "warehouseHandover", "warehouseReject", "warehouseFixTracking"]) {
+    const b = blockOf(name);
+    if (!/region: "asia-northeast1"/.test(b)) throw new Error(`${name}: region が asia-northeast1 でない`);
+    if (!/serviceAccount: SA_BATCH/.test(b)) throw new Error(`${name}: SA_BATCH でない`);
+    if (!/const me = await requireWarehouse\(request\)/.test(b)) throw new Error(`${name}: requireWarehouse が無い`);
+    if (b.indexOf("requireWarehouse") > b.indexOf("request.data")) throw new Error(`${name}: 認可より前に入力を読んでいる`);
+    if (/requireStaff\(request, \{ allow: "editor" \}\)/.test(b)) throw new Error(`${name}: editor の認可（倉庫の人が使えない）`);
+  }
+  // requireWarehouse は requireStaff("warehouse") ＋ canUseLocation
+  const rw = src.slice(src.indexOf("async function requireWarehouse"), src.indexOf("// ===== App Check"));
+  if (!/requireStaff\(request, \{ allow: "warehouse" \}\)/.test(rw)) throw new Error("requireWarehouse: allow warehouse でない");
+  if (!/wr\.canUseLocation\(me\.user, locationId\)/.test(rw)) throw new Error("requireWarehouse: canUseLocation を使っていない");
+  if (!/import\("\.\/warehouse-rules\.mjs"\)/.test(src)) throw new Error("warehouse-rules.mjs を import() していない");
+  // 一覧は保管場所を確かめ、W（projectForWarehouse）だけを返す
+  const lb = blockOf("warehouseList");
+  if (!/assertWarehouseLocation\(me, locationId\)/.test(lb)) throw new Error("warehouseList: 保管場所の権限を確かめていない");
+  if ((lb.match(/wr\.projectForWarehouse\(s\)/g) || []).length !== 2) throw new Error("warehouseList: requested/done を projectForWarehouse で返していない");
+  if (!/wr\.warehouseActionable\(s, locationId, locs\.defaultId\)/.test(lb)) throw new Error("warehouseList: warehouseActionable を使っていない");
+  // 発送・受け渡しは共通のトランザクション（supply.js の発送済にすると同じ結果）
+  const wc = src.slice(src.indexOf("async function warehouseComplete"), src.indexOf("exports.warehouseShip"));
+  for (const [re, what] of [
+    [/db\.runTransaction\(/, "トランザクション"],
+    [/cur\.status !== "requested"/, "依頼済のままかの確認"],
+    [/wr\.stockShortage\(cur\.items, productsBySku, locId\)/, "在庫不足の確認"],
+    [/wr\.canUseLocation\(me\.user, locId\)/, "出荷元の場所の権限"],
+    [/stock: admin\.firestore\.FieldValue\.increment\(-need\[sku\]\)/, "合計の在庫"],
+    [/patch\[`stockByLocation\.\$\{locId\}`\] = admin\.firestore\.FieldValue\.increment\(-need\[sku\]\)/, "場所の在庫"],
+    [/collection\("inventoryMovements"\)/, "在庫の動きの記録"],
+    [/reason: "shipment", refNo: cur\.soNumber/, "理由と参照番号"],
+    [/dueRule: "net14"/, "dueRule"],
+    [/shippedBy: me\.name, shippedByEmail: me\.email, shippedAt: now/, "shippedBy*"],
+    [/warehouseIssue: admin\.firestore\.FieldValue\.delete\(\)/, "差し戻しを消す"],
+    [/po\.ref, \{ status: "shipped"/, "認定事業者の受注も出荷済に"],
+  ]) if (!re.test(wc)) throw new Error(`warehouseComplete: ${what}が無い`);
+  if (!/warehouseComplete\(me, shipmentId, "ship"/.test(blockOf("warehouseShip"))) throw new Error("warehouseShip: 発送で呼んでいない");
+  const hb = blockOf("warehouseHandover");
+  if (!/warehouseComplete\(me, shipmentId, "pickup"/.test(hb)) throw new Error("warehouseHandover: 持ち出しで呼んでいない");
+  if (!/handedOverAt: now, handedOverByEmail: me\.email, handedOverByName: me\.name/.test(hb)) throw new Error("warehouseHandover: 受け渡しの記録が無い");
+  const rb = blockOf("warehouseReject");
+  if (!/wr\.validateIssue\(/.test(rb)) throw new Error("warehouseReject: validateIssue を使っていない");
+  if (!/if \(cur\.warehouseIssue\) throw/.test(rb)) throw new Error("warehouseReject: 二重の差し戻しを止めていない");
+  if (!/getWebhook\("shipping"\)/.test(rb)) throw new Error("warehouseReject: 出荷指示と同じ投稿先でない");
+  if (!/chatMentionFor\(s\.requestedByEmail/.test(rb)) throw new Error("warehouseReject: 依頼した人へメンションしていない");
+  if (!/notified: true/.test(rb) || !/notified: false/.test(rb)) throw new Error("warehouseReject: notified を返していない");
+  const fb = blockOf("warehouseFixTracking");
+  if (!/cur\.shipDate >= since/.test(fb)) throw new Error("warehouseFixTracking: 30日の制限が無い");
+  if (!/WAREHOUSE_DONE_DAYS = 30/.test(src)) throw new Error("30日の定数が無い");
+  // notifyShipment: 持ち出しの文面・倉庫の画面へのリンク・倉庫の人は投稿できない
+  if (!/const WAREHOUSE_URL = `\$\{CRM_BASE_URL\}\/warehouse`/.test(src)) throw new Error("WAREHOUSE_URL が無い");
+  const sm = src.slice(src.indexOf("function shipmentChatMessage"), src.indexOf("async function chatMentionFor"));
+  if ((sm.match(/🏬 倉庫の画面: \$\{WAREHOUSE_URL\}/g) || []).length !== 2) throw new Error("出荷指示: 発送・持ち出しの両方に倉庫の画面へのリンクが無い");
+  if (!/【持ち出し】/.test(sm)) throw new Error("出荷指示: 持ち出しの文面が無い");
+  const nb = blockOf("notifyShipment");
+  if (!/ud\.role === "warehouse"/.test(nb)) throw new Error("notifyShipment: 倉庫の人を止めていない");
+  if (!/chatMentionFor\(s\.pickupByEmail, s\.pickupByName\)/.test(nb)) throw new Error("notifyShipment: 持ち出す人へメンションしていない");
+  console.log("OK test-functions-wiring 追加: 倉庫（roleAllows の表・5つの Callable・出荷指示の文面）");
+}

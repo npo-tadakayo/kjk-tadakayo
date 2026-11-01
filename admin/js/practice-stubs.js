@@ -10,6 +10,7 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-aut
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc,
   writeBatch, runTransaction, serverTimestamp, arrayUnion, increment, deleteField, Timestamp }
   from "/js/fs.js";
+import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf } from "/js/warehouse-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
@@ -300,6 +301,80 @@ function jstMidnightMs(ymd) {
 }
 function reopenLabel(from) {
   return Number(from) === 4 ? "再申込で再開（失注から）" : Number(from) === 13 ? "再申込で再開（完了から）" : "";
+}
+
+// ===== 倉庫画面（warehouseList ほか5つ）の共通部品（2026-10-24） =====
+// 本物は functions/ の同名の Callable。W（倉庫に返す形）は warehouse-rules.js の projectForWarehouse が正本。
+const WH_DONE_DAYS = 30;
+const WH_REASONS = ["shortage", "address", "other"];
+function whMs(t) {
+  if (!t) return 0;
+  if (typeof t === "number") return t;
+  if (typeof t.toMillis === "function") return t.toMillis();
+  if (t.seconds != null) return t.seconds * 1000;
+  // projectForWarehouse は Timestamp を ISO 文字列にして返すので、文字列も読む（2026-10-24 ブラウザ検証 B3）
+  if (typeof t === "string") { const ms = Date.parse(t); return Number.isFinite(ms) ? ms : 0; }
+  return 0;
+}
+async function whLocations() {
+  const snap = await getDocs(collection(db(), "locations"));
+  return orderLocations(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); // 並びは本物と同じ（warehouse-rules）
+}
+function whDefaultLocationId(locs) { return defaultLocationIdOf(locs); }
+function whShipLocation(s, defId) { return s.originLocationId || defId; }
+function whWire(id, s) {
+  const w = projectForWarehouse({ ...s, id });
+  for (const k of ["requestedAt", "handedOverAt"]) if (w[k]) w[k] = whMs(w[k]);
+  if (w.warehouseIssue && w.warehouseIssue.at) w.warehouseIssue = { ...w.warehouseIssue, at: whMs(w.warehouseIssue.at) };
+  return { ...w, id };
+}
+async function whLoadShipment(tx, shipmentId) {
+  const ref = doc(db(), "shipments", String(shipmentId || ""));
+  const snap = await tx.get(ref);
+  if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
+  return { ref, cur: snap.data() };
+}
+// 在庫を引いて発送済・受け渡し済にする（supply.js の「発送済にする」と同じ書き込み）
+async function whMarkShipped(shipmentId, expectMode, extra) {
+  const u = me();
+  const locs = await whLocations();
+  const defId = whDefaultLocationId(locs);
+  let soNumber = "", caseId = "";
+  await runTransaction(db(), async (tx) => {
+    const { ref, cur } = await whLoadShipment(tx, shipmentId);
+    if (cur.status !== "requested") throw fail("この出荷はすでに処理されています。画面を更新してください");
+    if (deliveryModeOf(cur) !== expectMode) throw fail(expectMode === "pickup" ? "この出荷は持ち出しではありません" : "この出荷は発送ではなく持ち出しです");
+    if (expectMode === "pickup" && !canPickup(cur)) throw fail("直送（AB Circleから直接）の出荷は持ち出しにできません"); // 本物と同じく直送は倉庫で扱わない
+    soNumber = cur.soNumber || ""; caseId = cur.caseId || "";
+    const locId = whShipLocation(cur, defId);
+    const need = {};
+    if ((cur.fulfillment || "warehouse") !== "direct") {
+      for (const i of cur.items || []) if (i && !i.nonStock && Number(i.qty) > 0 && !["support-fee", "discount"].includes(String(i.sku || ""))) need[i.sku] = (need[i.sku] || 0) + Number(i.qty);
+    }
+    const skus = Object.keys(need);
+    const prods = {};
+    for (const sku of skus) {
+      prods[sku] = (await tx.get(doc(db(), "products", sku))).data() || {};
+      const have = Number((prods[sku].stockByLocation || {})[locId]) || 0;
+      if (have < need[sku]) throw fail(`在庫が足りません: ${prods[sku].name || sku}（いま ${have} / 必要 ${need[sku]}）`);
+    }
+    const locName = (locs.find((l) => l.id === locId) || {}).name || "";
+    tx.update(ref, {
+      status: "shipped", confirmedAt: serverTimestamp(),
+      ...(skus.length ? { originLocationId: locId, originLocationName: locName } : {}),
+      shippedBy: u.name, shippedByEmail: u.email, shippedAt: serverTimestamp(), dueRule: "net14",
+      warehouseIssue: deleteField(),
+      ...extra, updatedAt: serverTimestamp(),
+    });
+    for (const sku of skus) {
+      tx.update(doc(db(), "products", sku), { stock: increment(-need[sku]), [`stockByLocation.${locId}`]: increment(-need[sku]) });
+      tx.set(doc(collection(db(), "inventoryMovements")), {
+        sku, delta: -need[sku], reason: "shipment", refNo: soNumber, locationId: locId, locationName: locName,
+        createdAt: serverTimestamp(), userName: u.name,
+      });
+    }
+  });
+  return { soNumber, caseId };
 }
 
 export const PRACTICE_STUBS = {
@@ -1009,5 +1084,91 @@ export const PRACTICE_STUBS = {
   async collectAnalyticsNow() {
     showPracticeNotice("アクセス解析の更新は練習中は行いません");
     return { skipped: "練習モードでは更新しません" };
+  },
+
+  // ===== 倉庫画面（2026-10-24 倉庫メニュー §9.4）。本物は functions/ の warehouse* =====
+  async warehouseList({ locationId }) {
+    const locs = await whLocations();
+    const defId = whDefaultLocationId(locs);
+    // 本物と同じ: 空なら既定の場所（無ければ先頭）を選んで location に返す。知らない場所の指定は断る
+    if (locationId && !locs.some((l) => l.id === locationId)) { const e = new Error("保管場所が見つかりません（停止中の可能性があります）"); e.code = "not-found"; throw e; }
+    const locationIdUse = locationId || defId;
+    const loc = locs.find((l) => l.id === locationIdUse) || null;
+    const snap = await getDocs(collection(db(), "shipments"));
+    const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const requested = all.filter((s) => warehouseActionable(s, locationIdUse, defId)).map((s) => whWire(s.id, s))
+      .sort((a, b) => String(a.pickupDate || a.desiredDate || "9999").localeCompare(String(b.pickupDate || b.desiredDate || "9999")));
+    const cutoff = new Date(Date.now() + 9 * 3600e3 - WH_DONE_DAYS * 86400e3).toISOString().slice(0, 10);
+    const done = all.filter((s) => ["shipped", "invoiced", "paid"].includes(shipStatusOf(s))
+      && (s.fulfillment || "warehouse") !== "direct" && whShipLocation(s, defId) === locationIdUse
+      && String(s.shipDate || "") >= cutoff).map((s) => whWire(s.id, s))
+      .sort((a, b) => String(b.shipDate || "").localeCompare(String(a.shipDate || "")));
+    const prods = await getDocs(collection(db(), "products"));
+    const stock = prods.docs.map((d) => {
+      const p = d.data();
+      return { sku: d.id, name: p.shortName || p.name || d.id, qty: Number((p.stockByLocation || {})[locationIdUse]) || 0 };
+    }).filter((r) => r.qty !== 0);
+    // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む）
+    let st = {};
+    try { const ss = await getDoc(doc(db(), "appConfig", "settings")); st = ss.exists() ? ss.data() : {}; } catch (_) {}
+    return { sender: senderForLabel(st), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
+  },
+
+  async warehouseShip({ shipmentId, shipDate, trackingNumber, letterPackType }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(shipDate || ""))) throw fail("発送日を入れてください");
+    const lp = ["light", "plus"].includes(letterPackType) ? letterPackType : null;
+    const tn = String(trackingNumber || "").trim().slice(0, 100);
+    const { soNumber, caseId } = await whMarkShipped(shipmentId, "ship", {
+      shipDate, ...(lp ? { letterPackType: lp } : {}), ...(tn ? { trackingNumber: tn } : {}),
+    });
+    await activity(caseId, "memo", `倉庫: 発送済にしました（${soNumber}）`, `${PRACTICE_NOTE}\n倉庫の画面から発送済にしました（担当: ${me().name}）。`);
+    showPracticeNotice("発送済にしました（練習のため、依頼した人への連絡はありません）");
+    return { ok: true };
+  },
+
+  async warehouseHandover({ shipmentId, date }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) throw fail("受け渡し日を入れてください");
+    const u = me();
+    const { soNumber, caseId } = await whMarkShipped(shipmentId, "pickup", {
+      shipDate: date, handedOverAt: serverTimestamp(), handedOverByEmail: u.email, handedOverByName: u.name,
+    });
+    await activity(caseId, "memo", `倉庫: 受け渡し済にしました（${soNumber}）`, `${PRACTICE_NOTE}\n倉庫の画面から受け渡し済にしました（担当: ${u.name}）。`);
+    showPracticeNotice("受け渡し済にしました");
+    return { ok: true };
+  },
+
+  async warehouseReject({ shipmentId, reason, note }) {
+    const n = String(note || "").trim().slice(0, 500);
+    if (!WH_REASONS.includes(reason)) throw fail("理由を選んでください");
+    if (reason === "other" && !n) throw fail("「その他」のときは、くわしい内容を書いてください");
+    const ref = doc(db(), "shipments", String(shipmentId || ""));
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
+    const s = snap.data();
+    if (s.status !== "requested") throw fail("この出荷はすでに処理されています。画面を更新してください");
+    const u = me();
+    await updateDoc(ref, {
+      warehouseIssue: { reason, note: n, at: Timestamp.now(), byEmail: u.email, byName: u.name },
+      updatedAt: serverTimestamp(),
+    });
+    await activity(s.caseId, "memo", `倉庫から差し戻し（${s.soNumber || ""}）`, `${PRACTICE_NOTE}\n理由: ${reason}${n ? `／${n}` : ""}\n依頼した人（${s.requestedByEmail || ""}）への Chat 通知は送っていません。`);
+    await logSent("warehouseReject", { shipmentId, soNumber: s.soNumber || "", reason, note: n, to: s.requestedByEmail || "" });
+    showPracticeNotice("依頼した人への Chat は送っていません。差し戻したことにして記録しました");
+    return { ok: true, notified: true };
+  },
+
+  async warehouseFixTracking({ shipmentId, trackingNumber }) {
+    // 空は「追跡番号を消す」（本番の warehouseFixTracking と同じ）
+    const tn = String(trackingNumber || "").trim().slice(0, 100);
+    const ref = doc(db(), "shipments", String(shipmentId || ""));
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
+    const s = snap.data();
+    if (!["shipped", "invoiced", "paid"].includes(shipStatusOf(s)) || deliveryModeOf(s) === "pickup") throw fail("追跡番号を直せるのは発送済の出荷だけです");
+    const cutoff = new Date(Date.now() + 9 * 3600e3 - WH_DONE_DAYS * 86400e3).toISOString().slice(0, 10);
+    if (String(s.shipDate || "") < cutoff) throw fail("直せるのは直近30日の発送済だけです");
+    await updateDoc(ref, { trackingNumber: tn, updatedAt: serverTimestamp() });
+    showPracticeNotice("追跡番号を直しました");
+    return { ok: true };
   },
 };

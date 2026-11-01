@@ -12,9 +12,12 @@ service firebase.storage {
     // 「users があって role == 'trainee'」のときだけ拒否する（exists を先に見るので、無い人で get は失敗しない）。
     // role 未設定の users でも拒否しないよう .get('role', '') で読む（.role だと評価エラー＝拒否になる）。
     // ⚠ firestore.get/exists を使うので、Storage から Firestore を読む権限が要る（shipments/tracking で付与済みの想定）。
+    // 2026-10-24 倉庫（docs/倉庫メニュー_設計_20261024.md §9.1）: ロール「倉庫（warehouse）」も練習生と同じく拒否する
+    // （訪問写真・請求書・見積PDF などは倉庫の仕事に要らない。Firestore の isRegistered() と同じ扱い）。
+    // 動画マニュアル（training/）は倉庫の人も見てよい（isStaffMail のまま）。
     function isNotTrainee() {
       return !firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email))
-        || firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.get('role', '') != 'trainee';
+        || !(firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.get('role', '') in ['trainee', 'warehouse']);
     }
     function isStaff() {
       return isStaffMail() && isNotTrainee();
@@ -37,7 +40,7 @@ service firebase.storage {
       allow write: if false;
     }
     // 動画マニュアル（CRM操作説明の mp4/vtt）。読むのは職員だけ。書き込みは開発担当が gcloud で行う（Admin 権限はルールを迂回）
-    // 2026-10-20 テストモード: 練習生も学習に使うので、ここだけは練習生も読める（isStaffMail のまま）。
+    // 2026-10-20 テストモード: 練習生も学習に使うので、ここだけは練習生も読める（isStaffMail のまま）。倉庫の人も読める（2026-10-24）。
     match /training/{fileName} {
       allow read: if isStaffMail();
       allow write: if false;
@@ -53,7 +56,8 @@ service firebase.storage {
           && firestore.exists(/databases/(default)/documents/users/$(request.auth.token.email))
           && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.active == true
           && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'viewer'
-          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'trainee';
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'trainee'
+          && firestore.get(/databases/(default)/documents/users/$(request.auth.token.email)).data.role != 'warehouse'; // 2026-10-24 倉庫も置けない
       }
       allow read: if isStaff();
       allow delete: if isEditorUser();

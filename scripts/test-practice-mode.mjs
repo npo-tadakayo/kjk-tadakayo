@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire as createRequire0 } from "node:module";
 
 const ROOT = fileURLToPath(new URL("../admin/", import.meta.url));
 const files = [
@@ -76,6 +77,7 @@ ok(/SHARED = new Set\(\["_counters", "appConfig"\]\)/.test(src["js/fs.js"]), "fs
 // 8) 練習生のロールが選べる
 ok(/value="trainee"/.test(src["users.html"]), "ユーザー管理に練習生が無い");
 
+const Flow0 = () => createRequire0(import.meta.url)("../functions/accept-flow.js");
 // 9) 本番の Callable はすべて練習生を拒否する（SDK から直接呼ばれても本番を触らせない）
 //    2026-10-21 統合: requireStaff（CRM改善の共通認可）が練習生も拒否するので、各 Callable の先頭は
 //    requireStaff か、独自の権限確認を持つものは rejectTrainee のどちらか。aiAssist も requireStaff で拒否する
@@ -88,8 +90,12 @@ ok(/value="trainee"/.test(src["users.html"]), "ユーザー管理に練習生が
   for (const part of parts) {
     const name = part.match(/^exports\.([A-Za-z]+)/)[1];
     const head = part.slice(0, part.indexOf("async (request) => {") + 200);
-    ok(/await (requireStaff\(request|rejectTrainee\(request\);)/.test(head), `${name} が練習生を拒否していない（先頭で requireStaff か rejectTrainee を呼ぶ）`);
+    // 倉庫の Callable（2026-10-24）は requireWarehouse（中で requireStaff を呼ぶ・下で確認）
+    ok(/await (requireStaff\(request|requireWarehouse\(request\)|rejectTrainee\(request\);)/.test(head), `${name} が練習生を拒否していない（先頭で requireStaff か requireWarehouse か rejectTrainee を呼ぶ）`);
   }
+  const rw = idx.slice(idx.indexOf("async function requireWarehouse"), idx.indexOf("async function requireWarehouse") + 300);
+  ok(/await requireStaff\(request, \{ allow: "warehouse" \}\)/.test(rw), "requireWarehouse が requireStaff を通していない");
+  ok(!Flow0().roleAllows({ role: "trainee", active: true }, "warehouse"), "roleAllows が練習生を倉庫で通す");
   // requireStaff の中で練習生を拒否している／判定関数 roleAllows も練習生を通さない
   const rs = idx.slice(idx.indexOf("async function requireStaff"), idx.indexOf("async function requireStaff") + 1600);
   ok(/user\.role === "trainee"/.test(rs), "requireStaff が練習生を拒否していない");

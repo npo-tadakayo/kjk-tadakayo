@@ -13,10 +13,11 @@ function $(id){ return document.getElementById(id); }
 function esc(s){return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function toast(m){const t=$("toast");t.textContent=m;t.style.display="block";clearTimeout(t._t);t._t=setTimeout(()=>t.style.display="none",2500);}
 // 練習生（trainee）＝練習モード固定・本番は読み書きとも不可（firestore.rules）。独り立ちしたら「スタッフ」に変える（2026-10-20）
-const ROLE_LABEL={admin:"管理者",staff:"スタッフ",viewer:"閲覧のみ",trainee:"練習生"};
-const ROLE_BADGE={admin:9,staff:2,viewer:4,trainee:6};
+const ROLE_LABEL={admin:"管理者",staff:"スタッフ",viewer:"閲覧のみ",trainee:"練習生",warehouse:"倉庫"};
+const ROLE_BADGE={admin:9,staff:2,viewer:4,trainee:6,warehouse:5};
 
-let usersCache=[], myEmail="", editing=null;
+let usersCache=[], myEmail="", editing=null, locationsCache=[];
+const locName=(id)=>(locationsCache.find(l=>l._id===id)||{}).name||id;
 
 function render(list){
   usersCache=list;
@@ -25,7 +26,7 @@ function render(list){
     <tr>
       <td><strong>${esc(u.name||"")}</strong>${u._id===myEmail?' <span style="font-size:12px;color:var(--color-primary)">(あなた)</span>':""}</td>
       <td style="font-size:12px">${esc(u._id)}</td>
-      <td><span class="badge badge-${ROLE_BADGE[u.role]||2}">${ROLE_LABEL[u.role]||u.role||"—"}</span></td>
+      <td><span class="badge badge-${ROLE_BADGE[u.role]||2}">${ROLE_LABEL[u.role]||u.role||"—"}</span>${u.role==="warehouse"?`<div style="font-size:12px;color:var(--color-ink-muted)">${(u.locationIds&&u.locationIds.length)?esc(u.locationIds.map(locName).join("・")):'<span style="color:var(--color-danger)">保管場所が未選択</span>'}</div>`:""}</td>
       <td>${u.active!==false?'<span class="badge badge-3">有効</span>':'<span class="badge badge-4">停止</span>'}</td>
       <td>${u.chatUserId?'<span class="badge badge-3">設定済</span>':'<span class="badge badge-4">未設定</span>'}</td>
       <td style="white-space:nowrap">
@@ -43,6 +44,15 @@ function render(list){
   }));
 }
 
+// 倉庫ロールのときだけ、扱える保管場所のチェックを出す（有効な保管場所。すでに選んである停止中の場所も残す）
+function renderLocationChecks(selected){
+  const sel=new Set(selected);
+  const list=locationsCache.filter(l=>l.active!==false||sel.has(l._id));
+  $("uLocations").innerHTML = list.length
+    ? list.map(l=>`<label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" class="u-loc" value="${esc(l._id)}" ${sel.has(l._id)?"checked":""}>${esc(l.name||l._id)}${l.active===false?"（停止中）":""}</label>`).join("")
+    : '<div style="font-size:13px;color:var(--color-ink-muted)">保管場所が登録されていません（在庫・発注の画面で追加できます）</div>';
+}
+function syncLocationsWrap(){ $("uLocationsWrap").style.display = $("uRole").value==="warehouse" ? "" : "none"; }
 function openModal(u){
   u=u||{}; editing=u._id||null;
   $("userModalTitle").textContent = editing?"ユーザーを編集":"ユーザーを追加";
@@ -51,6 +61,8 @@ function openModal(u){
   $("uRole").value=u.role||"staff";
   $("uActive").value=(u.active!==false)?"true":"false";
   $("uChatId").value=u.chatUserId||"";
+  renderLocationChecks(u.locationIds||[]);
+  syncLocationsWrap();
   $("uError").style.display="none";
   $("userModal").classList.add("open");
 }
@@ -69,7 +81,12 @@ async function save(){
   if(email===myEmail && (!active || role!=="admin")){
     if(!confirm("自分自身の権限を変更します。管理者でなくなる/停止すると、この画面に入れなくなる可能性があります。続けますか？")) return;
   }
-  const data={ email, name, role, active, chatUserId, updatedAt:serverTimestamp() };
+  let locationIds=[];
+  if(role==="warehouse"){
+    locationIds=[...document.querySelectorAll(".u-loc:checked")].map(c=>c.value);
+    if(!locationIds.length){ err.textContent="倉庫の人は、扱える保管場所を1つ以上選んでください"; err.style.display="block"; return; }
+  }
+  const data={ email, name, role, active, chatUserId, locationIds, updatedAt:serverTimestamp() };
   if(!editing){ data.createdAt=serverTimestamp(); }
   await setDoc(doc(db,"users",email), data, {merge:true});
   $("userModal").classList.remove("open");
@@ -88,6 +105,11 @@ onAuthStateChanged(auth, async (user)=>{
   $("closeUserBtn").addEventListener("click",()=>$("userModal").classList.remove("open"));
   $("cancelUserBtn").addEventListener("click",()=>$("userModal").classList.remove("open"));
   $("saveUserBtn").addEventListener("click",save);
+  $("uRole").addEventListener("change",syncLocationsWrap);
+  onSnapshot(query(collection(db,"locations")),(snap)=>{
+    locationsCache=snap.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>String(a.name||"").localeCompare(String(b.name||""),"ja"));
+    render(usersCache); // 一覧の保管場所の名前を引き直す
+  });
   $("gate").style.display="none"; $("main").style.display="block";
   onSnapshot(query(collection(db,"users")),(snap)=>{
     render(snap.docs.map(d=>({_id:d.id,...d.data()})).sort((a,b)=>(a.role==="admin"?-1:0)-(b.role==="admin"?-1:0)));

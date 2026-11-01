@@ -7,11 +7,20 @@
 const ST_NEW = 1, ST_CONFIRMING = 2, ST_ORDERED = 3, ST_LOST = 4, ST_DONE = 13;
 
 // ===== 認可（requireStaff の判定部分）=====
-// allow: "viewer"（登録済み・有効なら誰でも）／"editor"（閲覧のみ以外）／"admin"（管理者のみ）
+// allow: "viewer"（登録済み・有効なら誰でも）／"editor"（閲覧のみ以外）／"admin"（管理者のみ）／
+//        "warehouse"（倉庫の画面の Callable。倉庫の人と、管理者・スタッフ・ロール未設定の登録者）
 // firestore.rules の isRegistered / isEditor / isAdmin と同じ考え方。
+// 2026-10-24 倉庫（設計 docs/倉庫メニュー_設計_20261024.md §9.1）: 倉庫の人（role "warehouse"）は
+// "viewer"／"editor"／"admin" のどれでも通さない（従来の「閲覧のみ以外は editor」のままだと、倉庫の人が全 Callable を使えてしまう）。
+// 倉庫の人が使えるのは "warehouse" の指定だけ。保管場所ごとの権限は index.js の requireWarehouse（canUseLocation）で見る。
 function roleAllows(user, allow = "editor") {
   if (!user || user.active !== true) return false;
   if (user.role === "trainee") return false; // 練習生は本番の操作をどれもできない（2026-10-20 テストモード）
+  if (allow === "warehouse") {
+    const role = user.role == null ? "" : user.role;
+    return role === "warehouse" || role === "admin" || role === "staff" || role === "";
+  }
+  if (user.role === "warehouse") return false; // 倉庫の人は倉庫の Callable だけ（上の "warehouse"）
   if (allow === "admin") return user.role === "admin";
   if (allow === "editor") return user.role !== "viewer";
   if (allow === "viewer") return true;
