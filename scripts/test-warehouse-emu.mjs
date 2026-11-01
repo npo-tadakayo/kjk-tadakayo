@@ -330,6 +330,14 @@ check("差出人: 設定が無ければ印刷ページと同じ既定", r.ok && 
 await db.collection("appConfig").doc("settings").update({ senders: [{ name: "東京センター", postal: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }, { name: "二件目" }] });
 r = await call("warehouseList", WH2, { locationId: "L2" });
 check("差出人: 設定の senders の1件目", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "東京センター", postalCode: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }), JSON.stringify(r.r && r.r.sender));
+// 2026-11-01: 保管場所に「宛名ラベルのご依頼主」があればそちらを優先（設定の差出人より前）
+await db.collection("locations").doc("L2").update({ postal: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "090-0000-0000",
+  senderName: "NPO法人タダカヨ　滋賀ロジスティクスセンター", senderPhone: "050-1808-2999" });
+r = await call("warehouseList", WH2, { locationId: "L2" });
+check("差出人: 保管場所のご依頼主が最優先（郵便番号・住所は保管場所・電話は senderPhone）", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "NPO法人タダカヨ　滋賀ロジスティクスセンター", postalCode: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "050-1808-2999" }), JSON.stringify(r.r && r.r.sender));
+await db.collection("locations").doc("L2").update({ senderName: "" });
+r = await call("warehouseList", WH2, { locationId: "L2" });
+check("差出人: 保管場所のご依頼主の名前が空なら設定の差出人に戻る", r.ok && r.r.sender && r.r.sender.name === "東京センター", JSON.stringify(r.r && r.r.sender));
 const lbl = r.ok && r.r.requested.concat(r.r.done)[0];
 check("W に宛名ラベルの項目（postalCode・address・officeName・company・contactName・phone・letterPackType）", !!lbl && ["postalCode", "address", "officeName", "company", "contactName", "phone", "letterPackType"].every((k) => k in lbl), JSON.stringify(lbl));
 

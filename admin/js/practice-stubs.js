@@ -1108,10 +1108,10 @@ export const PRACTICE_STUBS = {
       const p = d.data();
       return { sku: d.id, name: p.shortName || p.name || d.id, qty: Number((p.stockByLocation || {})[locationIdUse]) || 0 };
     }).filter((r) => r.qty !== 0);
-    // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む）
+    // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む。保管場所のご依頼主があれば優先）
     let st = {};
     try { const ss = await getDoc(doc(db(), "appConfig", "settings")); st = ss.exists() ? ss.data() : {}; } catch (_) {}
-    return { sender: senderForLabel(st), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
+    return { sender: senderForLabel(st, loc), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
   },
 
   async warehouseShip({ shipmentId, shipDate, trackingNumber, letterPackType }) {

@@ -19,13 +19,31 @@ export function shipStatusOf(s) {
 // 設定 appConfig/settings の senders（名前か住所のあるもの）→ 旧形式 sender* → 請求書の発行者情報 → 既定（NPO法人タダカヨ）。
 // 倉庫の画面で宛名を印刷するために warehouseList が返す（倉庫の人は appConfig を直接読めない）。
 // 戻り値 { name, postalCode, address, phone }（1件目。印刷ページと同じく、複数あれば先頭）。名前も住所も無ければ null
+// 第2引数に出荷元の保管場所を渡すと、その場所のご依頼主（locationSender）があればそちらを返す
 const SENDER_DEFAULT = {
   name: "NPO法人タダカヨ　介護情報基盤伴走支援事業",
   postal: "",
   address: "東京都大田区大森中二丁目1番20-1001号",
   phone: "050-6872-9884",
 };
-export function senderForLabel(settings) {
+// 出荷元の保管場所に「宛名ラベルのご依頼主」（locations の senderName・senderPhone・senderPostal・senderAddress）が
+// 入っていれば、それを最優先にする（2026-11-01 次田さん決定。滋賀から出すのにご依頼主が東京・大森になっていた）。
+//   郵便番号・住所は sender* → 保管場所の postal・address の順。電話は senderPhone だけ（保管場所の phone は
+//   納品先＝受け取る方の電話なので使わない）。senderName が空なら null（＝従来どおり設定の差出人）
+export function locationSender(location) {
+  const l = location || {};
+  const name = str(l.senderName).trim();
+  if (!name) return null;
+  return {
+    name,
+    postalCode: str(l.senderPostal).trim() || str(l.postal).trim(),
+    address: str(l.senderAddress).trim() || str(l.address).trim(),
+    phone: str(l.senderPhone).trim(),
+  };
+}
+export function senderForLabel(settings, location) {
+  const fromLoc = locationSender(location);
+  if (fromLoc) return fromLoc;
   const st = settings || {};
   let list = Array.isArray(st.senders) ? st.senders.filter((x) => x && (x.name || x.address)) : [];
   if (!list.length && st.senderName) {

@@ -2,14 +2,17 @@
 // 出荷指示の投稿のURL（/letterpack-print.html?id={出荷ID}）から開き、届け先をプレビューしてそのまま A4 に印刷する。
 //   ・ライト＝青／プラス＝赤 をページ上で切り替える。選んだ種類は shipments.letterPackType に保存し、次に開いても同じ
 //   ・依頼主は 設定の差出人（settings.senders → sender*）→ 請求書の発行者情報 → 既定（NPO法人タダカヨ）の順に使う
+//   ・出荷元の保管場所に「宛名ラベルのご依頼主」があれば、それを選択肢の先頭（既定）にする（2026-11-01）。
+//     出荷元が無い古い出荷は既定の保管場所、直送（AB Circle から直接）は保管場所を通らないので使わない
 //   ・@tadakayo.jp でログインした職員だけ（supply-print.js と同じ認証ガード）
 //   ・出荷データには利用者・被保険者の情報は無い。載せるのは事業所側の宛名だけ
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "/js/fs.js";
+import { getFirestore, doc, getDoc, getDocs, collection, updateDoc, serverTimestamp } from "/js/fs.js";
 import { letterPackOrDefault } from "/js/ship-flow.js";
 import { renderLabel, fitLabel as fitLabelEl } from "/js/letterpack-label.js";
+import { locationSender, defaultLocationIdOf } from "/js/warehouse-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -48,6 +51,20 @@ function sendersOf(st){
 // 宛名枠に収まるか（お届け先・ご依頼主を縮めて収める。収まらなければ false）。中身は letterpack-label.js
 function fitLabel(){ return fitLabelEl(document.querySelector(".label")); }
 
+// 出荷元の保管場所（直送は null。出荷元が未設定の古い出荷は既定の保管場所＝supply.js の shipLocationOf と同じ）
+function originLocationOf(s, locations){
+  if (!s || s.fulfillment === "direct") return null;
+  const id = s.originLocationId || defaultLocationIdOf(locations);
+  return (locations || []).find((l) => l.id === id) || null;
+}
+// ご依頼主の選択肢: 保管場所のご依頼主（あれば先頭）＋ 設定の差出人（sendersOf）。読めない・未設定なら従来どおり
+function labelSendersOf(st, location){
+  const base = sendersOf(st);
+  const ls = locationSender(location);
+  if (!ls) return base;
+  return [{ name: ls.name, postal: ls.postalCode, address: ls.address, phone: ls.phone, fromLocation: location.name || "保管場所" }, ...base];
+}
+
 function setTheme(type){
   document.body.classList.toggle("lp-light", type === "light");
   document.body.classList.toggle("lp-plus", type === "plus");
@@ -67,9 +84,14 @@ onAuthStateChanged(auth, async (user) => {
     const s = snap.data();
     let st = {};
     try { const ss = await getDoc(doc(db, "appConfig", "settings")); st = ss.exists() ? ss.data() : {}; } catch (_) {}
-    const senders = sendersOf(st);
+    let loc = null;
+    try {
+      const ls = await getDocs(collection(db, "locations"));
+      loc = originLocationOf(s, ls.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (_) {} // 読めなければ設定の差出人だけ（従来どおり）
+    const senders = labelSendersOf(st, loc);
     const sel = document.getElementById("senderSel");
-    sel.innerHTML = senders.map((x, i) => `<option value="${i}">${esc(x.name || "(無名)")}</option>`).join("");
+    sel.innerHTML = senders.map((x, i) => `<option value="${i}">${esc(x.name || "(無名)")}${x.fromLocation ? `（出荷元: ${esc(x.fromLocation)}）` : ""}</option>`).join("");
     if (senders.length > 1) document.getElementById("senderWrap").style.display = "inline-flex";
 
     // 戻り先は出荷一覧の該当行（?so= の深いリンク）

@@ -744,6 +744,16 @@
         <div class="form-group"><label class="form-label" for="locAddress">住所</label><input class="form-control" id="locAddress" type="text" placeholder="滋賀県大津市…"></div>
         <div class="form-group"><label class="form-label" for="locRecipient">宛名（受け取る方・事業所名）</label><input class="form-control" id="locRecipient" type="text" placeholder="NPO法人タダカヨ ロジスティックセンター 藤田様">
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">発注の届け先と、保管場所間の移動の送り先に使います。</p></div>
+        <fieldset class="form-group" style="border:1px solid var(--color-border, #ddd);border-radius:8px;padding:10px 12px">
+          <legend class="form-label" style="padding:0 4px">宛名ラベルのご依頼主（任意）</legend>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 8px">出荷元がこの保管場所のとき、宛名ラベルのご依頼主に使います。空欄なら設定の差出人を使います。<br>郵便番号・住所が空欄なら上の郵便番号・住所を使います（請求書・見積書の電話番号は変わりません）。</p>
+          <div class="form-group"><label class="form-label" for="locSenderName">ご依頼主の名前</label><input class="form-control" id="locSenderName" type="text" placeholder="NPO法人タダカヨ　滋賀ロジスティクスセンター"></div>
+          <div class="form-row">
+            <div class="form-group"><label class="form-label" for="locSenderPostal">郵便番号</label><input class="form-control" id="locSenderPostal" type="text" inputmode="numeric" placeholder="空欄なら上の郵便番号" maxlength="8"></div>
+            <div class="form-group"><label class="form-label" for="locSenderPhone">電話</label><input class="form-control" id="locSenderPhone" type="tel" placeholder="050-0000-0000"></div>
+          </div>
+          <div class="form-group" style="margin-bottom:0"><label class="form-label" for="locSenderAddress">住所</label><input class="form-control" id="locSenderAddress" type="text" placeholder="空欄なら上の住所"></div>
+        </fieldset>
         <div class="form-group">
           <label class="form-label" style="display:flex;gap:8px;align-items:center;cursor:pointer">
             <input type="checkbox" id="locActive" checked style="width:18px;height:18px">

@@ -204,6 +204,8 @@ function openLocationModal(existing){
   pref.value = existing?(existing.pref||""):"";
   document.getElementById("locActive").checked = existing? existing.active!==false : true;
   ["Postal","Address","Recipient","Phone"].forEach(k=>{ document.getElementById("loc"+k).value = existing?(existing[k.toLowerCase()]||""):""; });
+  // 宛名ラベルのご依頼主（任意・2026-11-01）。出荷元がこの場所のとき letterpack-print・倉庫の画面で優先する
+  ["SenderName","SenderPostal","SenderAddress","SenderPhone"].forEach(k=>{ const f="s"+k.slice(1); document.getElementById("loc"+k).value = existing?(existing[f]||""):""; });
   document.getElementById("locNameErr").textContent="";
   document.getElementById("locationModal").classList.add("open");
   document.getElementById("locName").focus();
@@ -214,16 +216,19 @@ async function saveLocation(){
   const active=document.getElementById("locActive").checked;
   const addr={ postal:document.getElementById("locPostal").value.trim(), address:document.getElementById("locAddress").value.trim(),
     recipient:document.getElementById("locRecipient").value.trim(), phone:document.getElementById("locPhone").value.trim() };
+  const v=(id)=>document.getElementById(id).value.trim();
+  const sender={ senderName:v("locSenderName"), senderPostal:v("locSenderPostal"), senderAddress:v("locSenderAddress"), senderPhone:v("locSenderPhone") };
+  if(!sender.senderName && (sender.senderPostal||sender.senderAddress||sender.senderPhone)){ document.getElementById("locNameErr").textContent="宛名ラベルのご依頼主を使うときは、ご依頼主の名前を入れてください"; return; }
   const err=document.getElementById("locNameErr");
   if(!name){ err.textContent="保管場所の名前を入力してください"; return; }
   if(!pref){ err.textContent="都道府県を選んでください（ゆうパックの送料が発地で変わるため）"; return; }
   const btn=document.getElementById("saveLocationBtn"); btn.disabled=true;
   try{
     if(editingLoc){
-      await updateDoc(doc(db,"locations",editingLoc._id),{name,pref,active,...addr,updatedAt:serverTimestamp()});
+      await updateDoc(doc(db,"locations",editingLoc._id),{name,pref,active,...addr,...sender,updatedAt:serverTimestamp()});
       toast(`保管場所「${name}」を更新しました`);
     }else{
-      await addDoc(collection(db,"locations"),{name,pref,active,...addr,
+      await addDoc(collection(db,"locations"),{name,pref,active,...addr,...sender,
         isDefault: locations.length===0,   // 最初の1件を既定にする
         sort: locations.length, createdAt:serverTimestamp(),
         createdBy: currentUser.displayName||currentUser.email});

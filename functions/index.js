@@ -3564,7 +3564,8 @@ function warehouseStaleMsg(cur) {
 //   requested … その場所の依頼済（発送・持ち出し）。予定日（持ち出しは pickupDate・発送は希望出荷日）の近い順・同じなら依頼の古い順
 //   done      … その場所の直近30日の発送済・受け渡し済（発送日の新しい順）
 //   stock     … その場所の商品別の台数（読み取りのみ）
-//   sender    … 宛名ラベルの差出人 { name, postalCode, address, phone }（letterpack-print.js と同じ決め方・未設定なら null）
+//   sender    … 宛名ラベルの差出人 { name, postalCode, address, phone }（letterpack-print.js と同じ決め方・未設定なら null）。
+//               その保管場所に「宛名ラベルのご依頼主」（senderName 等）があればそれを優先（2026-11-01）
 exports.warehouseList = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
   async (request) => {
@@ -3617,7 +3618,7 @@ exports.warehouseList = onCall(
       .sort((a, b) => a.sku.localeCompare(b.sku));
 
     _settingsCache = null; // 設定画面で差出人を直した直後でも最新を使う
-    const sender = wr.senderForLabel(await getSettings());
+    const sender = wr.senderForLabel(await getSettings(), loc); // 保管場所にご依頼主があれば優先（2026-11-01）
     return {
       sender,
       location: { id: loc.id, name: String(loc.name || "") },
