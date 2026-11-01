@@ -18,10 +18,11 @@ for (const v of VIDEOS) {
 for (const g of groupIds) assert.ok(VIDEOS.some((v) => v.group === g), `区分 ${g} に動画が無い`);
 // おすすめの順番の動画はすべて目録にある
 for (const p of PATHS) for (const id of p.ids) assert.ok(findVideo(id), `PATHS ${p.id}: ${id} が目録に無い`);
-assert.equal(findVideo("U9").group, "notice");
+// U9「10月の改修のお知らせ」は 2026-11-01 に退役（内容は各単元へ取り込み）。目録に戻さない
+assert.equal(findVideo("U9"), null);
 assert.equal(findVideo("L-B").group, "learn");
 // 既存の ID（マニュアル・案件画面のリンク ?v=U5 など）は変えない
-for (let n = 1; n <= 10; n++) assert.equal(findVideo(`U${n}`)?.file, `crm-u${n}`);
+for (const n of [1, 2, 3, 4, 5, 6, 7, 8, 10]) assert.equal(findVideo(`U${n}`)?.file, `crm-u${n}`);
 
 // 同期スクリプトが置く名前と、目録の file が一致する
 const py = readFileSync(new URL("./sync-training-videos.py", import.meta.url), "utf8");
