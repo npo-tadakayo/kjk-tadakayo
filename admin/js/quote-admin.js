@@ -243,7 +243,9 @@ async function resend(quoteId) {
   render();
   try {
     const resendQuoteMail = httpsCallable(ctx.functions, "resendQuoteMail");
-    await resendQuoteMail({ quoteId });
+    // 宛先は案件のいまのメールを渡す（「連絡先を直す」で直したあとに、見積もりに残る旧メールへ送らないため。2026-11-02）
+    const to = (ctx.getCase ? ctx.getCase() : {})?.contactEmail || "";
+    await resendQuoteMail(to ? { quoteId, to } : { quoteId });
     ctx.toast("見積書を送りました");
   } catch (e) {
     alert(`送信に失敗しました: ${e.message || e}`);

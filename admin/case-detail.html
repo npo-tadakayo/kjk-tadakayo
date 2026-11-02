@@ -72,6 +72,10 @@
           <div class="case-title" id="caseTitle"></div>
           <p class="page-intro" style="margin:0 0 var(--space-3)">この案件の状況と、次にやることをここで進めます。</p>
           <div class="case-meta" id="caseMeta"></div>
+          <!-- 担当者名・メール・電話の訂正。閲覧のみには出さない（JS で隠す）。見出しの1行は描き直されるので、その外に置く -->
+          <button class="btn btn-ghost" id="editContactBtn" type="button" style="display:none;margin-top:var(--space-2);padding:2px 8px;font-size:12px">
+            <i class="ti ti-pencil" aria-hidden="true"></i> 連絡先を直す
+          </button>
           <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="statusSelect">ステータス</label>
@@ -661,6 +665,44 @@
         <button class="btn btn-secondary" id="copyCaseCancelBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="copyCaseConfirmBtn" type="button">
           <i class="ti ti-copy-plus" aria-hidden="true"></i>新しい案件を作成する
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 連絡先を直す モーダル -->
+  <div class="modal-overlay" id="editContactModal" role="dialog" aria-modal="true" aria-labelledby="editContactTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 id="editContactTitle">連絡先を直す</h2>
+        <button class="btn btn-secondary" id="editContactCloseBtn" type="button" aria-label="閉じる">
+          <i class="ti ti-x" aria-hidden="true"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
+          この案件の担当者名・メール・電話を直します。直した内容は対応記録に残ります。
+          メールを直すと、まだ送っていない見積もりの宛先も同じように直します（送付済みの見積もりは変えません）。
+        </p>
+        <div class="form-group">
+          <label class="form-label" for="editContactName">担当者名</label>
+          <input class="form-control" type="text" id="editContactName" maxlength="200" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="editContactEmail">メール</label>
+          <input class="form-control" type="text" id="editContactEmail" inputmode="email" placeholder="例: example@care.jp" autocomplete="off">
+          <div style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">空欄にすると、メールなしになります。</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="editContactPhone">電話</label>
+          <input class="form-control" type="text" id="editContactPhone" inputmode="tel" autocomplete="off">
+        </div>
+        <div id="editContactError" role="alert" style="display:none;color:var(--color-danger);font-size:13px"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="editContactCancelBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="editContactConfirmBtn" type="button">
+          <i class="ti ti-check" aria-hidden="true"></i>この内容で保存する
         </button>
       </div>
     </div>

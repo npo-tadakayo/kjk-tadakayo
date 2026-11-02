@@ -18,6 +18,8 @@ import { visitSummary } from "/js/schedule-core.js";
 // 事業種別（cases.serviceType）と「コピーして別の事業種別で作る」（2026-11-01）
 import { serviceTypeOptionsHtml, planHintText, isServiceType, isDupExcludedPair } from "/js/service-types.js";
 import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
+// 連絡先（担当者名・メール・電話）の訂正
+import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -378,6 +380,86 @@ async function copyCaseWithServiceType() {
   }
 }
 
+// ===== 連絡先（担当者名・メール・電話）を直す =====
+// 案件の更新・活動メモ・（メールを直したときは）未送付の見積もりの宛先を、1つのトランザクションで書く。
+// 見積もりは「この案件の、旧メールのまま、まだ送っていない」ものだけ。送付済みは送った宛先の記録なので触らない。
+// 練習モードも同じ道（fs.js が練習DBへ向ける。transaction 内の set には作成者の印が付く）。
+function openEditContactModal() {
+  const c = currentCase;
+  document.getElementById("editContactName").value = c.contactName || "";
+  document.getElementById("editContactEmail").value = c.contactEmail || "";
+  document.getElementById("editContactPhone").value = c.contactPhone || "";
+  document.getElementById("editContactError").style.display = "none";
+  document.getElementById("editContactConfirmBtn").disabled = false;
+  document.getElementById("editContactModal").classList.add("open");
+  document.getElementById("editContactName").focus();
+}
+function closeEditContactModal() { document.getElementById("editContactModal").classList.remove("open"); }
+
+async function saveContact() {
+  const errEl = document.getElementById("editContactError");
+  const input = {
+    contactName: document.getElementById("editContactName").value,
+    contactEmail: document.getElementById("editContactEmail").value,
+    contactPhone: document.getElementById("editContactPhone").value,
+  };
+  const pre = buildContactUpdate(currentCase, input);
+  if (!pre.ok) { errEl.textContent = pre.error; errEl.style.display = "block"; return; }
+  const btn = document.getElementById("editContactConfirmBtn");
+  btn.disabled = true;
+  try {
+    const caseRef = doc(db, "cases", caseId);
+    const actRef = doc(collection(db, "activities"));
+    const userId = currentUser?.uid || null;
+    const userName = currentUser?.displayName || currentUser?.email || "";
+    // 見積もりは先に探す（トランザクションの中では検索できないため）。中で1件ずつ読み直して、条件を確かめ直す
+    const oldEmail = pre.changes.contactEmail ? pre.changes.contactEmail.before : "";
+    let quoteRefs = [];
+    if (pre.changes.contactEmail && oldEmail) {
+      const qs = await getDocs(query(collection(db, "quotes"), where("caseId", "==", caseId)));
+      quoteRefs = qs.docs.filter((d) => quoteNeedsEmailFix(d.data(), oldEmail)).map((d) => d.ref);
+    }
+    let result = null;
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(caseRef);
+      if (!snap.exists()) throw new Error("案件が見つかりません");
+      // 画面を開いたあとに誰かが直していても、いまの値と見比べて作り直す
+      const built = buildContactUpdate(snap.data(), input);
+      if (!built.ok) throw new Error(built.error);
+      const fixedNos = [];
+      const quoteTargets = [];
+      for (const ref of quoteRefs) {
+        const qs = await tx.get(ref);
+        if (qs.exists() && built.changes.contactEmail && quoteNeedsEmailFix(qs.data(), built.changes.contactEmail.before)) {
+          quoteTargets.push(ref);
+          fixedNos.push(qs.data().estNo);
+        }
+      }
+      const now = serverTimestamp();
+      const texts = contactChangeActivity(built.changes, fixedNos);
+      tx.update(caseRef, { ...built.data, updatedAt: now });
+      for (const ref of quoteTargets) tx.update(ref, { contactEmail: built.data.contactEmail });
+      tx.set(actRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.subject, body: texts.body, attachmentUrls: [] });
+      result = { data: built.data, quoteCount: quoteTargets.length };
+    });
+    // 「メール送信」の宛先が旧メールのままなら、直したメールに差し替える
+    if ("contactEmail" in result.data) {
+      const mailTo = document.getElementById("mailTo");
+      if (mailTo && normalizeEmail(mailTo.value) === normalizeEmail(currentCase.contactEmail)) mailTo.value = result.data.contactEmail;
+    }
+    Object.assign(currentCase, result.data);
+    renderCaseMeta(currentCase);
+    closeEditContactModal();
+    showToast(result.quoteCount ? `連絡先を直しました（見積もり${result.quoteCount}件の宛先も直しました）` : "連絡先を直しました");
+  } catch (e) {
+    const denied = e?.code === "permission-denied" || /insufficient permissions/i.test(e?.message || "");
+    errEl.textContent = denied ? "保存できませんでした: この操作の権限がありません" : `保存できませんでした: ${e.message || e}`;
+    errEl.style.display = "block";
+    btn.disabled = false;
+  }
+}
+
 // 対象外バナー・操作ボタンの表示状態
 function renderCaseActions() {
   const c = currentCase;
@@ -404,6 +486,9 @@ function renderCaseActions() {
   // 対象外（統合済み・重複など）の案件からは作らない
   const copyBtn = document.getElementById("copyCaseBtn");
   if (copyBtn) copyBtn.style.display = canCopy && !c.archived ? "" : "none";
+  // 連絡先の訂正は閲覧のみに出さない（文言が「直す」で role.js の自動無効化に掛からないため、JS で隠す）
+  const editContactBtn = document.getElementById("editContactBtn");
+  if (editContactBtn) editContactBtn.style.display = canCopy && !c.archived ? "" : "none";
 }
 
 // 重複候補カード
@@ -1848,6 +1933,14 @@ onAuthStateChanged(auth, async (user) => {
   });
 
   // この案件をコピーして、別の事業種別で作る
+  document.getElementById("editContactBtn")?.addEventListener("click", openEditContactModal);
+  document.getElementById("editContactCloseBtn")?.addEventListener("click", closeEditContactModal);
+  document.getElementById("editContactCancelBtn")?.addEventListener("click", closeEditContactModal);
+  document.getElementById("editContactModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeEditContactModal(); });
+  ["editContactName", "editContactEmail", "editContactPhone"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => { document.getElementById("editContactError").style.display = "none"; });
+  });
+  document.getElementById("editContactConfirmBtn")?.addEventListener("click", saveContact);
   document.getElementById("copyCaseBtn")?.addEventListener("click", openCopyCaseModal);
   document.getElementById("copyCaseCloseBtn")?.addEventListener("click", closeCopyCaseModal);
   document.getElementById("copyCaseCancelBtn")?.addEventListener("click", closeCopyCaseModal);
