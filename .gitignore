@@ -1,5 +1,8 @@
 .DS_Store
 .claude/
+# エージェント・Codex の作業用（2026-10-27・/AI診断 P6。毎回「含めないで」と口頭で指定していた）
+.agents/
+.codex/
 *.log
 .firebase/
 .playwright-mcp/
