@@ -15,8 +15,8 @@ t("functions 側のコピーと同じ", () => {
 
 t("exports はこれだけ（§9.5）", () => {
   assert.deepEqual(Object.keys(W).sort(), [
-    "DELIVERY_MODES", "ISSUE_REASONS", "canPickup", "canUseLocation", "defaultLocationIdOf", "deliveryModeOf", "isWarehouseRole", "locationSender",
-    "orderLocations", "projectForWarehouse", "senderForLabel", "shipStatusOf", "stockShortage", "validateIssue", "validatePickup", "warehouseActionable",
+    "DELIVERY_MODES", "ISSUE_REASONS", "WAREHOUSE_NOTE_MAX", "canPickup", "canUseLocation", "defaultLocationIdOf", "deliveryModeOf", "isWarehouseRole", "locationSender",
+    "orderLocations", "projectForWarehouse", "senderForLabel", "shipStatusOf", "stockShortage", "validateIssue", "validatePickup", "validateWarehouseNote", "warehouseActionable",
   ]);
 });
 
@@ -97,7 +97,7 @@ t("projectForWarehouse（W の項目だけ・金額/案件ID/請求を出さな�
   assert.deepEqual(Object.keys(w).sort(), [
     "address", "company", "contactName", "deliveryMode", "desiredDate", "handedOverAt", "handedOverByName", "id", "items",
     "letterPackType", "note", "officeName", "phone", "pickupByName", "pickupDate", "postalCode", "requestedAt", "requestedByName",
-    "shipDate", "soNumber", "status", "trackingNumber", "warehouseIssue",
+    "shipDate", "soNumber", "status", "trackingNumber", "warehouseConfirmed", "warehouseConfirmedAt", "warehouseConfirmedByName", "warehouseIssue", "warehouseNote",
   ].sort());
   assert.equal(w.id, "sh1");
   assert.equal(w.postalCode, "100-0001");
@@ -433,6 +433,36 @@ t("新規出荷の送付方法（発送／持ち出し・Codex 指摘3回目 B�
   assert.match(rs, /await loadPickupUsers\(\)/); // 本番の users から（練習モードでも候補がある）
   assert.match(sup, /if\(!s\) resetShipDeliveryMode\(\);/);
   assert.match(sup, /getElementById\("shipDeliveryMode"\)\?\.addEventListener\("change",\(\)=>syncShipDeliveryMode\(true\)\)/);
+});
+
+t("validateWarehouseNote（倉庫用の備考・500字まで・空は消す）", () => {
+  assert.equal(W.WAREHOUSE_NOTE_MAX, 500);
+  assert.deepEqual(W.validateWarehouseNote("まとめて発送"), { ok: true, note: "まとめて発送" });
+  assert.deepEqual(W.validateWarehouseNote("  前後の空白は除く \n"), { ok: true, note: "前後の空白は除く" });
+  assert.deepEqual(W.validateWarehouseNote(""), { ok: true, note: "" });
+  assert.deepEqual(W.validateWarehouseNote("   "), { ok: true, note: "" });
+  assert.equal(W.validateWarehouseNote("あ".repeat(500)).ok, true);
+  const over = W.validateWarehouseNote("あ".repeat(501));
+  assert.equal(over.ok, false); assert.match(over.error, /500字以内/);
+  for (const bad of [null, undefined, 123, {}, ["a"], true]) assert.equal(W.validateWarehouseNote(bad).ok, false, String(bad));
+});
+
+t("projectForWarehouse: 一覧タブの新項目（確認済み・備考）", () => {
+  const w = W.projectForWarehouse({ status: "requested", warehouseConfirmedAt: ts("2026-11-04T01:02:03Z"), warehouseConfirmedBy: "藤田千晶", warehouseNote: "まとめて発送" });
+  assert.equal(w.warehouseConfirmed, true);
+  assert.equal(w.warehouseConfirmedAt, "2026-11-04T01:02:03.000Z");
+  assert.equal(w.warehouseConfirmedByName, "藤田千晶");
+  assert.equal(w.warehouseNote, "まとめて発送");
+  // 古い出荷（項目なし）は未確認・備考なし。画面が動く
+  const old = W.projectForWarehouse({ status: "requested" });
+  assert.equal(old.warehouseConfirmed, false);
+  assert.equal(old.warehouseConfirmedAt, null);
+  assert.equal(old.warehouseConfirmedByName, "");
+  assert.equal(old.warehouseNote, "");
+  // 既存の項目は変えない（追加のみ）。確認した人のメールなど、新しい生の項目は返さない
+  const keys = Object.keys(W.projectForWarehouse({ status: "requested", warehouseConfirmedByEmail: "x@tadakayo.jp", total: 1 }));
+  for (const k of ["id", "soNumber", "status", "deliveryMode", "officeName", "postalCode", "address", "phone", "items", "requestedByName", "requestedAt", "warehouseIssue", "shipDate", "trackingNumber", "handedOverAt"]) assert.ok(keys.includes(k), k);
+  for (const k of ["total", "warehouseConfirmedByEmail", "caseId", "invoiceNo"]) assert.ok(!keys.includes(k), k);
 });
 
 console.log(`OK: test-warehouse-rules ${n} 件`);
