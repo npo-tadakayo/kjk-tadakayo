@@ -407,7 +407,7 @@ console.log(`OK: test-functions-wiring ${n} 件`);
     const j = src.indexOf("\nexports.", i + 10);
     return src.slice(i, j < 0 ? undefined : j);
   };
-  for (const name of ["warehouseList", "warehouseShip", "warehouseHandover", "warehouseReject", "warehouseFixTracking"]) {
+  for (const name of ["warehouseList", "warehouseShip", "warehouseHandover", "warehouseReject", "warehouseFixTracking", "warehouseConfirm", "warehouseSetNote"]) {
     const b = blockOf(name);
     if (!/region: "asia-northeast1"/.test(b)) throw new Error(`${name}: region が asia-northeast1 でない`);
     if (!/serviceAccount: SA_BATCH/.test(b)) throw new Error(`${name}: SA_BATCH でない`);

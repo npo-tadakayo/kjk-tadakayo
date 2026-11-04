@@ -166,6 +166,11 @@ export function projectForWarehouse(s) {
     note: str(d.shipNote || d.note || ""),
     requestedByName: str(d.requestedBy),
     requestedAt: isoOf(d.requestedAt),
+    // 倉庫の「一覧」タブ（2026-11-04）。どれも任意（無い古い出荷は未確認・備考なし）
+    warehouseConfirmed: !!d.warehouseConfirmedAt,
+    warehouseConfirmedAt: isoOf(d.warehouseConfirmedAt),
+    warehouseConfirmedByName: str(d.warehouseConfirmedBy),
+    warehouseNote: str(d.warehouseNote),
     pickupByName: str(d.pickupByName),
     pickupDate: str(d.pickupDate),
     warehouseIssue: wi ? { reason: str(wi.reason), note: str(wi.note), at: isoOf(wi.at), byName: str(wi.byName) } : null,
@@ -211,6 +216,15 @@ export function validatePickup({ pickupByEmail, pickupDate } = {}) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { ok: false, error: "持ち出す人を選んでください" };
   if (!validYmd(pickupDate)) return { ok: false, error: "持ち出しの予定日を YYYY-MM-DD で入れてください" };
   return { ok: true };
+}
+
+// 倉庫用の備考（shipments.warehouseNote）の入力。空文字は「消す」。500字まで（前後の空白は除く）
+export const WAREHOUSE_NOTE_MAX = 500;
+export function validateWarehouseNote(note) {
+  if (typeof note !== "string") return { ok: false, error: "備考の形が正しくありません" };
+  const n = note.trim();
+  if (n.length > WAREHOUSE_NOTE_MAX) return { ok: false, error: `備考は${WAREHOUSE_NOTE_MAX}字以内で入れてください` };
+  return { ok: true, note: n };
 }
 
 // 「出荷できない」の入力（理由・メモ）。メモは200字まで。「その他」はメモ必須

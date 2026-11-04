@@ -3849,3 +3849,62 @@ exports.warehouseFixTracking = onCall(
     return { ok: true };
   }
 );
+
+// 入力 { shipmentId, confirmed:boolean } → { ok:true }
+// 倉庫の「一覧」タブの「確認済み」。依頼済（requested）の出荷だけ。外すと確認した日時・人を消す。
+// 発送済にした直後と競合したら（状態が requested でなくなっていたら）上書きせず失敗させる（トランザクションで状態を確かめる）
+exports.warehouseConfirm = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
+  async (request) => {
+    const me = await requireWarehouse(request); // 認可を最初に（入力を見る前に）
+    const data = request.data || {};
+    const shipmentId = warehouseShipmentId(data);
+    if (typeof data.confirmed !== "boolean") throw new HttpsError("invalid-argument", "確認済みのオン・オフを指定してください");
+    const wr = await loadWarehouseRules();
+    const locs = await warehouseLocations();
+    const ref = db.collection("shipments").doc(shipmentId);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError("not-found", "この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if (cur.status !== "requested") throw new HttpsError("failed-precondition", warehouseStaleMsg(cur));
+      if (cur.fulfillment === "direct") throw new HttpsError("failed-precondition", "直送（AB Circleから直接）の出荷は倉庫で扱いません");
+      const locId = cur.originLocationId || locs.defaultId;
+      if (!wr.canUseLocation(me.user, locId)) throw new HttpsError("permission-denied", "この保管場所の出荷を扱う権限がありません");
+      tx.update(ref, data.confirmed
+        ? { warehouseConfirmedAt: now, warehouseConfirmedBy: me.name, updatedAt: now }
+        : { warehouseConfirmedAt: admin.firestore.FieldValue.delete(), warehouseConfirmedBy: admin.firestore.FieldValue.delete(), updatedAt: now });
+    });
+    return { ok: true };
+  }
+);
+
+// 入力 { shipmentId, note:string } → { ok:true }
+// 倉庫用の備考（「まとめて発送」など）。依頼済・発送済どちらでも書ける（同じ保管場所の出荷だけ）。空文字で消す。500字まで
+exports.warehouseSetNote = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, serviceAccount: SA_BATCH },
+  async (request) => {
+    const me = await requireWarehouse(request); // 認可を最初に（入力を見る前に）
+    const data = request.data || {};
+    const shipmentId = warehouseShipmentId(data);
+    const wr = await loadWarehouseRules();
+    const v = wr.validateWarehouseNote(data.note);
+    if (!v.ok) throw new HttpsError("invalid-argument", v.error);
+    const locs = await warehouseLocations();
+    const ref = db.collection("shipments").doc(shipmentId);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError("not-found", "この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      const st = wr.shipStatusOf(cur);
+      if (st !== "requested" && !WAREHOUSE_DONE_STATUSES.includes(st)) throw new HttpsError("failed-precondition", warehouseStaleMsg(cur));
+      if (cur.fulfillment === "direct") throw new HttpsError("failed-precondition", "直送（AB Circleから直接）の出荷は倉庫で扱いません");
+      const locId = cur.originLocationId || locs.defaultId;
+      if (!wr.canUseLocation(me.user, locId)) throw new HttpsError("permission-denied", "この保管場所の出荷を扱う権限がありません");
+      tx.update(ref, { warehouseNote: v.note ? v.note : admin.firestore.FieldValue.delete(), updatedAt: now });
+    });
+    return { ok: true };
+  }
+);
