@@ -73,7 +73,9 @@ let locationId = "";
 let current = null; // モーダルで操作中の出荷
 let busy = false;
 // 一覧タブの状態（絞り込み・検索・並べ替え・「確認済みにしたあとも、この画面を開いている間は残す行」）
-const sheet = { filter: "unconfirmed", q: "", key: "requestedAt", dir: "asc", keep: new Set() };
+const sheet = { filter: "unconfirmed", q: "", key: "requestedAt", dir: "asc", keep: new Set(),
+  // 備考の未保存の入力（id → { value, state: "saving"|"error", msg }）。保存が終わるまで画面の描き直しでも消えない／失敗しても入力した文を残す
+  pending: new Map(), inflight: new Set() };
 
 function readSavedLoc() { try { return localStorage.getItem(LOC_KEY) || ""; } catch (_) { return ""; } }
 function saveLoc(v) { try { localStorage.setItem(LOC_KEY, v); } catch (_) {} }
@@ -238,7 +240,10 @@ function sheetRow(s, counts) {
     : tick(`data-shipchk="${id}"`, `${so}を${pickup ? "受け渡し済" : "発送済"}にする`, false, false);
   const dateCell = done ? esc(s.shipDate || "—") : (s.desiredDate ? `<span class="wh-meta">希望 ${esc(s.desiredDate)}</span>` : "—");
   const trackCell = done && !pickup ? esc(s.trackingNumber || "なし") : "—";
-  const noteCell = `<textarea class="form-control wh-note" rows="2" maxlength="500" data-note="${id}" aria-label="${esc(so)}の備考">${esc(s.warehouseNote || "")}</textarea><span class="wh-note-st" data-notest="${id}" aria-live="polite"></span>`;
+  const pend = sheet.pending.get(s.id); // 未保存（保存中・失敗）の入力があれば、サーバーの値より優先して出す
+  const noteVal = pend ? pend.value : (s.warehouseNote || "");
+  const stText = pend ? (pend.state === "saving" ? "保存中…" : `保存できませんでした：${pend.msg}`) : "";
+  const noteCell = `<textarea class="form-control wh-note" rows="2" maxlength="500" data-note="${id}" aria-label="${esc(so)}の備考">${esc(noteVal)}</textarea><span class="wh-note-st${pend && pend.state === "error" ? " err" : ""}" data-notest="${id}" aria-live="polite">${esc(stText)}</span>`;
   const cls = done ? "is-done" : (s.warehouseConfirmed ? "" : "is-unconfirmed");
   return `<tr class="${cls}"><td>${esc(fmtDT(s.requestedAt))}</td><td>${esc(s.requestedByName || "—")}</td><td>${Number(qtyOf(s))}</td>`
     + `<td>${dest}${sameHtml}</td><td><strong>${esc(so)}</strong></td><td class="chk">${confirmCell}</td><td class="chk">${shipCell}</td>`
@@ -312,18 +317,39 @@ async function onSheetNote(ta) {
   const id = ta.dataset.note;
   const s = find(id); if (!s) return;
   const value = ta.value.trim();
-  if (value === String(s.warehouseNote || "")) return; // 変わっていなければ保存しない
-  const st = () => document.querySelector(`[data-notest="${CSS.escape(id)}"]`);
-  const setSt = (msg, err) => { const el = st(); if (el) { el.textContent = msg; el.classList.toggle("err", !!err); } };
+  const pend = sheet.pending.get(id);
+  const same = value === String(s.warehouseNote || "");
+  const setSt = (msg, err) => {
+    const el = document.querySelector(`[data-notest="${CSS.escape(id)}"]`);
+    if (el) { el.textContent = msg; el.classList.toggle("err", !!err); }
+  };
+  if (!pend && same) return; // 変わっていなければ保存しない
+  if (pend && pend.state === "error" && same) { sheet.pending.delete(id); setSt("", false); return; } // 失敗した入力を、元の文に戻した
+  if (pend && pend.state === "saving") { pend.value = value; return; } // 保存中なら、終わったあとに最新の入力でもう一度保存する
+  const p = { value, state: "saving", msg: "" };
+  sheet.pending.set(id, p); // 送る前に手元へ入れる（描き直し・更新・別の行の操作で入力が消えない）
   setSt("保存中…", false);
-  try {
-    await noteFn({ shipmentId: id, note: value });
-    s.warehouseNote = value;
-    setSt("保存しました", false);
-    setTimeout(() => { const el = st(); if (el && el.textContent === "保存しました") el.textContent = ""; }, 3000);
-  } catch (e) {
-    setSt(`保存できませんでした：${errText(e)}`, true);
-  }
+  const run = (async () => {
+    for (;;) {
+      const sent = p.value;
+      try {
+        await noteFn({ shipmentId: id, note: sent });
+        s.warehouseNote = sent;
+      } catch (e) {
+        p.state = "error"; p.msg = errText(e); // 入力した文は pending に残す。失敗が分かる表示を出す
+        setSt(`保存できませんでした：${p.msg}`, true);
+        return;
+      }
+      if (p.value === sent) {
+        sheet.pending.delete(id);
+        setSt("保存しました", false);
+        setTimeout(() => { const el = document.querySelector(`[data-notest="${CSS.escape(id)}"]`); if (el && el.textContent === "保存しました") el.textContent = ""; }, 3000);
+        return;
+      }
+    }
+  })();
+  sheet.inflight.add(run);
+  run.finally(() => sheet.inflight.delete(run));
 }
 function bindSheet() {
   const host = $("tab-sheet");
@@ -471,7 +497,11 @@ onAuthStateChanged(auth, async (user) => {
   $("gate").style.display = "none"; $("main").style.display = "block";
   locationId = readSavedLoc();
   $("locSelect").addEventListener("change", (e) => { locationId = e.target.value; saveLoc(locationId); load(); });
-  $("reloadBtn").addEventListener("click", () => { sheet.keep.clear(); load(); });
+  $("reloadBtn").addEventListener("click", async () => {
+    if (sheet.inflight.size) await Promise.allSettled([...sheet.inflight]); // 備考の保存が終わってから読み直す（入力を静かに失わない）
+    sheet.keep.clear(); load();
+  });
+  window.addEventListener("beforeunload", (e) => { if (sheet.pending.size) { e.preventDefault(); e.returnValue = ""; } }); // 保存できていない備考があるまま閉じない
   document.querySelectorAll(".wh-tabs .tab").forEach((t) => t.addEventListener("click", () => {
     switchTab(t.dataset.tab);
     if (t.dataset.tab === "sheet") { sheet.keep.clear(); load(true); } // 一覧を開くたびに最新にする（依頼が入った分が出る）

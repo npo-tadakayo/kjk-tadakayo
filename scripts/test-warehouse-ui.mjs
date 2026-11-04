@@ -39,7 +39,7 @@ ok(/other/.test(js) && /くわしい内容を書いてください/.test(js), "�
 ok(/発送済にする/.test(js) && /受け渡し済にする/.test(js) && /出荷できない/.test(js) && /追跡番号を直す/.test(js), "ボタンの文言が足りない");
 ok(/code === "internal"/.test(js), "internal の言い換えが無い");
 // 動的に差し込む文字列はすべて esc を通す（テンプレート内の ${...} のうち生で出してよいものを許可リストで確認）
-const rawOk = /\$\{(esc\(|CSS\.escape\(|unconf\b|vis\.length|confirmCell|shipCell|dateCell|trackCell|noteCell|sameHtml|head\b|opts\b|arrow\(|sortTh\(|sheet\.|cls\b|attrs\b|label\b|n\}|so\b|id\}|pickup \? "受け渡し済"|checked \? |disabled \? |isPickup\(s\) \? esc\(|Number\(|pickup|badge|dest|itemsHtml|meta\.join|issue|actions|infoLine|lines|reasonList|rows|list\.map|data\.|ship\b|pick\b|i === 0|s\.postalCode \?|s\.phone \?|s\.desiredDate \?|s\.warehouseIssue\.note \?|s\.contactName|mode|code|msg|errText|typeof|r && r\.notified|s\.soNumber|k\b|v\b|n\}|id\}|\()/;
+const rawOk = /\$\{(esc\(|CSS\.escape\(|pend \&\& pend\.state|pend\.msg|p\.msg|unconf\b|vis\.length|confirmCell|shipCell|dateCell|trackCell|noteCell|sameHtml|head\b|opts\b|arrow\(|sortTh\(|sheet\.|cls\b|attrs\b|label\b|n\}|so\b|id\}|pickup \? "受け渡し済"|checked \? |disabled \? |isPickup\(s\) \? esc\(|Number\(|pickup|badge|dest|itemsHtml|meta\.join|issue|actions|infoLine|lines|reasonList|rows|list\.map|data\.|ship\b|pick\b|i === 0|s\.postalCode \?|s\.phone \?|s\.desiredDate \?|s\.warehouseIssue\.note \?|s\.contactName|mode|code|msg|errText|typeof|r && r\.notified|s\.soNumber|k\b|v\b|n\}|id\}|\()/;
 for (const m of js.matchAll(/\$\{([^}]*)\}/g)) ok(rawOk.test("${" + m[1] + "}"), `エスケープ未確認の差し込み: ${m[0]}`);
 
 // 練習用の代役（5つ・2スペース字下げ・外へ出ない）
@@ -125,7 +125,7 @@ ok(S.sameDestOf(rows[0], cnt) === 2 && S.sameDestOf(rows[1], cnt) === 2, "同じ
 ok(S.sameDestOf(rows[2], cnt) === 0 && S.sameDestOf(rows[3], cnt) === 0 && S.sameDestOf(rows[4], cnt) === 0, "1件だけ・持ち出し・発送済には出さない");
 // CSV
 ok(S.csvCell('a"b') === '"a""b"' && S.csvCell("x,y") === '"x,y"' && S.csvCell(null) === '""' && S.csvCell(3) === '"3"', "csvCell の引用");
-for (const f of ["=1+1", "+81", "-1", "@SUM(A1)", "\t=x", "\r=x"]) ok(S.csvCell(f).startsWith(`"'`), `式インジェクション対策: ${JSON.stringify(f)}`);
+for (const f of ["=1+1", "+81", "-1", "@SUM(A1)", "\t=x", "\r=x", " =1", "\u3000＝1", "  \t@x", "＋81", "－1", "＠SUM"]) ok(S.csvCell(f).startsWith(`"'`), `式インジェクション対策: ${JSON.stringify(f)}`);
 ok(S.csvCell("普通=の文字") === '"普通=の文字"', "途中の = は触らない");
 const csv = S.buildCsv(rows.slice(0, 1).concat(rows.slice(3, 5)).map((s) => ({ ...s, warehouseNote: s.id === "r1" ? '=HYPERLINK("x")' : "" })));
 ok(csv.charCodeAt(0) === 0xFEFF && csv.includes("\r\n") && csv.endsWith("\r\n"), "CSV は BOM 付き・CRLF");
@@ -134,5 +134,26 @@ ok(csv.includes(`"'=HYPERLINK(""x"")"`), "備考の先頭の = に ' を付け�
 ok(csv.includes('"2026-11-03 09:00"') && csv.includes('"受け渡し"') && csv.includes('"123"'), "CSV の日時（JST）・受け渡し・追跡番号");
 ok(S.csvFileName("滋賀/ロジ センター", "2026-11-04") === "出荷一覧_滋賀_ロジ_センター_20261104.csv" && S.csvFileName("", "2026-11-04") === "出荷一覧_保管場所_20261104.csv", "CSV のファイル名");
 ok(/buildCsv\(vis\)/.test(js) && /sheetVisible\(\)/.test(js) && /\\uFEFF/.test(readFileSync(root("admin/js/warehouse-sheet.js"), "utf8")), "CSV は見えている行から作る");
+
+// --- 要修正（独立レビュー）: 確認済みは依頼のし直し・取り消し・宛先／台数の修正で外れる（supply.js を静的に読む）---
+const sup = readFileSync(root("admin/js/supply.js"), "utf8");
+const clear = /warehouseConfirmedAt: deleteField\(\), warehouseConfirmedBy: deleteField\(\)/;
+{
+  const reReq = sup.slice(sup.indexOf("...requestedStampPatch(), warehouseIssue: deleteField()"), sup.indexOf("}catch(e){ alert(`出荷の依頼に失敗しました"));
+  ok(clear.test(reReq), "依頼（し直し）で確認済みを消していない");
+  const revert = sup.slice(sup.indexOf('status:"draft", requestRevertedAt'), sup.indexOf("依頼の取り消しに失敗しました"));
+  ok(clear.test(revert), "依頼の取り消しで確認済みを消していない");
+  const edit = sup.slice(sup.indexOf("async function saveShipEdit()"), sup.indexOf("// 案件（事業所の申し込み）→ 直接出荷フォームに取り込み"));
+  ok(/tx\.update\(shipRef, needsResendPrompt\(cur, \{ \.\.\.cur, \.\.\.patch \}\)\s*\? \{ \.\.\.patch, warehouseConfirmedAt: deleteField\(\), warehouseConfirmedBy: deleteField\(\) \} : patch\)/.test(edit), "宛先・台数の修正で確認済みを消していない");
+}
+// --- 要修正: 備考の入力は描き直し・更新・失敗で消えない ---
+{
+  const nb = js.slice(js.indexOf("async function onSheetNote("), js.indexOf("function bindSheet()"));
+  ok(nb.indexOf("sheet.pending.set(id, p)") > 0 && nb.indexOf("sheet.pending.set(id, p)") < nb.indexOf("await noteFn("), "保存を送る前に未保存の入力を手元へ入れていない");
+  ok(/p\.state = "error"/.test(nb) && !/sheet\.pending\.delete\(id\);\s*setSt\(`保存できませんでした/.test(nb), "保存に失敗しても入力を残していない");
+  ok(/const pend = sheet\.pending\.get\(s\.id\)/.test(js) && /const noteVal = pend \? pend\.value/.test(js), "sheetRow が未保存の入力を優先していない");
+  ok(/await Promise\.allSettled\(\[\.\.\.sheet\.inflight\]\)/.test(js), "更新ボタンが保存の完了を待っていない");
+  ok(/beforeunload/.test(js), "未保存の備考があるまま閉じる警告が無い");
+}
 
 console.log(`OK test-warehouse-ui: ${n} checks passed`);

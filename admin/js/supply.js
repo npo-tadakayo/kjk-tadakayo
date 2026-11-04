@@ -1164,7 +1164,9 @@ async function requestDraftShipment(s){
         ...(ans.deliveryMode==="pickup"
           ? { deliveryMode:"pickup", pickupByEmail:ans.pickupByEmail, pickupByName:ans.pickupByName, pickupDate:ans.shipDate, ...noPostage }
           : { deliveryMode:"ship", ...letterPackPatch(ans.letterPackType), ...restore }),
-        ...requestedStampPatch(), warehouseIssue: deleteField(), updatedAt: serverTimestamp() });
+        ...requestedStampPatch(), warehouseIssue: deleteField(),
+        warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField(), // 倉庫の「確認済み」も依頼し直しで外す（確認した内容と別物になるため）
+        updatedAt: serverTimestamp() });
     });
   }catch(e){ alert(`出荷の依頼に失敗しました: ${e.message}`); return; }
   const head = `${s.soNumber} の${ans.deliveryMode==="pickup"?"持ち出し":"出荷"}を依頼しました（在庫は${ans.deliveryMode==="pickup"?"受け渡し済":"発送済"}にしたときに引き落とします）`
@@ -1258,6 +1260,7 @@ async function revertToDraft(s){
         status:"draft", requestRevertedAt: serverTimestamp(), requestRevertedBy: currentUser.displayName||currentUser.email,
         shipNotifiedAt: deleteField(), shipNotifyStatus: deleteField(), shipNotifyLockAt: deleteField(),
         warehouseIssue: deleteField(), // 倉庫からの差し戻しも消す（持ち出しの項目は、依頼し直すときの初期値として残す）
+        warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField(), // 倉庫の「確認済み」も外す
         updatedAt: serverTimestamp() });
     });
   }catch(e){ alert(`依頼の取り消しに失敗しました: ${e.message}`); return; }
@@ -1935,7 +1938,9 @@ async function saveShipEdit(){
           }
         }
       }
-      tx.update(shipRef, patch);
+      // 依頼済のまま宛先・台数などを直したら、倉庫の「確認済み」は外す（確認した内容と変わるため。needsResendPrompt と同じ判定）
+      tx.update(shipRef, needsResendPrompt(cur, { ...cur, ...patch })
+        ? { ...patch, warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField() } : patch);
       // 在庫の差分を反映（増やしたら引く／減らしたら戻す）。何が動いたか履歴にも残す
       if(items){
         for(const sku of Object.keys(delta)){
