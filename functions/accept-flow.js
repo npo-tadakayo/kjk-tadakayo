@@ -248,8 +248,9 @@ function shouldNotifyConsent(before, after) {
  *   users は {email(=doc id), name, displayName, chatUserId, ...}
  * @returns {{overall:string|null, assignees:{email:string, name:string, text:string}[]}}
  */
-function planDailyPosts(nt, { cases, users, settings, now = new Date(), regionOf } = {}) {
-  const cls = nt.classifyCases(cases || [], { now, deadline: nt.resolveDeadline(settings || {}) });
+function planDailyPosts(nt, { cases, users, settings, now = new Date(), regionOf, shipments = [] } = {}) {
+  // shipments … 発送済(shipped)の出荷（請求書の出し忘れの節に使う・2026-11-08）。省略時はその節を作らない
+  const cls = nt.classifyCases(cases || [], { now, deadline: nt.resolveDeadline(settings || {}), shipments });
   let overall = nt.buildOverallDigest(cls, { regionOf });
   if (!nt.holidaysCover(now)) {
     const warn = `⚠️ 祝日の表に ${jstYmd(now).slice(0, 4)} 年の分がありません（初期連絡の超過が早めに出ます）。functions/first-contact.mjs と admin/js/first-contact.js に追記してください`;

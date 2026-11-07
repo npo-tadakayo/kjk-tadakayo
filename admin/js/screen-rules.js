@@ -31,6 +31,68 @@ export function completionActivityNote(warnings) {
   return list.length ? `警告を確認のうえ完了: ${list.join("／")}` : "";
 }
 
+// ===== 伴走支援実施済(8)にしたときの請求書の確認（2026-11-08 次田さん指示） =====
+// 伴走支援が終わった時点で請求書を出していない出荷があれば、ステータスを変えた本人にその場で知らせる。
+// 止めない（OK でもキャンセルでもステータスは変わる）。OK なら請求書の画面を開く。
+// 完了(13)にするときは completionWarnings の確認が出るので、ここでは 8〜12 だけを対象にする。
+
+/** 伴走支援実施済（constants.js の 8 と同じ。テストで一致を確かめる） */
+export const SUPPORT_DONE = 8;
+
+/** 7 以前 → 8〜12 にする操作か（8 以降の中での移動や、13 にする操作は false） */
+export function isFinishingSupport(prevStatus, newStatus) {
+  const p = Number(prevStatus), n = Number(newStatus);
+  return n >= SUPPORT_DONE && n < CASE_DONE && p < SUPPORT_DONE;
+}
+
+/**
+ * この案件の出荷のうち、請求書を出していないもの（発送済）と、まだ発送していないもの（下書き・依頼済）。
+ * 状態が空の古い出荷は発送済とみなす（case-complete-check.js の shipStatusOf と同じ）。キャンセル済みは数えない。
+ */
+export function invoicePending(shipments) {
+  const st = (s) => (s && s.status) || "shipped";
+  const live = (shipments || []).filter((s) => s && st(s) !== "canceled");
+  return {
+    notInvoiced: live.filter((s) => st(s) === "shipped"),
+    notShipped: live.filter((s) => ["draft", "requested"].includes(st(s))),
+  };
+}
+
+const soNos = (arr) => arr.map((s) => s.soNumber || "番号なし").join("・");
+
+/** 確認ダイアログの本文（知らせることが無ければ ""＝出さない） */
+export function invoicePromptText(pending) {
+  const { notInvoiced = [], notShipped = [] } = pending || {};
+  if (!notInvoiced.length && !notShipped.length) return "";
+  const lines = [];
+  if (notInvoiced.length) lines.push(`・請求書を出していない出荷: ${soNos(notInvoiced)}`);
+  if (notShipped.length) lines.push(`・まだ「発送済」になっていない出荷: ${soNos(notShipped)}（発送済にすると請求書を出せます）`);
+  const open = notInvoiced.length ? "請求書の画面を開きます" : "出荷の画面を開きます";
+  return "伴走支援、おつかれさまでした。忘れないうちに請求書を出しましょう。\n\n"
+    + lines.join("\n")
+    + `\n\n［OK］${open}\n［キャンセル］あとで出す\n（どちらを押しても、ステータスは変わります）`;
+}
+
+/** OK のときに開く画面（請求書を出していない出荷が1件ならその請求書、ほかは供給管理の出荷タブ） */
+export function invoicePromptUrl(pending) {
+  const { notInvoiced = [], notShipped = [] } = pending || {};
+  if (notInvoiced.length === 1 && notInvoiced[0]._id) {
+    return `/supply-print.html?type=invoice&id=${encodeURIComponent(notInvoiced[0]._id)}`;
+  }
+  const first = notInvoiced[0] || notShipped[0];
+  return `/supply.html?tab=shipments${first && first.soNumber ? `&so=${encodeURIComponent(first.soNumber)}` : ""}`;
+}
+
+/** 活動の本文へ足す1行（知らせることが無ければ ""） */
+export function invoicePromptNote(pending, opened) {
+  const { notInvoiced = [], notShipped = [] } = pending || {};
+  if (!notInvoiced.length && !notShipped.length) return "";
+  const parts = [];
+  if (notInvoiced.length) parts.push(`請求書未発行 ${soNos(notInvoiced)}`);
+  if (notShipped.length) parts.push(`未発送 ${soNos(notShipped)}`);
+  return `請求書の確認: ${parts.join("／")}（${opened ? "その場で画面を開いた" : "あとで出す"}）`;
+}
+
 // ===== 出荷の重複の帯（案件詳細の出荷タブ） =====
 
 /**

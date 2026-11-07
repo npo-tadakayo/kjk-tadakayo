@@ -17,7 +17,8 @@ import { askLostReason } from "/js/case-detail-util.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 // 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
 import { completionWarnings } from "/js/case-complete-check.js";
-import { isCompleting, completionConfirmText, completionActivityNote } from "/js/screen-rules.js";
+import { isCompleting, completionConfirmText, completionActivityNote,
+  isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -247,6 +248,21 @@ async function changeStatus(id, newStatus) {
     warnNote = completionActivityNote(warnings);
     patch.completedAt = serverTimestamp();
   }
+  // 伴走支援実施済(8)以降にしたときは、請求書を出していない出荷を知らせる（止めない・2026-11-08）。
+  // 出荷を読めなかったときは知らせずに進める（ステータス変更を止めないため）
+  let invUrl = "";
+  if (isFinishingSupport(prev, newStatus)) {
+    try {
+      const shipSnap = await getDocs(query(collection(db, "shipments"), where("caseId", "==", id)));
+      const pend = invoicePending(shipSnap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+      const msg = invoicePromptText(pend);
+      if (msg) {
+        const ok = confirm(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${msg}`);
+        warnNote = invoicePromptNote(pend, ok);
+        if (ok) invUrl = invoicePromptUrl(pend);
+      }
+    } catch (e) { console.warn("請求書の確認を読めませんでした", e); }
+  }
   try {
     await updateDoc(doc(db, "cases", id), patch);
     await addDoc(collection(db, "activities"), {
@@ -256,6 +272,8 @@ async function changeStatus(id, newStatus) {
       body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : ""), attachmentUrls: [],
     });
     toast(`#${c.caseNumber} ${c.officeName} → ${STATUS_LABELS[newStatus]}`);
+    // 読み込みを待ったあとなので新しいタブは止められることがある。止められたらこの画面で開く
+    if (invUrl && !window.open(invUrl, "_blank")) location.href = invUrl;
   } catch (e) {
     toast(`変更に失敗しました: ${e.message}`);
   }
