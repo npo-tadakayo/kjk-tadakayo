@@ -2594,10 +2594,11 @@ function renderShipments(ships, dv){
       lifeBtns = `<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金を記録する</button>`
         + docInvoice
         + applyCreditBtn
+        // 支払期限を過ぎたときの催促は急ぐ操作なので外に出す（2026-11-08）
+        + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
         + moreBtns(
           // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
           (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
-          + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
           + docRefund + docLetterpack + docShipnote + trackBtn + notifyBtn
           + editBtn + typeBtn + cancelBtn);
     } else if(st==="paid"){
