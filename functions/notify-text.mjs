@@ -28,7 +28,8 @@ export const DEADLINE = new Date("2027-03-12T23:59:59+09:00");       // 申請�
 export const AWAIT_DEPOSIT_DAYS = 14;   // 入金待ち(11)のまま、この日数以上更新なし
 export const DEADLINE_NEAR_DAYS = 30;   // 申請期限まで残りこの日数以下で「期限間近」
 export const SECTION_LIMIT = 10;
-export const SUPPORT_DONE = 8;          // 伴走支援実施済。これ以降で発送済のまま請求書が出ていない出荷を「請求書の出し忘れ」に載せる（2026-11-08）        // 各節に並べる件数の上限（超えた分は「…ほか N 件」）
+// 伴走支援実施済。これ以降（失注を除く）で発送済のまま請求書が出ていない出荷を「請求書の出し忘れ」に載せる（2026-11-08）
+export const SUPPORT_DONE = 8;        // 各節に並べる件数の上限（超えた分は「…ほか N 件」）
 export const ADMIN_URL = "https://kjk-tadakayo-admin.web.app";
 
 const DAY_MS = 86400000;
@@ -97,7 +98,8 @@ const emailKey = (e) => String(e || "").trim().toLowerCase();
  *   shipments … 出荷（caseId・status・soNumber・shippedAt）。発送済(shipped)のものだけ使う。省略時は請求書の節を作らない
  * @returns {{deadline:Date, deadlineDays:number, deadlineNearAll:number,
  *   overall:{firstContactOver:Entry[], newUnassigned:Entry[], engagedUnassigned:Entry[], staleUnassigned:Entry[]},
- *   assignees:Object<string,{email:string, newReceived:Entry[], stale:Entry[], awaitingDeposit:Entry[], deadlineNear:Entry[], firstContactOver:Entry[]}>}}
+ *   assignees:Object<string,{email:string, newReceived:Entry[], stale:Entry[], awaitingDeposit:Entry[], deadlineNear:Entry[], firstContactOver:Entry[], invoicePending:Entry[]}>}}
+ *   overall.invoicePending・assignees[].invoicePending の Entry は { c, days: 発送からの日数|null, sos: 出荷番号[] }
  *   Entry = { c: 案件, days: number|null }（days は節ごとの日数: 超過営業日・更新なしの日数）
  */
 export function classifyCases(cases, { now = new Date(), deadline = DEADLINE, holidays = JP_HOLIDAYS, shipments = [] } = {}) {

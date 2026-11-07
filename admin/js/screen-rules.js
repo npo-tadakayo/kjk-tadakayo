@@ -67,18 +67,21 @@ export function invoicePromptText(pending) {
   const lines = [];
   if (notInvoiced.length) lines.push(`・請求書を出していない出荷: ${soNos(notInvoiced)}`);
   if (notShipped.length) lines.push(`・まだ「発送済」になっていない出荷: ${soNos(notShipped)}（発送済にすると請求書を出せます）`);
-  const open = notInvoiced.length ? "請求書の画面を開きます" : "出荷の画面を開きます";
+  const how = notInvoiced.length
+    ? "出荷の画面で［請求書］を確かめて送り、［請求済にする］を押してください。"
+    : "出荷の画面で、発送が済んでいるか確かめてください。";
   return "伴走支援、おつかれさまでした。忘れないうちに請求書を出しましょう。\n\n"
     + lines.join("\n")
-    + `\n\n［OK］${open}\n［キャンセル］あとで出す\n（どちらを押しても、ステータスは変わります）`;
+    + `\n\n${how}\n\n［OK］出荷の画面を開く\n［キャンセル］あとで出す\n（どちらを押しても、ステータスは変わります）`;
 }
 
-/** OK のときに開く画面（請求書を出していない出荷が1件ならその請求書、ほかは供給管理の出荷タブ） */
+/**
+ * OK のときに開く画面＝供給管理の出荷タブ（該当の出荷へ寄せる）。
+ * 請求書の印刷画面（supply-print.html）は表示・印刷だけで、出荷を「請求済」にせず経理にも報告しないため、
+ * 件数にかかわらず［請求済にする］がある出荷の画面を開く（2026-11-08 独立レビュー指摘）
+ */
 export function invoicePromptUrl(pending) {
   const { notInvoiced = [], notShipped = [] } = pending || {};
-  if (notInvoiced.length === 1 && notInvoiced[0]._id) {
-    return `/supply-print.html?type=invoice&id=${encodeURIComponent(notInvoiced[0]._id)}`;
-  }
   const first = notInvoiced[0] || notShipped[0];
   return `/supply.html?tab=shipments${first && first.soNumber ? `&so=${encodeURIComponent(first.soNumber)}` : ""}`;
 }

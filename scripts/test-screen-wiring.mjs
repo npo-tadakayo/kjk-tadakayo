@@ -280,12 +280,12 @@ t("知らせることが無ければ確認を出さない", () => {
 t("確認の文面と、開く画面", () => {
   const one = invoicePending([{ _id: "id/1", soNumber: "SH-1", status: "shipped" }]);
   const txt = invoicePromptText(one);
-  assert.ok(txt.includes("SH-1") && txt.includes("請求書の画面を開きます") && txt.includes("ステータスは変わります"));
-  assert.equal(invoicePromptUrl(one), "/supply-print.html?type=invoice&id=id%2F1");
+  assert.ok(txt.includes("SH-1") && txt.includes("［請求済にする］") && txt.includes("ステータスは変わります"));
+  assert.equal(invoicePromptUrl(one), "/supply.html?tab=shipments&so=SH-1"); // 印刷画面では請求済にならないため出荷の画面
   const two = invoicePending([{ _id: "a", soNumber: "SH-1", status: "shipped" }, { _id: "b", soNumber: "SH-2", status: "shipped" }]);
   assert.equal(invoicePromptUrl(two), "/supply.html?tab=shipments&so=SH-1");
   const draft = invoicePending([{ _id: "c", soNumber: "SH-3", status: "draft" }]);
-  assert.ok(invoicePromptText(draft).includes("出荷の画面を開きます"));
+  assert.ok(invoicePromptText(draft).includes("発送が済んでいるか"));
   assert.equal(invoicePromptUrl(draft), "/supply.html?tab=shipments&so=SH-3");
   assert.equal(invoicePromptNote(one, false), "請求書の確認: 請求書未発行 SH-1（あとで出す）");
   assert.equal(invoicePromptNote(one, true), "請求書の確認: 請求書未発行 SH-1（その場で画面を開いた）");
