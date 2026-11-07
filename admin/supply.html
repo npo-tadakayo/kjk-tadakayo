@@ -85,7 +85,7 @@
 
       <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
-        <p class="page-intro">発送 → 請求 → 入金 → 領収証 の順に進めます。行のボタンは左から順に押します。</p>
+        <p class="page-intro">発送 → 請求 → 入金 → 領収証 の順に進めます。各行の赤いボタンが、次にやることです。ほかの操作は行の「その他」にあります。</p>
         <div class="page-header" style="margin-bottom:12px">
           <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
@@ -168,7 +168,7 @@
         <div id="orderItems"></div>
         <div class="form-group"><label class="form-label" for="orderShipRegion">お届け地域（送料の自動入力）</label>
           <select class="form-control" id="orderShipRegion"><option value="">選択しない（手入力）</option></select>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ABサークルの送料表から、選んだ地域の送料を下に自動入力します（100台未満は送料が必要）。</p></div>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">AB Circleの送料表から、選んだ地域の送料を下に自動入力します（100台未満は送料が必要）。</p></div>
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="orderShipLabel">送料の名目</label><input class="form-control" id="orderShipLabel" type="text" placeholder="送料(北海道)"></div>
           <div class="form-group"><label class="form-label" for="orderShipFee">送料（円・税別）</label><input class="form-control" id="orderShipFee" type="number" min="0" placeholder="1500"></div>
@@ -231,7 +231,7 @@
         </div>
         <!-- 自社在庫から出すときは、どの保管場所から出すかを指定する（2026-09-12 追加） -->
         <div class="form-group" id="shipOriginWrap">
-          <label class="form-label" for="shipOrigin">発送元の保管場所 <span style="color:red">*</span></label>
+          <label class="form-label" for="shipOrigin">出荷元の保管場所 <span style="color:red">*</span></label>
           <select class="form-control" id="shipOrigin"></select>
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">「発送済にする」を押したとき、この場所の在庫から引き落とします（出荷を依頼した時点では引き落としません）。</p>
         </div>
@@ -242,7 +242,7 @@
             <div class="form-group"><label class="form-label" for="shipDeliveryMode">送付方法</label>
               <select class="form-control" id="shipDeliveryMode">
                 <option value="ship" selected>発送（レターパックなどで送る）</option>
-                <option value="pickup">持ち出し（倉庫から直接持っていく）</option>
+                <option value="pickup">持ち出し（保管場所から直接持っていく）</option>
               </select></div>
             <div class="form-group" id="shipPickupWrap" style="display:none"><label class="form-label" for="shipPickupBy">持ち出す人 <span style="color:red">*</span></label>
               <select class="form-control" id="shipPickupBy"></select></div>
@@ -255,7 +255,7 @@
             <option value="plus" selected>レターパックプラス（赤）</option>
           </select>
           </div>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「依頼済」になり、出荷指示を投稿します。在庫は、センターが発送したのを確認して「発送済にする」を押したときに引き落とします。</p>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">登録するとこの出荷は「依頼済」になり、出荷指示を投稿します。在庫は、倉庫の担当が発送したのを確認して「発送済にする」を押したときに引き落とします。</p>
           <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer;margin-top:8px">
             <input type="checkbox" id="shipAlreadyShipped" style="margin-top:3px">
             <span>すでに発送済として登録（指示は送らない）<br><span style="font-size:11.5px;color:var(--color-ink-muted)">すでに届いている・手渡し済みなどの出荷に使います。登録と同時に発送済になり、在庫を引き落とします。出荷指示は投稿しません。</span></span>
@@ -287,7 +287,7 @@
           <label class="form-label" for="shipMethod">配送方法（送料を自動計算）</label>
           <select class="form-control" id="shipMethod">
             <option value="">指定しない / 送料を手入力</option>
-            <option value="letterpack">レターパック（直送・3台ごとに1通）</option>
+            <option value="letterpack">レターパック（事業所へ送る・3台ごとに1通）</option>
             <option value="yupack" id="shipYupackOpt">ゆうパック（まとめ）</option>
             <option value="none">郵送なし（手渡し・持参）</option>
           </select>
@@ -463,7 +463,7 @@
           <label class="form-label" for="shipDoneMode">送付方法</label>
           <select class="form-control" id="shipDoneMode">
             <option value="ship" selected>発送（レターパックなどで送る）</option>
-            <option value="pickup">持ち出し（倉庫から直接持っていく）</option>
+            <option value="pickup">持ち出し（保管場所から直接持っていく）</option>
           </select>
         </div>
         <div class="form-group" id="shipDonePickupWrap" style="display:none">
@@ -735,7 +735,7 @@
         <div class="form-group">
           <label class="form-label" for="locPref">都道府県 <span style="color:red">*</span></label>
           <select class="form-control" id="locPref"></select>
-          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ゆうパックの送料は<strong>発地</strong>で変わります。ここで選んだ都道府県を発送元として扱います。</p>
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">ゆうパックの送料は<strong>発地</strong>で変わります。ここで選んだ都道府県を出荷元として扱います。</p>
         </div>
         <div class="form-row">
           <div class="form-group"><label class="form-label" for="locPostal">郵便番号</label><input class="form-control" id="locPostal" type="text" inputmode="numeric" placeholder="520-0013" maxlength="8"></div>

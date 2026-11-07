@@ -365,6 +365,28 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 }
 #shipBody .row-actions .btn { justify-content: flex-start; }
 
+/* 出荷の行の「その他」（使う頻度の低いボタンの折りたたみ・2026-11-08）。
+   <details> なのでキーボード（Tab → Enter/Space）で開ける。 */
+#shipBody .row-more { grid-column: 1 / -1; }
+#shipBody .row-more > summary {
+  cursor: pointer; font-size: 12px; color: var(--color-ink-muted);
+  padding: 4px 8px; border-radius: 6px; list-style: none; display: inline-block;
+}
+#shipBody .row-more > summary::-webkit-details-marker { display: none; }
+#shipBody .row-more > summary::before { content: "▸ "; }
+#shipBody .row-more[open] > summary::before { content: "▾ "; }
+#shipBody .row-more > summary:focus-visible { outline: 2px solid var(--color-primary, #c8102e); outline-offset: 2px; }
+/* 開いた中身が操作欄の幅を押し広げない（width:0 + min-width:100% で、欄の幅に合わせて折り返す） */
+#shipBody .row-more-body { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; width: 0; min-width: 100%; }
+#shipBody .ship-wait-note { font-size: 12px; color: var(--color-ink-muted); display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 640px) {
+  #shipBody .row-actions { grid-template-columns: 1fr; }
+  #shipBody .row-more-body .btn { flex: 1 1 100%; }
+}
+@media print {
+  #shipBody .row-more { display: none !important; }
+}
+
 .conn-tag {
   display: inline-block;
   font-size: 11px;

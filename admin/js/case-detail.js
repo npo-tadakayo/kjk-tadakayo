@@ -26,7 +26,7 @@ import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
-import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone } from "/js/ship-flow.js";
+import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone, isPickup } from "/js/ship-flow.js";
 // 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
 import { completionWarnings } from "/js/case-complete-check.js";
 import { isCompleting, completionConfirmText, completionActivityNote,
@@ -702,10 +702,15 @@ function shipNextAction(s) {
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
   const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
-  // 出荷の二段階化（2026-10-21）: 下書きは「出荷を依頼する」、依頼済はセンターの発送を確かめて「発送済にする」。
-  // どちらも在庫・出荷指示が動く操作なので、ここでは押させず供給管理の該当行へ飛ばす
+  // 出荷の二段階化（2026-10-21）: 下書きは「出荷を依頼する」。依頼済は倉庫の担当が発送して「発送済」にするので、
+  // 依頼した人は押す操作がない（waiting: 状態の案内だけ・2026-11-08）。
+  // 在庫・出荷指示が動く操作なので、ここでは押させず供給管理の該当行へ飛ばす
   if (st === "draft") return { label: "出荷を依頼する", icon: "send", url: soUrl, external: false };
-  if (st === "requested") return { label: "発送済にする", icon: "truck-delivery", url: soUrl, external: false };
+  if (st === "requested") {
+    // 倉庫から差し戻されているときは「待ち」ではなく、直して再送する案内（押す操作は供給管理の行で行う）
+    if (s.warehouseIssue) return { label: "倉庫から差し戻し：直して再送してください", icon: "alert-triangle", url: soUrl, external: false, waiting: true, issue: true };
+    return { label: isPickup(s) ? "倉庫の受け渡し待ち" : "倉庫の発送待ち", icon: "truck-delivery", url: soUrl, external: false, waiting: true };
+  }
   if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invUrl, external: true };
   if (st === "invoiced") return { label: "入金を記録する", icon: "cash", url: soUrl, external: false };
   if (st === "paid") {
@@ -720,6 +725,12 @@ function shipNextActionHtml(s) {
   if (!a) return ""; // canceled
   if (a.done) {
     return `<span class="ship-next-msg"><i class="ti ti-circle-check" aria-hidden="true"></i> お金の流れは完了しています。申請情報タブへ進んでください。</span>`;
+  }
+  if (a.waiting) {
+    if (a.issue) {
+      return `<span class="ship-next-msg" style="color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${a.label}。 <a href="${a.url}">出荷の行を開く</a></span>`;
+    }
+    return `<span class="ship-next-msg"><i class="ti ti-truck-delivery" aria-hidden="true"></i> ${a.label}です（${isPickup(s) ? "受け渡し" : "発送済"}は倉庫の担当が押します）。 <a href="${a.url}">出荷の行を開く</a></span>`;
   }
   const targetAttrs = a.external ? ` target="_blank" rel="noopener"` : "";
   return `<a class="btn btn-primary" href="${a.url}"${targetAttrs}><i class="ti ti-${a.icon}" aria-hidden="true"></i> ${a.label}</a>`;
@@ -837,7 +848,7 @@ function renderNextStep() {
         const a = shipNextAction(s);
         return `<div class="next-step-money">
           <i class="ti ti-coin-yen" aria-hidden="true"></i>
-          お金の流れ：次は「${escHtml(a.label)}」（${escHtml(s.soNumber || "—")}）
+          お金の流れ：${a.waiting ? `${escHtml(a.label)}（${escHtml(s.soNumber || "—")}）` : `次は「${escHtml(a.label)}」（${escHtml(s.soNumber || "—")}）`}
           <a href="#" id="nextStepMoneyLink">出荷・請求・入金タブへ</a>
         </div>`;
       })()

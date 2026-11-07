@@ -415,7 +415,7 @@ t("W に宛名ラベルの項目がそろう（Codex 指摘3回目 C）", () => 
 t("新規出荷の送付方法（発送／持ち出し・Codex 指摘3回目 B）", () => {
   const html = readFileSync(new URL("../admin/supply.html", import.meta.url), "utf8");
   for (const id of ["shipDeliveryMode", "shipPickupWrap", "shipPickupBy", "shipLetterPackRow"]) assert.match(html, new RegExp(`id="${id}"`), id);
-  assert.match(html, /<option value="pickup">持ち出し（倉庫から直接持っていく）<\/option>/);
+  assert.match(html, /<option value="pickup">持ち出し（保管場所から直接持っていく）<\/option>/);
   const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
   const ss = sup.slice(sup.indexOf("async function saveShip()"), sup.indexOf("// 出荷の修正を保存する"));
   assert.match(ss, /validatePickup\(\{ pickupByEmail, pickupDate: shipDateIn \}\)/);

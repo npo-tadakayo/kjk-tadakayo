@@ -111,6 +111,8 @@ export function shipNotifyShown(s) {
 }
 
 // 状態ごとの主ボタン（次の一手）。無いときは null
+// ※ 依頼済の「発送済にする」は倉庫の担当・管理者が押す操作（2026-11-08 方針）。依頼した人の画面（supply.js の行・case-detail.js の
+//   shipNextAction）は「倉庫の発送待ち」の案内にしており、この関数は画面からは使っていない（テストが状態遷移の対応表として見ている）。
 export function primaryAction(s) {
   if (!s) return null;
   const st = shipStatusOf(s);
@@ -229,7 +231,7 @@ export function letterPackOrDefault(v) {
 // レターパックの注意（2026-10-27 次田さん決定）。滋賀（既定の保管場所・ロジスティックセンター）以外の保管場所のものは、
 // 基本的に倉庫から持ち出す（郵送しない）。ただし郵送することが全くないわけではないので、レターパックは選べるままにし、
 // 止めずに注意だけ出す。letterPack は「レターパックで送る選択になっているか」。
-export const LP_PICKUP_NOTICE = "この保管場所のものは、基本的に倉庫からの持ち出しです。郵送でよいか確認してください";
+export const LP_PICKUP_NOTICE = "この保管場所のものは、基本的に保管場所からの持ち出しです。郵送でよいか確認してください";
 export function lpPickupNotice({ originLocationId, defaultLocationId, letterPack }) {
   if (!letterPack || !originLocationId || !defaultLocationId) return "";
   return originLocationId === defaultLocationId ? "" : LP_PICKUP_NOTICE;
