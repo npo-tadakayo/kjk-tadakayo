@@ -955,9 +955,9 @@ async function resendShipNotice(s){
 // 以前の「出荷指示を送らない」チェックは廃止した（送らない場合は「すでに発送済（記録のみ）」を使う・2026-10-21）
 const SHIP_DIALOG = {
   request: { title:"出荷を依頼する", dateLabel:"希望出荷日", button:"出荷を依頼する",
-    note:"「出荷を依頼する」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、依頼の記録だけ残ります）。在庫はまだ引き落としません（センターが発送したのを確認して「発送済にする」を押したときに引き落とします）。" },
+    note:"「出荷を依頼する」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、依頼の記録だけ残ります）。在庫はまだ引き落としません（倉庫の担当が発送したのを確認して「発送済にする」を押したときに引き落とします）。" },
   ship: { title:"発送済にする", dateLabel:"発送日", button:"発送済にする",
-    note:"センターが発送したのを確認してから押してください。在庫を引き落とし、請求の起点になります。出荷指示は投稿しません（依頼のときに投稿済みです）。" },
+    note:"倉庫の担当が発送したのを確認してから押してください。在庫を引き落とし、請求の起点になります。出荷指示は投稿しません（依頼のときに投稿済みです）。" },
   record: { title:"すでに発送済（記録のみ）", dateLabel:"発送日", button:"発送済として記録",
     note:"すでに届いている・手渡し済みなどの出荷を、依頼を経ずに発送済として記録します。在庫を引き落とします。出荷指示は送りません。" },
 };
@@ -1036,7 +1036,7 @@ function syncShipDoneMode(){
     document.getElementById("shipDoneLpWrap").style.display = pickup ? "none" : "";
     document.getElementById("shipDoneDateLabel").textContent = pickup ? "持ち出し予定日" : SHIP_DIALOG.request.dateLabel;
     document.getElementById("shipDoneNote").textContent = pickup
-      ? "「出荷を依頼する」を押すと、倉庫へ「持ち出し」の指示を投稿します。在庫はまだ引き落としません（倉庫で受け渡したときに引き落とします）。送料の区分は「郵送なし」にします。"
+      ? "「出荷を依頼する」を押すと、倉庫へ「持ち出し」の指示を投稿します。在庫はまだ引き落としません（倉庫の担当が受け渡したときに引き落とします）。送料の区分は「郵送なし」にします。"
       : SHIP_DIALOG.request.note;
   }
 }
@@ -1246,7 +1246,7 @@ async function revertToDraft(s){
   if(notifyInFlight(s)){ alert(NOTIFY_IN_FLIGHT_MSG); return; }
   const posted = !!s.shipNotifiedAt;
   if(!confirm(`出荷 ${s.soNumber} の依頼を取り消して、下書きへ戻します。\n`
-    + (posted ? `出荷指示は ${fmtDT(s.shipNotifiedAt)} に投稿済みです。センターへ取り消しの連絡をしてください（自動では取り消しません）。\n` : "")
+    + (posted ? `出荷指示は ${fmtDT(s.shipNotifiedAt)} に投稿済みです。倉庫へ取り消しの連絡をしてください（自動では取り消しません）。\n` : "")
     + `在庫はまだ引き落としていないので動きません。よろしいですか？`)) return;
   const ref = doc(db,"shipments",s._id);
   try{
@@ -1264,7 +1264,7 @@ async function revertToDraft(s){
         updatedAt: serverTimestamp() });
     });
   }catch(e){ alert(`依頼の取り消しに失敗しました: ${e.message}`); return; }
-  toast(`${s.soNumber} を下書きへ戻しました${posted ? "。センターへ出荷指示の取り消しを連絡してください" : ""}`);
+  toast(`${s.soNumber} を下書きへ戻しました${posted ? "。倉庫へ出荷指示の取り消しを連絡してください" : ""}`);
 }
 
 // ===== 出荷の送料（料金・送料設定 appConfig を優先。デフォルト値・定数は supply-pricing.js） =====
@@ -1656,7 +1656,7 @@ function openShip(existing){
         + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「請求先を変える」</strong>から行ってください。`
         // 在庫を動かすかどうかは「すでに引き落としてあるか」（stockDeducted）で決まる。下書き・依頼済はまだ引いていない
         + (stockDeducted(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。`
-          : !shipUsedStock(s) ? `<br>この出荷は直送（ABサークルから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`
+          : !shipUsedStock(s) ? `<br>この出荷は直送（AB Circleから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`
           : `<br>この出荷はまだ発送済にしていないため、在庫は引き落としていません。数量を変えても在庫は動きません（発送済にしたときに引き落とします）。`)
         + (shipStatusOf(s)==="requested" ? `<br><strong>出荷を依頼済みです。</strong>数量・送付先を直したら、保存のあとで出荷指示を再送するか聞きます。` : "");
   }
@@ -1757,7 +1757,7 @@ async function saveShip(){
   if(!items.length){ alert("数量を入力してください"); return; }
   const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
   if(stockItems(items).length && !originLocationId){
-    alert("発送元の保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
+    alert("出荷元の保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
   // 既定は「登録して出荷を依頼する」（requested・在庫は動かさない・出荷指示を投稿）。
   // チェック「すでに発送済として登録」のときだけ、従来どおりその場で発送済（在庫を引く・出荷指示は送らない）（2026-10-21）
   const alreadyShipped=!!(document.getElementById("shipAlreadyShipped")||{}).checked;
@@ -2090,7 +2090,7 @@ function openCancelShipModal(s, opts){
     stockMsg = "下書きのため在庫は動きません。";
   } else if(s.status==="requested"){
     stockMsg = "まだ発送済にしていないため、在庫は引き落としていません（戻しません）。<br>"
-      + "<strong>出荷指示はすでに投稿済みです。</strong>センターへ取り消しの連絡をしてください（自動では取り消しません）。";
+      + "<strong>出荷指示はすでに投稿済みです。</strong>倉庫へ取り消しの連絡をしてください（自動では取り消しません）。";
   } else if(!shipUsedStock(s)){
     stockMsg = "直送のため在庫は動きません。";
   } else {
@@ -2453,7 +2453,7 @@ function renderShipments(ships, dv){
     dv.count?`<button type="button" class="alert-chip warn dup-filter" aria-pressed="${dupOnly}" style="cursor:pointer;font:inherit;text-align:left${dupOnly?";outline:2px solid var(--color-warning)":""}" title="${dupOnly?"押すと全件の表示に戻ります":"押すと重複している出荷だけを表示します"}"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><div class="alert-num">${dv.count}件</div><div class="alert-label">⚠ 下書きの重複${dupOnly?"（絞り込み中・押すと戻る）":"（押すと絞り込み）"}</div></div></button>`:"",
     drafts.length?`<div class="alert-chip info"><i class="ti ti-file-pencil"></i><div><div class="alert-num">${drafts.length}</div><div class="alert-label">出荷の下書き（依頼が必要）</div></div></div>`:"",
     // 依頼済＝出荷指示を出してセンターの発送を待っているもの。発送されたら「発送済にする」を押す（2026-10-21）
-    requested.length?`<div class="alert-chip warn"><i class="ti ti-truck-loading"></i><div><div class="alert-num">${requested.length}</div><div class="alert-label">出荷依頼中（センターの発送待ち）</div></div></div>`:"",
+    requested.length?`<div class="alert-chip warn"><i class="ti ti-truck-loading"></i><div><div class="alert-num">${requested.length}</div><div class="alert-label">倉庫の発送待ち（依頼済）</div></div></div>`:"",
     `<div class="alert-chip warn"><i class="ti ti-package-export"></i><div><div class="alert-num">${unbilled.length}</div><div class="alert-label">未請求（発送済）</div></div></div>`,
     `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(unpaid.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">未集金・残額（税込 ${unpaid.length}件）</div></div></div>`,
     overdue.length?`<div class="alert-chip danger"><i class="ti ti-alarm"></i><div><div class="alert-num">${yen(overdue.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">うち支払期限超過（${overdue.length}件）</div></div></div>`:"",
