@@ -19,13 +19,37 @@ export function shipStatusOf(s) {
 // 設定 appConfig/settings の senders（名前か住所のあるもの）→ 旧形式 sender* → 請求書の発行者情報 → 既定（NPO法人タダカヨ）。
 // 倉庫の画面で宛名を印刷するために warehouseList が返す（倉庫の人は appConfig を直接読めない）。
 // 戻り値 { name, postalCode, address, phone }（1件目。印刷ページと同じく、複数あれば先頭）。名前も住所も無ければ null
+// 第2引数に出荷元の保管場所を渡すと、その場所のご依頼主（locationSender）があればそちらを返す
 const SENDER_DEFAULT = {
   name: "NPO法人タダカヨ　介護情報基盤伴走支援事業",
   postal: "",
   address: "東京都大田区大森中二丁目1番20-1001号",
   phone: "050-6872-9884",
 };
-export function senderForLabel(settings) {
+// 出荷元の保管場所に「宛名ラベルのご依頼主」（locations の senderName・senderPhone・senderPostal・senderAddress）が
+// 入っていれば、それを最優先にする（2026-11-01 次田さん決定。滋賀から出すのにご依頼主が東京・大森になっていた）。
+//   郵便番号・住所は組で決める: senderPostal か senderAddress のどちらかが入っていればその2つだけ、
+//   両方空のときだけ保管場所の postal・address（別々に混ぜると別の場所の郵便番号と住所が並ぶ・PR #37 レビュー P2-1）。
+//   電話は senderPhone だけ（保管場所の phone は納品先＝受け取る方の電話なので使わない）。
+//   senderName が空、または使える住所が無いときは null（＝従来どおり設定の差出人・P2-2）
+export function locationSender(location) {
+  const l = location || {};
+  const name = str(l.senderName).trim();
+  if (!name) return null;
+  const sp = str(l.senderPostal).trim(), sa = str(l.senderAddress).trim();
+  const own = !!(sp || sa);
+  const address = own ? sa : str(l.address).trim();
+  if (!address) return null;
+  return {
+    name,
+    postalCode: own ? sp : str(l.postal).trim(),
+    address,
+    phone: str(l.senderPhone).trim(),
+  };
+}
+export function senderForLabel(settings, location) {
+  const fromLoc = locationSender(location);
+  if (fromLoc) return fromLoc;
   const st = settings || {};
   let list = Array.isArray(st.senders) ? st.senders.filter((x) => x && (x.name || x.address)) : [];
   if (!list.length && st.senderName) {
@@ -142,6 +166,11 @@ export function projectForWarehouse(s) {
     note: str(d.shipNote || d.note || ""),
     requestedByName: str(d.requestedBy),
     requestedAt: isoOf(d.requestedAt),
+    // 倉庫の「一覧」タブ（2026-11-04）。どれも任意（無い古い出荷は未確認・備考なし）
+    warehouseConfirmed: !!d.warehouseConfirmedAt,
+    warehouseConfirmedAt: isoOf(d.warehouseConfirmedAt),
+    warehouseConfirmedByName: str(d.warehouseConfirmedBy),
+    warehouseNote: str(d.warehouseNote),
     pickupByName: str(d.pickupByName),
     pickupDate: str(d.pickupDate),
     warehouseIssue: wi ? { reason: str(wi.reason), note: str(wi.note), at: isoOf(wi.at), byName: str(wi.byName) } : null,
@@ -187,6 +216,15 @@ export function validatePickup({ pickupByEmail, pickupDate } = {}) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { ok: false, error: "持ち出す人を選んでください" };
   if (!validYmd(pickupDate)) return { ok: false, error: "持ち出しの予定日を YYYY-MM-DD で入れてください" };
   return { ok: true };
+}
+
+// 倉庫用の備考（shipments.warehouseNote）の入力。空文字は「消す」。500字まで（前後の空白は除く）
+export const WAREHOUSE_NOTE_MAX = 500;
+export function validateWarehouseNote(note) {
+  if (typeof note !== "string") return { ok: false, error: "備考の形が正しくありません" };
+  const n = note.trim();
+  if (n.length > WAREHOUSE_NOTE_MAX) return { ok: false, error: `備考は${WAREHOUSE_NOTE_MAX}字以内で入れてください` };
+  return { ok: true, note: n };
 }
 
 // 「出荷できない」の入力（理由・メモ）。メモは200字まで。「その他」はメモ必須

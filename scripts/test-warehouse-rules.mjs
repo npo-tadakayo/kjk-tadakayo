@@ -15,8 +15,8 @@ t("functions 側のコピーと同じ", () => {
 
 t("exports はこれだけ（§9.5）", () => {
   assert.deepEqual(Object.keys(W).sort(), [
-    "DELIVERY_MODES", "ISSUE_REASONS", "canPickup", "canUseLocation", "defaultLocationIdOf", "deliveryModeOf", "isWarehouseRole",
-    "orderLocations", "projectForWarehouse", "senderForLabel", "shipStatusOf", "stockShortage", "validateIssue", "validatePickup", "warehouseActionable",
+    "DELIVERY_MODES", "ISSUE_REASONS", "WAREHOUSE_NOTE_MAX", "canPickup", "canUseLocation", "defaultLocationIdOf", "deliveryModeOf", "isWarehouseRole", "locationSender",
+    "orderLocations", "projectForWarehouse", "senderForLabel", "shipStatusOf", "stockShortage", "validateIssue", "validatePickup", "validateWarehouseNote", "warehouseActionable",
   ]);
 });
 
@@ -97,7 +97,7 @@ t("projectForWarehouse（W の項目だけ・金額/案件ID/請求を出さな�
   assert.deepEqual(Object.keys(w).sort(), [
     "address", "company", "contactName", "deliveryMode", "desiredDate", "handedOverAt", "handedOverByName", "id", "items",
     "letterPackType", "note", "officeName", "phone", "pickupByName", "pickupDate", "postalCode", "requestedAt", "requestedByName",
-    "shipDate", "soNumber", "status", "trackingNumber", "warehouseIssue",
+    "shipDate", "soNumber", "status", "trackingNumber", "warehouseConfirmed", "warehouseConfirmedAt", "warehouseConfirmedByName", "warehouseIssue", "warehouseNote",
   ].sort());
   assert.equal(w.id, "sh1");
   assert.equal(w.postalCode, "100-0001");
@@ -208,8 +208,10 @@ t("持ち出しの依頼は送料を「郵送なし」と同じ 0 円にする�
   const rf = sup.slice(sup.indexOf("function recalcShipFee"), sup.indexOf("function taxInclusiveShipFees"));
   assert.match(rf, /method==='none'\)\{[\s\S]*?feeEl\.value=0; labelEl\.value='郵送なし（手渡し・持参）'/);
   const rq = sup.slice(sup.indexOf("async function requestDraftShipment"), sup.indexOf("// 依頼済(requested) → 発送済"));
-  assert.match(rq, /ans\.deliveryMode==="pickup" && !isLocked\(cur\)\s*\? \{ shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" \}/);
-  assert.match(rq, /shippingMethod:"none", \.\.\.noPostage/);
+  // 送料の区分（shippingMethod）も金額と一緒にだけ変える。請求書の後は区分も金額も触らない（2026-11-01 レビュー指摘）
+  assert.match(rq, /ans\.deliveryMode==="pickup" && !isLocked\(cur\)\s*\? \{ shippingMethod:"none", shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" \}/);
+  assert.match(rq, /pickupDate:ans\.shipDate, \.\.\.noPostage \}/);
+  assert.doesNotMatch(rq, /shippingMethod:"none", \.\.\.noPostage/);
   assert.match(rq, /feeZeroed = ans\.deliveryMode==="pickup" && !isLocked\(cur\) && Number\(cur\.shippingFee\)>0/);
   assert.match(rq, /送料を0円にしました/);
 });
@@ -301,8 +303,8 @@ t("練習の代役の whMs は ISO 文字列も読む（ブラウザ検証 B3）
 
 t("senderForLabel は letterpack-print.js の差出人の決め方（sendersOf の1件目）と同じ（Codex 指摘3回目 C）", () => {
   const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
-  const def = lp.slice(lp.indexOf("const SENDER_DEFAULT"), lp.indexOf("const TYPE_LABEL"));
-  const fnSrc = lp.slice(lp.indexOf("function sendersOf(st)"), lp.indexOf("function itemsMemo"));
+  const def = lp.slice(lp.indexOf("const SENDER_DEFAULT"), lp.indexOf("function sendersOf(st)"));
+  const fnSrc = lp.slice(lp.indexOf("function sendersOf(st)"), lp.indexOf("// 宛名枠に収まるか"));
   const sendersOf = new Function(`${def}\n${fnSrc}\nreturn sendersOf;`)();
   const cases = [
     {}, null,
@@ -318,9 +320,91 @@ t("senderForLabel は letterpack-print.js の差出人の決め方（sendersOf �
   }
   assert.deepEqual(Object.keys(W.senderForLabel({})).sort(), ["address", "name", "phone", "postalCode"]);
   const fn = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
-  assert.match(fn, /const sender = wr\.senderForLabel\(await getSettings\(\)\)/);
+  assert.match(fn, /const sender = wr\.senderForLabel\(await getSettings\(\), loc\)/);
   const ps = readFileSync(new URL("../admin/js/practice-stubs.js", import.meta.url), "utf8");
-  assert.match(ps, /sender: senderForLabel\(st\)/);
+  assert.match(ps, /sender: senderForLabel\(st, loc\)/);
+  // 保管場所を渡しても、ご依頼主が未設定なら従来と同じ
+  for (const st of cases) assert.deepEqual(W.senderForLabel(st, { name: "滋賀", postal: "520-0013", address: "大津市", phone: "077" }), W.senderForLabel(st), JSON.stringify(st));
+});
+
+// 2026-11-01 次田さん決定: 出荷元の保管場所の「宛名ラベルのご依頼主」を優先する（滋賀から出すのに東京・大森になっていた）
+const SHIGA = {
+  id: "L-shiga", name: "滋賀倉庫", postal: "520-0013", address: "滋賀県大津市勧学2丁目9-3",
+  recipient: "藤田博之（NPO法人タダカヨ 副理事長）", phone: "090-0000-0000",
+};
+const ST = { senders: [{ name: "NPO法人タダカヨ　介護情報基盤伴走支援事業", postal: "143-0015", address: "東京都大田区大森中", phone: "050-6872-9884" }] };
+t("senderForLabel: 保管場所にご依頼主があればそれを最優先（郵便番号・住所は sender* があればそちら）", () => {
+  const loc = { ...SHIGA, senderName: "NPO法人タダカヨ　滋賀ロジスティクスセンター", senderPostal: "520-9999", senderAddress: "別住所", senderPhone: "050-1808-2999" };
+  assert.deepEqual(W.senderForLabel(ST, loc), { name: "NPO法人タダカヨ　滋賀ロジスティクスセンター", postalCode: "520-9999", address: "別住所", phone: "050-1808-2999" });
+  assert.deepEqual(W.senderForLabel(null, loc), W.senderForLabel(ST, loc)); // 設定が無くても同じ
+});
+t("senderForLabel: senderName だけなら郵便番号・住所は保管場所のもの・電話は空（保管場所の phone＝納品先の電話は使わない）", () => {
+  assert.deepEqual(W.senderForLabel(ST, { ...SHIGA, senderName: " 滋賀ロジ " }), { name: "滋賀ロジ", postalCode: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "" });
+});
+t("locationSender: 郵便番号・住所は組で決める（PR #37 レビュー P2-1）", () => {
+  const n = { senderName: "滋賀ロジ", senderPhone: "050-1808-2999" };
+  // ご依頼主の住所だけ → 郵便番号は空（保管場所の 520-0013 を混ぜない）
+  assert.deepEqual(W.locationSender({ ...SHIGA, ...n, senderAddress: "別の住所" }), { name: "滋賀ロジ", postalCode: "", address: "別の住所", phone: "050-1808-2999" });
+  // ご依頼主の郵便番号だけ → ご依頼主の住所が空なので使える住所が無い → null（設定の差出人に戻る）
+  assert.equal(W.locationSender({ ...SHIGA, ...n, senderPostal: "100-0001" }), null);
+  assert.deepEqual(W.senderForLabel(ST, { ...SHIGA, ...n, senderPostal: "100-0001" }), W.senderForLabel(ST));
+  // 両方空 → 保管場所の postal・address の組
+  assert.deepEqual(W.locationSender({ ...SHIGA, ...n }), { name: "滋賀ロジ", postalCode: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "050-1808-2999" });
+});
+t("locationSender: 名前だけで住所が無い（ご依頼主も保管場所も空）なら null（PR #37 レビュー P2-2）", () => {
+  const loc = { id: "L9", name: "住所なし倉庫", senderName: "滋賀ロジ", senderPhone: "050-1808-2999" };
+  assert.equal(W.locationSender(loc), null);
+  assert.deepEqual(W.senderForLabel(ST, loc), W.senderForLabel(ST));
+  assert.equal(W.locationSender({ ...loc, postal: "520-0013" }), null); // 郵便番号だけでは使わない
+});
+t("supply.js: ご依頼主の名前を入れたら住所と電話が必須・検証は名前・都道府県の後（PR #37 レビュー P2-2・P3）", () => {
+  const js = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
+  const f = js.slice(js.indexOf("async function saveLocation()"), js.indexOf("// ===== 在庫・商品 ====="));
+  assert.ok(f.indexOf('err.textContent="都道府県を選んでください') < f.indexOf("ご依頼主の名前を入れてください"));
+  assert.match(f, /ご依頼主の住所を入れてください/);
+  assert.match(f, /ご依頼主の電話を入れてください/);
+  assert.doesNotMatch(f, /document\.getElementById\("locNameErr"\)\.textContent=/);
+});
+t("senderForLabel: 保管場所なし・ご依頼主なしは従来どおり（設定の差出人）", () => {
+  const legacy = { name: "NPO法人タダカヨ　介護情報基盤伴走支援事業", postalCode: "143-0015", address: "東京都大田区大森中", phone: "050-6872-9884" };
+  assert.deepEqual(W.senderForLabel(ST), legacy);
+  assert.deepEqual(W.senderForLabel(ST, null), legacy);
+  assert.deepEqual(W.senderForLabel(ST, SHIGA), legacy);
+  assert.deepEqual(W.senderForLabel(ST, { ...SHIGA, senderName: "  ", senderPhone: "050-1808-2999" }), legacy); // 名前が空なら使わない
+  assert.equal(W.locationSender(null), null);
+  assert.equal(W.locationSender(SHIGA), null);
+});
+
+t("letterpack-print: 出荷元の保管場所のご依頼主を選択肢の先頭に入れる（設定の差出人も残す）", () => {
+  const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
+  const def = lp.slice(lp.indexOf("const SENDER_DEFAULT"), lp.indexOf("function sendersOf(st)"));
+  const fnSrc = lp.slice(lp.indexOf("function sendersOf(st)"), lp.indexOf("// 宛名枠に収まるか"));
+  const extra = lp.slice(lp.indexOf("// 出荷元の保管場所（"), lp.indexOf("function setTheme"));
+  const { originLocationOf, labelSendersOf } = new Function("locationSender", "defaultLocationIdOf",
+    `${def}\n${fnSrc}\n${extra}\nreturn { originLocationOf, labelSendersOf };`)(W.locationSender, W.defaultLocationIdOf);
+  const tokyo = { id: "L-tokyo", name: "東京", isDefault: true, sort: 0 };
+  const shiga = { ...SHIGA, sort: 1, senderName: "NPO法人タダカヨ　滋賀ロジスティクスセンター", senderPhone: "050-1808-2999" };
+  const locs = [tokyo, shiga];
+  assert.equal(originLocationOf({ originLocationId: "L-shiga" }, locs), shiga);
+  assert.equal(originLocationOf({}, locs), tokyo);                                   // 出荷元が無い古い出荷は既定の場所
+  assert.equal(originLocationOf({ fulfillment: "direct", originLocationId: "L-shiga" }, locs), null); // 直送は使わない
+  assert.equal(originLocationOf({ originLocationId: "L-gone" }, locs), null);
+  const a = labelSendersOf(ST, shiga);
+  assert.equal(a.length, 2);
+  assert.deepEqual({ ...a[0] }, { name: "NPO法人タダカヨ　滋賀ロジスティクスセンター", postal: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "050-1808-2999", fromLocation: "滋賀倉庫" });
+  assert.equal(a[1].phone, "050-6872-9884"); // 設定の差出人（代表番号）は2番目に残る
+  assert.deepEqual(labelSendersOf(ST, tokyo), ST.senders);   // ご依頼主の無い場所は従来どおり
+  assert.deepEqual(labelSendersOf(ST, null), ST.senders);
+  assert.match(lp, /import \{ locationSender, defaultLocationIdOf \} from "\/js\/warehouse-rules\.js"/);
+});
+
+t("保管場所の編集画面にご依頼主の欄がある（supply.html・supply.js）", () => {
+  const html = readFileSync(new URL("../admin/supply.html", import.meta.url), "utf8");
+  for (const id of ["locSenderName", "locSenderPostal", "locSenderAddress", "locSenderPhone"]) assert.match(html, new RegExp(`id="${id}"`), id);
+  assert.match(html, /出荷元がこの保管場所のとき、宛名ラベルのご依頼主に使います。空欄なら設定の差出人を使います/);
+  const js = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
+  assert.match(js, /senderName:v\("locSenderName"\), senderPostal:v\("locSenderPostal"\), senderAddress:v\("locSenderAddress"\), senderPhone:v\("locSenderPhone"\)/);
+  assert.equal((js.match(/\.\.\.addr,\.\.\.sender,/g) || []).length, 2); // 追加・更新の両方で保存
 });
 
 t("W に宛名ラベルの項目がそろう（Codex 指摘3回目 C）", () => {
@@ -349,6 +433,36 @@ t("新規出荷の送付方法（発送／持ち出し・Codex 指摘3回目 B�
   assert.match(rs, /await loadPickupUsers\(\)/); // 本番の users から（練習モードでも候補がある）
   assert.match(sup, /if\(!s\) resetShipDeliveryMode\(\);/);
   assert.match(sup, /getElementById\("shipDeliveryMode"\)\?\.addEventListener\("change",\(\)=>syncShipDeliveryMode\(true\)\)/);
+});
+
+t("validateWarehouseNote（倉庫用の備考・500字まで・空は消す）", () => {
+  assert.equal(W.WAREHOUSE_NOTE_MAX, 500);
+  assert.deepEqual(W.validateWarehouseNote("まとめて発送"), { ok: true, note: "まとめて発送" });
+  assert.deepEqual(W.validateWarehouseNote("  前後の空白は除く \n"), { ok: true, note: "前後の空白は除く" });
+  assert.deepEqual(W.validateWarehouseNote(""), { ok: true, note: "" });
+  assert.deepEqual(W.validateWarehouseNote("   "), { ok: true, note: "" });
+  assert.equal(W.validateWarehouseNote("あ".repeat(500)).ok, true);
+  const over = W.validateWarehouseNote("あ".repeat(501));
+  assert.equal(over.ok, false); assert.match(over.error, /500字以内/);
+  for (const bad of [null, undefined, 123, {}, ["a"], true]) assert.equal(W.validateWarehouseNote(bad).ok, false, String(bad));
+});
+
+t("projectForWarehouse: 一覧タブの新項目（確認済み・備考）", () => {
+  const w = W.projectForWarehouse({ status: "requested", warehouseConfirmedAt: ts("2026-11-04T01:02:03Z"), warehouseConfirmedBy: "藤田千晶", warehouseNote: "まとめて発送" });
+  assert.equal(w.warehouseConfirmed, true);
+  assert.equal(w.warehouseConfirmedAt, "2026-11-04T01:02:03.000Z");
+  assert.equal(w.warehouseConfirmedByName, "藤田千晶");
+  assert.equal(w.warehouseNote, "まとめて発送");
+  // 古い出荷（項目なし）は未確認・備考なし。画面が動く
+  const old = W.projectForWarehouse({ status: "requested" });
+  assert.equal(old.warehouseConfirmed, false);
+  assert.equal(old.warehouseConfirmedAt, null);
+  assert.equal(old.warehouseConfirmedByName, "");
+  assert.equal(old.warehouseNote, "");
+  // 既存の項目は変えない（追加のみ）。確認した人のメールなど、新しい生の項目は返さない
+  const keys = Object.keys(W.projectForWarehouse({ status: "requested", warehouseConfirmedByEmail: "x@tadakayo.jp", total: 1 }));
+  for (const k of ["id", "soNumber", "status", "deliveryMode", "officeName", "postalCode", "address", "phone", "items", "requestedByName", "requestedAt", "warehouseIssue", "shipDate", "trackingNumber", "handedOverAt"]) assert.ok(keys.includes(k), k);
+  for (const k of ["total", "warehouseConfirmedByEmail", "caseId", "invoiceNo"]) assert.ok(!keys.includes(k), k);
 });
 
 console.log(`OK: test-warehouse-rules ${n} 件`);

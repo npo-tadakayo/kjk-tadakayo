@@ -10,7 +10,7 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-aut
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc,
   writeBatch, runTransaction, serverTimestamp, arrayUnion, increment, deleteField, Timestamp }
   from "/js/fs.js";
-import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf } from "/js/warehouse-rules.js";
+import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote } from "/js/warehouse-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
@@ -324,7 +324,7 @@ function whDefaultLocationId(locs) { return defaultLocationIdOf(locs); }
 function whShipLocation(s, defId) { return s.originLocationId || defId; }
 function whWire(id, s) {
   const w = projectForWarehouse({ ...s, id });
-  for (const k of ["requestedAt", "handedOverAt"]) if (w[k]) w[k] = whMs(w[k]);
+  for (const k of ["requestedAt", "handedOverAt", "warehouseConfirmedAt"]) if (w[k]) w[k] = whMs(w[k]);
   if (w.warehouseIssue && w.warehouseIssue.at) w.warehouseIssue = { ...w.warehouseIssue, at: whMs(w.warehouseIssue.at) };
   return { ...w, id };
 }
@@ -1108,10 +1108,10 @@ export const PRACTICE_STUBS = {
       const p = d.data();
       return { sku: d.id, name: p.shortName || p.name || d.id, qty: Number((p.stockByLocation || {})[locationIdUse]) || 0 };
     }).filter((r) => r.qty !== 0);
-    // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む）
+    // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む。保管場所のご依頼主があれば優先）
     let st = {};
     try { const ss = await getDoc(doc(db(), "appConfig", "settings")); st = ss.exists() ? ss.data() : {}; } catch (_) {}
-    return { sender: senderForLabel(st), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
+    return { sender: senderForLabel(st, loc), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
   },
 
   async warehouseShip({ shipmentId, shipDate, trackingNumber, letterPackType }) {
@@ -1169,6 +1169,34 @@ export const PRACTICE_STUBS = {
     if (String(s.shipDate || "") < cutoff) throw fail("直せるのは直近30日の発送済だけです");
     await updateDoc(ref, { trackingNumber: tn, updatedAt: serverTimestamp() });
     showPracticeNotice("追跡番号を直しました");
+    return { ok: true };
+  },
+  // 一覧タブの「確認済み」（本物の warehouseConfirm と同じ: 依頼済だけ・外すと日時と人を消す）
+  async warehouseConfirm({ shipmentId, confirmed }) {
+    if (typeof confirmed !== "boolean") throw fail("確認済みのオン・オフを指定してください");
+    const ref = doc(db(), "shipments", String(shipmentId || ""));
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
+    const s = snap.data();
+    if (s.status !== "requested") throw fail("この出荷はすでに処理されています。画面を更新してください");
+    if (s.fulfillment === "direct") throw fail("直送（AB Circleから直接）の出荷は倉庫で扱いません");
+    await updateDoc(ref, confirmed
+      ? { warehouseConfirmedAt: serverTimestamp(), warehouseConfirmedBy: me().name, updatedAt: serverTimestamp() }
+      : { warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField(), updatedAt: serverTimestamp() });
+    return { ok: true };
+  },
+
+  // 一覧タブの備考（本物の warehouseSetNote と同じ: 依頼済・発送済どちらでも・空で消す・500字まで）
+  async warehouseSetNote({ shipmentId, note }) {
+    const v = validateWarehouseNote(note);
+    if (!v.ok) throw fail(v.error);
+    const ref = doc(db(), "shipments", String(shipmentId || ""));
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
+    const s = snap.data();
+    if (!["requested", "shipped", "invoiced", "paid"].includes(shipStatusOf(s))) throw fail("この出荷には備考を書けません。画面を更新してください");
+    if (s.fulfillment === "direct") throw fail("直送（AB Circleから直接）の出荷は倉庫で扱いません");
+    await updateDoc(ref, { warehouseNote: v.note ? v.note : deleteField(), updatedAt: serverTimestamp() });
     return { ok: true };
   },
 };

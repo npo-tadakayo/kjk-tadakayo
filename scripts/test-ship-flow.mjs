@@ -5,7 +5,7 @@ import {
   shipStatusOf, usesWarehouse, stockDeducted, isLocked, canDelete, canCancel,
   nextStatus, notifyOnTransition, deductsOnTransition, shipNotifyShown, primaryAction, shipActions,
   qtyDelta, needsResendPrompt, shipStepsDone, todoCounts, paymentsOf, netPaidOf, CANCEL_BLOCKED_BY_PAYMENT,
-  notifyInFlight, NOTIFY_IN_FLIGHT_MSG,
+  notifyInFlight, NOTIFY_IN_FLIGHT_MSG, LP_PICKUP_NOTICE, lpPickupNotice,
 } from "../admin/js/ship-flow.js";
 
 let n = 0;
@@ -287,7 +287,85 @@ console.log(`OK test-ship-flow: ${n}件 全件合格`);
   assert.match(sup, /lpSel\.value=DEFAULT_LETTERPACK/);
   const lp = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
   assert.match(lp, /let type = letterPackOrDefault\(s\.letterPackType\)/);
-  console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
+  // ===== レターパックの注意（滋賀以外の保管場所） =====
+t(() => {
+  const base = { defaultLocationId: "shiga", letterPack: true };
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "okinawa" }), LP_PICKUP_NOTICE);   // 滋賀以外 × レターパック → 注意
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "shiga" }), "");                    // 滋賀 → 出さない
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "okinawa", letterPack: false }), ""); // レターパックでなければ出さない
+  assert.equal(lpPickupNotice({ ...base, originLocationId: "" }), "");                         // 出荷元が未選択なら出さない
+  assert.equal(lpPickupNotice({ originLocationId: "okinawa", defaultLocationId: "", letterPack: true }), ""); // 既定が無ければ判定しない
+  assert.match(LP_PICKUP_NOTICE, /持ち出し/);
+});
+
+console.log("OK test-ship-flow 追加: レターパックの初期値はプラス");
+}
+
+// ===== 2026-10-30 台数を目立たせる改修（出荷指示・宛名印刷）=====
+{
+  const { shipQtySummary } = await import("../admin/js/ship-flow.js");
+  const { readFileSync } = await import("node:fs");
+  const R = (sku, name, qty, extra = {}) => ({ sku, name, qty, ...extra });
+  // 1品番・1台
+  let q = shipQtySummary([R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 1)]);
+  assert.equal(q.total, 1);
+  assert.equal(q.detail, "CIR415A × 1");
+  // 伴走支援費・金額調整・在庫を使わない行・0台は数えない
+  q = shipQtySummary([
+    R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 3),
+    R("support-fee", "伴走支援費", 1), R("discount", "金額調整", 1),
+    R("x-1", "サービス", 2, { nonStock: true }), R("cir315a-02", "介護情報基盤 汎用カードリーダ CIR315A（Type-A）", 0),
+  ]);
+  assert.equal(q.total, 3);
+  assert.equal(q.lines.length, 1);
+  // 2品番は品番ごとと合計
+  q = shipQtySummary([R("cir415a-01", "介護情報基盤 汎用カードリーダ CIR415A", 2), R("cir315a-02", "介護情報基盤 汎用カードリーダ CIR315A（Type-A）", 1)]);
+  assert.equal(q.total, 3);
+  assert.equal(q.detail, "CIR415A × 2・CIR315A（Type-A） × 1");
+  // 品名が無ければ品番
+  assert.equal(shipQtySummary([R("abc", "", 2)]).detail, "abc × 2");
+  assert.deepEqual(shipQtySummary(undefined), { lines: [], total: 0, detail: "" });
+  // Functions の複製が admin と同じ中身（BEGIN〜END）
+  const pick = (src) => src.split("// BEGIN shipQtySummary\n")[1].split("// END shipQtySummary")[0].replace("export function", "function");
+  const fl = readFileSync(new URL("../admin/js/ship-flow.js", import.meta.url), "utf8");
+  const fn = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
+  assert.equal(pick(fn), pick(fl));
+  // 出荷指示: 見出し・副題・本文2行目・カード先頭に台数
+  assert.match(fn, /const q = shipQtySummary\(s\.items\);/);
+  assert.match(fn, /`🔢 台数: \$\{q\.total\}台（\$\{q\.detail\}）← 箱に入れる前に数えてください`/);
+  assert.match(fn, /— カードリーダー \$\{q\.total\}台`, subtitle: `[^`]*【合計 \$\{q\.total\}台】`/);
+  // 宛名印刷: 宛名枠の台数と梱包の確認（チェック4つ）
+  // 宛名ラベルの部品は letterpack-label.js（2026-11-01 倉庫の宛名印刷と共通化）。印刷ページ側は lpPage
+  const lp = readFileSync(new URL("../admin/js/letterpack-label.js", import.meta.url), "utf8");
+  const lpPage = readFileSync(new URL("../admin/js/letterpack-print.js", import.meta.url), "utf8");
+  assert.match(lp, /import \{ shipQtySummary \} from "\/js\/ship-flow\.js"/);
+  assert.match(lpPage, /import \{ renderLabel, fitLabel as fitLabelEl \} from "\/js\/letterpack-label\.js"/);
+  // 宛名枠は郵便局の依頼で 上から お届け先 → ご依頼主 → 品名（台数）の順（2026-10-30）
+  assert.match(lp, /class="item-qty"/);
+  const iTo = lp.indexOf('<div class="to">'), iFrom = lp.indexOf('<div class="from">'), iItem = lp.indexOf('<div class="item">');
+  assert.ok(iTo > 0 && iTo < iFrom && iFrom < iItem, "宛名枠の並びは お届け先 → ご依頼主 → 品名");
+  assert.match(lp, /data-qty-total>\$\{q\.total\}<small>台<\/small>/);
+  assert.equal((lp.match(/<li><span class="box"/g) || []).length, 4);
+  assert.match(lp, /確認した人：/);
+  const lph = readFileSync(new URL("../admin/css/letterpack-label.css", import.meta.url), "utf8");
+  for (const page of ["letterpack-print.html", "warehouse-print.html"]) {
+    assert.match(readFileSync(new URL(`../admin/${page}`, import.meta.url), "utf8"), /<link rel="stylesheet" href="\/css\/letterpack-label\.css">/, page);
+  }
+  assert.match(lph, /\.label\{width:125mm;height:145mm;/); // レターパックの宛名面の枠（縦14.5cm×横12.5cm）
+  // A4 の幅（約794px）は max-width:820px にも当たるため、印刷用に寸法を固定し直していること（Codex 指摘 #33）
+  assert.match(lph.slice(lph.indexOf('@media print')), /\.label\{width:125mm;height:145mm;min-height:0;\}/);
+  assert.match(lph, /\.pack\{/);
+  // 長い宛名は お届け先・ご依頼主 を縮めて枠に収め、収まらなければ警告と印刷前の確認（Codex 指摘 #33）
+  assert.match(lp, /export function fitLabel\(el\)/);
+  assert.match(lpPage, /labelFits = fitLabel\(\);/);
+  assert.match(lpPage, /if \(!labelFits && !confirm\(/);
+  // 倉庫の宛名印刷も同じ部品で描き、収まらなければ警告と印刷前の確認（2026-11-01）
+  const wp = readFileSync(new URL("../admin/js/warehouse-print.js", import.meta.url), "utf8");
+  assert.match(wp, /import \{ renderLabel, fitLabel \} from "\/js\/letterpack-label\.js"/);
+  assert.match(wp, /if \(!fitLabel\(el\)\)/);
+  assert.match(wp, /if \(overflow\.length && !confirm\(/);
+  assert.match(lph, /\.label\.measure\{width:125mm !important;height:145mm !important;/);
+  console.log("OK test-ship-flow 追加: 台数を目立たせる（出荷指示・宛名印刷）");
 }
 
 // ===== 2026-10-24 送付方法「持ち出し」（倉庫メニュー §9.2）=====

@@ -2,6 +2,9 @@
 // 13ステータスの数値はそのまま。表示・整理のため 5 フェーズに束ねる。
 // 旧: cases.js / kanban.js / dashboard.js に重複していた定義をここへ集約。
 
+import { normalizeEmail, normalizePhone } from "./normalize.js"; // 重複判定キーに全角のゆれを持ち込まない
+import { isDupExcludedPair } from "./service-types.js"; // 同じ事業所の別事業（事業種別が違う・コピーでつながった組）は重複にしない（2026-11-01）
+
 export const STATUS_LABELS = {
   1: "新規受信", 2: "確認中", 3: "受注確定", 4: "失注",
   5: "担当者決定", 6: "事前準備中", 7: "伴走支援待ち",
@@ -119,8 +122,8 @@ export const ARCHIVE_REASONS = {
 // 重複判定キー（メール／電話の数字のみ／事業所名）。1件が複数キーを持ちうる。
 export function dupKeys(c) {
   const keys = [];
-  const e = (c.contactEmail || "").trim().toLowerCase(); if (e) keys.push("e:" + e);
-  const p = (c.contactPhone || "").replace(/[^0-9]/g, "");  if (p) keys.push("p:" + p);
+  const e = normalizeEmail(c.contactEmail).toLowerCase(); if (e) keys.push("e:" + e);
+  const p = normalizePhone(c.contactPhone).replace(/[^0-9]/g, "");  if (p) keys.push("p:" + p);
   const o = (c.officeName || "").trim();                     if (o) keys.push("o:" + o);
   return keys;
 }
@@ -130,6 +133,8 @@ export function pairKey(a, b) { return a < b ? `${a}__${b}` : `${b}__${a}`; }
 
 // 共有キーで連結した重複グループ（union-find）。2件以上のグループのみ返す。
 // dismissed: 「重複ではない」と確定したペアキーの Set。その組は連結しない。
+// 事業種別（serviceType）が両方入っていて違う組、コピーでつながった組（copiedFrom.caseId が相手）も連結しない
+// （1事業＝1案件で意図して分けた案件・2026-11-01）。ただし第三の案件を介して同じグループに入ることはある（union-find のため）。
 export function computeDuplicateGroups(cases, dismissed) {
   const dis = dismissed || new Set();
   const parent = {};
@@ -137,10 +142,13 @@ export function computeDuplicateGroups(cases, dismissed) {
   cases.forEach((c) => { parent[c._id] = c._id; });
   // 同一キーを持つ案件どうしをペアで連結（「重複ではない」確定の組はスキップ）
   const byKey = {};
+  const byId = {};
+  cases.forEach((c) => { byId[c._id] = c; });
   cases.forEach((c) => dupKeys(c).forEach((k) => { (byKey[k] = byKey[k] || []).push(c._id); }));
   Object.values(byKey).forEach((ids) => {
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
+        if (isDupExcludedPair(byId[ids[i]], byId[ids[j]])) continue;
         if (!dis.has(pairKey(ids[i], ids[j]))) parent[find(ids[i])] = find(ids[j]);
       }
     }

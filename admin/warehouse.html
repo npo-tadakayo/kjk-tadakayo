@@ -38,6 +38,25 @@
     .wh-err { color:var(--color-danger); font-size:13px; margin:8px 0 0; display:none; }
     .wh-empty { text-align:center; color:var(--color-ink-muted); padding:var(--space-6) var(--space-4); font-size:15px; }
     .wh-loading { opacity:.5; pointer-events:none; }
+    /* 一覧タブ（2026-11-04）。表は横スクロール（.table-wrap）。チェックは 22px・押せる範囲は 44px */
+    .wh-sheet-bar { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); margin-bottom:var(--space-3); }
+    .wh-sheet-bar select, .wh-sheet-bar input[type=search] { min-height:44px; font-size:15px; }
+    .wh-sheet-bar input[type=search] { flex:1 1 200px; min-width:0; }
+    .wh-sheet-count { font-size:13px; color:var(--color-ink-muted); }
+    .wh-sheet { width:100%; min-width:1080px; border-collapse:collapse; font-size:14px; }
+    .wh-sheet th, .wh-sheet td { padding:8px; border-bottom:1px solid var(--color-line); text-align:left; vertical-align:top; overflow-wrap:anywhere; }
+    .wh-sheet th { white-space:nowrap; font-size:13px; }
+    .wh-sheet th button { min-height:44px; background:none; border:0; font:inherit; font-weight:700; cursor:pointer; color:inherit; padding:0 4px; }
+    .wh-sheet td.chk, .wh-sheet th.chk { text-align:center; white-space:nowrap; }
+    .wh-sheet tr.is-done { background:rgba(0,0,0,.03); }
+    .wh-sheet tr.is-unconfirmed { box-shadow:inset 4px 0 0 var(--color-primary); }
+    .wh-tick { display:inline-flex; align-items:center; justify-content:center; min-width:44px; min-height:44px; cursor:pointer; }
+    .wh-tick input { width:22px; height:22px; accent-color:var(--color-primary); }
+    .wh-tick input:disabled { cursor:default; }
+    .wh-sheet textarea.wh-note { width:100%; min-width:200px; min-height:44px; font-size:14px; resize:vertical; }
+    .wh-note-st { display:block; font-size:12px; color:var(--color-ink-muted); min-height:1.4em; }
+    .wh-note-st.err { color:var(--color-danger); }
+    .wh-same { display:inline-block; margin-top:4px; }
     @media (max-width: 480px) { .wh-top select { width:100%; } }
   </style>
 </head>
@@ -66,10 +85,12 @@
           <button class="tab active" type="button" role="tab" data-tab="requested" aria-selected="true">出荷の依頼</button>
           <button class="tab" type="button" role="tab" data-tab="done" aria-selected="false">発送済・受け渡し済（30日）</button>
           <button class="tab" type="button" role="tab" data-tab="stock" aria-selected="false">在庫</button>
+          <button class="tab" type="button" role="tab" data-tab="sheet" aria-selected="false">一覧 <span class="badge badge-1" id="sheetBadge" style="display:none"></span></button>
         </div>
         <div class="tab-content active" id="tab-requested"></div>
         <div class="tab-content" id="tab-done"></div>
         <div class="tab-content" id="tab-stock"></div>
+        <div class="tab-content" id="tab-sheet"></div>
       </div>
     </main>
   </div>

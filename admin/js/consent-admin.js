@@ -12,6 +12,7 @@
 //   ・条文は発行時に全文を焼き込む（consent-document.js の注記を参照）
 //   ・署名そのものは公開ページ（consent.html）が行う。ここでは作成・取消・閲覧だけ
 
+import { normalizeEmail } from "/js/normalize.js";
 import {
   collection, doc, getDocs, setDoc, updateDoc, deleteField, query, where,
   serverTimestamp,
@@ -283,7 +284,7 @@ function openMailModal(r, url) {
   document.getElementById("consentMailClose").addEventListener("click", close);
   document.getElementById("consentMailCancel").addEventListener("click", close);
   document.getElementById("consentMailSend").addEventListener("click", async (e) => {
-    const to = document.getElementById("cmTo").value.trim();
+    const to = normalizeEmail(document.getElementById("cmTo").value);
     const subject = document.getElementById("cmSubject").value.trim();
     const body = document.getElementById("cmBody").value;
     if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }

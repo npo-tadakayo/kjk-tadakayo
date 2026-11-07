@@ -17,6 +17,7 @@
 //   ・品番→表示名は products コレクション（doc id = sku）を一度だけ読み込み、name と
 //     connectionLabel(product) を併記する。取得できない品番はそのまま sku を出す
 
+import { normalizeEmail } from "/js/normalize.js";
 import {
   collection, query, where, onSnapshot, getDocs,
 } from "/js/fs.js";
@@ -242,7 +243,9 @@ async function resend(quoteId) {
   render();
   try {
     const resendQuoteMail = httpsCallable(ctx.functions, "resendQuoteMail");
-    await resendQuoteMail({ quoteId });
+    // 宛先は案件のいまのメールを渡す（「連絡先を直す」で直したあとに、見積もりに残る旧メールへ送らないため。2026-11-02）
+    const to = (ctx.getCase ? ctx.getCase() : {})?.contactEmail || "";
+    await resendQuoteMail(to ? { quoteId, to } : { quoteId });
     ctx.toast("見積書を送りました");
   } catch (e) {
     alert(`送信に失敗しました: ${e.message || e}`);
@@ -383,7 +386,7 @@ async function submitRevise() {
 // 金額はここでは計算しない（サーバの staffCreateQuote が計算し、結果をトーストで返す）。
 function openCreate() {
   const kase = ctx.getCase ? ctx.getCase() : {};
-  const contactEmail = (kase?.contactEmail || kase?.email || "").trim();
+  const contactEmail = normalizeEmail(kase?.contactEmail || kase?.email);
   const hasEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail);
   const host = document.getElementById("reviseModalHost");
   host.innerHTML = `

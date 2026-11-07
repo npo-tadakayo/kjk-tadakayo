@@ -1,3 +1,4 @@
+import { normalizeEmail, normalizePhone } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
@@ -14,7 +15,10 @@ import {
 } from "/js/constants.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, savePref, loadPref } from "/js/assignee-filter.js";
 import { areaOf, REGIONS } from "/js/area.js";
+import { visitFull, FORMAT_LABELS } from "/js/schedule-core.js";
 import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
+// 事業種別（cases.serviceType・2026-11-01）。同じ事業所の案件が並んだとき、どの事業かをラベルで見分ける
+import { serviceTypeBadge, serviceTypeOptionsHtml, planHintText, isServiceType } from "/js/service-types.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -184,7 +188,8 @@ function matchFilters(c, { search, statusFilter, sourceFilter, quoteFilter, inte
   const matchSearch = !search ||
     (c.officeName || "").toLowerCase().includes(search) ||
     (c.corpName || "").toLowerCase().includes(search) ||
-    (c.contactName || "").toLowerCase().includes(search);
+    (c.contactName || "").toLowerCase().includes(search) ||
+    (c.serviceType || "").toLowerCase().includes(search);
   const matchStatus = !statusFilter || String(c.status) === statusFilter;
   const matchSource = !sourceFilter || c.source === sourceFilter;
   // 紹介元（referralSource）。SOURCE_LABELS の流入元とは別物。
@@ -294,6 +299,7 @@ function renderCases() {
       <td class="col-office">
         <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
         ${c.corpName ? `<div style="font-size:12px;color:var(--color-ink-muted)">${escHtml(c.corpName)}</div>` : ""}
+        <div style="margin-top:2px">${serviceTypeBadge(c, escHtml)}</div>
       </td>
       <td>${escHtml(c.contactName || "") || "—"}</td>
       <td>${escHtml(c._area?.region || "") || areaBlank()}</td>
@@ -303,7 +309,7 @@ function renderCases() {
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
       <td><span class="badge badge-${c.status}"${Number(c.status) === LOST ? ` title="失注の理由: ${escHtml(lostReasonLabel(c))}${c.lostReasonNote ? `（${escHtml(c.lostReasonNote)}）` : ""}"` : ""}>${STATUS_LABELS[c.status] || "—"}</span>${Number(c.status) === LOST ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:2px">${escHtml(lostReasonLabel(c))}</div>` : ""}${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
-      <td>${c.visitDate ? escHtml(c.visitDate.replace(/-/g, "/")) : "—"}</td>
+      <td>${c.visitDate ? escHtml(visitFull(c.visitDate, c.visitTimeFrom)) : "—"}</td>
       <td>${formatDate(c.receivedAt)}</td>
       <td>${formatDate(c.updatedAt)}</td>
     </tr>
@@ -360,7 +366,7 @@ function openDupModal() {
       ${g.map((c) => `
         <a href="/case-detail.html?id=${c._id}" style="display:flex;gap:10px;align-items:center;padding:6px 4px;text-decoration:none;color:inherit;border-top:1px solid var(--color-line)">
           <strong style="min-width:46px">#${c.caseNumber || "—"}</strong>
-          <span style="flex:1">${escHtml(c.officeName || "—")}${c.corpName ? ` <span style="color:var(--color-ink-muted);font-size:12px">${escHtml(c.corpName)}</span>` : ""}</span>
+          <span style="flex:1">${escHtml(c.officeName || "—")}${c.corpName ? ` <span style="color:var(--color-ink-muted);font-size:12px">${escHtml(c.corpName)}</span>` : ""} ${serviceTypeBadge(c, escHtml)}</span>
           <span style="font-size:12px;color:var(--color-ink-muted)">${SOURCE_LABELS[c.source] || c.source || ""}</span>
           <span class="badge badge-${c.status}" style="font-size:11px">${STATUS_LABELS[c.status] || ""}</span>
         </a>`).join("")}
@@ -429,7 +435,7 @@ function exportCsv() {
   const rows = getFilteredCases();
   if (rows.length === 0) { toast("出力対象の案件がありません"); return; }
   const headers = ["案件番号","事業所名","法人名","担当者","地域","都道府県","市町村","電話","メール","流入元","ご希望","紹介元",
-    "ステータス","失注の理由","担当営業","訪問予定日","補助金区分","想定補助額","受信日時","最終更新"];
+    "ステータス","失注の理由","担当営業","訪問予定日","訪問開始","訪問終了","訪問形式","補助金区分","想定補助額","受信日時","最終更新","事業種別"];
   const lines = [headers.join(",")];
   rows.forEach((c) => {
     lines.push([
@@ -440,8 +446,10 @@ function exportCsv() {
       referralLabel(c.referralSource, appSettings),
       STATUS_LABELS[c.status] || "", Number(c.status) === LOST ? lostReasonLabel(c) + (c.lostReasonNote ? `（${c.lostReasonNote}）` : "") : "",
       c.assignedUserName || "未割当", c.visitDate || "",
+      c.visitTimeFrom || "", c.visitTimeTo || "", FORMAT_LABELS[c.visitFormat] || "",
       c.subsidyCategory || "", c.expectedSubsidyAmount || "",
       fmtFull(c.receivedAt), fmtFull(c.updatedAt),
+      c.serviceType || "", // 事業種別は既存の列の並びを変えないよう最後に足す（2026-11-01）
     ].map(csvCell).join(","));
   });
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -486,19 +494,21 @@ async function createCase(user) {
   try {
     const now = serverTimestamp();
     const corpName = document.getElementById("corpName").value.trim();
+    const newServiceType = document.getElementById("newServiceType")?.value || "";
     const officeRef = await addDoc(collection(db, "offices"), {
       corpName, officeName,
-      phone: document.getElementById("contactPhone").value.trim(),
+      phone: normalizePhone(document.getElementById("contactPhone").value),
       createdAt: now, updatedAt: now,
     });
     const caseNumber = await getNextCaseNumber();
     const caseRef = await addDoc(collection(db, "cases"), {
       caseNumber, officeId: officeRef.id, officeName, corpName,
       contactName: document.getElementById("contactName").value.trim(),
-      contactEmail: document.getElementById("contactEmail").value.trim(),
-      contactPhone: document.getElementById("contactPhone").value.trim(),
+      contactEmail: normalizeEmail(document.getElementById("contactEmail").value),
+      contactPhone: normalizePhone(document.getElementById("contactPhone").value),
       source: "manual", status: 1, assignedUserId: null, assignedUserName: null,
       referralSource: null, // 紹介元は未設定で作る（案件詳細で選ぶ。決め打ちしない）
+      serviceType: isServiceType(newServiceType) ? newServiceType : null, // 事業種別（任意。未設定なら案件詳細で選ぶ）
       receivedAt: now, updatedAt: now, cardReaders: [],
       subsidyCategory: null, expectedSubsidyAmount: null, lostReason: null,
       orderedAt: null, completedAt: null,
@@ -526,8 +536,9 @@ function openModal() {
 function closeModal() {
   document.getElementById("newCaseModal").classList.remove("open");
   setFieldError("officeName", "");
-  ["corpName","officeName","contactName","contactPhone","contactEmail","newCaseMemo"]
-    .forEach((id) => { document.getElementById(id).value = ""; });
+  ["corpName","officeName","contactName","contactPhone","contactEmail","newCaseMemo","newServiceType"]
+    .forEach((id) => { const el = document.getElementById(id); if (el) el.value = ""; });
+  const hint = document.getElementById("newServicePlanHint"); if (hint) hint.textContent = "";
 }
 
 // 初期化
@@ -538,6 +549,12 @@ onAuthStateChanged(auth, async (user) => {
   applyViewerMode(myRole);
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
+  // 全角で入れたメール・電話は、欄を離れたときに半角へ直して見せる（保存時にも直す）
+  [["contactEmail", normalizeEmail], ["contactPhone", normalizePhone]].forEach(([id, fn]) => {
+    const el = document.getElementById(id);
+    el?.addEventListener("change", () => { const v = fn(el.value); if (v !== el.value) el.value = v; });
+    el?.addEventListener("blur", () => { const v = fn(el.value); if (v !== el.value) el.value = v; });
+  });
   populateStatusFilter();
   // ?status=N（ダッシュボード「今日やること」からの遷移）を既存のステータス絞り込みへ反映
   const urlStatus = urlParams.get("status");
@@ -548,6 +565,11 @@ onAuthStateChanged(auth, async (user) => {
 
   document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
   document.getElementById("newCaseBtn").addEventListener("click", openModal);
+  const svcSel = document.getElementById("newServiceType");
+  if (svcSel) {
+    svcSel.innerHTML = serviceTypeOptionsHtml("", escHtml, { emptyLabel: "未設定（あとで案件詳細で選べます）" });
+    svcSel.addEventListener("change", () => { document.getElementById("newServicePlanHint").textContent = planHintText(svcSel.value); });
+  }
   document.getElementById("closeModalBtn").addEventListener("click", closeModal);
   document.getElementById("cancelModalBtn").addEventListener("click", closeModal);
   document.getElementById("saveNewCaseBtn").addEventListener("click", () => createCase(user));

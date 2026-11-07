@@ -102,6 +102,14 @@
       .ls-body{padding:4px 12px 14px;}
       .ls-head{padding:12px 10px;gap:10px;}
     }
+    /* 全編（YouTube・限定公開）への入口。埋め込まずリンクにする（開いただけで Google に通信しないため） */
+    .zenpen{display:flex;gap:16px;align-items:center;margin:0 0 18px;padding:12px;border:1px solid var(--color-border,#e5e5e5);border-radius:10px;background:#fff;color:inherit;text-decoration:none}
+    .zenpen:hover{border-color:#B02626}
+    .zenpen img{width:240px;max-width:40%;height:auto;border-radius:6px;flex:none}
+    .zenpen .k{font-size:12px;color:#B02626;font-weight:700}
+    .zenpen .t{font-size:16px;font-weight:700;margin:2px 0 4px}
+    .zenpen .d{font-size:13px;color:var(--color-ink-muted,#555);line-height:1.6}
+    @media (max-width:600px){.zenpen{flex-direction:column;align-items:stretch}.zenpen img{width:100%;max-width:none}}
   </style>
 </head>
 <body>
@@ -119,6 +127,12 @@
       <div class="doc" id="doc" style="display:none">
         <p class="page-intro">新しく伴走支援に入る方が、独り立ちまでの7つのステップを順に進める画面です。STEP1〜5 はひとりで進められます（動画を最後まで見て、確認テストに合格）。STEP1〜5 が済むと「OJTに入れます」になり、STEP7 の OJT でトレーナーが評価シートをつけます。</p>
 
+        <a class="zenpen" href="https://youtu.be/D8S1Nm_VWHE" target="_blank" rel="noopener">
+          <img src="/images/videos/zenpen-2026-11.jpg" alt="介護情報基盤 伴走支援 研修動画 全編（18本）の表紙" width="640" height="360" loading="lazy">
+          <div><div class="k"><i class="ti ti-brand-youtube" aria-hidden="true"></i> 全編を通して見るならこちら（YouTube・限定公開）</div>
+            <div class="t">研修動画 全編（18本・1時間53分・2026年11月版）</div>
+            <div class="d">育成コース・ガイドブック・CRMの使い方を1本にまとめました。目次から必要なところだけ見られます。移動の時間などに、速度を上げて見ても大丈夫です（運転中や歩きながらは見ないでください）。</div></div>
+        </a>
         <div id="solo" class="ls-solo" hidden></div>
         <div class="ls-next" role="status" aria-live="polite">
           <i class="ti ti-flag-3" aria-hidden="true"></i>

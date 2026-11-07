@@ -29,6 +29,13 @@ ok(html.includes("重複の候補だけ") && html.includes("統合済みも表�
 ok(/esc\(g\.officeName\)/.test(js), "事業所名をエスケープしていない");
 ok(!/cdn\.|https:\/\/[^"]*\.js/.test(html.replace(/https:\/\/cdn\.jsdelivr\.net\/npm\/@tabler[^"]+/, "")), "offices.html に CDN の追加がある");
 ok(!/updateDoc|setDoc|addDoc|writeBatch/.test(js), "offices.js が Firestore を直接書いている（Callable 経由だけにする）");
+// 事業所の新規登録（2026-11-01）は既存の事業所を書き換えない「追加」だけなので、別ファイル office-create.js から addDoc する。
+// 既存の更新・削除はそこでもしない（offices.js の上の検査と合わせて、書き換えは Callable だけを保つ）
+{
+  const oc = rd("admin/js/office-create.js");
+  ok(/import \{ createOffice \} from "\/js\/office-create\.js"/.test(js), "新規登録は office-create.js を使う");
+  ok(/addDoc\(collection\(db, "offices"\)/.test(oc) && !/updateDoc|setDoc|deleteDoc|writeBatch|runTransaction/.test(oc), "office-create.js は offices への追加だけ");
+}
 ok(js.includes("統合を続ける") && js.includes("統合が途中で止まっています"), "途中で止まった統合の表示・操作が無い");
 ok(/mergeStatus === "running"/.test(js), "running の判定が無い");
 ok(/keep: \{\}/.test(js), "続きの実行は keep を空で呼ぶ");

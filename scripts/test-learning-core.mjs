@@ -49,7 +49,8 @@ t("7ステップ・ID・番号・動画の割当て", () => {
   assert.equal(findStep("S7").ojt, true);
   assert.deepEqual(READY_STEPS, ["S1", "S2", "S3", "S4", "S5"]);
   assert.equal(PLEDGE_ITEMS.length, 10);
-  assert.match(findStep("S4").note, /旧画面/);
+  // 2026-11-01 に単元1〜4・6〜8を今の画面で作り直したので「旧画面」の注記は外した
+  assert.doesNotMatch(findStep("S4").note, /旧画面/);
   for (const s of STEPS) for (const id of s.videos || []) assert.ok(findVideo(id), `${s.id}: 動画 ${id} が目録に無い`);
   for (const s of STEPS) for (const k of ["title", "desc", "time"]) assert.ok(s[k], `${s.id}: ${k} が空`);
 });

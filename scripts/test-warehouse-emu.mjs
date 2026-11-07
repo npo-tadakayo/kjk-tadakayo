@@ -330,8 +330,69 @@ check("差出人: 設定が無ければ印刷ページと同じ既定", r.ok && 
 await db.collection("appConfig").doc("settings").update({ senders: [{ name: "東京センター", postal: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }, { name: "二件目" }] });
 r = await call("warehouseList", WH2, { locationId: "L2" });
 check("差出人: 設定の senders の1件目", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "東京センター", postalCode: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }), JSON.stringify(r.r && r.r.sender));
+// 2026-11-01: 保管場所に「宛名ラベルのご依頼主」があればそちらを優先（設定の差出人より前）
+await db.collection("locations").doc("L2").update({ postal: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "090-0000-0000",
+  senderName: "NPO法人タダカヨ　滋賀ロジスティクスセンター", senderPhone: "050-1808-2999" });
+r = await call("warehouseList", WH2, { locationId: "L2" });
+check("差出人: 保管場所のご依頼主が最優先（郵便番号・住所は保管場所・電話は senderPhone）", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "NPO法人タダカヨ　滋賀ロジスティクスセンター", postalCode: "520-0013", address: "滋賀県大津市勧学2丁目9-3", phone: "050-1808-2999" }), JSON.stringify(r.r && r.r.sender));
+await db.collection("locations").doc("L2").update({ senderName: "" });
+r = await call("warehouseList", WH2, { locationId: "L2" });
+check("差出人: 保管場所のご依頼主の名前が空なら設定の差出人に戻る", r.ok && r.r.sender && r.r.sender.name === "東京センター", JSON.stringify(r.r && r.r.sender));
 const lbl = r.ok && r.r.requested.concat(r.r.done)[0];
 check("W に宛名ラベルの項目（postalCode・address・officeName・company・contactName・phone・letterPackType）", !!lbl && ["postalCode", "address", "officeName", "company", "contactName", "phone", "letterPackType"].every((k) => k in lbl), JSON.stringify(lbl));
+
+// ---------- 11. 一覧タブ: 確認済み・備考（2026-11-04） ----------
+section("11. warehouseConfirm / warehouseSetNote");
+await seed([
+  [sh("c1"), base({ soNumber: "SH-C1", originLocationId: "L1", items: [{ sku: "BT", qty: 1 }] })],
+  [sh("c2"), base({ soNumber: "SH-C2", originLocationId: "L2", items: [{ sku: "BT", qty: 1 }] })],
+]);
+r = await call("warehouseConfirm", WH1, { shipmentId: "c1", confirmed: true });
+s = await get(sh("c1"));
+check("確認済みにできる（日時・確認した人の名前が入る）", r.ok && !!s.warehouseConfirmedAt && s.warehouseConfirmedBy === "倉庫1" && s.status === "requested", JSON.stringify(r));
+r = await call("warehouseList", WH1, { locationId: "L1" });
+const cw1 = r.ok && r.r.requested.find((w) => w.soNumber === "SH-C1");
+check("warehouseList に新しい項目が返る", !!cw1 && cw1.warehouseConfirmed === true && cw1.warehouseConfirmedByName === "倉庫1" && !!cw1.warehouseConfirmedAt && cw1.warehouseNote === "", JSON.stringify(cw1));
+const cw2 = r.ok && r.r.requested.find((w) => w.soNumber === "SH-6");
+check("古い出荷（項目なし）は未確認・備考なし", !!cw2 && cw2.warehouseConfirmed === false && cw2.warehouseConfirmedAt === null && cw2.warehouseNote === "");
+r = await call("warehouseConfirm", WH1, { shipmentId: "c1", confirmed: false });
+s = await get(sh("c1"));
+check("外すと確認済みの日時・人が消える", r.ok && !("warehouseConfirmedAt" in s) && !("warehouseConfirmedBy" in s));
+r = await call("warehouseConfirm", WH1, { shipmentId: "c2", confirmed: true });
+check("他の保管場所の出荷は確認済みにできない", !r.ok && r.code === "permission-denied" && !("warehouseConfirmedAt" in (await get(sh("c2")))), JSON.stringify(r));
+r = await call("warehouseConfirm", WH1, { shipmentId: "done1", confirmed: true });
+check("発送済は確認済みにできない（failed-precondition）", !r.ok && r.code === "failed-precondition" && !("warehouseConfirmedAt" in (await get(sh("done1")))), JSON.stringify(r));
+r = await call("warehouseConfirm", WH1, { shipmentId: "sd", confirmed: true });
+check("直送は扱えない", !r.ok && r.code === "failed-precondition");
+r = await call("warehouseConfirm", WH1, { shipmentId: "c1", confirmed: "yes" });
+check("confirmed が真偽値でなければ invalid-argument", !r.ok && r.code === "invalid-argument");
+r = await call("warehouseConfirm", VIEWER, { shipmentId: "c1", confirmed: true });
+check("閲覧のみは使えない", !r.ok && r.code === "permission-denied");
+r = await call("warehouseConfirm", WH1, { shipmentId: "nothing", confirmed: true });
+check("無い出荷は not-found", !r.ok && r.code === "not-found");
+// 競合: 発送済にした直後の確認済みは上書きしない
+r = await call("warehouseShip", WH1, { shipmentId: "c1", shipDate: TODAY });
+r = await call("warehouseConfirm", WH1, { shipmentId: "c1", confirmed: true });
+check("発送済にした直後の確認済みは失敗する", !r.ok && r.code === "failed-precondition" && !("warehouseConfirmedAt" in (await get(sh("c1")))), JSON.stringify(r));
+
+r = await call("warehouseSetNote", WH1, { shipmentId: "s5", note: "  まとめて発送  " });
+check("依頼済に備考を書ける（前後の空白は除く）", r.ok && (await get(sh("s5"))).warehouseNote === "まとめて発送", JSON.stringify(r));
+r = await call("warehouseSetNote", WH1, { shipmentId: "c1", note: "追跡番号は後で" });
+check("発送済にも備考を書ける", r.ok && (await get(sh("c1"))).warehouseNote === "追跡番号は後で", JSON.stringify(r));
+r = await call("warehouseSetNote", WH1, { shipmentId: "s5", note: "" });
+check("空文字で備考を消せる", r.ok && !("warehouseNote" in (await get(sh("s5")))));
+r = await call("warehouseSetNote", WH1, { shipmentId: "s5", note: "あ".repeat(501) });
+check("501字は invalid-argument", !r.ok && r.code === "invalid-argument");
+r = await call("warehouseSetNote", WH1, { shipmentId: "s5", note: "あ".repeat(500) });
+check("500字はよい", r.ok);
+r = await call("warehouseSetNote", WH1, { shipmentId: "s5", note: 123 });
+check("文字列でなければ invalid-argument", !r.ok && r.code === "invalid-argument");
+r = await call("warehouseSetNote", WH1, { shipmentId: "c2", note: "x" });
+check("他の保管場所の出荷には書けない", !r.ok && r.code === "permission-denied");
+r = await call("warehouseSetNote", WH1, { shipmentId: "sdraft", note: "x" });
+check("下書きには書けない", !r.ok && r.code === "failed-precondition");
+r = await call("warehouseSetNote", WH1, { shipmentId: "sd", note: "x" });
+check("直送には書けない", !r.ok && r.code === "failed-precondition");
 
 console.log(results.join("\n"));
 console.log(`\n合計: ${pass}/${pass + fail} 合格`);

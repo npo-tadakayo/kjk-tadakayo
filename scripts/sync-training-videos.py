@@ -27,15 +27,15 @@ BUCKET = "gs://kjk-tadakayo.firebasestorage.app/training"
 
 # Storage 上の名前 → (mp4, 字幕の元)。版を上げたらここを直す（video-catalog.js の file と同じ名前）
 FILES = {f"crm-u{n}": (CRM / f"{b}.mp4", CRM / f"{b}.srt") for n, b in {
-    1: "介護情報基盤CRM_単元1_はじめに_v1.2",
-    2: "介護情報基盤CRM_単元2_案件を進める_v1.2",
-    3: "介護情報基盤CRM_単元3_発注と出荷_v1.2",
-    4: "介護情報基盤CRM_単元4_請求と領収_v1.2",
+    1: "介護情報基盤CRM_単元1_はじめに_v1.3",
+    2: "介護情報基盤CRM_単元2_案件を進める_v1.3",
+    3: "介護情報基盤CRM_単元3_発注と出荷_v2.1",
+    4: "介護情報基盤CRM_単元4_請求と領収_v1.3",
     5: "介護情報基盤CRM_単元5_認定事業者_v1.3",
-    6: "介護情報基盤CRM_単元6_設定と管理_v1.2",
-    7: "介護情報基盤CRM_単元7_伴走支援の記録_v1.2",
-    8: "介護情報基盤CRM_単元8_Web申し込み_v1.2",
-    9: "介護情報基盤CRM_単元9_10月の改修_v1.0",
+    6: "介護情報基盤CRM_単元6_設定と管理_v1.4",
+    7: "介護情報基盤CRM_単元7_伴走支援の記録_v1.3",
+    8: "介護情報基盤CRM_単元8_Web申し込み_v1.3",
+    # 9（10月の改修のお知らせ）は 2026-11-01 に退役。正本は _旧版_20261101/ へ移した。Storage の training/crm-u9.* は古いリンクのため残す
     10: "介護情報基盤CRM_単元10_事業所の編集と統合_v1.0",
 }.items()}
 # 伴走支援ガイドブックの解説動画（2026-10-24 育成コースのために追加）
@@ -44,12 +44,12 @@ for p in range(4):
     FILES[f"guide-part{p}"] = (b.with_suffix(".mp4"), b.with_suffix(".srt"))
 # 事業所向け「伴走支援のご案内」（共有ドライブに正本が無いので制作フォルダの完成品。字幕は timeline.json から作る）
 _annai = KIBAN / "動画_事業所向け_伴走支援のご案内_20261013"
-FILES["guide-annai"] = (_annai / "out.mp4", _annai / "timeline.json")
+FILES["guide-annai"] = (_annai / "ばんそう支援の進み方とお願い_v1.1.mp4", _annai / "ばんそう支援の進み方とお願い_v1.1.srt")  # 2026-10-26 v1.1（音量調整済みの完成品＋srt）
 # 育成コース STEP1 の新しい動画（2026-10-24）。ご案内と同じく制作フォルダの完成品・字幕は timeline.json から作る
 _intro = KIBAN / "動画_育成_伴走支援者になるまで_20261024"
-FILES["learn-intro"] = (_intro / "out.mp4", _intro / "timeline.json")
+FILES["learn-intro"] = (_intro / "伴走支援者になるまで_v1.1.mp4", _intro / "伴走支援者になるまで_v1.1.srt")  # 2026-10-27 v1.1（報酬は完了した暦月で算定を追加）
 _pledge = KIBAN / "動画_育成_伴走支援者の約束_20261024"
-FILES["learn-pledge"] = (_pledge / "out.mp4", _pledge / "timeline.json")
+FILES["learn-pledge"] = (_pledge / "伴走支援者の約束_v1.1.mp4", _pledge / "伴走支援者の約束_v1.1.srt")  # 2026-10-26 v1.1（約束10の報告先）
 # 育成コースの使い方（2026-10-25）。操作動画スキルの modern で作ったので字幕は映像に焼き込み済み → vtt は置かない（None）
 _course = KIBAN / "動画_育成_コースの進め方_20261025"
 FILES["learn-course"] = (_course / "out.mp4", None)

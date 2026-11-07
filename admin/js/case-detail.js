@@ -1,9 +1,10 @@
+import { normalizeEmail } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { gateRole, applyViewerMode } from "/js/role.js";
+import { gateRole, applyViewerMode, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
-  collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch }
+  collection, query, where, orderBy, onSnapshot, serverTimestamp, writeBatch, runTransaction }
   from "/js/fs.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
@@ -11,7 +12,14 @@ import { getFunctions, httpsCallable }
   from "/js/fn.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
   referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
-import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason } from "/js/case-detail-util.js";
+import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
+  officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
+import { visitSummary } from "/js/schedule-core.js";
+// 事業種別（cases.serviceType）と「コピーして別の事業種別で作る」（2026-11-01）
+import { serviceTypeOptionsHtml, planHintText, isServiceType, isDupExcludedPair } from "/js/service-types.js";
+import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
+// 連絡先（担当者名・メール・電話）の訂正
+import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -42,6 +50,8 @@ let isAdmin = false;
 // 統合（mergeInto）は取り消せないので「閲覧のみ（viewer）」には出さない。
 // 完全削除＝管理者のみ／統合＝管理者＋スタッフ（データは消えず対象外になるだけなので削除より1段ゆるい）。
 let canMerge = false;
+// 「コピーして別の事業種別で作る」＝閲覧のみ以外（書き込みはルールの isEditor と同じ範囲）
+let canCopy = false;
 let currentUser = null;
 let supportChecklist = null; // initSupportChecklist の戻り値（refreshPeople）
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
@@ -62,26 +72,68 @@ function inquiryIntentBadge(intent) {
   return `<span class="badge ${cls}">ご希望: ${escHtml(label)}</span>`;
 }
 
-function renderCaseHeader(c) {
-  document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
-  document.getElementById("caseNumber").textContent = `案件 #${c.caseNumber || "—"}`;
-  document.getElementById("caseTitle").textContent = c.officeName || "（事業所名未登録）";
-
+// 見出しの1行（法人・担当者・電話・メール・住所・流入元・ご希望）。
+// 住所は後から読むので、読み終えたらこの行だけ描き直す（ステータス・訪問予定日の入力は触らない）
+function renderCaseMeta(c) {
   const metaEl = document.getElementById("caseMeta");
   metaEl.innerHTML = [
     c.corpName ? `<span class="case-meta-item"><i class="ti ti-building" aria-hidden="true"></i>${escHtml(c.corpName)}</span>` : "",
     c.contactName ? `<span class="case-meta-item"><i class="ti ti-user" aria-hidden="true"></i>${escHtml(c.contactName)}</span>` : "",
     c.contactPhone ? `<span class="case-meta-item"><i class="ti ti-phone" aria-hidden="true"></i>${escHtml(c.contactPhone)}</span>` : "",
     c.contactEmail ? `<span class="case-meta-item"><i class="ti ti-mail" aria-hidden="true"></i>${escHtml(c.contactEmail)}</span>` : "",
+    officeAddressItem(),
     `<span class="case-meta-item"><i class="ti ti-tag" aria-hidden="true"></i>${SOURCE_LABELS[c.source] || c.source || "—"}</span>`,
     c.inquiryIntent ? `<span class="case-meta-item">${inquiryIntentBadge(c.inquiryIntent)}</span>` : "",
   ].filter(Boolean).join("");
+}
+
+function renderCaseHeader(c) {
+  document.title = `#${c.caseNumber || "—"} ${c.officeName || ""} — タダカヨ CRM`;
+  document.getElementById("caseNumber").textContent = `案件 #${c.caseNumber || "—"}`;
+  document.getElementById("caseTitle").textContent = c.officeName || "（事業所名未登録）";
+
+  renderCaseMeta(c);
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
   renderLostReason(c);
   const vd = document.getElementById("visitDateInput");
   if (vd) vd.value = c.visitDate || "";
+  renderVisitExtras(c);
+}
+
+// 訪問の時刻・形式（visitTimeFrom / visitTimeTo "HH:MM"・visitFormat "onsite"|"online"）。日付が空なら無効
+function renderVisitExtras(c, force = false) {
+  const hasDate = !!c.visitDate;
+  [["visitTimeFromInput", c.visitTimeFrom], ["visitTimeToInput", c.visitTimeTo], ["visitFormatSelect", c.visitFormat]].forEach(([id, v]) => {
+    const el = document.getElementById(id);
+    if (!el || (!force && el === document.activeElement)) return;
+    el.value = v || "";
+    el.disabled = !hasDate;
+    el.title = hasDate ? "" : "先に訪問予定日を入れてください";
+  });
+}
+
+// 事業所の住所（2026-10-26 前田さんの要望：電話・メールと並べて出す）。
+// undefined＝読み込み中（何も出さない）／""＝未登録（事業所の画面で入れてもらう）
+let officeAddress;
+function officeAddressItem() {
+  if (officeAddress === undefined) return "";
+  if (!officeAddress) {
+    return `<span class="case-meta-item"><i class="ti ti-map-pin" aria-hidden="true"></i><a href="/offices.html">住所未登録（事業所の画面で入力）</a></span>`;
+  }
+  const url = mapsSearchUrl(officeAddress);
+  return `<span class="case-meta-item"><i class="ti ti-map-pin" aria-hidden="true"></i><a href="${escHtml(url)}" target="_blank" rel="noopener" title="Google マップで開く">${escHtml(officeAddress)}</a></span>`;
+}
+async function loadOfficeAddress(c) {
+  if (!c.officeId) { officeAddress = ""; renderCaseMeta(currentCase); return; }
+  try {
+    const snap = await getDoc(doc(db, "offices", c.officeId));
+    officeAddress = snap.exists() ? officeAddressText(snap.data()) : "";
+  } catch (_) {
+    officeAddress = undefined; // 読めないときは出さない（権限・通信の失敗で「未登録」と誤って出さない）
+  }
+  renderCaseMeta(currentCase);
 }
 
 // 失注の理由の表示（ステータス横）。失注でなければ隠す。既存の失注案件は「未記入」。
@@ -96,12 +148,60 @@ function renderLostReason(c) {
 // ===== 訪問予定日（visitDate: "YYYY-MM-DD" の文字列） =====
 // 担当営業と同じ作法で、誰がいつ何日に変えたかをタイムラインに残す。
 async function saveVisitDate(value) {
+  await flushVisitLog(); // 保留中の時刻・形式の記録を先に書く（記録の順序を保つ）
   const v = value || null;
-  const prev = currentCase.visitDate || "未設定";
-  await updateDoc(doc(db, "cases", caseId), { visitDate: v, updatedAt: serverTimestamp() });
-  currentCase.visitDate = v;
-  await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${prev}`);
+  const before = visitSnapshot();
+  // 日付を消したら時刻・形式も外す（日付の無い時刻だけが残らないように）
+  const upd = v ? { visitDate: v, updatedAt: serverTimestamp() }
+    : { visitDate: null, visitTimeFrom: null, visitTimeTo: null, visitFormat: null, updatedAt: serverTimestamp() };
+  await updateDoc(doc(db, "cases", caseId), upd);
+  const { updatedAt: _u, ...patch } = upd;
+  Object.assign(currentCase, patch);
+  renderVisitExtras(currentCase, true);
+  await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${before.visitDate || "未設定"}`);
   showToast(v ? `訪問予定日を ${v} にしました` : "訪問予定日を未設定にしました");
+}
+
+function visitSnapshot() {
+  return {
+    visitDate: currentCase.visitDate || "", visitTimeFrom: currentCase.visitTimeFrom || "",
+    visitTimeTo: currentCase.visitTimeTo || "", visitFormat: currentCase.visitFormat || "",
+  };
+}
+
+// 時刻・形式の変更。保存はその都度、活動記録は最後の変更から約2秒まとめて1件にする
+// （開始→終了→形式と続けて入れても記録が増えない）。変更前は最初の変更前、変更後は最後の値。
+const VISIT_LOG_DELAY_MS = 2000;
+let pendingVisitLog = null; // { before, timer }
+
+async function flushVisitLog() {
+  const p = pendingVisitLog;
+  if (!p) return;
+  pendingVisitLog = null;
+  clearTimeout(p.timer);
+  const after = visitSnapshot();
+  if (JSON.stringify(p.before) === JSON.stringify(after)) return; // 元に戻したときは記録しない
+  try {
+    await logActivity(`訪問予定を変更 → ${visitSummary(after)}`, `変更前: ${visitSummary(p.before)}`);
+  } catch (e) { console.warn("visit log:", e.message); }
+}
+window.addEventListener("pagehide", () => { flushVisitLog(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushVisitLog(); });
+
+async function saveVisitExtras() {
+  const before = pendingVisitLog ? pendingVisitLog.before : visitSnapshot();
+  const from = document.getElementById("visitTimeFromInput").value || "";
+  let to = document.getElementById("visitTimeToInput").value || "";
+  const fmt = document.getElementById("visitFormatSelect").value || "";
+  if (!from) to = ""; // 開始が無いのに終了だけは持たない
+  if (from && to && to <= from) throw new Error("終了時刻は開始時刻より後にしてください");
+  const patch = { visitTimeFrom: from || null, visitTimeTo: to || null, visitFormat: fmt || null };
+  await updateDoc(doc(db, "cases", caseId), { ...patch, updatedAt: serverTimestamp() });
+  Object.assign(currentCase, patch);
+  if (!from) document.getElementById("visitTimeToInput").value = ""; // 開始を消したら終了も外れる
+  if (pendingVisitLog) clearTimeout(pendingVisitLog.timer);
+  pendingVisitLog = { before, timer: setTimeout(flushVisitLog, VISIT_LOG_DELAY_MS) };
+  showToast(`訪問予定を ${visitSummary(visitSnapshot())} にしました`);
 }
 
 // ===== 担当営業（assignedUserId / assignedUserName） =====
@@ -176,6 +276,190 @@ async function saveReferral(value) {
   showToast(v ? `紹介元を「${referralLabel(v, appSettings)}」にしました` : "紹介元を未設定にしました");
 }
 
+// ===== 事業種別（serviceType・2026-11-01） =====
+// 1事業（事業種別）＝1案件。値は service-types.js の正式名。未設定は null。
+// 「プランの目安」は表示するだけ（subsidyCategory などを自動で書き換えない）。
+function renderServiceTypeSelect() {
+  const sel = document.getElementById("serviceTypeSelect");
+  if (!sel) return;
+  const cur = currentCase?.serviceType || "";
+  sel.innerHTML = serviceTypeOptionsHtml(cur, escHtml);
+  sel.value = cur;
+  const hint = document.getElementById("servicePlanHint");
+  if (hint) hint.textContent = planHintText(cur);
+}
+
+async function saveServiceType(value) {
+  const prev = currentCase.serviceType || "";
+  const v = value || null;
+  if (v && !isServiceType(v) && v !== prev) throw new Error("一覧にない事業種別です");
+  await updateDoc(doc(db, "cases", caseId), { serviceType: v, updatedAt: serverTimestamp() });
+  currentCase.serviceType = v;
+  // 誰がいつ事業種別を変えたか追えるように、担当営業と同じ作法でタイムラインへ記録
+  await logActivity(`事業種別変更 → ${v || "未設定"}`, `変更前: ${prev || "未設定"}`);
+  showToast(v ? `事業種別を「${v}」にしました` : "事業種別を未設定にしました");
+}
+
+// ===== この案件をコピーして、別の事業種別で作る（2026-11-01） =====
+// 案件番号は _counters/cases の連番。既存の新規作成と同じくトランザクションで払い出し、
+// 新しい案件・コピー元とコピー先の対応記録（2件）も同じトランザクションで書く（番号だけ進んで案件が無い、を作らない）。
+function openCopyCaseModal() {
+  const c = currentCase;
+  document.getElementById("copyCaseFrom").innerHTML =
+    `コピー元: <strong>#${escHtml(c.caseNumber || "—")} ${escHtml(c.officeName || "")}</strong>（事業種別: ${escHtml(c.serviceType || "未設定")}）`;
+  const sel = document.getElementById("copyServiceType");
+  sel.innerHTML = serviceTypeOptionsHtml("", escHtml, { emptyLabel: "選んでください" });
+  // コピー元と同じ事業種別は選べないようにする
+  [...sel.options].forEach((o) => { if (o.value && o.value === c.serviceType) o.disabled = true; });
+  sel.value = "";
+  // コピー元が未設定なら、コピー元の事業種別も選んでもらう（同じトランザクションでコピー元にも書く）
+  const srcGroup = document.getElementById("copySourceTypeGroup");
+  const srcSel = document.getElementById("copySourceType");
+  const needSource = !c.serviceType;
+  srcGroup.style.display = needSource ? "" : "none";
+  srcSel.innerHTML = serviceTypeOptionsHtml("", escHtml, { emptyLabel: "選んでください" });
+  srcSel.value = "";
+  document.getElementById("copyPlanHint").textContent = "";
+  document.getElementById("copyCaseError").style.display = "none";
+  document.getElementById("copyCaseModal").classList.add("open");
+  sel.focus();
+}
+function closeCopyCaseModal() { document.getElementById("copyCaseModal").classList.remove("open"); }
+
+async function copyCaseWithServiceType() {
+  const errEl = document.getElementById("copyCaseError");
+  const serviceType = document.getElementById("copyServiceType").value;
+  const sourceServiceType = currentCase.serviceType ? "" : document.getElementById("copySourceType").value;
+  const pre = buildCopiedCase(currentCase, { serviceType, sourceServiceType, caseNumber: 1, now: null }); // 番号を払い出す前に入力だけ確かめる
+  if (!pre.ok) { errEl.textContent = pre.error; errEl.style.display = "block"; return; }
+  const btn = document.getElementById("copyCaseConfirmBtn");
+  btn.disabled = true;
+  try {
+    const src = currentCase;
+    const counterRef = doc(db, "_counters", "cases");
+    const newRef = doc(collection(db, "cases"));
+    const srcActRef = doc(collection(db, "activities"));
+    const newActRef = doc(collection(db, "activities"));
+    const srcRef = doc(db, "cases", caseId);
+    const srcTypeActRef = doc(collection(db, "activities"));
+    const userId = currentUser?.uid || null;
+    const userName = currentUser?.displayName || currentUser?.email || "";
+    let srcTypeSet = "";
+    const newNumber = await runTransaction(db, async (tx) => {
+      // コピー元はトランザクションの中で読み直す（画面を開いたあとに別の人が事業種別を入れていても、その値で判定する）
+      const srcSnap = await tx.get(srcRef);
+      if (!srcSnap.exists()) throw new Error("コピー元の案件が見つかりません");
+      const fresh = { ...src, ...srcSnap.data(), _id: caseId };
+      const snap = await tx.get(counterRef);
+      const next = (snap.exists() ? snap.data().value : 0) + 1;
+      const now = serverTimestamp();
+      const built = buildCopiedCase(fresh, { serviceType, sourceServiceType, caseNumber: next, now });
+      if (!built.ok) throw new Error(built.error);
+      srcTypeSet = built.setSource ? built.sourceServiceType : "";
+      const texts = copyActivityTexts(fresh, next, serviceType, srcTypeSet);
+      tx.set(counterRef, { value: next });
+      tx.set(newRef, built.data);
+      if (srcTypeSet) {
+        tx.update(srcRef, { serviceType: srcTypeSet, updatedAt: now });
+        tx.set(srcTypeActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+          subject: texts.sourceUpdate.subject, body: texts.sourceUpdate.body, attachmentUrls: [] });
+      }
+      tx.set(srcActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.source.subject, body: texts.source.body, attachmentUrls: [] });
+      tx.set(newActRef, { caseId: newRef.id, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.target.subject, body: texts.target.body, attachmentUrls: [] });
+      return next;
+    });
+    closeCopyCaseModal();
+    showToast(`案件 #${newNumber}（${serviceType}）を作りました`);
+    location.href = `/case-detail.html?id=${newRef.id}`;
+  } catch (e) {
+    errEl.textContent = `作成できませんでした: ${e.message || e}`;
+    errEl.style.display = "block";
+    btn.disabled = false;
+  }
+}
+
+// ===== 連絡先（担当者名・メール・電話）を直す =====
+// 案件の更新・活動メモ・（メールを直したときは）未送付の見積もりの宛先を、1つのトランザクションで書く。
+// 見積もりは「この案件の、旧メールのまま、まだ送っていない」ものだけ。送付済みは送った宛先の記録なので触らない。
+// 練習モードも同じ道（fs.js が練習DBへ向ける。transaction 内の set には作成者の印が付く）。
+function openEditContactModal() {
+  const c = currentCase;
+  document.getElementById("editContactName").value = c.contactName || "";
+  document.getElementById("editContactEmail").value = c.contactEmail || "";
+  document.getElementById("editContactPhone").value = c.contactPhone || "";
+  document.getElementById("editContactError").style.display = "none";
+  document.getElementById("editContactConfirmBtn").disabled = false;
+  document.getElementById("editContactModal").classList.add("open");
+  document.getElementById("editContactName").focus();
+}
+function closeEditContactModal() { document.getElementById("editContactModal").classList.remove("open"); }
+
+async function saveContact() {
+  const errEl = document.getElementById("editContactError");
+  const input = {
+    contactName: document.getElementById("editContactName").value,
+    contactEmail: document.getElementById("editContactEmail").value,
+    contactPhone: document.getElementById("editContactPhone").value,
+  };
+  const pre = buildContactUpdate(currentCase, input);
+  if (!pre.ok) { errEl.textContent = pre.error; errEl.style.display = "block"; return; }
+  const btn = document.getElementById("editContactConfirmBtn");
+  btn.disabled = true;
+  try {
+    const caseRef = doc(db, "cases", caseId);
+    const actRef = doc(collection(db, "activities"));
+    const userId = currentUser?.uid || null;
+    const userName = currentUser?.displayName || currentUser?.email || "";
+    // 見積もりは先に探す（トランザクションの中では検索できないため）。中で1件ずつ読み直して、条件を確かめ直す
+    const oldEmail = pre.changes.contactEmail ? pre.changes.contactEmail.before : "";
+    let quoteRefs = [];
+    if (pre.changes.contactEmail && oldEmail) {
+      const qs = await getDocs(query(collection(db, "quotes"), where("caseId", "==", caseId)));
+      quoteRefs = qs.docs.filter((d) => quoteNeedsEmailFix(d.data(), oldEmail)).map((d) => d.ref);
+    }
+    let result = null;
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(caseRef);
+      if (!snap.exists()) throw new Error("案件が見つかりません");
+      // 画面を開いたあとに誰かが直していても、いまの値と見比べて作り直す
+      const built = buildContactUpdate(snap.data(), input);
+      if (!built.ok) throw new Error(built.error);
+      const fixedNos = [];
+      const quoteTargets = [];
+      for (const ref of quoteRefs) {
+        const qs = await tx.get(ref);
+        if (qs.exists() && built.changes.contactEmail && quoteNeedsEmailFix(qs.data(), built.changes.contactEmail.before)) {
+          quoteTargets.push(ref);
+          fixedNos.push(qs.data().estNo);
+        }
+      }
+      const now = serverTimestamp();
+      const texts = contactChangeActivity(built.changes, fixedNos);
+      tx.update(caseRef, { ...built.data, updatedAt: now });
+      for (const ref of quoteTargets) tx.update(ref, { contactEmail: built.data.contactEmail });
+      tx.set(actRef, { caseId, type: "memo", occurredAt: now, userId, userName,
+        subject: texts.subject, body: texts.body, attachmentUrls: [] });
+      result = { data: built.data, quoteCount: quoteTargets.length };
+    });
+    // 「メール送信」の宛先が旧メールのままなら、直したメールに差し替える
+    if ("contactEmail" in result.data) {
+      const mailTo = document.getElementById("mailTo");
+      if (mailTo && normalizeEmail(mailTo.value) === normalizeEmail(currentCase.contactEmail)) mailTo.value = result.data.contactEmail;
+    }
+    Object.assign(currentCase, result.data);
+    renderCaseMeta(currentCase);
+    closeEditContactModal();
+    showToast(result.quoteCount ? `連絡先を直しました（見積もり${result.quoteCount}件の宛先も直しました）` : "連絡先を直しました");
+  } catch (e) {
+    const denied = e?.code === "permission-denied" || /insufficient permissions/i.test(e?.message || "");
+    errEl.textContent = denied ? "保存できませんでした: この操作の権限がありません" : `保存できませんでした: ${e.message || e}`;
+    errEl.style.display = "block";
+    btn.disabled = false;
+  }
+}
+
 // 対象外バナー・操作ボタンの表示状態
 function renderCaseActions() {
   const c = currentCase;
@@ -198,6 +482,13 @@ function renderCaseActions() {
     if (unarchiveBtn) unarchiveBtn.style.display = "none";
   }
   if (deleteBtn) deleteBtn.style.display = isAdmin ? "" : "none";
+  // コピーは閲覧のみに出さない（文言に「コピー」を含み、role.js の自動無効化の対象外になるため）。
+  // 対象外（統合済み・重複など）の案件からは作らない
+  const copyBtn = document.getElementById("copyCaseBtn");
+  if (copyBtn) copyBtn.style.display = canCopy && !c.archived ? "" : "none";
+  // 連絡先の訂正は閲覧のみに出さない（文言が「直す」で role.js の自動無効化に掛からないため、JS で隠す）
+  const editContactBtn = document.getElementById("editContactBtn");
+  if (editContactBtn) editContactBtn.style.display = canCopy && !c.archived ? "" : "none";
 }
 
 // 重複候補カード
@@ -721,6 +1012,9 @@ async function loadDuplicateCandidates() {
       // ⚠️ 以前は未定義の変数 kase を見ていて ReferenceError になり、候補が常に0件（統合ボタンが出ない）だった（2026-10-21 E2E で発見）
       && !(currentCase?.quoteGroupId && c.quoteGroupId && c.quoteGroupId === currentCase.quoteGroupId)
       && dupKeys(c).some((k) => myKeys.has(k))
+      // 同じ事業所の別事業（事業種別が両方入っていて違う）は、1事業＝1案件で意図して分けたので重複候補にしない（2026-11-01）
+      // コピーでつながった組（copiedFrom.caseId が相手）も同じ（レビュー P1）
+      && !isDupExcludedPair(currentCase, c)
       && !dismissed.has(pairKey(caseId, c._id)));
 }
 
@@ -742,6 +1036,13 @@ const MERGE_FIELDS = [
     id: (c) => String(c.referralSource || "").trim(),
     text: (c) => referralLabel(c.referralSource, appSettings),
     pick: (c) => ({ referralSource: c.referralSource || null }),
+  },
+  // 事業種別（2026-11-01）。重複の統合で両方に違う値が入っていれば、どちらを残すか選ばせる
+  {
+    key: "serviceType", label: "事業種別",
+    id: (c) => String(c.serviceType || "").trim(),
+    text: (c) => String(c.serviceType || "").trim(),
+    pick: (c) => ({ serviceType: c.serviceType || null }),
   },
   ...[["contactName", "担当者名"], ["contactEmail", "メール"], ["contactPhone", "電話"], ["corpName", "法人名"]]
     .map(([f, label]) => ({
@@ -1429,7 +1730,7 @@ function aiResultToComposer() {
 // メール送信
 const sendCaseEmailFn = httpsCallable(functions, "sendCaseEmail");
 async function sendMail() {
-  const to = document.getElementById("mailTo").value.trim();
+  const to = normalizeEmail(document.getElementById("mailTo").value);
   const subject = document.getElementById("mailSubject").value.trim();
   const body = document.getElementById("mailBody").value.trim();
   const status = document.getElementById("mailStatus");
@@ -1487,6 +1788,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!myRole) return;
   isAdmin = myRole.role === "admin";
   canMerge = myRole.role === "admin" || myRole.role === "staff";
+  canCopy = !isViewer(myRole);
   currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
@@ -1537,6 +1839,7 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("loadingEl").style.display = "none";
   document.getElementById("mainContent").style.display = "block";
   renderCaseHeader(currentCase);
+  loadOfficeAddress(currentCase); // 事業所の住所は別に読んで、見出しに足す（待たない）
   renderNextStep(); // 次の一手（まだ shipmentsCache が空でも1行目は出せる。2行目は購読が来てから更新）
   // 伴走支援承諾書カード（事前確認タブの先頭）。メールは既存の sendCaseEmail を流用
   initConsentCard({
@@ -1563,6 +1866,7 @@ onAuthStateChanged(auth, async (user) => {
   }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
+  renderServiceTypeSelect();
   renderCaseActions();
   renderDuplicateCandidates();
 
@@ -1596,6 +1900,59 @@ onAuthStateChanged(auth, async (user) => {
       inp.disabled = false;
     }
   });
+
+  // 訪問の時刻・形式の変更（保存＋タイムラインに記録）
+  // ・保存は直列化する（並行しても、毎回「そのとき欄にある最新の値」で書くので後の値が先の値で上書きされない）
+  // ・欄は無効化も描き直しもしない（保存中に次の欄を入力できる）。失敗したときだけ、失敗した欄を保存済みの値へ戻す
+  const VISIT_FIELD = { visitTimeFromInput: "visitTimeFrom", visitTimeToInput: "visitTimeTo", visitFormatSelect: "visitFormat" };
+  let visitSaveChain = Promise.resolve();
+  Object.keys(VISIT_FIELD).forEach((id) => {
+    document.getElementById(id)?.addEventListener("change", (e) => {
+      const el = e.target;
+      visitSaveChain = visitSaveChain.then(() => saveVisitExtras()).catch((err) => {
+        alert(`訪問の時刻・形式の保存に失敗しました: ${err.message || err}`);
+        el.value = currentCase[VISIT_FIELD[id]] || "";
+      });
+    });
+  });
+
+  // 事業種別の変更（保存＋タイムラインに記録）
+  document.getElementById("serviceTypeSelect")?.addEventListener("change", async (e) => {
+    const sel = e.target;
+    const prev = currentCase.serviceType || "";
+    sel.disabled = true;
+    try {
+      await saveServiceType(sel.value);
+      renderServiceTypeSelect(); // 一覧にない値から外れた場合に選択肢を作り直す
+    } catch (err) {
+      sel.value = prev;
+      alert(`事業種別の保存に失敗しました: ${err.message || err}`);
+    } finally {
+      sel.disabled = false;
+    }
+  });
+
+  // この案件をコピーして、別の事業種別で作る
+  document.getElementById("editContactBtn")?.addEventListener("click", openEditContactModal);
+  document.getElementById("editContactCloseBtn")?.addEventListener("click", closeEditContactModal);
+  document.getElementById("editContactCancelBtn")?.addEventListener("click", closeEditContactModal);
+  document.getElementById("editContactModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeEditContactModal(); });
+  ["editContactName", "editContactEmail", "editContactPhone"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => { document.getElementById("editContactError").style.display = "none"; });
+  });
+  document.getElementById("editContactConfirmBtn")?.addEventListener("click", saveContact);
+  document.getElementById("copyCaseBtn")?.addEventListener("click", openCopyCaseModal);
+  document.getElementById("copyCaseCloseBtn")?.addEventListener("click", closeCopyCaseModal);
+  document.getElementById("copyCaseCancelBtn")?.addEventListener("click", closeCopyCaseModal);
+  document.getElementById("copyCaseModal")?.addEventListener("click", (e) => { if (e.target === e.currentTarget) closeCopyCaseModal(); });
+  document.getElementById("copySourceType")?.addEventListener("change", () => {
+    document.getElementById("copyCaseError").style.display = "none";
+  });
+  document.getElementById("copyServiceType")?.addEventListener("change", (e) => {
+    document.getElementById("copyPlanHint").textContent = planHintText(e.target.value);
+    document.getElementById("copyCaseError").style.display = "none";
+  });
+  document.getElementById("copyCaseConfirmBtn")?.addEventListener("click", copyCaseWithServiceType);
 
   // 紹介元の変更（値は id を保存。表示名は保存しない）
   document.getElementById("referralSelect")?.addEventListener("change", async (e) => {

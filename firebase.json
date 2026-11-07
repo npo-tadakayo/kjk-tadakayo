@@ -50,6 +50,26 @@
             {
               "key": "Cache-Control",
               "value": "no-cache, max-age=0"
+            },
+            {
+              "key": "Content-Security-Policy",
+              "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.clarity.ms https://scripts.clarity.ms https://www.googletagmanager.com https://www.gstatic.com https://www.google.com https://www.recaptcha.net; connect-src 'self' https://*.clarity.ms https://www.googletagmanager.com https://*.google-analytics.com https://*.analytics.google.com https://asia-northeast1-kjk-tadakayo.cloudfunctions.net https://firestore.googleapis.com https://content-firebaseappcheck.googleapis.com https://firebaseappcheck.googleapis.com https://zipcloud.ibsnet.co.jp https://www.google.com; img-src 'self' data: blob: https://i.ytimg.com https://*.clarity.ms https://c.bing.com https://www.googletagmanager.com https://*.google-analytics.com https://www.gstatic.com https://www.google.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src https://www.youtube-nocookie.com https://www.google.com https://www.recaptcha.net; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+            },
+            {
+              "key": "X-Content-Type-Options",
+              "value": "nosniff"
+            },
+            {
+              "key": "X-Frame-Options",
+              "value": "DENY"
+            },
+            {
+              "key": "Referrer-Policy",
+              "value": "strict-origin-when-cross-origin"
+            },
+            {
+              "key": "Permissions-Policy",
+              "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
             }
           ]
         },
