@@ -302,4 +302,39 @@ t("holidaysCover", () => {
   assert.equal(N.holidaysCover("でたらめ"), false);
 });
 
+// ===== 請求書の出し忘れ（2026-11-08）=====
+t("伴走支援実施済以降で発送済のまま → 担当ごと／担当なしの節に載る", () => {
+  const ships = [
+    { caseId: "p8", soNumber: "SH-8", status: "shipped", shippedAt: daysAgo(NOW, 3) },
+    { caseId: "p7", soNumber: "SH-7", status: "shipped", shippedAt: daysAgo(NOW, 3) },  // 7 はまだ対象外
+    { caseId: "pinv", soNumber: "SH-9", status: "invoiced" },                            // 請求済は対象外
+    { caseId: "pnone", soNumber: "SH-10" },                                              // 状態が空の古い出荷は数えない
+    { caseId: "pun", soNumber: "SH-11", status: "shipped" },
+    { caseId: "plost", soNumber: "SH-12", status: "shipped" },
+  ];
+  const cls = N.classifyCases([
+    base({ id: "p8", status: 8, assignedUserId: "a@tadakayo.jp" }),
+    base({ id: "p7", status: 7, assignedUserId: "a@tadakayo.jp" }),
+    base({ id: "pinv", status: 11, assignedUserId: "a@tadakayo.jp" }),
+    base({ id: "pnone", status: 12, assignedUserId: "a@tadakayo.jp" }),
+    base({ id: "pun", status: 13 }),
+    base({ id: "plost", status: 4, assignedUserId: "a@tadakayo.jp" }),
+  ], { now: NOW, shipments: ships });
+  assert.deepEqual(cls.assignees["a@tadakayo.jp"].invoicePending.map((e) => e.c.id), ["p8"]);
+  assert.equal(cls.assignees["a@tadakayo.jp"].invoicePending[0].days, 3);
+  assert.deepEqual(cls.overall.invoicePending.map((e) => e.c.id), ["pun"]);
+  const msg = N.buildAssigneeDigest({ email: "a@tadakayo.jp", displayName: "テスト" },
+    cls.assignees["a@tadakayo.jp"], { deadlineDays: 100 });
+  assert.ok(msg.includes("請求書を出していない") && msg.includes("SH-8（発送から3日）"), msg);
+  assert.ok(N.buildOverallDigest(cls).includes("SH-11"));
+});
+t("shipments を渡さなければ請求書の節は出ない（従来どおり）", () => {
+  const cls = N.classifyCases([base({ id: "q", status: 8, assignedUserId: "a@tadakayo.jp" })], { now: NOW });
+  assert.equal(cls.assignees["a@tadakayo.jp"], undefined);
+  assert.equal(cls.overall.invoicePending.length, 0);
+});
+t("SUPPORT_DONE は constants.js の「伴走支援実施済」", () => {
+  assert.equal(C.STATUS_LABELS[N.SUPPORT_DONE], "伴走支援実施済");
+});
+
 console.log(`OK test-notify-text: ${n} 件合格`);

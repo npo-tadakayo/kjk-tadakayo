@@ -27,7 +27,9 @@ export const DEADLINE = new Date("2027-03-12T23:59:59+09:00");       // 申請�
 // ===== 通知だけの定数 =====
 export const AWAIT_DEPOSIT_DAYS = 14;   // 入金待ち(11)のまま、この日数以上更新なし
 export const DEADLINE_NEAR_DAYS = 30;   // 申請期限まで残りこの日数以下で「期限間近」
-export const SECTION_LIMIT = 10;        // 各節に並べる件数の上限（超えた分は「…ほか N 件」）
+export const SECTION_LIMIT = 10;
+// 伴走支援実施済。これ以降（失注を除く）で発送済のまま請求書が出ていない出荷を「請求書の出し忘れ」に載せる（2026-11-08）
+export const SUPPORT_DONE = 8;        // 各節に並べる件数の上限（超えた分は「…ほか N 件」）
 export const ADMIN_URL = "https://kjk-tadakayo-admin.web.app";
 
 const DAY_MS = 86400000;
@@ -92,21 +94,32 @@ const emailKey = (e) => String(e || "").trim().toLowerCase();
 /**
  * 案件を日次まとめの節に振り分ける。
  * @param {object[]} cases  cases のドキュメント（id か _id・status・assignedUserId・updatedAt・receivedAt/createdAt・archived …）
- * @param {{now?:Date, deadline?:Date, holidays?:string[]}} opts
+ * @param {{now?:Date, deadline?:Date, holidays?:string[], shipments?:object[]}} opts
+ *   shipments … 出荷（caseId・status・soNumber・shippedAt）。発送済(shipped)のものだけ使う。省略時は請求書の節を作らない
  * @returns {{deadline:Date, deadlineDays:number, deadlineNearAll:number,
  *   overall:{firstContactOver:Entry[], newUnassigned:Entry[], engagedUnassigned:Entry[], staleUnassigned:Entry[]},
- *   assignees:Object<string,{email:string, newReceived:Entry[], stale:Entry[], awaitingDeposit:Entry[], deadlineNear:Entry[], firstContactOver:Entry[]}>}}
+ *   assignees:Object<string,{email:string, newReceived:Entry[], stale:Entry[], awaitingDeposit:Entry[], deadlineNear:Entry[], firstContactOver:Entry[], invoicePending:Entry[]}>}}
+ *   overall.invoicePending・assignees[].invoicePending の Entry は { c, days: 発送からの日数|null, sos: 出荷番号[] }
  *   Entry = { c: 案件, days: number|null }（days は節ごとの日数: 超過営業日・更新なしの日数）
  */
-export function classifyCases(cases, { now = new Date(), deadline = DEADLINE, holidays = JP_HOLIDAYS } = {}) {
+export function classifyCases(cases, { now = new Date(), deadline = DEADLINE, holidays = JP_HOLIDAYS, shipments = [] } = {}) {
   const nowMs = now.getTime();
   const deadlineDays = Math.ceil((deadline.getTime() - nowMs) / DAY_MS);
   const deadlineNear = deadlineDays <= DEADLINE_NEAR_DAYS;
-  const overall = { firstContactOver: [], newUnassigned: [], engagedUnassigned: [], staleUnassigned: [] };
+  const overall = { firstContactOver: [], newUnassigned: [], engagedUnassigned: [], staleUnassigned: [], invoicePending: [] };
+  // 案件ごとの「発送済のまま請求書を出していない出荷」（状態が空の古い出荷は数えない＝昔の記録で騒がないため）
+  const shippedByCase = new Map();
+  for (const sh of shipments || []) {
+    if (!sh || sh.status !== "shipped" || !sh.caseId) continue;
+    const k = String(sh.caseId);
+    if (!shippedByCase.has(k)) shippedByCase.set(k, []);
+    shippedByCase.get(k).push(sh);
+  }
   const assignees = {};
   let deadlineNearAll = 0;
   const bucketOf = (email) => (assignees[emailKey(email)] ||= {
     email: String(email).trim(), newReceived: [], stale: [], awaitingDeposit: [], deadlineNear: [], firstContactOver: [],
+    invoicePending: [],
   });
 
   for (const c of cases || []) {
@@ -121,7 +134,11 @@ export function classifyCases(cases, { now = new Date(), deadline = DEADLINE, ho
     if (isNear) deadlineNearAll++;
 
     if (fcOver > 0) overall.firstContactOver.push({ c, days: fcOver });
+    // 請求書の出し忘れ: 伴走支援実施済(8)以降（失注を除く）で、発送済のまま請求書を出していない出荷がある
+    const pend = st >= SUPPORT_DONE && st !== 4 ? (shippedByCase.get(String(c.id || c._id || "")) || []) : [];
+    const invEntry = pend.length ? { c, days: oldestDays(pend, nowMs), sos: pend.map((x) => cleanText(x.soNumber) || "番号なし") } : null;
     if (!assigned) {
+      if (invEntry) overall.invoicePending.push(invEntry);
       if (st === 1) overall.newUnassigned.push({ c, days: null });
       if (ENGAGED_STATUSES.includes(st)) overall.engagedUnassigned.push({ c, days: null });
       if (isStale) overall.staleUnassigned.push({ c, days: since });
@@ -133,13 +150,20 @@ export function classifyCases(cases, { now = new Date(), deadline = DEADLINE, ho
     if (st === 11 && since != null && since >= AWAIT_DEPOSIT_DAYS) b.awaitingDeposit.push({ c, days: since });
     if (isNear) b.deadlineNear.push({ c, days: null });
     if (fcOver > 0) b.firstContactOver.push({ c, days: fcOver });
+    if (invEntry) b.invoicePending.push(invEntry);
   }
   // 担当ごとの空の入れ物は作らないが、念のため全部空のものは落とす
   for (const k of Object.keys(assignees)) if (!assigneeHasItems(assignees[k])) delete assignees[k];
   return { deadline, deadlineDays, deadlineNearAll, overall, assignees };
 }
 
-const ASSIGNEE_KEYS = ["newReceived", "stale", "awaitingDeposit", "deadlineNear", "firstContactOver"];
+const ASSIGNEE_KEYS = ["newReceived", "stale", "awaitingDeposit", "deadlineNear", "firstContactOver", "invoicePending"];
+
+// 出荷のうち、発送済にしてからいちばん日数がたったもの（shippedAt が無ければ null）
+function oldestDays(list, nowMs) {
+  const ds = list.map((x) => daysSinceAt(x.shippedAt, nowMs)).filter((v) => v != null);
+  return ds.length ? Math.max(...ds) : null;
+}
 function assigneeHasItems(b) { return !!b && ASSIGNEE_KEYS.some((k) => (b[k] || []).length > 0); }
 
 // 1行: ・#123 【大阪府 豊中市】○○事業所（新規受信）…補足
@@ -159,6 +183,7 @@ function section(title, entries, regionOf, extra) {
 }
 const fcExtra = (e) => ` 初期連絡 ${e.days}営業日超過`;
 const staleExtra = (e) => ` ${e.days}日更新なし`;
+const invExtra = (e) => ` ${(e.sos || []).join("・")}${e.days != null ? `（発送から${e.days}日）` : ""}`;
 
 /** 申請期限の和文（JST）。例: 2027年3月12日 */
 export function deadlineText(deadline) {
@@ -179,6 +204,7 @@ export function buildOverallDigest(cls, { regionOf } = {}) {
     section("⏳ 未割当の新規案件", o.newUnassigned, regionOf),
     section("👤 受注確定以降で担当営業が決まっていない案件", o.engagedUnassigned, regionOf),
     section(`⚠️ 担当なしで${STALE_DAYS}日以上更新なし`, o.staleUnassigned, regionOf, staleExtra),
+    section("🧾 伴走支援が終わったのに請求書を出していない（担当なし）", o.invoicePending || [], regionOf, invExtra),
   ].filter(Boolean);
   if (!body.length) return null;
   const near = cls.deadlineDays <= DEADLINE_NEAR_DAYS ? `・未申請 ${cls.deadlineNearAll} 件` : "";
@@ -204,6 +230,7 @@ export function buildAssigneeDigest(user, bucket, { regionOf, deadlineDays } = {
     section(`⚠️ ${STALE_DAYS}日以上更新なし`, bucket.stale, regionOf, staleExtra),
     section(`💰 入金待ちが${AWAIT_DEPOSIT_DAYS}日以上`, bucket.awaitingDeposit, regionOf, staleExtra),
     section(`📋 申請期限が近い未申請${days}`, bucket.deadlineNear, regionOf),
+    section("🧾 伴走支援が終わったのに請求書を出していない", bucket.invoicePending || [], regionOf, invExtra),
   ].filter(Boolean);
   return [
     `🗓 ${calleeOf(who)}、担当案件で対応が必要なものがあります`,

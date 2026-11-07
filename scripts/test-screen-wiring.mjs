@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import {
   CASE_DONE, isCompleting, completionConfirmText, completionActivityNote,
   caseDuplicateBanner, preShipCountAfterMerge,
-  todayYmdJst, receivedDateError, ACCEPT_CHANNELS, PAY_METHODS,
+  todayYmdJst, receivedDateError,
+  SUPPORT_DONE, isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote, ACCEPT_CHANNELS, PAY_METHODS,
   buildGroupChoices, buildAcceptPayload, summarizeAcceptResult, dailyPreviewBlocks, acceptMailTo,
 } from "../admin/js/screen-rules.js";
 import { STATUS_LABELS, TERMINAL } from "../admin/js/constants.js";
@@ -247,6 +248,47 @@ t("role.js の isWarehousePath: /warehouse と /warehouse.html だけ倉庫の�
   const re = new RegExp(m[1].slice(1, -1));
   for (const ok of ["/warehouse", "/warehouse.html", "/warehouse/"]) assert.equal(re.test(ok), true, ok);
   for (const ng of ["/supply.html", "/warehouse-x", "/dashboard", "/", "/admin/warehouse"]) assert.equal(re.test(ng), false, ng);
+});
+
+// ---- 伴走支援実施済(8)にしたときの請求書の確認（2026-11-08）----
+t("SUPPORT_DONE は constants.js の「伴走支援実施済」と一致", () => {
+  assert.equal(STATUS_LABELS[SUPPORT_DONE], "伴走支援実施済");
+});
+t("8〜12 に初めて進めたときだけ確認する", () => {
+  assert.equal(isFinishingSupport(7, 8), true);
+  assert.equal(isFinishingSupport("6", "9"), true);   // 8 を飛ばしても対象
+  assert.equal(isFinishingSupport(3, 12), true);
+  assert.equal(isFinishingSupport(8, 9), false);      // 8 以降の中での移動
+  assert.equal(isFinishingSupport(7, 13), false);     // 完了は完了の警告に任せる
+  assert.equal(isFinishingSupport(9, 7), false);      // 戻す
+  assert.equal(isFinishingSupport(7, 4), false);      // 失注
+});
+t("請求書を出していない出荷・未発送を拾い、キャンセルは数えない", () => {
+  const p = invoicePending([
+    { _id: "a", soNumber: "SH-1", status: "shipped" }, { _id: "b", soNumber: "SH-2", status: "invoiced" },
+    { _id: "c", soNumber: "SH-3", status: "requested" }, { _id: "d", soNumber: "SH-4", status: "canceled" },
+    { _id: "e", soNumber: "SH-5" }, // 状態が空の古い出荷は発送済とみなす
+  ]);
+  assert.deepEqual(p.notInvoiced.map((s) => s.soNumber), ["SH-1", "SH-5"]);
+  assert.deepEqual(p.notShipped.map((s) => s.soNumber), ["SH-3"]);
+});
+t("知らせることが無ければ確認を出さない", () => {
+  assert.equal(invoicePromptText(invoicePending([])), "");
+  assert.equal(invoicePromptText(invoicePending([{ status: "paid" }, { status: "canceled" }])), "");
+  assert.equal(invoicePromptNote(invoicePending([]), true), "");
+});
+t("確認の文面と、開く画面", () => {
+  const one = invoicePending([{ _id: "id/1", soNumber: "SH-1", status: "shipped" }]);
+  const txt = invoicePromptText(one);
+  assert.ok(txt.includes("SH-1") && txt.includes("［請求済にする］") && txt.includes("ステータスは変わります"));
+  assert.equal(invoicePromptUrl(one), "/supply.html?tab=shipments&so=SH-1"); // 印刷画面では請求済にならないため出荷の画面
+  const two = invoicePending([{ _id: "a", soNumber: "SH-1", status: "shipped" }, { _id: "b", soNumber: "SH-2", status: "shipped" }]);
+  assert.equal(invoicePromptUrl(two), "/supply.html?tab=shipments&so=SH-1");
+  const draft = invoicePending([{ _id: "c", soNumber: "SH-3", status: "draft" }]);
+  assert.ok(invoicePromptText(draft).includes("発送が済んでいるか"));
+  assert.equal(invoicePromptUrl(draft), "/supply.html?tab=shipments&so=SH-3");
+  assert.equal(invoicePromptNote(one, false), "請求書の確認: 請求書未発行 SH-1（あとで出す）");
+  assert.equal(invoicePromptNote(one, true), "請求書の確認: 請求書未発行 SH-1（その場で画面を開いた）");
 });
 
 console.log(`test-screen-wiring: ${n} 件 OK`);

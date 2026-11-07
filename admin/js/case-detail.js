@@ -30,7 +30,8 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone } fro
 // 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
 import { completionWarnings } from "/js/case-complete-check.js";
 import { isCompleting, completionConfirmText, completionActivityNote,
-  caseDuplicateBanner, preShipCountAfterMerge } from "/js/screen-rules.js";
+  caseDuplicateBanner, preShipCountAfterMerge,
+  isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -924,16 +925,22 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
   await updateDoc(doc(db, "cases", caseId), patch);
   if (lost) { currentCase.lostReason = lost.reason; currentCase.lostReasonNote = lost.note || null; }
   else if (patch.lostReason === null) { currentCase.lostReason = null; currentCase.lostReasonNote = null; }
-  await addDoc(collection(db, "activities"), {
-    caseId,
-    type: "memo",
-    occurredAt: serverTimestamp(),
-    userId,
-    userName,
-    subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
-    body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : (warnNote || ""),
-    attachmentUrls: [],
-  });
+  // 活動の記録だけが失敗しても、ステータスはもう変わっている。画面を元に戻さず知らせるだけにする（2026-11-08 レビュー指摘）
+  try {
+    await addDoc(collection(db, "activities"), {
+      caseId,
+      type: "memo",
+      occurredAt: serverTimestamp(),
+      userId,
+      userName,
+      subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
+      body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : (warnNote || ""),
+      attachmentUrls: [],
+    });
+  } catch (err) {
+    console.warn("ステータス変更の記録に失敗", err);
+    showToast(`ステータスは変更しましたが、対応記録への記録に失敗しました: ${err.message || err}`);
+  }
 }
 
 // ===== 対象外化 / 解除 / 完全削除 / 統合 =====
@@ -1984,7 +1991,27 @@ onAuthStateChanged(auth, async (user) => {
       if (msg && !confirm(msg)) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
       warnNote = completionActivityNote(warnings);
     }
-    await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote);
+    // 伴走支援実施済(8)以降にしたときは、請求書を出していない出荷を知らせる（止めない・2026-11-08）。
+    // ポップアップを止められないよう、OK を押したその場で空のタブを開き、保存のあとで行き先を入れる
+    let invTab = null, invUrl = "";
+    if (isFinishingSupport(currentCase.status, e.target.value)) {
+      const pend = invoicePending(shipmentsCache);
+      const msg = invoicePromptText(pend);
+      if (msg) {
+        const ok = confirm(msg);
+        warnNote = invoicePromptNote(pend, ok);
+        if (ok) { invUrl = invoicePromptUrl(pend); invTab = window.open("about:blank", "_blank"); }
+      }
+    }
+    try {
+      await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote);
+    } catch (err) {
+      if (invTab) invTab.close();
+      e.target.value = String(currentCase.status || 1);
+      alert(`ステータスの変更に失敗しました: ${err.message || err}`);
+      return;
+    }
+    if (invUrl) { if (invTab) invTab.location.href = invUrl; else location.href = invUrl; }
     currentCase.status = Number(e.target.value);
     renderLostReason(currentCase);
     renderNextStep(); // 次の一手を即座に更新

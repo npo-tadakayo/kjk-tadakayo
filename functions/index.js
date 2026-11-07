@@ -2010,13 +2010,16 @@ function regionOfFromOffices(officeMap) {
 async function buildDailyPlan(now = new Date()) {
   const nt = await loadNotify();
   _settingsCache = null; // 期限の設定を直した直後でも最新を使う
-  const [caseSnap, officeSnap, userSnap, settings] = await Promise.all([
+  // 発送済のまま請求書を出していない出荷（請求書の出し忘れの節・2026-11-08）。status の等価条件だけなので索引は不要
+  const [caseSnap, officeSnap, userSnap, settings, shipSnap] = await Promise.all([
     db.collection("cases").get(), db.collection("offices").get(), db.collection("users").get(), getSettings(),
+    db.collection("shipments").where("status", "==", "shipped").get(),
   ]);
   const cases = caseSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const users = userSnap.docs.map((d) => ({ ...d.data(), email: d.id }));
+  const shipments = shipSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
   const regionOf = regionOfFromOffices(new Map(officeSnap.docs.map((d) => [d.id, d.data()])));
-  return Flow.planDailyPosts(nt, { cases, users, settings, now, regionOf });
+  return Flow.planDailyPosts(nt, { cases, users, settings, now, regionOf, shipments });
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

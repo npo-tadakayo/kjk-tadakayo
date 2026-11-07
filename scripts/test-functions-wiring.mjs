@@ -249,6 +249,15 @@ t("N2・N3: 日次の投稿計画（全体＋担当別の宛先）", () => {
   // 祝日の表が無い年は全体に警告（全体が無くても警告だけ出す）
   const y28 = F.planDailyPosts(nt, { cases: [], users: [], settings: {}, now: new Date("2028-01-05T00:00:00Z"), regionOf });
   assert.match(y28.overall, /祝日の表に 2028 年/);
+  // 請求書の出し忘れ（2026-11-08）: shipments を渡すと担当のまとめに載る。渡さなければ載らない（従来どおり）
+  const invCases = [{ id: "inv1", caseNumber: "91", officeName: "請求テスト事業所", status: 8,
+    assignedUserId: "jiro@tadakayo.jp", updatedAt: now }];
+  const invShips = [{ caseId: "inv1", soNumber: "SH-2026-9001", status: "shipped" }];
+  const withInv = F.planDailyPosts(nt, { cases: invCases, users, settings: {}, now, regionOf, shipments: invShips });
+  const jiro = withInv.assignees.find((a) => a.email.toLowerCase() === "jiro@tadakayo.jp");
+  assert.ok(jiro && /請求書を出していない/.test(jiro.text) && /SH-2026-9001/.test(jiro.text));
+  const noInv = F.planDailyPosts(nt, { cases: invCases, users, settings: {}, now, regionOf });
+  assert.equal(noInv.assignees.find((a) => a.email.toLowerCase() === "jiro@tadakayo.jp"), undefined);
 });
 
 t("出荷指示: 取り消し後の古い送信は結果を書かない（requestSeq・Codex 指摘4）", () => {
