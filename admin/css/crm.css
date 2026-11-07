@@ -376,7 +376,8 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
 #shipBody .row-more > summary::before { content: "▸ "; }
 #shipBody .row-more[open] > summary::before { content: "▾ "; }
 #shipBody .row-more > summary:focus-visible { outline: 2px solid var(--color-primary, #c8102e); outline-offset: 2px; }
-#shipBody .row-more-body { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+/* 開いた中身が操作欄の幅を押し広げない（width:0 + min-width:100% で、欄の幅に合わせて折り返す） */
+#shipBody .row-more-body { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; width: 0; min-width: 100%; }
 #shipBody .ship-wait-note { font-size: 12px; color: var(--color-ink-muted); display: inline-flex; align-items: center; gap: 4px; }
 @media (max-width: 640px) {
   #shipBody .row-actions { grid-template-columns: 1fr; }
