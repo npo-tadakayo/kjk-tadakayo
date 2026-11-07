@@ -1,7 +1,7 @@
 #!/bin/bash
 # タダカヨ kjk デプロイスクリプト
 # 実行前に: firebase login:add で yoshinao-tsukuda@tadakayo.jp を追加しておくこと
-# 初回デプロイ前: CRM_SETUP_GUIDE.md の手順を完了させること
+# 初回デプロイ前: docs/CRM_SETUP_GUIDE.md の手順を完了させること
 
 set -e
 
