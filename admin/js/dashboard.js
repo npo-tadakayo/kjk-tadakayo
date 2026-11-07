@@ -90,7 +90,7 @@ function renderTodo() {
     { icon: "ti-file-pencil", label: "出荷の下書き（依頼が必要）", href: "/supply.html?tab=shipments",
       ...shipRow("draft") },
     // 出荷指示を出して倉庫の発送を待っているもの。発送済は倉庫の担当が押すので、依頼した人は待つだけ
-    { icon: "ti-truck-delivery", label: "倉庫の発送待ち（依頼済）", href: "/supply.html?tab=shipments",
+    { icon: "ti-truck-delivery", label: "倉庫の対応待ち（依頼済）", href: "/supply.html?tab=shipments",
       ...shipRow("requested") },
     { icon: "ti-receipt", label: "発送済で請求書を出していない", href: "/supply.html?tab=shipments",
       ...shipRow("unbilled") },

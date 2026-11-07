@@ -911,13 +911,13 @@ async function postShipNotice(shipmentId, opts){
     return ({
       unset: "出荷指示の投稿先が未設定のため、投稿していません",
       disabled: "出荷指示の投稿先が停止中のため、投稿していません",
-      error: "出荷指示の投稿に失敗しました（出荷の行の「出荷指示を再送」でやり直せます）",
+      error: "出荷指示の投稿に失敗しました（出荷の行の「その他」→「出荷指示を再送」でやり直せます）",
       already: "出荷指示は投稿済みです",
       busy: "出荷指示はいま投稿中です",
     })[d.reason] || "出荷指示は投稿していません";
   }catch(e){
     console.warn("notifyShipment:", e);
-    return `出荷指示を投稿できませんでした（${e.message||e}）。出荷の行の「出荷指示を再送」でやり直せます`;
+    return `出荷指示を投稿できませんでした（${e.message||e}）。出荷の行の「その他」→「出荷指示を再送」でやり直せます`;
   }
 }
 // 「すでに発送済（記録のみ）」のときに出荷へ書く印（出荷指示を送っていない）。再送ボタンからは後で送れる
@@ -932,7 +932,7 @@ async function deliveredHint(s){
   try{
     const cs = await getDoc(doc(db,"cases",s.caseId));
     const st = cs.exists() ? Number(cs.data().status) : 0;
-    if(st >= 8 && st !== 4) return "この案件はすでに伴走支援が済んでいます。カードリーダーが届いていれば、ここで依頼せず、一覧の「すでに発送済（記録のみ）」を使ってください（出荷指示を二重に送るのを防ぐため）";
+    if(st >= 8 && st !== 4) return "この案件はすでに伴走支援が済んでいます。カードリーダーが届いていれば、ここで依頼せず、下書きの行の「その他」→「すでに発送済（記録のみ）」を使ってください（出荷指示を二重に送るのを防ぐため）";
   }catch(_){}
   return null;
 }
@@ -1653,7 +1653,7 @@ function openShip(existing){
         + `<strong>数量・送料・出荷日は変えられません</strong>（請求書に印字される内容のため）。送付先の書き間違いだけ直せます。<br>`
         + `金額を直す必要がある場合は、入金の記録を取り消して請求をやり直すか、この出荷を削除して作り直してください。`
       : `もともと入っている品番の単価は、登録したときのまま変えません（新しく足した品番だけ今の単価が入ります）。<br>`
-        + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の<strong>「請求先を変える」</strong>から行ってください。`
+        + `請求先（出荷種別）を付け替えるときは、このモーダルではなく一覧の行の「その他」にある<strong>「請求先を変える」</strong>から行ってください。`
         // 在庫を動かすかどうかは「すでに引き落としてあるか」（stockDeducted）で決まる。下書き・依頼済はまだ引いていない
         + (stockDeducted(s) ? `<br>数量を変えると、増減したぶんだけ自社在庫を動かします。`
           : !shipUsedStock(s) ? `<br>この出荷は直送（AB Circleから認定事業者へ直接）のため、数量を変えても自社在庫は動きません。`
@@ -2034,8 +2034,8 @@ function shipUsedStock(s){ return usesWarehouse(s); }
 async function deleteShipment(s){
   if(!canDelete(s)){
     alert(shipStatusOf(s)==="requested"
-      ? `出荷 ${s.soNumber} は出荷を依頼済みのため削除できません。先に「依頼を取り消す」で下書きへ戻してください。`
-      : `出荷 ${s.soNumber} は${SHIP_STATUS[shipStatusOf(s)]||""}のため削除できません。取り消すときは「キャンセルにする」を使ってください。`);
+      ? `出荷 ${s.soNumber} は出荷を依頼済みのため削除できません。先に行の「その他」→「依頼を取り消す」で下書きへ戻してください。`
+      : `出荷 ${s.soNumber} は${SHIP_STATUS[shipStatusOf(s)]||""}のため削除できません。取り消すときは行の「その他」→「キャンセルにする」を使ってください。`);
     return false;
   }
   const restores = stockDeducted(s); // 下書きは常に false（念のため判定は正本に任せる）
@@ -2453,7 +2453,7 @@ function renderShipments(ships, dv){
     dv.count?`<button type="button" class="alert-chip warn dup-filter" aria-pressed="${dupOnly}" style="cursor:pointer;font:inherit;text-align:left${dupOnly?";outline:2px solid var(--color-warning)":""}" title="${dupOnly?"押すと全件の表示に戻ります":"押すと重複している出荷だけを表示します"}"><i class="ti ti-alert-triangle" aria-hidden="true"></i><div><div class="alert-num">${dv.count}件</div><div class="alert-label">⚠ 下書きの重複${dupOnly?"（絞り込み中・押すと戻る）":"（押すと絞り込み）"}</div></div></button>`:"",
     drafts.length?`<div class="alert-chip info"><i class="ti ti-file-pencil"></i><div><div class="alert-num">${drafts.length}</div><div class="alert-label">出荷の下書き（依頼が必要）</div></div></div>`:"",
     // 依頼済＝出荷指示を出してセンターの発送を待っているもの。発送されたら「発送済にする」を押す（2026-10-21）
-    requested.length?`<div class="alert-chip warn"><i class="ti ti-truck-loading"></i><div><div class="alert-num">${requested.length}</div><div class="alert-label">倉庫の発送待ち（依頼済）</div></div></div>`:"",
+    requested.length?`<div class="alert-chip warn"><i class="ti ti-truck-loading"></i><div><div class="alert-num">${requested.length}</div><div class="alert-label">倉庫の対応待ち（依頼済）</div></div></div>`:"",
     `<div class="alert-chip warn"><i class="ti ti-package-export"></i><div><div class="alert-num">${unbilled.length}</div><div class="alert-label">未請求（発送済）</div></div></div>`,
     `<div class="alert-chip danger"><i class="ti ti-receipt"></i><div><div class="alert-num">${yen(unpaid.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">未集金・残額（税込 ${unpaid.length}件）</div></div></div>`,
     overdue.length?`<div class="alert-chip danger"><i class="ti ti-alarm"></i><div><div class="alert-num">${yen(overdue.reduce((a,s)=>a+payRemain(s),0))}</div><div class="alert-label">うち支払期限超過（${overdue.length}件）</div></div></div>`:"",
@@ -2549,8 +2549,12 @@ function renderShipments(ships, dv){
     const cancelBtn = acts.includes("cancel") ? `<button class="btn btn-secondary cancel-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${st==="requested"?"記録を残したままキャンセルにします（在庫はまだ引いていないので戻しません）":"記録を残したまま在庫を戻してキャンセルにします"}"><i class="ti ti-ban"></i>キャンセルにする</button>` : "";
     // 行のボタンは「主な1つ（赤）＋よく使う1〜2個」だけ外に出し、残りは「その他」に畳む（2026-11-08 依頼する側の分かりやすさ）。
     // ボタンの id・class・data-id はそのまま（委譲されたクリック処理が動き続ける）。
-    const moreBtns = (html) => html ? `<details class="row-more"><summary>その他</summary><div class="row-more-body">${html}</div></details>` : "";
-    const waitNote = `<span class="ship-wait-note"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 倉庫の発送待ち</span>`;
+    const moreBtns = (html) => html ? `<details class="row-more"><summary aria-label="その他の操作（${esc(s.soNumber)}）">その他</summary><div class="row-more-body">${html}</div></details>` : "";
+    // 依頼済の案内。倉庫からの差し戻しがあるときは「待ち」ではなく、直して再送する案内にする（再送・取り消しは外に出す）
+    const waitNote = wi
+      ? `<span class="ship-wait-note" style="color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 倉庫から差し戻し：直して再送してください</span>`
+      : `<span class="ship-wait-note"><i class="ti ti-truck-delivery" aria-hidden="true"></i> ${isPickup(s)?"倉庫の受け渡し待ち":"倉庫の発送待ち"}</span>`;
+    const revertBtn = `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`;
     const markShippedBtn = (primary) => `<button class="btn ${primary?"btn-primary ":"btn-secondary "}mark-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${isPickup(s)?"持ち出す人に渡したのを確認してから押してください（在庫を引き落とします）":"倉庫の担当が発送したのを確認してから押してください（在庫を引き落とします）"}"><i class="ti ti-${isPickup(s)?"hand-grab":"truck-delivery"}"></i>${markShippedLabel(s)}</button>`;
     if(st==="draft"){
       // 外: 出荷を依頼する（主）・（重複のとき）こちらを残す・送付先・数量を直す ／ その他: 帳票・請求先・記録のみ・キャンセル・削除
@@ -2565,14 +2569,16 @@ function renderShipments(ships, dv){
     } else if(st==="requested"){
       // 依頼した人は押す操作がない（発送済は倉庫の担当が押す）。外: 倉庫の発送待ち・直す ／ その他: 発送済にする・出荷指示を再送・帳票・依頼を取り消す・キャンセル
       // 削除は出さない（出荷指示を投稿済みのため。取り消してから下書きで削除する）
+      // 差し戻しのあるときだけ「出荷指示を再送」「依頼を取り消す」を外に出す（直して再送するのが次の一手のため）
       lifeBtns = waitNote
         + keepBtn
+        + (wi ? notifyBtn + revertBtn : "")
         + editBtn
         + moreBtns(markShippedBtn(false)
-          + notifyBtn
+          + (wi ? "" : notifyBtn)
           + docLetterpack + docShipnote + docInvoice + docRefund
           + typeBtn
-          + `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`
+          + (wi ? "" : revertBtn)
           + cancelBtn);
     } else if(st==="shipped"){
       // 外: 請求済にする（赤）・請求書 ／ その他: それ以外

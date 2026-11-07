@@ -111,6 +111,8 @@ export function shipNotifyShown(s) {
 }
 
 // 状態ごとの主ボタン（次の一手）。無いときは null
+// ※ 依頼済の「発送済にする」は倉庫の担当・管理者が押す操作（2026-11-08 方針）。依頼した人の画面（supply.js の行・case-detail.js の
+//   shipNextAction）は「倉庫の発送待ち」の案内にしており、この関数は画面からは使っていない（テストが状態遷移の対応表として見ている）。
 export function primaryAction(s) {
   if (!s) return null;
   const st = shipStatusOf(s);

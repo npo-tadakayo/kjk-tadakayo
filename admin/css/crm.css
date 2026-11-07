@@ -384,7 +384,7 @@ h1, h2, h3 { font-family: 'Noto Serif JP', serif; }
   #shipBody .row-more-body .btn { flex: 1 1 100%; }
 }
 @media print {
-  #shipBody .row-actions, #shipBody .row-more { display: none !important; }
+  #shipBody .row-more { display: none !important; }
 }
 
 .conn-tag {

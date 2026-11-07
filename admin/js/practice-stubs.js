@@ -590,7 +590,7 @@ export const PRACTICE_STUBS = {
       shipStatus = sh.exists() ? (sh.data().status || null) : null;
       // 依頼済（requested）も止める（本番の reviseQuote と同じ・2026-10-21 出荷の二段階化）
       if (sh.exists() && shipStatus === "requested") {
-        throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧で「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。センターへの取り消しの連絡もお願いします。`);
+        throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧の行の「その他」→「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。倉庫への取り消しの連絡もお願いします。`);
       }
       if (sh.exists() && shipStatus !== "draft") {
         throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
