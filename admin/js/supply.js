@@ -2547,57 +2547,66 @@ function renderShipments(ships, dv){
     const acts = shipActions(s);
     const delBtn = acts.includes("delete") ? `<button class="btn btn-danger del-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="この出荷を削除"><i class="ti ti-trash"></i>この出荷を削除</button>` : "";
     const cancelBtn = acts.includes("cancel") ? `<button class="btn btn-secondary cancel-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${st==="requested"?"記録を残したままキャンセルにします（在庫はまだ引いていないので戻しません）":"記録を残したまま在庫を戻してキャンセルにします"}"><i class="ti ti-ban"></i>キャンセルにする</button>` : "";
+    // 行のボタンは「主な1つ（赤）＋よく使う1〜2個」だけ外に出し、残りは「その他」に畳む（2026-11-08 依頼する側の分かりやすさ）。
+    // ボタンの id・class・data-id はそのまま（委譲されたクリック処理が動き続ける）。
+    const moreBtns = (html) => html ? `<details class="row-more"><summary>その他</summary><div class="row-more-body">${html}</div></details>` : "";
+    const waitNote = `<span class="ship-wait-note"><i class="ti ti-truck-delivery" aria-hidden="true"></i> 倉庫の発送待ち</span>`;
+    const markShippedBtn = (primary) => `<button class="btn ${primary?"btn-primary ":"btn-secondary "}mark-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${isPickup(s)?"持ち出す人に渡したのを確認してから押してください（在庫を引き落とします）":"倉庫の担当が発送したのを確認してから押してください（在庫を引き落とします）"}"><i class="ti ti-${isPickup(s)?"hand-grab":"truck-delivery"}"></i>${markShippedLabel(s)}</button>`;
     if(st==="draft"){
-      // 流れの順: 出荷を依頼する →（帳票を見る）→ 送付先・数量を直す → 請求先を変える → すでに発送済（記録のみ）→ キャンセルにする → この出荷を削除
+      // 外: 出荷を依頼する（主）・（重複のとき）こちらを残す・送付先・数量を直す ／ その他: 帳票・請求先・記録のみ・キャンセル・削除
       lifeBtns = `<button class="btn btn-primary request-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-send"></i>出荷を依頼する</button>`
         + keepBtn
-        + docInvoice + docLetterpack + docShipnote + docRefund
-        + editBtn + typeBtn
-        // すでに届いている出荷（伴走支援が済んだ案件など）だけに使う小さなボタン。依頼を経ずに発送済へ・出荷指示は送らない
-        + `<button class="btn btn-secondary record-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="すでに届いている出荷を、出荷指示を送らずに${isPickup(s)?"受け渡し済":"発送済"}として記録します（在庫は引き落とします）"><i class="ti ti-check"></i>${recordShippedLabel(s)}</button>`
-        + cancelBtn + delBtn;
+        + editBtn
+        + moreBtns(docInvoice + docLetterpack + docShipnote + docRefund
+          + typeBtn
+          // すでに届いている出荷（伴走支援が済んだ案件など）だけに使う小さなボタン。依頼を経ずに発送済へ・出荷指示は送らない
+          + `<button class="btn btn-secondary record-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="すでに届いている出荷を、出荷指示を送らずに${isPickup(s)?"受け渡し済":"発送済"}として記録します（在庫は引き落とします）"><i class="ti ti-check"></i>${recordShippedLabel(s)}</button>`
+          + cancelBtn + delBtn);
     } else if(st==="requested"){
-      // 流れの順: 発送済にする → 出荷指示を再送 →（帳票）→ 送付先・数量を直す → 請求先を変える → 依頼を取り消す → キャンセルにする
+      // 依頼した人は押す操作がない（発送済は倉庫の担当が押す）。外: 倉庫の発送待ち・直す ／ その他: 発送済にする・出荷指示を再送・帳票・依頼を取り消す・キャンセル
       // 削除は出さない（出荷指示を投稿済みのため。取り消してから下書きで削除する）
-      lifeBtns = `<button class="btn btn-primary mark-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${isPickup(s)?"持ち出す人に渡したのを確認してから押してください（在庫を引き落とします）":"センターが発送したのを確認してから押してください（在庫を引き落とします）"}"><i class="ti ti-${isPickup(s)?"hand-grab":"truck-delivery"}"></i>${markShippedLabel(s)}</button>`
+      lifeBtns = waitNote
         + keepBtn
-        + notifyBtn
-        + docLetterpack + docShipnote + docInvoice + docRefund
-        + editBtn + typeBtn
-        + `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`
-        + cancelBtn;
+        + editBtn
+        + moreBtns(markShippedBtn(false)
+          + notifyBtn
+          + docLetterpack + docShipnote + docInvoice + docRefund
+          + typeBtn
+          + `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`
+          + cancelBtn);
     } else if(st==="shipped"){
-      // 流れの順: 請求書を確認 → 請求済にする → 送付先・数量を直す →（宛名・送付状）→ 請求先を変える → キャンセルにする
-      // 発送済の「次の一手」は請求済にする＝赤（下書きの「出荷を依頼する」・請求済の「入金を記録する」と同じ扱い・2026-09-14）
+      // 外: 請求済にする（赤）・請求書 ／ その他: それ以外
       lifeBtns = `<button class="btn btn-primary mark-invoiced" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>請求済にする</button>`
         + docInvoice
-        + (s.shipNotifiedAt ? "" : notifyBtn) + trackBtn
-        + editBtn + docLetterpack + docShipnote + docRefund + (s.shipNotifiedAt ? notifyBtn : "")
-        // 請求前に入金を記録した出荷（銀行明細の取り込みなど）は、入金の履歴を開いて確かめ・取り消せる。状態は変えない（Codex 指摘1）
-        + (acts.includes("payHistory") ? `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴（${payList(s).length}件）</button>` : "")
-        + typeBtn + cancelBtn;
+        + moreBtns((s.shipNotifiedAt ? "" : notifyBtn) + trackBtn
+          + editBtn + docLetterpack + docShipnote + docRefund + (s.shipNotifiedAt ? notifyBtn : "")
+          // 請求前に入金を記録した出荷（銀行明細の取り込みなど）は、入金の履歴を開いて確かめ・取り消せる。状態は変えない（Codex 指摘1）
+          + (acts.includes("payHistory") ? `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴（${payList(s).length}件）</button>` : "")
+          + typeBtn + cancelBtn);
     } else if(st==="invoiced"){
-      // 流れの順: 入金を記録する →（過入金を充当）→ 請求書 → 経理へ報告する → 催促メールを送る →（返金明細）→ 宛名・送付状 → 送付先・数量を直す → 請求先を変える → キャンセルにする
-      lifeBtns = `<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金を記録する</button>`
+      // 外: 入金を記録する（赤）・請求書・（あれば）過入金を充当 ／ その他: 経理へ報告・催促・それ以外
+      const applyCreditBtn = creditBalanceForBillTo(s)>0
         // 同じ請求先の過入金は金額つきで、別請求先（グループ）の分しか無いときは「別請求先」と明示して出す
-        + (creditBalanceForBillTo(s)>0
-            ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`
-            : (crossCreditBalanceFor(s)>0
-                ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（別請求先 ${yen(Math.min(crossCreditBalanceFor(s),remain))}）</button>`
-                : ""))
+        ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（${yen(Math.min(creditBalanceForBillTo(s),remain))}）</button>`
+        : (crossCreditBalanceFor(s)>0
+            ? `<button class="btn btn-secondary apply-credit" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-down-circle"></i>過入金を充当（別請求先 ${yen(Math.min(crossCreditBalanceFor(s),remain))}）</button>`
+            : "");
+      lifeBtns = `<button class="btn btn-primary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-cash"></i>入金を記録する</button>`
         + docInvoice
-        // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
-        + (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
-        + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
-        + docRefund + docLetterpack + docShipnote + trackBtn + notifyBtn
-        + editBtn + typeBtn + cancelBtn;
+        + applyCreditBtn
+        + moreBtns(
+          // 報告が失敗した／後から報告するとき用（請求済のステータスは変えない）
+          (s.accountingReportedAt?"":`<button class="btn btn-secondary report-acct" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-invoice"></i>経理へ報告する</button>`)
+          + (od>0?`<button class="btn btn-secondary dun-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-mail-forward"></i>催促メールを送る${s.dunningSentAt?`（${esc(String(s.dunningSentAt).slice(5))}送信済）`:""}</button>`:"")
+          + docRefund + docLetterpack + docShipnote + trackBtn + notifyBtn
+          + editBtn + typeBtn + cancelBtn);
     } else if(st==="paid"){
-      // 流れの順: 領収証 → 入金の履歴を見る →（返金明細）→ 請求書・宛名・送付状 → 送付先・数量を直す → 請求先を変える
+      // 外: 領収証（未発行なら主・発行済でも見られるように外）／ その他: 入金の履歴・それ以外
       // 入金がある出荷はキャンセル不可（返金の手続きが先＝既存の返金フローに任せる）。削除も不可
       lifeBtns = docReceipt
-        + `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴を見る</button>`
-        + docRefund + docInvoice + docLetterpack + docShipnote + trackBtn + notifyBtn
-        + editBtn + typeBtn;
+        + moreBtns(`<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-list-details"></i>入金の履歴を見る</button>`
+          + docRefund + docInvoice + docLetterpack + docShipnote + trackBtn + notifyBtn
+          + editBtn + typeBtn);
     } else {
       // canceled: 記録として残すだけ。帳票リンク・修正系のボタンは出さず、理由を小さく表示する
       lifeBtns = `<div style="font-size:12px;color:var(--color-ink-muted)">理由: ${esc(s.cancelReason||"-")}${s.cancelNote?`・${esc(s.cancelNote)}`:""}</div>`;
