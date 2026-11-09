@@ -22,7 +22,10 @@ import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stockDeducted, isLocked,
   canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
   netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
-  isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel } from "/js/ship-flow.js";
+  isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary } from "/js/ship-flow.js";
+// 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
+import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
+  buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
@@ -939,6 +942,7 @@ async function deliveredHint(s){
 
 // 出荷指示の再送（明示の操作なので投稿済みでも送る。必ず確認を出す）
 async function resendShipNotice(s){
+  if(shipQtySummary(s.items).total===0){ alert("この出荷には物の出荷がありません（伴走支援費だけです）。出荷指示は送れません。"); return; }
   const msg = s.shipNotifiedAt
     ? `出荷 ${s.soNumber} の出荷指示は ${fmtDT(s.shipNotifiedAt)} に投稿済みです。\nもう一度投稿しますか？（同じ指示が2回届きます）`
     : `出荷 ${s.soNumber} の出荷指示を投稿します。よろしいですか？`;
@@ -1118,6 +1122,9 @@ function staleMsg(cur){
 // 出荷の下書き(draft) → 依頼済(requested)（旧 confirmDraftShipment）。
 // 在庫は動かさない。出荷指示を投稿する。トランザクションで「まだ下書きか」を確かめる（2人が同時に押しても依頼は1回）
 async function requestDraftShipment(s){
+  // 物の出荷が無い（伴走支援費だけの）出荷は倉庫に出す荷物が無い。依頼せず「すでに発送済（記録のみ）」にしてもらう（2026-11-09）
+  if(shipQtySummary(s.items).total===0){
+    alert("この出荷には物の出荷がありません（伴走支援費だけです）。倉庫へは依頼できません。\n行の「その他」→「すでに発送済（記録のみ）」にしてください（出荷指示は投稿されません）。"); return; }
   const usesStock = usesWarehouse(s);
   const hint = await deliveredHint(s);
   const pickupUsers = await loadPickupUsers();
@@ -1418,6 +1425,10 @@ function fillSubsidyPlanSelect(){
   el.innerHTML = '<option value="">選択してください</option>' +
     Object.keys(EP.PLANS).map(k=>{ const p=EP.PLANS[k];
       return `<option value="${esc(k)}">${esc(p.label)}（上限${yen(p.limit)}・最大${p.maxQty}台）</option>`; }).join("");
+  const mp=document.getElementById("shipManualPlan");
+  if(mp) mp.innerHTML = '<option value="">選択してください</option>' +
+    Object.keys(EP.PLANS).map(k=>{ const p=EP.PLANS[k];
+      return `<option value="${esc(k)}">${esc(p.label)}（上限${yen(p.limit)}）</option>`; }).join("");
 }
 // 商品欄（#shipItems）に今入っている品番別の台数。伴走支援の既定値・自己負担の計算に使う
 function subsidyProductQty(){
@@ -1465,6 +1476,8 @@ function subsidyExtraItems(){
 }
 // 出荷ドキュメントに保存する伴走支援費の付帯情報（修正で開いたときの復元用。明細そのものは resolveShipItems 側）
 function subsidyPatch(){
+  // 任意の金額の伴走支援費のときは、助成区分（上限を決めた区分）だけ残す。補助対象台数は自動計算のものなので 0
+  if(manualEnabled()) return { subsidyCategory: document.getElementById("shipManualPlan").value||"", subsidyQty: { bt:0, usb:0 } };
   return subsidyEnabled()
     ? { subsidyCategory: document.getElementById("shipSubsidyPlan").value||"",
         subsidyQty: { bt: parseInt(document.getElementById("shipSubsidyBt").value,10)||0,
@@ -1476,6 +1489,118 @@ function subsidyPlanMissing(){
   const EP=window.EstimatePricing;
   return !(EP && EP.PLANS[document.getElementById("shipSubsidyPlan").value]);
 }
+// ===== 伴走支援費を任意の金額で入れる行（2026-11-09・設計 docs/設計_伴走支援費の任意行_20261109.md）=====
+// カードリーダーを売らない出荷（先方が他で購入済み）で、「助成金の上限 − 先方のリーダー購入費」を伴走支援費の1行だけで請求する。
+// 判定（検証・上限・排他・明細）は manual-support-fee.js が正本。ここは画面の読み書きだけ。
+// ・自動の伴走支援費（shipSubsidyOn）と同時には入れられない（相手のチェックを先に外してもらう。自動で消さない）
+// ・上限（助成区分の上限 − 先方購入費 − この出荷のカードリーダー代）を超える金額は保存できない
+let shipSaving=false;   // 保存中（updateShipTotal が走っても保存ボタンを有効に戻さない）
+function manualEnabled(){ const el=document.getElementById("shipManualOn"); return !!(el && el.checked); }
+function readerSkus(){ const EP=window.EstimatePricing; return EP ? [EP.SKU.BT, EP.SKU.USB_A, EP.SKU.USB_C] : []; }
+function manualPlanLimit(){
+  const EP=window.EstimatePricing; const el=document.getElementById("shipManualPlan");
+  const p = EP && el ? EP.PLANS[el.value] : null;
+  return p ? p.limit : null;
+}
+// 画面の入力欄の値を検査にかける（上限に引くカードリーダー代は、いま商品欄に入っているもの）
+function manualValidation(){
+  return validateManual({
+    amount: document.getElementById("shipManualAmount").value,
+    name: document.getElementById("shipManualName").value,
+    priorBuyerReaderCost: document.getElementById("shipManualPrior").value,
+    planLimit: manualPlanLimit(),
+    readerCost: readerCostOf(shipProductItems(), readerSkus()),
+  });
+}
+// 合計の表示・保存に使う任意行の明細（金額・品名が読めないとき・チェックOFFのときは空）。
+// 修正で開いた出荷に同じ内容の行があれば、入れた人・日時は元のものを保つ（住所だけ直した保存で上書きしない）
+function manualSupportItems(){
+  if(!manualEnabled()) return [];
+  const f={ amount:document.getElementById("shipManualAmount").value, name:document.getElementById("shipManualName").value,
+    priorBuyerReaderCost:document.getElementById("shipManualPrior").value, memo:document.getElementById("shipManualMemo").value };
+  const old = editingShip ? manualFormFromItems(editingShip.items) : null;
+  const same = old && Number(old.amount)===parseYen(f.amount) && old.name===String(f.name).trim()
+    && String(old.priorBuyerReaderCost)===String(f.priorBuyerReaderCost).trim() && old.memo===String(f.memo).trim();
+  const it = buildManualItem({ ...f, by: same ? old.manualBy : (currentUser.email||""), at: same ? old.manualAt : new Date().toISOString() });
+  return it ? [it] : [];
+}
+// 自動・任意の排他と、入力欄の有効・無効、上限・エラーの表示を出し直す（updateShipTotal から毎回呼ぶ）
+function updateManualBody(){
+  const onEl=document.getElementById("shipManualOn"); if(!onEl) return;
+  const locked = shipIsLocked(editingShip);
+  const ex = exclusion({ autoOn: subsidyEnabled(), manualOn: manualEnabled(), locked });
+  onEl.disabled = ex.manualDisabled;
+  document.getElementById("shipSubsidyOn").disabled = ex.autoDisabled;
+  const setNote=(id,txt)=>{ const el=document.getElementById(id); el.textContent=txt; el.style.display=txt?"":"none"; };
+  setNote("shipManualReason", locked ? "" : ex.manualReason);
+  setNote("shipSubsidyReason", locked ? "" : ex.autoReason);
+  ["shipManualPlan","shipManualAmount","shipManualName","shipManualPrior","shipManualMemo"].forEach(id=>{
+    document.getElementById(id).disabled = locked; });
+  const body=document.getElementById("shipManualBody"); body.style.display = manualEnabled() ? "" : "none";
+  const errEl=document.getElementById("shipManualError"), limEl=document.getElementById("shipManualLimit");
+  let blocked=false;
+  if(manualEnabled()){
+    const v=manualValidation();
+    limEl.textContent = limitText(v.limit);
+    const msgs = v.errors.concat(v.warnings);
+    errEl.innerHTML = msgs.map(m=>esc(m)).join("<br>");
+    errEl.style.display = msgs.length ? "" : "none";
+    errEl.style.color = v.ok ? "var(--color-ink-muted)" : "var(--color-danger)";
+    blocked = !v.ok && !locked;
+  }else{ limEl.textContent=""; errEl.style.display="none"; }
+  // 上限を超える金額などは保存できない（保存ボタンを止める）。閲覧のみの画面ではボタンに触らない
+  const btn=document.getElementById("saveShipBtn");
+  if(btn && !viewerMode) btn.disabled = blocked || shipSaving;
+}
+// 保存前の検査。画面の入力欄と、これから保存する明細の両方を検べる。問題があれば文言を返す（無ければ ""）
+function manualSaveError(items){
+  if(manualEnabled()){
+    const v=manualValidation();
+    if(!v.ok) return v.errors.join("\n");
+  }
+  if(manualEnabled() && subsidyEnabled()) return "自動の伴走支援費と、任意の金額の伴走支援費は同時に入れられません";
+  const r=checkSupportFeeRows(items, { planLimit: manualPlanLimit(), readerSkus: readerSkus() });
+  return r.ok ? "" : r.errors.join("\n");
+}
+// 修正で開いたとき、保存済みの任意行から入力欄を復元する（無ければまっさらに戻す）
+function restoreManualFromShip(s){
+  const f = manualFormFromItems(s.items);
+  const EP=window.EstimatePricing;
+  document.getElementById("shipManualOn").checked = !!f;
+  document.getElementById("shipManualPlan").value = (f && s.subsidyCategory && EP && EP.PLANS[s.subsidyCategory]) ? s.subsidyCategory : "";
+  document.getElementById("shipManualAmount").value = f ? f.amount : "";
+  document.getElementById("shipManualName").value = f ? f.name : DEFAULT_MANUAL_NAME;
+  document.getElementById("shipManualPrior").value = f ? f.priorBuyerReaderCost : "";
+  document.getElementById("shipManualMemo").value = f ? f.memo : "";
+  if(f && !document.getElementById("shipManualPlan").value) defaultManualPlan().catch(()=>{});
+}
+// 助成区分の初期値: 紐づく案件の助成区分（subsidyCategory）。入っていなければ空のまま（人が選ぶ）
+async function defaultManualPlan(){
+  const EP=window.EstimatePricing; const el=document.getElementById("shipManualPlan");
+  const caseId = editingShip?.caseId || prefillCaseId; if(!EP || !el || el.value || !caseId) return;
+  const shipAtStart=editingShip;
+  const c=await getDoc(doc(db,"cases",caseId));
+  if(editingShip!==shipAtStart || (editingShip?.caseId || prefillCaseId)!==caseId || el.value) return;   // 別の出荷を開き直した・人が先に選んだなら触らない
+  const k=c.exists() ? c.data().subsidyCategory : "";
+  if(k && EP.PLANS[k]){ el.value=k; updateShipTotal(); }
+}
+// 任意行を保存した（変えた・外した）ときの案件の活動記録。記録の失敗で保存そのものは戻さない
+async function logManualSupportFee(caseId, oldItems, newItems){
+  if(!caseId) return;
+  const oldRow = supportFeeRows(oldItems).find(i=>i.manual), newRow = supportFeeRows(newItems).find(i=>i.manual);
+  const changed = newRow && (!oldRow || oldRow.unitPrice!==newRow.unitPrice || oldRow.name!==newRow.name
+    || (oldRow.priorBuyerReaderCost??"")!==(newRow.priorBuyerReaderCost??"") || (oldRow.manualMemo||"")!==(newRow.manualMemo||""));
+  const removed = !newRow && oldRow;
+  if(!changed && !removed) return;
+  const txt = manualActivityText(changed ? newRow : oldRow, { removed: !!removed });
+  try{
+    await addDoc(collection(db,"activities"),{
+      caseId, type:"memo", occurredAt:serverTimestamp(),
+      userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"",
+      subject: txt.subject, body: txt.body, attachmentUrls: [] });
+  }catch(e){ console.warn("伴走支援費の活動記録に失敗", e); toast(`保存はできましたが、案件への活動の記録に失敗しました: ${e.message||e}`); }
+}
+
 // モーダル内訳表示（送料は含まない・カードリーダー＋伴走支援費＋金額調整のみ）
 function updateSubsidyBody(){
   const bd=document.getElementById("shipSubsidyBreakdown"); if(!bd) return;
@@ -1490,7 +1615,8 @@ function updateSubsidyBody(){
 // 修正モードで開いたとき、保存済みの出荷から伴走支援費の入力欄を復元する
 function restoreSubsidyFromShip(s){
   const items=s.items||[];
-  const supportItem=items.find(i=>i.sku==="support-fee");
+  restoreManualFromShip(s);   // 任意の金額の行があれば、そちらの入力欄を復元する（自動の欄はOFFのまま）
+  const supportItem=items.find(i=>i.sku==="support-fee" && !i.manual);
   const onEl=document.getElementById("shipSubsidyOn"), planEl=document.getElementById("shipSubsidyPlan");
   const btEl=document.getElementById("shipSubsidyBt"), usbEl=document.getElementById("shipSubsidyUsb");
   const EP=window.EstimatePricing;
@@ -1543,9 +1669,18 @@ function resolveShipItems(){
   const shipType = editingShip
     ? ((editingShip.shipType==="dropship" || editingShip.partnerEmail) ? "dropship" : "direct")
     : document.getElementById("shipType").value;
+  const productItems = shipProductItems(shipType);
+  // 伴走支援費・金額調整（自動: チェックONのときだけ・Webからのお申し込みと同じ形の明細）と、任意の金額の伴走支援費（1行）を末尾に足す
+  return productItems.concat(subsidyExtraItems(), manualSupportItems());
+}
+// 商品欄の明細（単価つき）。resolveShipItems と、任意行の上限（同じ出荷のカードリーダー購入費）の計算で共通に使う
+function shipProductItems(shipType){
+  if(!shipType) shipType = editingShip
+    ? ((editingShip.shipType==="dropship" || editingShip.partnerEmail) ? "dropship" : "direct")
+    : document.getElementById("shipType").value;
   const orig = {};
   (editingShip?.items||[]).forEach(i=>{ orig[i.sku] = i; });
-  const productItems = collectItems("shipItems").map(it=>{
+  return collectItems("shipItems").map(it=>{
     const p = products.find(x=>x.id===it.sku) || {};
     const was = orig[it.sku];
     // 修正時、もともと入っていた品番は当時の単価を保つ。新しく足した品番だけ今の基準で入れる
@@ -1554,8 +1689,6 @@ function resolveShipItems(){
       : (shipType==="dropship" ? partnerPriceFor(p, it.qty) : (p.listPrice||0));
     return {...it, unitPrice};
   });
-  // 伴走支援費・金額調整（チェックONのときだけ・Webからのお申し込みと同じ形の明細を末尾に足す）
-  return productItems.concat(subsidyExtraItems());
 }
 
 // 保存前に金額が見えるようにする（今までモーダルに合計が無く、保存して一覧で初めて分かる状態だった）
@@ -1563,6 +1696,7 @@ function updateShipTotal(){
   const el=document.getElementById("shipTotalLine"); if(!el) return;
   refreshSubsidyAutoDefaults(); // 商品欄の台数が変わったら伴走支援の既定値も出し直す（手で直した欄は上書きしない）
   updateSubsidyBody();
+  updateManualBody();
   const items=resolveShipItems();
   const fee=Number(document.getElementById("shipFee").value)||0;
   // 税基準は請求先で変わる。修正中はその出荷、新規は画面の出荷種別から見る
@@ -1615,6 +1749,7 @@ function openShip(existing){
     document.getElementById("shipSubsidyPlan").value="";
     const btEl0=document.getElementById("shipSubsidyBt"), usbEl0=document.getElementById("shipSubsidyUsb");
     btEl0.value=0; btEl0.dataset.auto="1"; usbEl0.value=0; usbEl0.dataset.auto="1";
+    restoreManualFromShip({ items: [] });   // 任意の金額の欄もまっさらに戻す
   }else{
     title.textContent=`出荷の修正（${s.soNumber||""}）`;
     label.textContent="修正を保存";
@@ -1666,7 +1801,8 @@ function openShip(existing){
 
   // 金額に関わる欄のロック（伴走支援費も金額に関わるのでロック対象に含める）
   const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion","shipDate",
-    "shipSubsidyOn","shipSubsidyPlan","shipSubsidyBt","shipSubsidyUsb"];
+    "shipSubsidyOn","shipSubsidyPlan","shipSubsidyBt","shipSubsidyUsb",
+    "shipManualOn","shipManualPlan","shipManualAmount","shipManualName","shipManualPrior","shipManualMemo"];
   moneyIds.forEach(id=>{ const el=document.getElementById(id); if(el) el.disabled=locked; });
   document.querySelectorAll("#shipItems .qty-input").forEach(i=>{ i.disabled=locked; });
 
@@ -1755,12 +1891,15 @@ async function saveShip(){
   if(subsidyPlanMissing()){ alert("伴走支援費を含める場合はプランを選んでください"); return; }
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
+  { const me=manualSaveError(items); if(me){ alert(me); return; } }   // 伴走支援費の行は1行まで・任意の金額は上限以下（画面の検査に頼らず保存する明細を検べる）
+  // 物の出荷が無い（在庫を使う商品が0行＝伴走支援費だけ）出荷は、倉庫へ出荷指示を投稿しない・発送の工程を飛ばす（2026-11-09）
+  const noGoods = shipQtySummary(items).total===0;
   const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
   if(stockItems(items).length && !originLocationId){
     alert("出荷元の保管場所を選んでください（未登録なら在庫タブから追加できます）"); return; }
   // 既定は「登録して出荷を依頼する」（requested・在庫は動かさない・出荷指示を投稿）。
   // チェック「すでに発送済として登録」のときだけ、従来どおりその場で発送済（在庫を引く・出荷指示は送らない）（2026-10-21）
-  const alreadyShipped=!!(document.getElementById("shipAlreadyShipped")||{}).checked;
+  const alreadyShipped = noGoods || !!(document.getElementById("shipAlreadyShipped")||{}).checked;
   const short=[];
   for(const [sku,q] of Object.entries(qtyBySku(items))){ const p=products.find(x=>x.id===sku)||{};
     if(stockAt(p,originLocationId)<q) short.push(`${p.name||sku}（${locationName(originLocationId)} ${stockAt(p,originLocationId)} / 出荷 ${q}）`); }
@@ -1769,8 +1908,8 @@ async function saveShip(){
     if(alreadyShipped) return; // 発送済として登録するときは在庫が要る
     if(!confirm(`在庫が足りません: ${short.join("、")}\n依頼は出せますが、「発送済にする」の時点で在庫が必要です（足りないと発送済にできません）。依頼を続けますか？`)) return;
   }
-  const deliveryMode=shipDeliveryModeNow();
-  const pickup = deliveryMode==="pickup";
+  const deliveryMode = noGoods ? "ship" : shipDeliveryModeNow();
+  const pickup = !noGoods && deliveryMode==="pickup";
   const shipDateIn=document.getElementById("shipDate").value||today();
   let pickupByEmail="", pickupByName="";
   if(pickup){
@@ -1781,22 +1920,25 @@ async function saveShip(){
     if(!v.ok || !canPickup({})){ alert(v.error||"この出荷は持ち出しにできません"); return; }
   }
   // 持ち出しは郵送しないので、送料は必ず「郵送なし」（0円）で登録する（欄を手で直していても）
-  const shippingMethod=pickup ? "none" : (document.getElementById("shipMethod").value||"manual");
-  const shippingFee=pickup ? 0 : (Number(document.getElementById("shipFee").value)||0);
-  const shippingLabel=pickup ? "郵送なし（手渡し・持参）" : (document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":""));
-  const letterPackType=pickup ? "" : ((document.getElementById("shipLetterPack")||{}).value||"");
+  // 物の出荷が無いときは、送るものが無いので送料も0円（郵送なし）・レターパックも無し
+  const shippingMethod=(pickup||noGoods) ? "none" : (document.getElementById("shipMethod").value||"manual");
+  const shippingFee=(pickup||noGoods) ? 0 : (Number(document.getElementById("shipFee").value)||0);
+  const shippingLabel=noGoods ? "" : pickup ? "郵送なし（手渡し・持参）" : (document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":""));
+  const letterPackType=(pickup||noGoods) ? "" : ((document.getElementById("shipLetterPack")||{}).value||"");
   // 押した人・日付・出荷元・種類を確認してから登録する（2026-10-19）
   const lpText = LETTERPACK_TYPE_LABEL[letterPackType] || "未選択";
   const hasStock = stockItems(items).length>0;
   const how = pickup ? `\n送付方法: 持ち出し（持ち出す人: ${pickupByName}・送料は郵送なし0円）` : `\nレターパック: ${lpText}`;
-  const msg = alreadyShipped
+  const msg = noGoods
+    ? `物の出荷はありません（伴走支援費だけの請求です）。\n発送の手続きは要らないので、出荷を「発送済」として登録します（在庫は動かさない・倉庫への出荷指示は投稿しません）。\n金額: ${yen(invoiceTotals({ shipType, partnerEmail, items, shippingFee:0 }).total)}（税込）\nよろしいですか？`
+    : alreadyShipped
     ? `出荷を「すでに${pickup?"受け渡し済":"発送済"}」として登録します（出荷指示は送りません）。\n${pickup?"受け渡した日":"発送日"}: ${shipDateIn}`
       + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫から引き落とします）` : "") + `${how}\nよろしいですか？`
     : `出荷を登録して、出荷を依頼します。\n${pickup?"持ち出しの予定日":"希望出荷日"}: ${shipDateIn}`
       + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫は「${pickup?"受け渡し済":"発送済"}にする」のときに引き落とします）` : "")
       + `${how}\n登録すると、出荷指示を投稿します。よろしいですか？`;
   if(!confirm(msg)) return;
-  const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
+  const btn=document.getElementById("saveShipBtn"); btn.disabled=true; shipSaving=true;
   let newShipId="", soNumber="";
   try{
     soNumber=seqFmt("SH",await nextSeq("shipments"));
@@ -1821,6 +1963,7 @@ async function saveShip(){
       email:normalizeEmail(document.getElementById("shipEmail").value),
       ...(prefillCaseId ? { caseId: prefillCaseId } : {}),
       ...subsidyPatch(),
+      ...(noGoods ? { noGoods: true } : {}),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email };
     if(alreadyShipped){
       // 出荷の作成と在庫の引き落としを1つのトランザクションで（在庫は最新の値で確かめる）
@@ -1842,7 +1985,12 @@ async function saveShip(){
     }
     newShipId = newRef.id;
     document.getElementById("shipModal").classList.remove("open");
-  }catch(e){ alert(`登録失敗: ${e.message}`); return; } finally{ btn.disabled=false; }
+  }catch(e){ alert(`登録失敗: ${e.message}`); return; } finally{ btn.disabled=false; shipSaving=false; }
+  await logManualSupportFee(prefillCaseId, [], items);
+  if(noGoods){
+    toast(`出荷 ${soNumber} を登録しました（物の出荷なし・伴走支援費のみ。発送済・出荷指示は投稿しません）。次は請求書の確認です`);
+    return;
+  }
   if(alreadyShipped){
     toast(`出荷 ${soNumber} を発送済として登録しました${hasStock?`（${locationName(originLocationId)||"在庫"}から引落）`:""}。${NO_NOTICE_MSG}`);
     return;
@@ -1885,6 +2033,13 @@ async function saveShipEdit(){
     if(isPickup(s0) && shipStatusOf(s0)==="requested") patch.pickupDate = patch.shipDate;
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
+    { const me=manualSaveError(items); if(me){ alert(me); return; } }   // 新規と同じ検査（伴走支援費は1行まで・任意の金額は上限以下）
+    // 依頼済の出荷から商品をすべて外すと、倉庫へ出した出荷指示だけが残ってしまう。先に「依頼を取り消す」で下書きへ戻してもらう
+    if(shipStatusOf(s0)==="requested" && shipQtySummary(items).total===0){
+      alert("商品がすべて外れています。依頼済の出荷は、出荷指示がすでに倉庫へ出ているので、このままでは保存できません。\n先に行の「その他」→「依頼を取り消す」で下書きへ戻してから直してください。"); return; }
+    // 物の出荷なし（伴走支援費だけ）で発送済にした出荷に、あとから商品を足すと、在庫だけ動いて発送の記録が無いまま残る。作り直してもらう
+    if(shipQtySummary(s0.items).total===0 && shipStatusOf(s0)!=="draft" && shipQtySummary(items).total>0){
+      alert("この出荷は物の出荷がない（伴走支援費だけの）出荷として登録済みです。商品を足す場合は、この出荷をキャンセルして新しい出荷を作ってください。"); return; }
     delta=qtyDelta(s0, qtyBySku(s0.items), qtyBySku(items));
 
     // 増やすぶんだけ在庫が要る（在庫を引いていない出荷＝下書き・依頼済・直送はそもそも動かさない）。
@@ -1911,7 +2066,7 @@ async function saveShipEdit(){
     });
   }
 
-  const btn=document.getElementById("saveShipBtn"); btn.disabled=true;
+  const btn=document.getElementById("saveShipBtn"); btn.disabled=true; shipSaving=true;
   try{
     // 出荷・在庫・履歴を1つのトランザクションで書く。
     // 差分は「開いた時点の items」ではなく、いま Firestore にある items から計算し直す
@@ -1953,11 +2108,12 @@ async function saveShipEdit(){
     });
     document.getElementById("shipModal").classList.remove("open");
     editingShip=null;
+    if(items) await logManualSupportFee(s0.caseId, s0.items, items);
     toast(locked
       ? `出荷 ${s0.soNumber} の送付先を直しました`
       : `出荷 ${s0.soNumber} を修正しました${moved?"（在庫も差分を調整）":""}`);
-  }catch(e){ alert(`修正の保存に失敗しました: ${e.message}`); btn.disabled=false; return; }
-  btn.disabled=false;
+  }catch(e){ alert(`修正の保存に失敗しました: ${e.message}`); btn.disabled=false; shipSaving=false; return; }
+  btn.disabled=false; shipSaving=false;
   // 依頼済の出荷の数量・送付先を直したら、センターが古い内容で動かないよう出荷指示の再送を聞く
   if(needsResendPrompt(s0, { ...s0, ...patch })){
     const q = s0.shipNotifiedAt
@@ -3793,9 +3949,20 @@ onAuthStateChanged(auth, async (user)=>{
     if(isDrop){
       document.getElementById("shipSubsidyOn").checked=false;
       document.getElementById("shipSubsidyBody").style.display="none";
+      document.getElementById("shipManualOn").checked=false;   // 任意の金額の伴走支援費も直接請求する出荷だけ
     }
     updateShipTotal();
   });
+  // 伴走支援費を任意の金額で入れる行（自動のチェックがONの間は無効。manual-support-fee.js の exclusion）
+  document.getElementById("shipManualOn").addEventListener("change",(e)=>{
+    if(e.target.checked){
+      defaultManualPlan().catch(()=>{});   // 紐づく案件の助成区分を初期値にする（入っていれば）
+      const nm=document.getElementById("shipManualName"); if(!nm.value.trim()) nm.value=DEFAULT_MANUAL_NAME;
+    }
+    updateShipTotal();
+  });
+  ["shipManualPlan","shipManualAmount","shipManualName","shipManualPrior","shipManualMemo"].forEach(id=>{
+    const el=document.getElementById(id); el.addEventListener("input",updateShipTotal); el.addEventListener("change",updateShipTotal); });
   document.getElementById("shipSubsidyOn").addEventListener("change",(e)=>{
     document.getElementById("shipSubsidyBody").style.display = e.target.checked ? "" : "none";
     if(e.target.checked){

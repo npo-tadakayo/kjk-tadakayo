@@ -269,6 +269,7 @@
             <input type="checkbox" id="shipSubsidyOn" style="width:18px;height:18px">
             伴走支援費を含める（助成金の上限までの構成）
           </label>
+          <p id="shipSubsidyReason" style="display:none;font-size:12px;color:var(--color-ink-muted);margin:4px 0 0 26px"></p>
           <div id="shipSubsidyBody" style="display:none;margin-top:10px">
             <div class="form-group"><label class="form-label" for="shipSubsidyPlan">プラン</label>
               <select class="form-control" id="shipSubsidyPlan"><option value="">選択してください</option></select></div>
@@ -280,6 +281,33 @@
             </div>
             <p style="font-size:12px;color:var(--color-ink-muted);margin-top:-6px">台数は上の商品数量から自動で入ります（Bluetooth優先・残り枠をUSBに充当）。手で直すとそちらを優先します。</p>
             <div id="shipSubsidyBreakdown" style="font-size:13px;line-height:1.9"></div>
+          </div>
+          <!-- 伴走支援費を任意の金額で入れる行（カードリーダーを売らない出荷など・1出荷に1行まで）。
+               自動の伴走支援費と同時には入れられない。上限＝助成区分の上限 −（先方が購入したカードリーダー費用＋この出荷のカードリーダー代）。上限を超える金額は保存できない -->
+          <div id="shipManualBox" style="border-top:1px dashed var(--color-line);margin-top:12px;padding-top:12px">
+            <label style="display:flex;align-items:center;gap:8px;font-weight:600;cursor:pointer">
+              <input type="checkbox" id="shipManualOn" style="width:18px;height:18px">
+              伴走支援費を任意の金額で入れる
+            </label>
+            <p id="shipManualReason" style="display:none;font-size:12px;color:var(--color-ink-muted);margin:4px 0 0 26px"></p>
+            <div id="shipManualBody" style="display:none;margin-top:10px">
+              <div class="form-group"><label class="form-label" for="shipManualPlan">助成区分（入力できる上限を決めます）</label>
+                <select class="form-control" id="shipManualPlan"><option value="">選択してください</option></select></div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="shipManualAmount">金額（税込・円）</label>
+                  <input class="form-control" type="number" min="1" step="1" inputmode="numeric" id="shipManualAmount"></div>
+                <div class="form-group"><label class="form-label" for="shipManualName">品名</label>
+                  <input class="form-control" type="text" maxlength="60" id="shipManualName" value="伴走支援費"></div>
+              </div>
+              <div class="form-group"><label class="form-label" for="shipManualPrior">先方が購入したカードリーダー費用（税込・任意）</label>
+                <input class="form-control" type="number" min="0" step="1" inputmode="numeric" id="shipManualPrior" placeholder="先方が他で買った場合だけ入れます">
+              </div>
+              <div id="shipManualLimit" style="font-size:13px;font-weight:600;margin:-2px 0 6px"></div>
+              <div id="shipManualError" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-bottom:8px"></div>
+              <div class="form-group"><label class="form-label" for="shipManualMemo">メモ（任意・社内用）</label>
+                <input class="form-control" type="text" maxlength="200" id="shipManualMemo" placeholder="例：先方のリーダー購入費を差し引いた額"></div>
+              <p style="font-size:12px;color:var(--color-ink-muted);margin-top:-2px">この出荷にカードリーダーが無いときは、物の発送はありません。登録すると「発送済」になり、出荷指示は投稿しません（請求書の確認から先は同じです）。</p>
+            </div>
           </div>
         </div>
         <!-- 送料（配送方法から自動計算・手修正可）。直送=レターパック / まとめ=ゆうパック(滋賀発) -->

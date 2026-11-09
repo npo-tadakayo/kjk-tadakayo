@@ -419,10 +419,10 @@ t("新規出荷の送付方法（発送／持ち出し・Codex 指摘3回目 B�
   const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
   const ss = sup.slice(sup.indexOf("async function saveShip()"), sup.indexOf("// 出荷の修正を保存する"));
   assert.match(ss, /validatePickup\(\{ pickupByEmail, pickupDate: shipDateIn \}\)/);
-  assert.match(ss, /const shippingMethod=pickup \? "none"/);
-  assert.match(ss, /const shippingFee=pickup \? 0/);
-  assert.match(ss, /const shippingLabel=pickup \? "郵送なし（手渡し・持参）"/);
-  assert.match(ss, /const letterPackType=pickup \? ""/);
+  assert.match(ss, /const shippingMethod=\(pickup\|\|noGoods\) \? "none"/);
+  assert.match(ss, /const shippingFee=\(pickup\|\|noGoods\) \? 0/);
+  assert.match(ss, /pickup \? "郵送なし（手渡し・持参）"/);
+  assert.match(ss, /const letterPackType=\(pickup\|\|noGoods\) \? ""/);
   assert.match(ss, /deliveryMode,\s*\.\.\.\(pickup \? \{ pickupByEmail, pickupByName, pickupDate: shipDateIn \} : \{\}\)/);
   // 出荷指示を投稿するのは登録の後（送付方法がデータに入ってから）
   assert.ok(ss.indexOf("deliveryMode,") < ss.indexOf("postShipNotice(newShipId)"));
