@@ -44,31 +44,91 @@ function resolve(el, doc) {
   return doc && doc.getElementById ? doc.getElementById(el) : null;
 }
 
+// 未保存の間に、他の人の更新で保存済みの値が変わったときの一言
+export const CONFLICT_TEXT = "他の人が更新しました。保存すると上書きします。最新を見るには再読み込みしてください";
+
+// 比べるための文字列（キーの順番に左右されない）。updatedAt / createdAt は比べない（サーバー時刻で変わるため）
+export function stableKey(v) {
+  const walk = (x) => {
+    if (x === undefined) return null;
+    if (x === null || typeof x !== "object") return x;
+    if (Array.isArray(x)) return x.map(walk);
+    if (typeof x.toMillis === "function") return { $ts: x.toMillis() };
+    const o = {};
+    for (const k of Object.keys(x).sort()) { if (k !== "updatedAt" && k !== "createdAt") o[k] = walk(x[k]); }
+    return o;
+  };
+  return JSON.stringify(walk(v));
+}
+
+// 未保存の一覧から全部外す（削除・ログアウトなど、自分で画面を離れるときに確認を出さないため）
+export function discardUnsaved() { dirty.clear(); }
+
 // root の中の入力（input / change）で「未保存」にする。
 // status: 表示する要素か、その id（描き直される欄は id で渡す）。
 // opts.match(target): 対象にする入力だけ true（省略時は root の中すべて）。
-// 戻り値: { mark(), clean() 保存に成功したら呼ぶ, isDirty() }
+// opts.active(): false の間は見張らない（例: トレーナーでない人の評価欄＝保存できないので未保存にしない）。
+// 戻り値:
+//   mark()                 入力欄以外の操作（写真を「×」で外す など）で未保存にする
+//   clean()                保存に成功したら呼ぶ
+//   isDirty()
+//   rescope(id, note)      入力の対象（評価IDなど）が変わったら未保存の入力を捨てる。捨てたら true（note を表示）
+//   observe(saved, {own})  届いた保存済みの値。未保存の間に他の人の更新で変わっていたら CONFLICT_TEXT を出す。
+//                          自分の書き込みの通知（own=true: hasPendingWrites）では出さない
 export function trackUnsaved(key, root, status, opts = {}) {
   const doc = opts.document || (typeof document === "undefined" ? null : document);
-  const show = (on) => {
+  let conflict = false, note = "", lastText = null, scope, base, hasBase = false;
+  // 状態が変わったときだけ書き込む（同じ文言を何度も書くと読み上げが繰り返されるため）
+  const render = () => {
+    const on = dirty.has(key);
+    const text = on ? (conflict ? `${UNSAVED_TEXT}。${CONFLICT_TEXT}` : UNSAVED_TEXT) : note;
+    if (text === lastText) return;
     const el = resolve(status, doc);
     if (!el) return;
-    el.textContent = on ? UNSAVED_TEXT : "";
-    el.style.display = on ? "" : "none";
+    lastText = text;
+    el.textContent = text;
+    el.style.display = text ? "" : "none";
   };
-  const mark = (e) => {
+  const setDirty = () => { note = ""; dirty.add(key); render(); };
+  const onInput = (e) => {
+    if (opts.active && !opts.active()) return;
     if (opts.match && !opts.match(e && e.target)) return;
-    dirty.add(key);
-    show(true);
+    setDirty();
   };
   if (root && root.addEventListener) {
-    root.addEventListener("input", mark);
-    root.addEventListener("change", mark);
+    root.addEventListener("input", onInput);
+    root.addEventListener("change", onInput);
   }
   bindUnloadGuard(opts.window);
+  const clean = () => { dirty.delete(key); conflict = false; note = ""; hasBase = false; render(); };
   return {
-    mark() { dirty.add(key); show(true); }, // 入力欄以外の操作（写真を「×」で外す など）で未保存にする
-    clean() { dirty.delete(key); show(false); },
+    mark: setDirty,
+    clean,
     isDirty() { return dirty.has(key); },
+    rescope(id, discardNote = "") {
+      const changed = scope !== undefined && id !== scope;
+      scope = id;
+      if (!changed || !dirty.has(key)) return false;
+      clean();
+      note = discardNote;
+      lastText = null; // 描き直された欄でも出す
+      render();
+      return true;
+    },
+    observe(saved, { own = false } = {}) {
+      const k = stableKey(saved);
+      if (!dirty.has(key) || own || !hasBase) { base = k; hasBase = true; if (!dirty.has(key)) conflict = false; render(); return false; }
+      if (k !== base) { conflict = true; base = k; }
+      render();
+      return conflict;
+    },
   };
+}
+
+// 保存済みの値を入力欄へ流し込んでよいか（評価欄など）。
+// 対象（scopeId＝評価ID）が変わったら未保存の入力は捨てて必ず流し込み直す。変わらなければ、
+// 入力中（focused）か未保存のときは流し込まない（入力を残す）
+export function shouldRefillForm(tracker, scopeId, focused, discardNote = "") {
+  const discarded = tracker.rescope(scopeId, discardNote);
+  return discarded || !(focused || tracker.isDirty());
 }

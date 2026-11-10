@@ -57,3 +57,30 @@ export function summaryLine(p) {
   if (p.trainerName) parts.push(`トレーナー：${p.trainerName}`);
   return parts.join("／");
 }
+
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+// 実施者・トレーナーの選択肢（有効な人を名前順）。無効化・削除済みの人が選ばれていても、別の人に化けないよう残す
+export function peopleOptionsHtml(users, selectedId, withBlank) {
+  const list = Array.isArray(users) ? users : [];
+  const name = (u) => u.name || u._id;
+  const actives = list.filter((u) => u.active !== false)
+    .slice().sort((a, b) => name(a).localeCompare(name(b), "ja"));
+  let html = withBlank ? `<option value="">—</option>` : `<option value="">選んでください</option>`;
+  html += actives.map((u) => `<option value="${esc(u._id)}">${esc(name(u))}</option>`).join("");
+  if (selectedId && !actives.some((u) => u._id === selectedId)) {
+    const known = list.find((u) => u._id === selectedId);
+    html += `<option value="${esc(selectedId)}">${esc(known ? name(known) : selectedId)}（無効）</option>`;
+  }
+  return html;
+}
+
+// 選択肢を作り直す。keepCurrent=true（未保存の入力がある）ときは、いま選んでいる値を保つ
+// （選んでいなければ fallbackId）。職員一覧が後から届いても、選択肢が空のまま残らないようにする
+export function fillPeopleSelect(sel, users, fallbackId, withBlank, keepCurrent) {
+  if (!sel) return;
+  const value = (keepCurrent && sel.value) || fallbackId || "";
+  sel.innerHTML = peopleOptionsHtml(users, value, withBlank);
+  sel.value = value;
+}

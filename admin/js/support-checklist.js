@@ -19,12 +19,12 @@ import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnaps
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
 
-import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
+import { MODES, buildPerformance, summaryLine, fillPeopleSelect } from "./support-performance.js";
 import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvaluation, evaluationId, evaluationEligible,
   buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
 import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
-import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved } from "./save-mode.js";
+import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
 
 function escapeHtml(s) {
@@ -573,21 +573,6 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   let perf = null; // 保存済みの performance
   const $ = (id) => document.getElementById(id);
 
-  function peopleOptions(selectedId, withBlank) {
-    const users = (opts.getUsers ? opts.getUsers() : []) || [];
-    const name = (u) => u.name || u._id;
-    const actives = users.filter((u) => u.active !== false)
-      .slice().sort((a, b) => name(a).localeCompare(name(b), "ja"));
-    let html = withBlank ? `<option value="">—</option>` : `<option value="">選んでください</option>`;
-    html += actives.map((u) => `<option value="${escapeHtml(u._id)}">${escapeHtml(name(u))}</option>`).join("");
-    // 無効化・削除済みの人が記録済みでも、別の人に化けないよう選択肢に残す
-    if (selectedId && !actives.some((u) => u._id === selectedId)) {
-      const known = users.find((u) => u._id === selectedId);
-      html += `<option value="${escapeHtml(selectedId)}">${escapeHtml(known ? name(known) : selectedId)}（無効）</option>`;
-    }
-    return html;
-  }
-
   function renderPerfSummary() {
     const el = $("sc-perf-summary");
     if (!el) return;
@@ -602,15 +587,18 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (wrap) wrap.style.display = mode === "solo" ? "none" : "";
   }
 
-  // 実施者の既定＝担当営業。保存済みの記録があればそれを優先
-  function fillPerfForm() {
+  // 実施者・トレーナーの選択肢を作る。実施者の既定＝担当営業。保存済みの記録があればそれを優先。
+  // keepCurrent=true（未保存の入力がある）ときは、いま選んでいる値を保ったまま選択肢だけ作り直す
+  // （職員一覧が届く前に入力を始めても、選択肢が空のまま残らないように）
+  function fillPerfOptions(keepCurrent) {
     const c = (opts.getCase ? opts.getCase() : null) || {};
-    const perfId = (perf && perf.performerId) || c.assignedUserId || "";
-    const trainerId = (perf && perf.trainerId) || "";
-    $("sc-perf-performer").innerHTML = peopleOptions(perfId, false);
-    $("sc-perf-trainer").innerHTML = peopleOptions(trainerId, true);
-    $("sc-perf-performer").value = perfId;
-    $("sc-perf-trainer").value = trainerId;
+    const list = (opts.getUsers ? opts.getUsers() : []) || [];
+    fillPeopleSelect($("sc-perf-performer"), list, (perf && perf.performerId) || c.assignedUserId || "", false, keepCurrent);
+    fillPeopleSelect($("sc-perf-trainer"), list, (perf && perf.trainerId) || "", true, keepCurrent);
+  }
+
+  function fillPerfForm() {
+    fillPerfOptions(false);
     $("sc-perf-date").value = (perf && perf.date) || "";
     $("sc-perf-companions").value = (perf && perf.companions) || "";
     $("sc-perf-note").value = (perf && perf.note) || "";
@@ -658,13 +646,16 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   });
   // 実施の記録・トレーニング評価は保存ボタン。未保存の間は表示し、ページを離れるときに確認を出す（save-mode.js）
   const perfUnsaved = trackUnsaved("supportPerformance", $("sc-perf-card"), "sc-perf-unsaved");
-  const evalUnsaved = trackUnsaved("supportEvaluation", $("sc-eval-card"), "sc-eval-unsaved");
+  // トレーナーでない人は評価を保存できないので、評価欄に触っても未保存にしない（消せない表示と離れるときの確認を出さない）
+  const evalUnsaved = trackUnsaved("supportEvaluation", $("sc-eval-card"), "sc-eval-unsaved",
+    { active: () => isTrainer(actorId(), users(), rosterIds) });
   const perfSaveBtn = $("sc-perf-save");
   if (perfSaveBtn) perfSaveBtn.addEventListener("click", savePerformance);
 
   // ----- トレーニング評価・バッジ -----
   let grants = [];      // supportBadges 全件（付与履歴）
   let caseEvals = [];   // この案件の評価（supportEvaluations・caseId 一致）
+  let evalsOwn = false; // 最後に届いた評価の通知が自分の書き込みか（hasPendingWrites）
   let rosterIds = null; // appConfig/supportTrainers.ids（任意）。無ければ初期トレーナー4名を名前で照合
   getDoc(doc(db, "appConfig", "supportTrainers")).then((d) => { if (d.exists()) rosterIds = d.data().ids || null; renderEval(); }).catch(() => {});
   const users = () => (opts.getUsers ? opts.getUsers() : []) || [];
@@ -764,9 +755,15 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     card.style.display = "";
     $("sc-eval-who").textContent = `受講者：${perf.performerName}／トレーナー：${perf.trainerName}／実施日：${perf.date}`;
     renderLearningLine();
-    const busy = (document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-")) || evalUnsaved.isDirty();
+    const canSave = isTrainer(actorId(), users(), rosterIds);
+    if (!canSave) evalUnsaved.clean();
+    // 受講者・実施日が変わって評価IDが変わったら、前の人の未保存の入力は捨てて流し込み直す
+    // （残すと「評価を保存」で別の人の評価IDに前の人の点数が書かれる）
+    const focused = !!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-"));
+    const refill = shouldRefillForm(evalUnsaved, myEvalId(), focused, "受講者または実施日が変わったため、保存していない評価の入力を取り消しました");
     const ev = caseEvals.find((e) => e._id === myEvalId());
-    if (!busy) {
+    evalUnsaved.observe(ev || null, { own: evalsOwn }); // 未保存の間に他の人が更新したら知らせる
+    if (refill) {
       ITEMS.forEach((i) => { $(`sc-eval-${i.n}`).value = (ev && ev.scores && ev.scores[i.n]) || ""; });
       const r = document.querySelector(`input[name="sc-eval-ojt"][value="${(ev && ev.ojtResult) || ""}"]`);
       document.querySelectorAll('input[name="sc-eval-ojt"]').forEach((x) => { x.checked = false; });
@@ -774,7 +771,6 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       $("sc-eval-judgement").value = (ev && ev.judgement) || "";
       $("sc-eval-note").value = (ev && ev.note) || "";
     }
-    const canSave = isTrainer(actorId(), users(), rosterIds);
     $("sc-eval-save").disabled = !canSave;
     $("sc-eval-save").title = canSave ? "" : "評価を保存できるのはトレーナーのみです";
     $("sc-eval-saved").textContent = ev ? `保存済み（${judgementLabel(ev.judgement)}）` : (canSave ? "" : "評価の保存はトレーナーのみ");
@@ -830,7 +826,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
 
   onSnapshot(collection(db, "supportBadges"), (snap) => { grants = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderPerfWarn(); renderBadgeBox(); }, () => {});
   onSnapshot(query(collection(db, "supportEvaluations"), where("caseId", "==", caseId)),
-    (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderEval(); }, () => {});
+    (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); evalsOwn = !!(snap.metadata && snap.metadata.hasPendingWrites); renderEval(); }, () => {});
 
   // 変更した欄があるカードの「保存しました」に出す。cp は事前確認・当日・アフターの3タブにまたがるため、
   // sec ごとの id（sc-saved-cp は事前確認の見出しにしか無い）で探すと別タブに出てしまっていた（2026-11-10 修正）
@@ -944,6 +940,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     populate();
     // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
     perf = data.performance || null;
+    perfUnsaved.observe(perf, { own: !!(snap.metadata && snap.metadata.hasPendingWrites) }); // 未保存の間に他の人が更新したら知らせる
     renderPerfSummary();
     renderPerfWarn();
     loadPriorOk().then(renderEval);
@@ -951,5 +948,5 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (!perfUnsaved.isDirty() && !(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { if (!perfUnsaved.isDirty()) fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
+  return { refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
 }

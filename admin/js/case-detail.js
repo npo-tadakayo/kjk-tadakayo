@@ -21,7 +21,7 @@ import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 // 連絡先（担当者名・メール・電話）の訂正
 import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
-import { trackUnsaved, unsavedSpanHtml } from "/js/save-mode.js";
+import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
@@ -549,7 +549,8 @@ function renderTimeline(activities) {
   `).join("")}</div>`;
 }
 
-function renderDocumentChecklist(cl) {
+// own: 自分の書き込みの通知か（snap.metadata.hasPendingWrites）。未保存の間に他の人が口座情報を変えたかの判定に使う
+function renderDocumentChecklist(cl, own = false) {
   const fields = {
     "chk-bankbook": "bankbookReady",
     "chk-service": "serviceConfirmReady",
@@ -572,7 +573,9 @@ function renderDocumentChecklist(cl) {
     }
   }
 
-  // 入力途中（未保存）の口座情報は、書類チェックの保存などで届いた値で上書きしない
+  // 入力途中（未保存）の口座情報は、書類チェックの保存などで届いた値で上書きしない。
+  // その間に他の人が口座情報を変えたら「他の人が更新しました」と出す（流し込みは止めたまま）
+  bankUnsaved?.observe(cl?.bankAccountInfo || null, { own });
   if (bankUnsaved?.isDirty()) { applyBankType(); return; }
   if (cl?.bankAccountInfo) {
     const b = cl.bankAccountInfo;
@@ -638,7 +641,8 @@ function applyBankType() {
   }
 }
 
-function renderSubsidy(sa) {
+function renderSubsidy(sa, own = false) {
+  subsidyUnsaved?.observe(sa || null, { own }); // 未保存の間に他の人が更新したら知らせる
   if (!sa) return;
   if (subsidyUnsaved?.isDirty()) return; // 入力途中（未保存）の申請情報は上書きしない
   document.getElementById("subsidyStatus").value = sa.status || "preparing";
@@ -981,6 +985,7 @@ async function archiveCase(reason, note) {
   });
   await logActivity(`対象外に設定（${ARCHIVE_REASONS[reason] || reason}）`, note);
   showToast("対象外にしました");
+  discardUnsaved(); // 自分で操作した読み直しでは「未保存」の確認を出さない
   setTimeout(() => location.reload(), 600);
 }
 
@@ -992,6 +997,7 @@ async function unarchiveCase() {
   });
   await logActivity("対象外を解除", "");
   showToast("対象外を解除しました");
+  discardUnsaved();
   setTimeout(() => location.reload(), 600);
 }
 
@@ -1014,6 +1020,7 @@ async function hardDeleteCase() {
     batch.delete(doc(db, "cases", caseId));
     await batch.commit();
     alert(`案件 #${num} を削除しました`);
+    discardUnsaved(); // 案件はもう無いので、未保存の確認を出さずに一覧へ
     location.href = "/cases.html";
   } catch (e) {
     alert(`削除に失敗しました: ${e.message || e}`);
@@ -1824,7 +1831,8 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
-  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => { discardUnsaved(); location.href = "/index.html"; }));
+  // ↑ ログアウトしたあとに確認で「このページに留まる」を選ぶと、ログアウト済みの画面が残るため、確認を出さない
 
   initTabs();
 
@@ -1841,6 +1849,7 @@ onAuthStateChanged(auth, async (user) => {
   const caseSnap = await getDoc(doc(db, "cases", caseId));
   if (!caseSnap.exists()) {
     alert("案件が見つかりません");
+    discardUnsaved();
     location.href = "/cases.html";
     return;
   }
@@ -2114,13 +2123,13 @@ onAuthStateChanged(auth, async (user) => {
 
   // 書類チェックリスト購読
   onSnapshot(doc(db, "documentChecklists", caseId), (snap) => {
-    renderDocumentChecklist(snap.exists() ? snap.data() : null);
+    renderDocumentChecklist(snap.exists() ? snap.data() : null, !!snap.metadata?.hasPendingWrites);
   });
 
   // 申請情報購読
   onSnapshot(doc(db, "subsidyApplications", caseId), (snap) => {
     subsidyCache = snap.exists() ? snap.data() : null;
-    renderSubsidy(subsidyCache);
+    renderSubsidy(subsidyCache, !!snap.metadata?.hasPendingWrites);
   });
 
   // タイムライン購読

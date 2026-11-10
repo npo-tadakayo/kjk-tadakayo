@@ -39,4 +39,11 @@ for (const text of [s109.choices[0], s109.why, PLEDGE_ITEMS[8]]) {
   assert.ok(!text.includes("PM"), `相談先に PM が残っている: ${text}`);
   assert.ok(text.includes("TM_介護情報基盤普及推進室"), `相談先が TM_介護情報基盤普及推進室 でない: ${text}`);
 }
+// 「TM_介護情報基盤普及推進室」「TM」の前後に半角スペースを入れない（S1-09・S1-10 で表記をそろえる）
+for (const id of ["S1-09", "S1-10"]) {
+  const q = QUIZZES.S1.questions.find((x) => x.id === id);
+  for (const text of [...q.choices, q.why]) {
+    assert.ok(!/ TM|TM_介護情報基盤普及推進室 /.test(text), `${id} の表記にスペースがある: ${text}`);
+  }
+}
 console.log(`ok learning-quiz（${total}問）`);
