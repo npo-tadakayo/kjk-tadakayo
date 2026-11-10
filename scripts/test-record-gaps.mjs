@@ -198,4 +198,51 @@ t("点検10: 案件詳細・カンバンのつなぎ（受注日を書く・対�
   hasNot(read("admin/js/record-gaps.js"), /updateDoc|setDoc|writeBatch|getDocs/);
 });
 
+// ===== 点検7: 練習モードの代役（practice-stubs.js）を本番（functions/index.js）にそろえる =====
+// 代役はブラウザ用（firebase の CDN を import する）なので node では読み込めない。ソースを読んで照らし合わせる
+const objLiteral = (src, name) => {
+  const m = src.match(new RegExp(`const ${name} = (\\{[\\s\\S]*?\\});`));
+  assert.ok(m, `${name} が見つからない`);
+  return Function(`"use strict"; return (${m[1]});`)();
+};
+const fnBody = (src, head, next) => {
+  const i = src.indexOf(head);
+  assert.ok(i >= 0, `見つからない: ${head}`);
+  const j = src.indexOf(next, i + head.length);
+  return src.slice(i, j < 0 ? undefined : j);
+};
+t("点検7: 受注確定で作る出荷の下書きの品名・つなぎ方が本番と同じ", () => {
+  const fn = read("functions/index.js");
+  const ps = read("admin/js/practice-stubs.js");
+  assert.deepEqual(objLiteral(ps, "PRODUCT_NAMES"), objLiteral(fn, "PRODUCT_NAMES"));
+  assert.deepEqual(objLiteral(ps, "CONNECTION_LABELS"), objLiteral(fn, "CONNECTION_LABELS"));
+  const items = fnBody(ps, "function shipmentItemsFromQuote(P, q)", "\n}\n");
+  has(items, /const NAMES = PRODUCT_NAMES;/);
+  hasNot(items, /BT_LABEL|USB_LABEL/); // 見積の表示名を下書きの品名に使わない
+});
+t("点検7: 倉庫で発送済・受け渡し済にしたとき、受注も出荷済にする（本番と同じ）", () => {
+  const fn = read("functions/index.js");
+  const real = fnBody(fn, "async function warehouseComplete(", "\n}\n");
+  has(real, /if \(po && po\.exists\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  const ps = read("admin/js/practice-stubs.js");
+  const wh = fnBody(ps, "async function whMarkShipped(", "\n}\n");
+  has(wh, /const po = cur\.partnerOrderId \? await tx\.get\(doc\(db\(\), "partnerOrders"/);
+  has(wh, /if \(po && po\.exists\(\)\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  // 読み取り（tx.get）は書き込み（tx.update）より前
+  assert.ok(wh.indexOf('"partnerOrders"') < wh.indexOf("tx.update(ref"), "受注の読み取りが書き込みの後にある");
+});
+t("点検7: 倉庫の発送済・受け渡し済は、本番と同じく対応記録を書かない", () => {
+  const fn = read("functions/index.js");
+  for (const name of ["warehouseShip", "warehouseHandover"]) {
+    const real = fnBody(fn, `exports.${name} = onCall(`, "\n);\n");
+    hasNot(real, /activities/, `本番の ${name} が対応記録を書くようになった。練習もそろえること`);
+  }
+  hasNot(fnBody(fn, "async function warehouseComplete(", "\n}\n"), /activities/);
+  const ps = read("admin/js/practice-stubs.js");
+  for (const name of ["warehouseShip", "warehouseHandover"]) {
+    const stub = fnBody(ps, `  async ${name}(`, "\n  },\n");
+    hasNot(stub, /await activity\(/, `練習の ${name} が対応記録を書いている`);
+  }
+});
+
 console.log(`OK test-record-gaps: ${n} 件合格`);
