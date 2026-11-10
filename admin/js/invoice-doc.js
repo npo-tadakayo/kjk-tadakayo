@@ -52,7 +52,7 @@ export function invoiceTotals(s){
 // 支払期限の文言（2026-10-19 CRM改修 #7）。
 //   dueRule:'net14' の出荷（新ルールの開始後に「発送済にする」を押した出荷）＝ 請求書の発行日＋14日の実際の日付を出す。
 //   それ以外（従来の出荷）＝ 従来どおり「請求書発行月の翌月末」。すでに発行・発送済みの分の文言は変わらない。
-//   期限日の決め方は supply.js の dueDateOf と同じ（shipments.dueDate があれば最優先）。
+//   期限日の決め方は supply-rules.js の dueDateOf と同じ（shipments.dueDate があれば最優先）。
 //   まだ請求済にしていない出荷のプレビューでは、発行日＝今日（renderInvoiceHtml の発行日の既定と同じ）で数える。
 //   金額の計算には関わらない。
 function addDaysYmd(ymd, n){
@@ -258,6 +258,28 @@ export const INVOICE_STYLE = `
 .inv .pay{margin-top:18px;border:1px dashed #E8E4DC;border-radius:6px;padding:12px;}
 .inv .footer{margin-top:36px;padding-top:14px;border-top:1px solid #E8E4DC;font-size:11px;color:#6a5e48;text-align:center;}
 `;
+
+// 経理報告で使う請求先名（直送＝認定事業者〔名前が無ければメール〕／直接＝事業所）。
+// 出荷の画面（supply.js の billToOf）と印刷画面のメール送付後の経理報告で共通（2026-11-10 supply.js から移した）
+export function billToForReportOf(s){
+  s = s || {};
+  return s.shipType==="dropship" ? (s.partnerName||s.partnerEmail||"") : (s.company||s.officeName||"");
+}
+// 経理報告メールの件名・本文の差し込み（2026-11-10 supply.js から移した。出荷の画面の「請求済にする」と、
+// 印刷画面で請求書をメール送付したあとの経理報告で同じ文面にする）
+// v = { contactName, invNo, billTo, deliverTo, amountText, due, soNumber, shipDate }
+export function fillInvoiceReportText(t, v){
+  v = v || {};
+  return String(t||"")
+    .split("{{経理担当}}").join(v.contactName || "経理ご担当")
+    .split("{{請求書番号}}").join(v.invNo || "")
+    .split("{{請求先}}").join(v.billTo || "")
+    .split("{{納品先}}").join(v.deliverTo || "")
+    .split("{{請求金額}}").join(v.amountText || "")
+    .split("{{支払期限}}").join(v.due || "（未設定）")
+    .split("{{出荷番号}}").join(v.soNumber || "")
+    .split("{{出荷日}}").join(v.shipDate || "");
+}
 
 // 経理報告メールの定型文デフォルト（settings.js の初期表示と内容を一致させること）
 export const DEFAULT_INVOICE_MAIL_SUBJECT = "【請求書発行のご報告】{{請求先}}（{{請求書番号}}）";

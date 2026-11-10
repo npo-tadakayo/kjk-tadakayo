@@ -12,7 +12,8 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
   from "/js/st.js";
 import { renderPOHtml, PO_STYLE, DEFAULT_PO_MAIL_SUBJECT, DEFAULT_PO_MAIL_BODY } from "/js/po-doc.js";
 import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOnePagePdf,
-  DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals } from "/js/invoice-doc.js";
+  DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY, invoiceTotals, fillInvoiceReportText, billToForReportOf } from "/js/invoice-doc.js";
+import { markInvoiced } from "/js/invoice-mark.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
@@ -22,7 +23,7 @@ import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stockDeducted, isLocked,
   canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
   netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
-  isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary } from "/js/ship-flow.js";
+  isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary, mailedPendingNotes } from "/js/ship-flow.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
@@ -30,7 +31,8 @@ import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, vali
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
 import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
-import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, invoicePatchOf, paymentRemovalOf, VIEWER_LOCK_SELECTOR } from "/js/supply-rules.js";
+import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, paymentRemovalOf, VIEWER_LOCK_SELECTOR,
+  dueDateOf, invoiceDueOf, accountingReportDestOf } from "/js/supply-rules.js";
 import { initBankImport } from "/js/bank-import.js";
 
 const app = initializeApp(firebaseConfig);
@@ -2382,30 +2384,12 @@ function crossCreditSourcesFor(s){
     .sort((a,b)=>String(a.shipDate||"").localeCompare(String(b.shipDate||"")));
 }
 function crossCreditBalanceFor(s){ return crossCreditSourcesFor(s).reduce((a,x)=>a+creditBalanceOf(x),0); }
-// 支払期限（請求書の記載と同じ）。
-//   ① shipments.dueDate があればそれを最優先（請求済にしたときに確定値を保存する）
-//   ② dueRule:'net14'（2026-10-19 以降に「発送済にする」を押した出荷）＝ 請求書の発行日＋14日（納品日＝発行日）
-//   ③ それ以外（従来の出荷）＝ 請求月の翌月末。すでに発送済み・請求済みの出荷の期限は変えない
-//   請求書の文言は invoice-doc.js の paymentDueText と同じ規則にすること
-function addDaysYmd(ymd, n){
-  const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd||""));
-  if(!m) return "";
-  return new Date(Date.UTC(Number(m[1]), Number(m[2])-1, Number(m[3])+n)).toISOString().slice(0,10);
-}
+// 支払期限（dueDateOf）は supply-rules.js に移した（印刷画面のメール送付後の「請求済にする」と共通・2026-11-10）
 // ISO文字列（UTC）を日本時間の「YYYY-MM-DD HH:MM」にする（追跡写真の登録時刻の表示用）
 function jstDateTime(iso){
   const d=new Date(iso||"");
   if(Number.isNaN(d.getTime())) return "";
   return d.toLocaleString("sv-SE",{timeZone:"Asia/Tokyo"}).slice(0,16);
-}
-function dueDateOf(s){
-  if(s.dueDate) return s.dueDate;
-  const base=s.invoicedAt||s.shipDate||"";
-  if(s.dueRule==="net14") return addDaysYmd(base, 14);
-  const m=/^(\d{4})-(\d{2})/.exec(base);
-  if(!m) return "";
-  const d=new Date(Number(m[1]), Number(m[2])+1, 0); // 翌月末
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 // 期限超過の日数（未超過・期限不明は0）
 function overdueDays(s){
@@ -2420,7 +2404,8 @@ function isUnpaid(s){ return s.status==="invoiced" && payRemain(s)>0; }
 // 古い出荷には今の選択肢に無い shipType:"stock" が入っていて、それも請求先は認定事業者なので
 // partnerEmail の有無まで見る。※ 請求先名そのもの（billToOf）の解釈は従来のまま変えない。
 function billsPartner(s){ return s.shipType==="dropship" || !!s.partnerEmail; }
-function billToOf(s){ return s.shipType==="dropship" ? (s.partnerName||s.partnerEmail||"") : (s.company||s.officeName||""); }
+// 請求先名（経理報告の差し込みと共通のため invoice-doc.js の billToForReportOf が正本・2026-11-10）
+function billToOf(s){ return billToForReportOf(s); }
 function billToEmailOf(s){
   if(s.shipType==="dropship") return s.partnerEmail||"";
   return s.email||s.contactEmail||"";
@@ -2638,7 +2623,9 @@ function renderShipments(ships, dv){
         ? ` <span class="badge badge-2">自社在庫から発送</span>`
         : ` <span class="badge badge-7">AB Circleから直送</span>`);
     const st=s.status||"shipped";
-    const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${shipStatusLabelOf(s)}</span>`;
+    const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${shipStatusLabelOf(s)}</span>`
+      // 送付済み・記録待ち（メールで送ったが「請求済にする」「発行を記録」がまだ・2026-11-10）
+      + mailedPendingNotes(s).map(n=>` <span class="badge badge-5" title="${esc(n.hint)}">${esc(n.label)}</span>`).join("");
     // 持ち出し（倉庫から直接持っていく）の印・予定日・持ち出す人。倉庫からの差し戻しがあれば警告の行を出す（2026-10-24 §9.1・§9.3）
     const pickupHtml = isPickup(s)
       ? `<div style="font-size:12px"><span class="badge badge-5">持ち出し</span> ${esc(s.pickupDate||"")}${s.pickupByName?`・持ち出す人 ${esc(s.pickupByName)}`:""}`
@@ -3337,23 +3324,17 @@ async function openInvoiceReport(s, opts){
   if(!invReportOnly) dateIn.value = today();
   const invoicedAt = invReportOnly ? (s.invoicedAt || today()) : dateIn.value;
   // 支払期限は請求書の記載と一致させる（dueRule:'net14' は発行日＋14日・従来は請求月の翌月末）
-  const due = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+  const due = invoiceDueOf(s, invoicedAt);
   const deliverTo = [s.company, s.officeName].filter(Boolean).join(" / ");
-  const contactName = (st.accountingContactName || "").trim();
-  const acctEmail = (st.accountingEmail || "").trim();
-  // 経理の投稿先は設定画面の「有効／停止」に従う（未定義は有効。停止中は投稿しない＝functions の resolveWebhook と同じ）
-  const webhook = st.accountingChatWebhookEnabled === false ? "" : (st.accountingChatWebhookUrl || "").trim();
+  // 経理の投稿先は設定画面の「有効／停止」に従う（未定義は有効。停止中は投稿しない＝functions の resolveWebhook と同じ）。
+  // 判定は supply-rules.js の accountingReportDestOf（印刷画面と共通・2026-11-10）
+  const { contactName, acctEmail, webhook, ready } = accountingReportDestOf(st);
 
   // dueOverride: 発行日を入れ直したときの支払期限（renderInvReportDated から渡す）
-  const fill=(t, dueOverride)=>String(t||"")
-    .split("{{経理担当}}").join(contactName || "経理ご担当")
-    .split("{{請求書番号}}").join(invNo)
-    .split("{{請求先}}").join(billToOf(s))
-    .split("{{納品先}}").join(deliverTo)
-    .split("{{請求金額}}").join(amountText)
-    .split("{{支払期限}}").join((dueOverride ?? due) || "（未設定）")
-    .split("{{出荷番号}}").join(s.soNumber||"")
-    .split("{{出荷日}}").join(s.shipDate||"");
+  // 差し込みは invoice-doc.js の fillInvoiceReportText（印刷画面のメール送付後の経理報告と共通・2026-11-10）
+  const fill=(t, dueOverride)=>fillInvoiceReportText(t, {
+    contactName, invNo, billTo: billToOf(s), deliverTo, amountText,
+    due: dueOverride ?? due, soNumber: s.soNumber, shipDate: s.shipDate });
 
   document.getElementById("invReportTitle").textContent = invReportOnly
     ? `経理へ報告（${s.soNumber}）` : `請求済にする（${s.soNumber}）`;
@@ -3374,7 +3355,6 @@ async function openInvoiceReport(s, opts){
   if(webhook) destParts.push("経理スペースへChat投稿"); else destParts.push("Chat未設定（投稿しません）");
   if(acctEmail) destParts.push(`${acctEmail} へPDF添付メール${contactName?`（${contactName}さん）`:""}`);
   else destParts.push("経理メール未設定（送信しません）");
-  const ready = !!(webhook || acctEmail);
   document.getElementById("invReportDest").innerHTML = ready
     ? esc(destParts.join(" ／ "))
     : `<span style="color:var(--color-danger)">報告先が未設定です。「設定」画面の「経理への請求書発行報告」で登録してください</span>`;
@@ -3416,7 +3396,7 @@ function renderInvReportDated(){
   const invoicedAt = document.getElementById("invReportDate").value;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(invoicedAt)) return;
   invReportCtx.invoicedAt = invoicedAt;
-  const due = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+  const due = invoiceDueOf(s, invoicedAt);
   const dueEl = document.getElementById("invReportDue"); if(dueEl) dueEl.textContent = due || "（未設定）";
   if(invReportFill){
     const st = invReportCtx.st || {};
@@ -3468,18 +3448,11 @@ async function doInvoiceReport(){
       btn.innerHTML = '<i class="ti ti-loader-2 ti-spin"></i> 請求済にしています...';
       const invoicedAt = issueYmd;
       // 支払期限は請求済にした時点で確定値として保存する（以後、計算の規則が変わっても請求書の記載とずれない）
-      const dueDate = dueDateOf({ ...s, status:"invoiced", invoicedAt }) || "";
+      const dueDate = invoiceDueOf(s, invoicedAt);
       // 請求前に入金明細などで全額入っていた出荷は、請求済にした時点で入金済にする（2026-10-21 レビュー指摘）。
-      // 残額は最新の記録で判定する（画面を開いたあとに入金が記録されている場合があるため tx で読む）
-      const r = await runTransaction(db, async (tx)=>{
-        const ref = doc(db,"shipments",s._id);
-        const snap = await tx.get(ref);
-        if(!snap.exists()) throw new Error("出荷が見つかりません");
-        const latest = { _id:s._id, ...snap.data() };
-        const out = invoicePatchOf(latest, { invoicedAt, dueDate, today: today() });
-        tx.update(ref, { ...out.patch, updatedAt:serverTimestamp() });
-        return { latest, ...out };
-      });
+      // 残額は最新の記録で判定する（画面を開いたあとに入金が記録されている場合があるため tx で読む）。
+      // 書き込みは invoice-mark.js（印刷画面のメール送付後の「請求済にする」と共通・2026-11-10）
+      const r = await markInvoiced(db, s._id, { invoicedAt, dueDate, today: today() });
       paidOnInvoice = r.paid;
       cur = { ...r.latest, ...r.patch };
     }

@@ -196,6 +196,31 @@ export function shipStepsDone(s) {
   };
 }
 
+// 送付済み・記録待ち（2026-11-10）。帳票をメールで送ったが、記録（請求済にする・発行を記録）がまだの出荷。
+// メール送付後の確認でキャンセルを押すと、送ったのに「未請求」「未発行」のまま残るので、一覧・案件詳細で気づけるようにする。
+// 表示のためだけの判定で、「請求済」「発行済み」の判定（shipStepsDone・todoCounts など）は変えない。
+//   invoice … 請求書をメール送付済み（invoiceMailedAt）で、まだ請求済でない（下書き・依頼済・発送済）
+//   receipt … 領収証をメール送付済み（receiptMailedAt）で、発行の記録（receiptIssuedAt）がない
+export const MAILED_PENDING_LABEL = "送付済み・記録待ち";
+export function mailedPendingOf(s) {
+  const st = shipStatusOf(s);
+  if (!s || st === "canceled") return { invoice: false, receipt: false };
+  return {
+    invoice: !!s.invoiceMailedAt && (st === "draft" || st === "requested" || st === "shipped"),
+    receipt: !!s.receiptMailedAt && !s.receiptIssuedAt,
+  };
+}
+// 表示する文（一覧のバッジの説明・案件詳細の注意書き）。無ければ空の配列
+export function mailedPendingNotes(s) {
+  const m = mailedPendingOf(s);
+  const out = [];
+  if (m.invoice) out.push({ key: "invoice", label: `請求書 ${MAILED_PENDING_LABEL}`,
+    hint: `請求書はメールで送付済みです（${s.invoiceMailedAt}）。出荷の画面の「請求済にする」で記録してください` });
+  if (m.receipt) out.push({ key: "receipt", label: `領収証 ${MAILED_PENDING_LABEL}`,
+    hint: `領収証はメールで送付済みです（${s.receiptMailedAt}）。領収証ページの「発行を記録」で記録してください` });
+  return out;
+}
+
 // ホーム（今日やること）の件数。キャンセルは数えない
 export function todoCounts(ships) {
   const c = { draft: 0, requested: 0, unbilled: 0, unpaid: 0, noReceipt: 0 };

@@ -291,4 +291,16 @@ t("確認の文面と、開く画面", () => {
   assert.equal(invoicePromptNote(one, true), "請求書の確認: 請求書未発行 SH-1（その場で画面を開いた）");
 });
 
+t("案件詳細の「請求書を出す」は invoicePromptUrl（正本）の飛び先にそろえる（2026-11-10）", () => {
+  const cd = readFileSync(new URL("../admin/js/case-detail.js", import.meta.url), "utf8");
+  const fn = cd.slice(cd.indexOf("function shipNextAction(s)"), cd.indexOf("function shipNextActionHtml(s)"));
+  assert.match(fn, /label: "請求書を出す", icon: "file-invoice", url: invoicePromptUrl\(\{ notInvoiced: \[s\] \}\), external: false/);
+  // 印刷画面へ直接飛ばしていない
+  assert.doesNotMatch(fn, /supply-print\.html\?type=invoice/);
+  assert.equal(invoicePromptUrl({ notInvoiced: [{ soNumber: "SH-2026-0001" }] }), "/supply.html?tab=shipments&so=SH-2026-0001");
+  // 送付済み・記録待ちの注意を出荷カードに出す（判定は ship-flow.js）
+  assert.match(cd, /mailedPendingNotes\(s\)/);
+  assert.match(cd, /\$\{shipNextActionHtml\(s\)\}\$\{shipMailedPendingHtml\(s\)\}/);
+});
+
 console.log(`test-screen-wiring: ${n} 件 OK`);

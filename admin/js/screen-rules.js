@@ -79,6 +79,8 @@ export function invoicePromptText(pending) {
  * OK のときに開く画面＝供給管理の出荷タブ（該当の出荷へ寄せる）。
  * 請求書の印刷画面（supply-print.html）は表示・印刷だけで、出荷を「請求済」にせず経理にも報告しないため、
  * 件数にかかわらず［請求済にする］がある出荷の画面を開く（2026-11-08 独立レビュー指摘）
+ * 2026-11-10: 印刷画面でも、請求書をメールで送った直後に「請求済にしますか？」と聞くようになったが、
+ * 印刷だけでは請求済にならないことは変わらないので、飛び先はこのまま。案件詳細の「請求書を出す」もこれを使う（正本）
  */
 export function invoicePromptUrl(pending) {
   const { notInvoiced = [], notShipped = [] } = pending || {};
