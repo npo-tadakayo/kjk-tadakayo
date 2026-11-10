@@ -21,6 +21,7 @@ import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 // 連絡先（担当者名・メール・電話）の訂正
 import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
+import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
@@ -548,7 +549,8 @@ function renderTimeline(activities) {
   `).join("")}</div>`;
 }
 
-function renderDocumentChecklist(cl) {
+// own: 自分の書き込みの通知か（snap.metadata.hasPendingWrites）。未保存の間に他の人が口座情報を変えたかの判定に使う
+function renderDocumentChecklist(cl, own = false) {
   const fields = {
     "chk-bankbook": "bankbookReady",
     "chk-service": "serviceConfirmReady",
@@ -571,6 +573,10 @@ function renderDocumentChecklist(cl) {
     }
   }
 
+  // 入力途中（未保存）の口座情報は、書類チェックの保存などで届いた値で上書きしない。
+  // その間に他の人が口座情報を変えたら「他の人が更新しました」と出す（流し込みは止めたまま）
+  bankUnsaved?.observe(cl?.bankAccountInfo || null, { own });
+  if (bankUnsaved?.isDirty()) { applyBankType(); return; }
   if (cl?.bankAccountInfo) {
     const b = cl.bankAccountInfo;
     document.getElementById("bankType").value = b.bankType || "bank";
@@ -635,8 +641,10 @@ function applyBankType() {
   }
 }
 
-function renderSubsidy(sa) {
+function renderSubsidy(sa, own = false) {
+  subsidyUnsaved?.observe(sa || null, { own }); // 未保存の間に他の人が更新したら知らせる
   if (!sa) return;
+  if (subsidyUnsaved?.isDirty()) return; // 入力途中（未保存）の申請情報は上書きしない
   document.getElementById("subsidyStatus").value = sa.status || "preparing";
   document.getElementById("applicationDate").value = toDateInput(sa.applicationDate);
   document.getElementById("decisionReceivedAt").value = toDateInput(sa.decisionReceivedAt);
@@ -900,6 +908,7 @@ async function saveBankInfo() {
   };
   const clRef = doc(db, "documentChecklists", caseId);
   await setDoc(clRef, { bankAccountInfo, updatedAt: serverTimestamp() }, { merge: true });
+  bankUnsaved?.clean();
   showToast("口座情報を保存しました");
 }
 
@@ -923,6 +932,7 @@ async function saveSubsidyInfo() {
     rejectionReason: document.getElementById("rejectionReason").value.trim() || null,
     updatedAt: serverTimestamp(),
   }, { merge: true });
+  subsidyUnsaved?.clean();
   showToast("申請情報を保存しました");
 }
 
@@ -980,6 +990,7 @@ async function archiveCase(reason, note) {
   });
   await logActivity(`対象外に設定（${ARCHIVE_REASONS[reason] || reason}）`, note);
   showToast("対象外にしました");
+  discardUnsaved(); // 自分で操作した読み直しでは「未保存」の確認を出さない
   setTimeout(() => location.reload(), 600);
 }
 
@@ -991,6 +1002,7 @@ async function unarchiveCase() {
   });
   await logActivity("対象外を解除", "");
   showToast("対象外を解除しました");
+  discardUnsaved();
   setTimeout(() => location.reload(), 600);
 }
 
@@ -1013,6 +1025,7 @@ async function hardDeleteCase() {
     batch.delete(doc(db, "cases", caseId));
     await batch.commit();
     alert(`案件 #${num} を削除しました`);
+    discardUnsaved(); // 案件はもう無いので、未保存の確認を出さずに一覧へ
     location.href = "/cases.html";
   } catch (e) {
     alert(`削除に失敗しました: ${e.message || e}`);
@@ -1402,6 +1415,8 @@ function showToast(msg) {
 // 現場からの要望: 記載漏れの追記や書き間違いの訂正が実際に起きる。
 // 誰がいつ直したかは残す（支援の記録なので、黙って書き換わらないようにする）。
 let editingSessionId = null;   // 編集中の記録。null なら全部が表示モード
+// 保存ボタンの欄の「未保存の変更があります」とページを離れるときの確認（save-mode.js）。init で作る
+let sessionUnsaved = null, sessionEditUnsaved = null, bankUnsaved = null, subsidyUnsaved = null;
 let sessionsCache = [];        // 編集の保存後に描画し直すため保持
 
 function renderSessions(sessions) {
@@ -1449,7 +1464,7 @@ function sessionEditHtml(s) {
   return `
     <div class="card" style="margin-bottom:var(--space-3);border-color:var(--color-primary)">
       <div class="card-body">
-        <div style="font-weight:600;font-size:13px;margin-bottom:10px"><i class="ti ti-edit" aria-hidden="true"></i> この記録を編集しています</div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:10px"><i class="ti ti-edit" aria-hidden="true"></i> この記録を編集しています（「変更を保存」を押すと保存されます）${unsavedSpanHtml("sessEditUnsaved")}</div>
         <div class="form-row">
           <div class="form-group">
             <label class="form-label" for="sessEditDate">実施日</label>
@@ -1483,16 +1498,19 @@ function wireSessionButtons() {
   document.querySelectorAll(".sess-edit").forEach((b) => b.addEventListener("click", () => {
     editingSessionId = b.dataset.id;
     removedPhotoUrls = new Set();
+    sessionEditUnsaved?.clean();
     renderSessions(sessionsCache);
   }));
   document.querySelectorAll(".sess-cancel").forEach((b) => b.addEventListener("click", () => {
     editingSessionId = null;
     removedPhotoUrls = new Set();
+    sessionEditUnsaved?.clean();
     renderSessions(sessionsCache);
   }));
   document.querySelectorAll(".sess-photo-del").forEach((b) => b.addEventListener("click", () => {
     if (b.dataset.url) removedPhotoUrls.add(b.dataset.url);
     b.closest("div").style.display = "none";
+    sessionEditUnsaved?.mark();
   }));
   document.querySelectorAll(".sess-save").forEach((b) => b.addEventListener("click", () => saveSessionEdit(b.dataset.id)));
   document.querySelectorAll(".sess-delete").forEach((b) => b.addEventListener("click", () => deleteSession(b.dataset.id)));
@@ -1570,6 +1588,7 @@ async function saveSessionEdit(sessionId) {
 
     editingSessionId = null;
     removedPhotoUrls = new Set();
+    sessionEditUnsaved?.clean();
     showToast("伴走支援の記録を更新しました");
     renderSessions(latestSessions); // 編集中は購読側の描画を止めているので、ここで戻す
   } catch (e) {
@@ -1604,6 +1623,7 @@ async function deleteSession(sessionId) {
     });
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
     editingSessionId = null;
+    sessionEditUnsaved?.clean();
     showToast("伴走支援の記録を削除しました");
     renderSessions(latestSessions); // 編集中は購読側の描画を止めているので、ここで戻す
   } catch (e) {
@@ -1668,6 +1688,7 @@ async function addSession(userId, userName) {
 
     dateEl.value = ""; summaryEl.value = ""; filesEl.value = "";
     const pc = document.getElementById("photoCount"); if (pc) pc.textContent = "";
+    sessionUnsaved?.clean();
     showToast("伴走支援セッションを記録しました");
   } catch (e) {
     alert(`記録に失敗しました: ${e.message}`);
@@ -1815,7 +1836,8 @@ onAuthStateChanged(auth, async (user) => {
   currentUser = user;
 
   document.getElementById("userEmail").textContent = user.displayName || user.email;
-  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => location.href = "/index.html"));
+  document.getElementById("logoutBtn").addEventListener("click", () => signOut(auth).then(() => { discardUnsaved(); location.href = "/index.html"; }));
+  // ↑ ログアウトしたあとに確認で「このページに留まる」を選ぶと、ログアウト済みの画面が残るため、確認を出さない
 
   initTabs();
 
@@ -1832,6 +1854,7 @@ onAuthStateChanged(auth, async (user) => {
   const caseSnap = await getDoc(doc(db, "cases", caseId));
   if (!caseSnap.exists()) {
     alert("案件が見つかりません");
+    discardUnsaved();
     location.href = "/cases.html";
     return;
   }
@@ -2053,6 +2076,12 @@ onAuthStateChanged(auth, async (user) => {
 
   // 伴走支援セッション追加
   document.getElementById("addSessionBtn").addEventListener("click", () => addSession(user.uid, user.displayName || user.email));
+  // 保存ボタンの欄（伴走支援の記録・その編集・振込口座・申請情報）の未保存の表示と、ページを離れるときの確認
+  sessionUnsaved = trackUnsaved("session", document.getElementById("addSessionBtn").closest(".card"), "sessionUnsaved");
+  sessionEditUnsaved = trackUnsaved("sessionEdit", document.getElementById("sessionsEl"), "sessEditUnsaved",
+    { match: (t) => !!(t && t.closest && t.closest("#sessEditDate, #sessEditSummary, #sessEditAdd")) });
+  bankUnsaved = trackUnsaved("bank", document.getElementById("saveBankBtn").closest(".card"), "bankUnsaved");
+  subsidyUnsaved = trackUnsaved("subsidy", document.getElementById("saveSubsidyBtn").closest(".card"), "subsidyUnsaved");
 
   // 写真: カメラ撮影 / 選択
   const photoInput = document.getElementById("sessionPhotos");
@@ -2099,13 +2128,13 @@ onAuthStateChanged(auth, async (user) => {
 
   // 書類チェックリスト購読
   onSnapshot(doc(db, "documentChecklists", caseId), (snap) => {
-    renderDocumentChecklist(snap.exists() ? snap.data() : null);
+    renderDocumentChecklist(snap.exists() ? snap.data() : null, !!snap.metadata?.hasPendingWrites);
   });
 
   // 申請情報購読
   onSnapshot(doc(db, "subsidyApplications", caseId), (snap) => {
     subsidyCache = snap.exists() ? snap.data() : null;
-    renderSubsidy(subsidyCache);
+    renderSubsidy(subsidyCache, !!snap.metadata?.hasPendingWrites);
   });
 
   // タイムライン購読

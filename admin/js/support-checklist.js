@@ -19,11 +19,13 @@ import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnaps
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
 
-import { MODES, buildPerformance, summaryLine } from "./support-performance.js";
+import { MODES, buildPerformance, summaryLine, fillPeopleSelect } from "./support-performance.js";
 import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvaluation, evaluationId, evaluationEligible,
   buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
 import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
+import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
+import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -107,8 +109,15 @@ function rowStep(sec, item) {
     </div>`;
 }
 
-function savedSpan(sec) {
-  return `<span class="sc-saved" id="sc-saved-${sec}" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>`;
+// 「保存しました HH:MM」を出す場所。自動保存のカードごとに1つ置き、変更した欄があるカードの分に出す（markSaved）。
+// 同じ sec（cp など）が複数のタブ・カードにまたがるので、2つ目以降は part で id を分ける
+function savedSpan(sec, part) {
+  return `<span class="sc-saved" id="sc-saved-${sec}${part ? `-${part}` : ""}" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>`;
+}
+
+// カード見出しの左側（タイトル＋保存のしかたの説明＋未保存の表示）
+function cardTitle(title, note, extra = "") {
+  return `<div><span style="font-weight:600;font-size:14px">${title}</span>${saveModeNoteHtml(note)}${extra}</div>`;
 }
 
 function selectGroup(id, sec, path, label, opts) {
@@ -118,6 +127,11 @@ function selectGroup(id, sec, path, label, opts) {
       <label class="form-label" for="${id}">${label}</label>
       <select class="form-control" id="${id}" data-sec="${sec}" data-path="${path}" style="max-width:340px">${o}</select>
     </div>`;
+}
+
+// ケアプラン連携が「導入済み」のときに出す省略の表示（support-cp-install.js の applyCpInstalled が切り替える）
+function cpSkipNote(text) {
+  return `<p data-cp-skip-note style="display:none;font-size:13px;margin:0 0 12px;padding:8px 12px;border-radius:6px;background:var(--color-bg-subtle, #faf7f2)">${text}</p>`;
 }
 
 function checkOnly(sec, id, path, label) {
@@ -135,10 +149,13 @@ function cardCpPre() {
   return `
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 事前確認</span>
+        ${cardTitle("ケアプラン連携 — 事前確認", AUTO_SAVE_NOTE)}
         ${savedSpan("cp")}
       </div>
       <div class="card-body">
+        ${selectGroup("sc-cp-installStatus", "cp", "installStatus", "ケアプランデータ連携システムの導入状況", CP_INSTALL_OPTS)}
+        ${cpSkipNote(CP_SKIP_PRE_TEXT)}
+        <div data-cp-skip>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">介護情報基盤を入れた事業所はKJ-ID・電子証明書が整っていることが多く、ケアプランデータ連携の導入が容易（同じ電子請求受付システムを使う）。</p>
         ${row3state("cp", { key: "software", label: "介護ソフトが標準仕様に対応しているか" })}
         ${selectGroup("sc-cp-ebilling", "cp", "eBilling", "介護電子請求の有無（電子証明書の種類判定）", [
@@ -152,6 +169,7 @@ function cardCpPre() {
           { v: "careplan", t: "介護DX証明書（無料・旧称：請求委任事業所用ケアプラン証明書）" },
           { v: "none", t: "未取得" },
         ])}
+        </div>
         <div class="form-group">
           <label class="form-label" for="sc-cp-partner">主な連携相手（取引先）の本システム導入状況</label>
           <input class="form-control" type="text" id="sc-cp-partner" data-sec="cp" data-path="partnerStatus">
@@ -164,7 +182,7 @@ function renderPre() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — 事前確認（訪問前）</span>
+        ${cardTitle("介護情報基盤 — 事前確認（訪問前）", AUTO_SAVE_NOTE)}
         ${savedSpan("pre")}
       </div>
       <div class="card-body">
@@ -184,7 +202,7 @@ function cardVisitInfo() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">当日 — 訪問情報</span>
+        ${cardTitle("当日 — 訪問情報", AUTO_SAVE_NOTE)}
         ${savedSpan("onsite")}
       </div>
       <div class="card-body">
@@ -220,7 +238,8 @@ function cardOnsiteSteps() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — 当日工程</span>
+        ${cardTitle("介護情報基盤 — 当日工程", AUTO_SAVE_NOTE)}
+        ${savedSpan("onsite", "steps")}
       </div>
       <div class="card-body">
         ${ONSITE_STEPS.map((i) => rowStep("onsite", i)).join("")}
@@ -236,10 +255,14 @@ function cardCpSteps() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 導入作業</span>
+        ${cardTitle("ケアプラン連携 — 導入作業", AUTO_SAVE_NOTE)}
+        ${savedSpan("cp", "onsite")}
       </div>
       <div class="card-body">
+        ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
+        <div data-cp-skip>
         ${CP_STEPS.map((i) => rowStep("cp", i)).join("")}
+        </div>
       </div>
     </div>`;
 }
@@ -248,9 +271,11 @@ function cardCpEvidence() {
   return `
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 証憑写真（ライセンス／電子証明書の有効期間）</span>
+        ${cardTitle("ケアプラン連携 — 証憑写真（ライセンス／電子証明書の有効期間）", AUTO_SAVE_NOTE)}
       </div>
       <div class="card-body">
+        ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
+        <div data-cp-skip>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">利用申請完了画面・ライセンス情報や、電子証明書の有効期間がわかる画面の写真を保存できます。個人情報（パスワード等）が写り込まないよう注意。</p>
         <input type="file" id="sc-cp-photo-input" accept="image/*" multiple style="display:none">
         <button type="button" class="btn btn-secondary" id="sc-cp-photo-btn" style="min-height:44px">
@@ -258,6 +283,7 @@ function cardCpEvidence() {
         </button>
         <span id="sc-cp-photo-progress" aria-live="polite" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-left:10px"></span>
         <div id="sc-cp-photos" style="margin-top:10px"></div>
+        </div>
       </div>
     </div>`;
 }
@@ -270,9 +296,9 @@ function cardPerformance() {
           <input type="radio" name="sc-perf-mode" value="${m.v}"> <span>${m.t}</span>
         </label>`).join("");
   return `
-    <div class="card" style="margin-bottom:var(--space-4)">
+    <div class="card" id="sc-perf-card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">実施の記録（誰が実施したか）</span>
+        ${cardTitle("実施の記録（誰が実施したか）", manualSaveNote("実施の記録を保存"), unsavedSpanHtml("sc-perf-unsaved"))}
         <span id="sc-perf-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
       </div>
       <div class="card-body">
@@ -323,7 +349,7 @@ function cardEvaluation() {
   return `
     <div class="card" id="sc-eval-card" style="margin-bottom:var(--space-4);display:none">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">トレーニング評価（トレーナーが記入）</span>
+        ${cardTitle("トレーニング評価（トレーナーが記入）", manualSaveNote("評価を保存"), unsavedSpanHtml("sc-eval-unsaved"))}
         <span id="sc-eval-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
       </div>
       <div class="card-body">
@@ -375,7 +401,8 @@ function cardCpAfter() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — ライセンス・運用・アフター</span>
+        ${cardTitle("ケアプラン連携 — ライセンス・運用・アフター", AUTO_SAVE_NOTE)}
+        ${savedSpan("cp", "after")}
       </div>
       <div class="card-body">
         <div class="form-row">
@@ -403,7 +430,7 @@ function renderAfter() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — アフターフォロー</span>
+        ${cardTitle("介護情報基盤 — アフターフォロー", AUTO_SAVE_NOTE)}
         ${savedSpan("after")}
       </div>
       <div class="card-body">
@@ -442,7 +469,8 @@ function renderAfter() {
     ${cardCpAfter()}
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">個人情報の取扱い確認（Pマーク準拠）</span>
+        ${cardTitle("個人情報の取扱い確認（Pマーク準拠）", AUTO_SAVE_NOTE)}
+        ${savedSpan("after", "privacy")}
       </div>
       <div class="card-body">
         ${PRIVACY_ITEMS.map((i) => `
@@ -495,6 +523,12 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     });
     fillOnsiteDefaults();
     renderPhotos();
+    syncCpInstalled();
+  }
+
+  // ケアプラン連携が「導入済み」なら、事前確認の一部と当日の工程・証憑を畳む（データは消さない）
+  function syncCpInstalled() {
+    [elPre, elOnsite].forEach((root) => applyCpInstalled(root, cpInstalled(state.cp)));
   }
 
   // 当日タブの訪問日・時刻・場所は、保存済みの値が空のときだけ案件の値を初期表示する（二重入力を減らす）。
@@ -539,21 +573,6 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   let perf = null; // 保存済みの performance
   const $ = (id) => document.getElementById(id);
 
-  function peopleOptions(selectedId, withBlank) {
-    const users = (opts.getUsers ? opts.getUsers() : []) || [];
-    const name = (u) => u.name || u._id;
-    const actives = users.filter((u) => u.active !== false)
-      .slice().sort((a, b) => name(a).localeCompare(name(b), "ja"));
-    let html = withBlank ? `<option value="">—</option>` : `<option value="">選んでください</option>`;
-    html += actives.map((u) => `<option value="${escapeHtml(u._id)}">${escapeHtml(name(u))}</option>`).join("");
-    // 無効化・削除済みの人が記録済みでも、別の人に化けないよう選択肢に残す
-    if (selectedId && !actives.some((u) => u._id === selectedId)) {
-      const known = users.find((u) => u._id === selectedId);
-      html += `<option value="${escapeHtml(selectedId)}">${escapeHtml(known ? name(known) : selectedId)}（無効）</option>`;
-    }
-    return html;
-  }
-
   function renderPerfSummary() {
     const el = $("sc-perf-summary");
     if (!el) return;
@@ -568,15 +587,18 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (wrap) wrap.style.display = mode === "solo" ? "none" : "";
   }
 
-  // 実施者の既定＝担当営業。保存済みの記録があればそれを優先
-  function fillPerfForm() {
+  // 実施者・トレーナーの選択肢を作る。実施者の既定＝担当営業。保存済みの記録があればそれを優先。
+  // keepCurrent=true（未保存の入力がある）ときは、いま選んでいる値を保ったまま選択肢だけ作り直す
+  // （職員一覧が届く前に入力を始めても、選択肢が空のまま残らないように）
+  function fillPerfOptions(keepCurrent) {
     const c = (opts.getCase ? opts.getCase() : null) || {};
-    const perfId = (perf && perf.performerId) || c.assignedUserId || "";
-    const trainerId = (perf && perf.trainerId) || "";
-    $("sc-perf-performer").innerHTML = peopleOptions(perfId, false);
-    $("sc-perf-trainer").innerHTML = peopleOptions(trainerId, true);
-    $("sc-perf-performer").value = perfId;
-    $("sc-perf-trainer").value = trainerId;
+    const list = (opts.getUsers ? opts.getUsers() : []) || [];
+    fillPeopleSelect($("sc-perf-performer"), list, (perf && perf.performerId) || c.assignedUserId || "", false, keepCurrent);
+    fillPeopleSelect($("sc-perf-trainer"), list, (perf && perf.trainerId) || "", true, keepCurrent);
+  }
+
+  function fillPerfForm() {
+    fillPerfOptions(false);
     $("sc-perf-date").value = (perf && perf.date) || "";
     $("sc-perf-companions").value = (perf && perf.companions) || "";
     $("sc-perf-note").value = (perf && perf.note) || "";
@@ -607,6 +629,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       // 既存の pre/onsite/cp/after を壊さないよう merge で書く
       await setDoc(ref, { performance: r.performance, updatedAt: serverTimestamp() }, { merge: true });
       perf = r.performance;
+      perfUnsaved.clean();
       renderPerfSummary();
       renderPerfWarn();
       await loadPriorOk();
@@ -621,12 +644,18 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   elOnsite.addEventListener("change", (e) => {
     if (e.target && e.target.name === "sc-perf-mode") syncPerfMode();
   });
+  // 実施の記録・トレーニング評価は保存ボタン。未保存の間は表示し、ページを離れるときに確認を出す（save-mode.js）
+  const perfUnsaved = trackUnsaved("supportPerformance", $("sc-perf-card"), "sc-perf-unsaved");
+  // トレーナーでない人は評価を保存できないので、評価欄に触っても未保存にしない（消せない表示と離れるときの確認を出さない）
+  const evalUnsaved = trackUnsaved("supportEvaluation", $("sc-eval-card"), "sc-eval-unsaved",
+    { active: () => isTrainer(actorId(), users(), rosterIds) });
   const perfSaveBtn = $("sc-perf-save");
   if (perfSaveBtn) perfSaveBtn.addEventListener("click", savePerformance);
 
   // ----- トレーニング評価・バッジ -----
   let grants = [];      // supportBadges 全件（付与履歴）
   let caseEvals = [];   // この案件の評価（supportEvaluations・caseId 一致）
+  let evalsOwn = false; // 最後に届いた評価の通知が自分の書き込みか（hasPendingWrites）
   let rosterIds = null; // appConfig/supportTrainers.ids（任意）。無ければ初期トレーナー4名を名前で照合
   getDoc(doc(db, "appConfig", "supportTrainers")).then((d) => { if (d.exists()) rosterIds = d.data().ids || null; renderEval(); }).catch(() => {});
   const users = () => (opts.getUsers ? opts.getUsers() : []) || [];
@@ -722,13 +751,19 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   function renderEval() {
     const card = $("sc-eval-card");
     if (!card) return;
-    if (!evaluationEligible(perf)) { card.style.display = "none"; return; } // トレーナーなし・見学・単独は対象外
+    if (!evaluationEligible(perf)) { card.style.display = "none"; evalUnsaved.clean(); return; } // トレーナーなし・見学・単独は対象外（隠れた欄の未保存は数えない）
     card.style.display = "";
     $("sc-eval-who").textContent = `受講者：${perf.performerName}／トレーナー：${perf.trainerName}／実施日：${perf.date}`;
     renderLearningLine();
-    const busy = document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-");
+    const canSave = isTrainer(actorId(), users(), rosterIds);
+    if (!canSave) evalUnsaved.clean();
+    // 受講者・実施日が変わって評価IDが変わったら、前の人の未保存の入力は捨てて流し込み直す
+    // （残すと「評価を保存」で別の人の評価IDに前の人の点数が書かれる）
+    const focused = !!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-"));
+    const refill = shouldRefillForm(evalUnsaved, myEvalId(), focused, "受講者または実施日が変わったため、保存していない評価の入力を取り消しました");
     const ev = caseEvals.find((e) => e._id === myEvalId());
-    if (!busy) {
+    evalUnsaved.observe(ev || null, { own: evalsOwn }); // 未保存の間に他の人が更新したら知らせる
+    if (refill) {
       ITEMS.forEach((i) => { $(`sc-eval-${i.n}`).value = (ev && ev.scores && ev.scores[i.n]) || ""; });
       const r = document.querySelector(`input[name="sc-eval-ojt"][value="${(ev && ev.ojtResult) || ""}"]`);
       document.querySelectorAll('input[name="sc-eval-ojt"]').forEach((x) => { x.checked = false; });
@@ -736,7 +771,6 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       $("sc-eval-judgement").value = (ev && ev.judgement) || "";
       $("sc-eval-note").value = (ev && ev.note) || "";
     }
-    const canSave = isTrainer(actorId(), users(), rosterIds);
     $("sc-eval-save").disabled = !canSave;
     $("sc-eval-save").title = canSave ? "" : "評価を保存できるのはトレーナーのみです";
     $("sc-eval-saved").textContent = ev ? `保存済み（${judgementLabel(ev.judgement)}）` : (canSave ? "" : "評価の保存はトレーナーのみ");
@@ -757,6 +791,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     try {
       // 同じ案件・日付・受講者の評価は上書き（OJT 1回＝シート1枚）
       await setDoc(doc(db, "supportEvaluations", myEvalId()), { ...r.evaluation, updatedAt: serverTimestamp() });
+      evalUnsaved.clean();
       $("sc-eval-saved").textContent = `保存しました ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (e) {
       errEl.textContent = "保存に失敗しました（時間をおいて再試行）"; errEl.style.display = "inline";
@@ -791,13 +826,19 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
 
   onSnapshot(collection(db, "supportBadges"), (snap) => { grants = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderPerfWarn(); renderBadgeBox(); }, () => {});
   onSnapshot(query(collection(db, "supportEvaluations"), where("caseId", "==", caseId)),
-    (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderEval(); }, () => {});
+    (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); evalsOwn = !!(snap.metadata && snap.metadata.hasPendingWrites); renderEval(); }, () => {});
 
-  function markSaved(sec) {
-    const el = document.getElementById(`sc-saved-${sec}`);
-    if (!el) return;
+  // 変更した欄があるカードの「保存しました」に出す。cp は事前確認・当日・アフターの3タブにまたがるため、
+  // sec ごとの id（sc-saved-cp は事前確認の見出しにしか無い）で探すと別タブに出てしまっていた（2026-11-10 修正）
+  function savedSpanFor(el) {
+    const card = el && el.closest ? el.closest(".card") : null;
+    return (card && card.querySelector(".sc-saved")) || document.getElementById(`sc-saved-${el.dataset.sec}`);
+  }
+  function markSaved(el) {
+    const sv = savedSpanFor(el);
+    if (!sv) return;
     const t = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    el.textContent = `保存しました ${t}`;
+    sv.textContent = `保存しました ${t}`;
   }
 
   async function saveSection(sec) {
@@ -809,11 +850,12 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const path = el.dataset.path;
     const value = el.type === "checkbox" ? el.checked : el.value;
     setByPath(state[sec], path, value);
+    if (sec === "cp" && path === "installStatus") syncCpInstalled();
     try {
       await saveSection(sec);
-      markSaved(sec === "cp" ? "cp" : sec);
+      markSaved(el);
     } catch (e) {
-      const sv = document.getElementById(`sc-saved-${sec === "cp" ? "cp" : sec}`);
+      const sv = savedSpanFor(el);
       if (sv) sv.textContent = "保存に失敗しました（時間をおいて再試行）";
       console.error("[supportChecklist] save failed", e);
     }
@@ -898,11 +940,13 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     populate();
     // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
     perf = data.performance || null;
+    perfUnsaved.observe(perf, { own: !!(snap.metadata && snap.metadata.hasPendingWrites) }); // 未保存の間に他の人が更新したら知らせる
     renderPerfSummary();
     renderPerfWarn();
     loadPriorOk().then(renderEval);
-    if (!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
+    // 未保存の変更があるときも流し込まない（同じ文書の自動保存のたびに、入力途中の実施の記録が保存済みの値に戻っていた）
+    if (!perfUnsaved.isDirty() && !(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
+  return { refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
 }
