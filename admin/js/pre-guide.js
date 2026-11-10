@@ -12,6 +12,7 @@ import { normalizeEmail } from "/js/normalize.js";
 import {
   doc, updateDoc, serverTimestamp,
 } from "/js/fs.js";
+import { classifySendOutcome, recordRetryFailedText, RECORD_RETRY_LABEL, CLOSE_WITH_PENDING_RECORD_TEXT } from "/js/record-gaps.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -101,30 +102,60 @@ function openModal() {
         </div>
       </div>
     </div>`;
-  const close = () => { host.innerHTML = ""; };
+  // 送信の成否と記録の成否を分ける（2026-11-10・点検4）。送れたあと記録だけ失敗したら、
+  // 送信ボタンを「記録だけやり直す」に変え、メールは二度と送らない（sentTo が入っている間は再送しない）
+  let sentTo = "", sentOn = "";
+  const close = () => {
+    if (sentTo && !confirm(CLOSE_WITH_PENDING_RECORD_TEXT)) return;
+    host.innerHTML = "";
+  };
+  // 記録の日付は送った日（やり直しが日をまたいでも送信日のまま）
+  const record = (to) => updateDoc(doc(ctx.db, "cases", ctx.caseId), {
+    preGuideMailedAt: sentOn,
+    preGuideMailedTo: to,
+    updatedAt: serverTimestamp(),
+  });
+  const done = () => {
+    const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = sentOn;
+    sentTo = "";
+    ctx.toast("事前準備のご案内を送信しました");
+    close();
+    render();
+  };
   document.getElementById("pgClose").addEventListener("click", close);
   document.getElementById("pgCancel").addEventListener("click", close);
   document.getElementById("pgSend").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (sentTo) { // 送信済み・記録待ち: 記録だけやり直す
+      btn.disabled = true;
+      try { await record(sentTo); } catch (err) { alert(recordRetryFailedText(err)); btn.disabled = false; return; }
+      done();
+      return;
+    }
     const to = normalizeEmail(document.getElementById("pgTo").value);
     const subject = document.getElementById("pgSubject").value.trim();
     const body = document.getElementById("pgBody").value;
     if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }
-    e.target.disabled = true;
+    btn.disabled = true;
     try {
       await ctx.sendMail({ to, subject, body, caseId: ctx.caseId });
-      await updateDoc(doc(ctx.db, "cases", ctx.caseId), {
-        preGuideMailedAt: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }),
-        preGuideMailedTo: to,
-        updatedAt: serverTimestamp(),
-      });
-      const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
-      ctx.toast("事前準備のご案内を送信しました");
-      close();
-      render();
     } catch (err) {
-      alert(`送信に失敗しました: ${err.message || err}`);
-      e.target.disabled = false;
+      alert(classifySendOutcome({ sendError: err }).message);
+      btn.disabled = false;
+      return;
     }
+    sentTo = to;
+    sentOn = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+    try {
+      await record(to);
+    } catch (err) {
+      alert(classifySendOutcome({ recordError: err }).message);
+      ["pgTo", "pgSubject", "pgBody"].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = true; });
+      btn.innerHTML = `<i class="ti ti-refresh" aria-hidden="true"></i> ${RECORD_RETRY_LABEL}`;
+      btn.disabled = false;
+      return;
+    }
+    done();
   });
 }
 

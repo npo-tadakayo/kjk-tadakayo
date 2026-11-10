@@ -458,7 +458,7 @@ erDiagram
 | `quotes` | 見積もり（2026-09-06〜）。1案件に v1, v2… を積む。`estNo` は案件で引き継ぎ、版だけ上げる。`items[{sku,connector,subsidyQty,extraQty}]` は**品番ベース**、`amounts` は**サーバ計算のみ**（`functions/estimate-pricing.js`＝`js/estimate-pricing.js` と同一内容・`scripts/check-pricing-sync.sh`）。`status`: issued / accepted / superseded。`createdVia`: web（見積もりツール）/ staff（CRM「見積もりを作る」・2026-09-14）。`accessToken` は事業所側の操作（PDF送付・申込）の鍵。`pdfPath/pdfUrl/mailedAt` は PDF 送付済みの印。`groupId/groupIndex/groupSize` は同一法人の複数事業所まとめ見積もり（2026-09-14）。`validUntil`=発行＋30日（期限切れは画面で判定・status は書き換えない） |
 | `leadTokens` | 継続トークン（128bit 乱数・30日）。LP問い合わせの応答で発行し `mitsumori.html?t=` で事業所情報を引き継ぐ。`get` のみ公開・`list` はスタッフ・書き込みは Functions のみ |
 | `locations` | 保管場所マスタ（2026-09-12）。`products.stockByLocation` と `shipments.originLocationId` が参照 |
-| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない） |
+| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない）。`mailedAt/mailedTo` は依頼メールを送った印。送信と記録は別に扱い、送信後に記録だけ失敗したら「記録だけやり直す」（メールは再送しない・`admin/js/record-gaps.js`・2026-11-10 点検4）。事前準備のご案内の `cases.preGuideMailedAt/To` も同じ |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定。**2026-10-21〜 読めるのは登録スタッフ・書けるのは管理者だけ**（`match /appConfig/{docId}`）。`settings.js`・`pricing.js`・`simulator.js` はいずれも管理者画面 |
 | `bankTxns/{hash}` | 入金明細の取込記録（2026-10-21）。**記録した行だけ**を最小限（日付・金額・正規化名義・出荷）で残し、同じ行の二重取り込みを防ぐ。CSV 全体は保存しない。職員が書く（catch-all のまま） |
 | `bankConfig/{presets,payerAliases}` | 銀行CSVの列割り当てプリセットと、名義の学習（2026-10-21）。**appConfig に置かない**（staff が書くため）。職員が書く |
