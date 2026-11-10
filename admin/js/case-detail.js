@@ -1908,6 +1908,8 @@ onAuthStateChanged(auth, async (user) => {
     getActor: () => currentUser?.displayName || currentUser?.email || "",
     getActorId: () => currentUser?.email || "",
     getActorUid: () => currentUser?.uid || "",
+    // 「同じ事業所の他の案件にも写す」（提案2）は閲覧のみ以外（コピーで案件を作るのと同じ範囲）
+    canEdit: () => canCopy,
     onVisitDate: (d) => { onsiteVisitDate = d || ""; applySessionDateDefault(); },
   });
 

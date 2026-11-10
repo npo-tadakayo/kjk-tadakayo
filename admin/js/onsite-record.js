@@ -4,7 +4,7 @@
 // 提案1: 当日の「訪問日」を正にして、伴走支援の記録の実施日（新規入力欄）と実施の記録の実施日の
 //        **初期値**に使う。欄が空のときだけ入れる。保存済みの performance.date は絶対に書き換えない
 //        （トレーニング評価のIDが「案件ID__実施日__実施者」なので、黙って変えると評価が別物になる）。
-// 提案5: 対応記録（activities）に任意の refType（"session" | "onsite"）と refId を持たせ、
+// 提案5: 対応記録（activities）に任意の refType（"session" | "onsite"。提案2 の複写は "onsiteCopy"）と refId を持たせ、
 //        一覧から当日タブの該当の場所を開けるようにする。既存の記録（ref なし）はそのまま。
 
 // 当日の訪問日。保存済みの onsite.visitDate を正とし、無ければ当日タブの訪問日欄に初期表示している
@@ -85,12 +85,16 @@ export function onsiteConfirmActivity({ caseId, visitDate, summary, userId = "",
 // 伴走支援の記録の見出しカードの id（対応記録のリンクからスクロールする先）
 export const sessionAnchorId = (sessionId) => `session-${sessionId}`;
 export const ONSITE_ANCHOR_ID = "tab-onsite";
+export const COPY_ANCHOR_ID = "sc-copy-card";
 
 // 対応記録の行から開く先。ref が無い・知らない種類なら null（リンクを出さない）
 export function activityRefLink(a) {
   if (!a || typeof a.refId !== "string" || !a.refId) return null;
   if (a.refType === "session") return { label: "伴走支援の記録を開く", tab: "onsite", anchorId: sessionAnchorId(a.refId), fallbackId: ONSITE_ANCHOR_ID };
   if (a.refType === "onsite") return { label: "当日の記録を開く", tab: "onsite", anchorId: ONSITE_ANCHOR_ID, fallbackId: ONSITE_ANCHOR_ID };
+  // 当日の記録を他の案件へ写した／他の案件から写した行（提案2・onsite-copy.js の COPY_REF_TYPE）。
+  // 「確定」の行ではない（findOnsiteConfirmation は refType "onsite" だけを見る）
+  if (a.refType === "onsiteCopy") return { label: "当日の記録を開く", tab: "onsite", anchorId: COPY_ANCHOR_ID, fallbackId: ONSITE_ANCHOR_ID };
   return null;
 }
 
