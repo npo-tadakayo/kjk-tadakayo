@@ -189,9 +189,6 @@
           <button class="tab active" role="tab" data-tab="timeline" aria-selected="true">
             <i class="ti ti-timeline" aria-hidden="true"></i> 対応記録
           </button>
-          <button class="tab" role="tab" data-tab="sessions" aria-selected="false">
-            <i class="ti ti-camera" aria-hidden="true"></i> 伴走支援
-          </button>
           <button class="tab" role="tab" data-tab="pre" aria-selected="false">
             <i class="ti ti-clipboard-check" aria-hidden="true"></i> 事前確認
           </button>
@@ -259,56 +256,60 @@
           </div>
         </div>
 
-        <!-- 伴走支援タブ -->
-        <div class="tab-content" id="tab-sessions">
-          <div class="card" style="margin-bottom:var(--space-4)">
-            <div class="card-header">
-              <div><span style="font-weight:600;font-size:14px">伴走支援セッションを記録</span><span class="save-mode-note" style="display:block;font-size:12px;font-weight:400;color:var(--color-ink-muted)">「伴走支援を記録」を押すと保存されます</span><span id="sessionUnsaved" class="unsaved-note" role="status" style="display:none;font-size:12px;font-weight:600;color:var(--color-danger)"></span></div>
-            </div>
-            <div class="card-body">
-              <div class="form-row" style="margin-bottom:var(--space-3)">
-                <div class="form-group" style="margin-bottom:0">
-                  <label class="form-label" for="sessionDate">実施日</label>
-                  <input class="form-control" type="date" id="sessionDate">
-                </div>
-                <div class="form-group" style="margin-bottom:0">
-                  <label class="form-label">写真（その場で撮影／選択）</label>
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                    <button class="btn btn-secondary" id="cameraBtn" type="button"><i class="ti ti-camera" aria-hidden="true"></i> カメラで撮影</button>
-                    <button class="btn btn-secondary" id="galleryBtn" type="button"><i class="ti ti-photo" aria-hidden="true"></i> 写真を選択</button>
-                    <span id="photoCount" style="font-size:12px;color:var(--color-ink-muted)"></span>
-                  </div>
-                  <input type="file" id="sessionPhotos" accept="image/*" multiple style="display:none">
-                </div>
-              </div>
-              <div class="form-group" style="margin-bottom:var(--space-3)">
-                <label class="form-label" for="sessionSummary">支援内容・メモ</label>
-                <textarea class="form-control" id="sessionSummary" rows="3" placeholder="当日の支援内容、設定状況、次回までの宿題など"></textarea>
-              </div>
-              <div style="text-align:right">
-                <button class="btn btn-primary" id="addSessionBtn" type="button">
-                  <i class="ti ti-plus" aria-hidden="true"></i>伴走支援を記録
-                </button>
-              </div>
-              <div id="sessionUploadProgress" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-top:8px">
-                <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> アップロード中...
-              </div>
-            </div>
-          </div>
-
-          <div id="sessionsEl">
-            <div class="empty-state">
-              <i class="ti ti-camera" aria-hidden="true"></i>
-              <p>伴走支援の記録がありません</p>
-            </div>
-          </div>
-        </div>
-
         <!-- 事前確認タブ（support-checklist.js が描画） -->
         <div class="tab-content" id="tab-pre"></div>
 
-        <!-- 当日タブ（support-checklist.js が描画） -->
-        <div class="tab-content" id="tab-onsite"></div>
+        <!-- 当日タブ（チェックリストは support-checklist.js が #onsiteChecklist に描画。
+             末尾の「伴走支援の記録」（sessions・写真とメモ）は 2026-11-10 に旧「伴走支援」タブから移した） -->
+        <div class="tab-content" id="tab-onsite">
+          <div id="onsiteChecklist"></div>
+          <section id="onsiteSessions" aria-labelledby="onsiteSessionsHeading" style="margin-top:var(--space-6)">
+            <h2 id="onsiteSessionsHeading" style="font-size:15px;font-weight:700;margin:0 0 var(--space-3);display:flex;align-items:center;gap:6px">
+              <i class="ti ti-camera" aria-hidden="true"></i> 伴走支援の記録（写真・メモ）
+            </h2>
+            <div class="card" style="margin-bottom:var(--space-4)">
+              <div class="card-header">
+                <div><span style="font-weight:600;font-size:14px">伴走支援セッションを記録</span><span class="save-mode-note" style="display:block;font-size:12px;font-weight:400;color:var(--color-ink-muted)">「伴走支援を記録」を押すと保存されます</span><span id="sessionUnsaved" class="unsaved-note" role="status" style="display:none;font-size:12px;font-weight:600;color:var(--color-danger)"></span></div>
+              </div>
+              <div class="card-body">
+                <div class="form-row" style="margin-bottom:var(--space-3)">
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label" for="sessionDate">実施日</label>
+                    <input class="form-control" type="date" id="sessionDate">
+                  </div>
+                  <div class="form-group" style="margin-bottom:0">
+                    <label class="form-label">写真（その場で撮影／選択）</label>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                      <button class="btn btn-secondary" id="cameraBtn" type="button"><i class="ti ti-camera" aria-hidden="true"></i> カメラで撮影</button>
+                      <button class="btn btn-secondary" id="galleryBtn" type="button"><i class="ti ti-photo" aria-hidden="true"></i> 写真を選択</button>
+                      <span id="photoCount" style="font-size:12px;color:var(--color-ink-muted)"></span>
+                    </div>
+                    <input type="file" id="sessionPhotos" accept="image/*" multiple style="display:none">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:var(--space-3)">
+                  <label class="form-label" for="sessionSummary">支援内容・メモ</label>
+                  <textarea class="form-control" id="sessionSummary" rows="3" placeholder="当日の支援内容、設定状況、次回までの宿題など"></textarea>
+                </div>
+                <div style="text-align:right">
+                  <button class="btn btn-primary" id="addSessionBtn" type="button">
+                    <i class="ti ti-plus" aria-hidden="true"></i>伴走支援を記録
+                  </button>
+                </div>
+                <div id="sessionUploadProgress" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-top:8px">
+                  <i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> アップロード中...
+                </div>
+              </div>
+            </div>
+
+            <div id="sessionsEl">
+              <div class="empty-state">
+                <i class="ti ti-camera" aria-hidden="true"></i>
+                <p>伴走支援の記録がありません</p>
+              </div>
+            </div>
+          </section>
+        </div>
 
         <!-- 書類チェックタブ -->
         <div class="tab-content" id="tab-documents">

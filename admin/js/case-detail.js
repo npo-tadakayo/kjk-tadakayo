@@ -21,6 +21,7 @@ import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 // 連絡先（担当者名・メール・電話）の訂正
 import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
+import { dateDefault, resolveTab } from "/js/onsite-record.js";
 import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -1626,6 +1627,16 @@ async function deleteSession(sessionId) {
   }
 }
 
+// 伴走支援の記録（新規入力欄）の実施日が空なら、当日タブの訪問日を初期値に入れる（2026-11-10・設計書 提案1）。
+// 入っている値・触って未保存の欄は変えない。値を入れるだけでは「未保存」にしない（input/change を起こさない）
+let onsiteVisitDate = "";
+function applySessionDateDefault() {
+  const el = document.getElementById("sessionDate");
+  if (!el || el === document.activeElement) return;
+  const v = dateDefault(el.value, onsiteVisitDate, { dirty: !!sessionUnsaved?.isDirty() });
+  if (v) el.value = v;
+}
+
 async function addSession(userId, userName) {
   const dateEl = document.getElementById("sessionDate");
   const summaryEl = document.getElementById("sessionSummary");
@@ -1682,6 +1693,7 @@ async function addSession(userId, userName) {
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
     dateEl.value = ""; summaryEl.value = ""; filesEl.value = "";
+    applySessionDateDefault(); // 次の記録の実施日も当日の訪問日から
     const pc = document.getElementById("photoCount"); if (pc) pc.textContent = "";
     sessionUnsaved?.clean();
     showToast("伴走支援セッションを記録しました");
@@ -1800,7 +1812,8 @@ async function sendMail() {
 }
 
 // タブ切替（「次の一手」ボタンからの遷移と、タブクリックの両方がここを通る＝2026-09-14）
-function activateTab(tabName) {
+function activateTab(name) {
+  const tabName = resolveTab(name); // 旧「伴走支援」タブ（sessions）は当日タブの末尾へ移した（2026-11-10）
   document.querySelectorAll(".tab").forEach((t) => {
     const on = t.dataset.tab === tabName;
     t.classList.toggle("active", on);
@@ -1843,6 +1856,7 @@ onAuthStateChanged(auth, async (user) => {
     getUsers: () => usersList,
     getActor: () => currentUser?.displayName || currentUser?.email || "",
     getActorId: () => currentUser?.email || "",
+    onVisitDate: (d) => { onsiteVisitDate = d || ""; applySessionDateDefault(); },
   });
 
   // 案件データ読み込み

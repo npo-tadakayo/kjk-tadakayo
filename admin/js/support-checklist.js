@@ -26,6 +26,7 @@ import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
 import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
+import { effectiveVisitDate, perfDateDefault } from "./onsite-record.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -501,7 +502,9 @@ function getByPath(obj, path) {
 // 戻り値の refreshPeople() を読み込み後に呼ぶ（実施者・トレーナーの選択肢を作る）。
 export function initSupportChecklist(db, caseId, storage, opts = {}) {
   const elPre = document.getElementById("tab-pre");
-  const elOnsite = document.getElementById("tab-onsite");
+  // 当日タブはチェックリスト（ここで描く）と、その下の「伴走支援の記録」（case-detail.js）の2段。
+  // 伴走支援の記録を消さないよう、チェックリストは #onsiteChecklist にだけ描く（無い古い画面ではタブ全体）
+  const elOnsite = document.getElementById("onsiteChecklist") || document.getElementById("tab-onsite");
   const elAfter = document.getElementById("tab-after");
   if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {} }; // タブが無ければ何もしない
 
@@ -524,6 +527,15 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     fillOnsiteDefaults();
     renderPhotos();
     syncCpInstalled();
+    notifyVisitDate();
+  }
+
+  // 当日の訪問日（保存済みの onsite.visitDate、無ければ訪問日欄に初期表示している案件の訪問予定日）。
+  // 実施の記録の実施日と、伴走支援の記録の実施日（case-detail.js・opts.onVisitDate）の初期値に使う
+  const visitDate = () => effectiveVisitDate(state.onsite, opts.getCase ? opts.getCase() : null);
+  function notifyVisitDate() {
+    applyPerfDateDefault();
+    if (opts.onVisitDate) opts.onVisitDate(visitDate());
   }
 
   // ケアプラン連携が「導入済み」なら、事前確認の一部と当日の工程・証憑を畳む（データは消さない）
@@ -571,6 +583,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
 
   // ----- 実施の記録 -----
   let perf = null; // 保存済みの performance
+  let perfUnsaved = null; // 実施の記録の未保存の見張り（下で作る。populate が先に呼ばれても落ちないよう let）
   const $ = (id) => document.getElementById(id);
 
   function renderPerfSummary() {
@@ -605,6 +618,16 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const radio = document.querySelector(`input[name="sc-perf-mode"][value="${(perf && perf.mode) || ""}"]`);
     if (radio) radio.checked = true;
     syncPerfMode();
+    applyPerfDateDefault();
+  }
+
+  // 実施日が空なら当日の訪問日を初期値に入れる。保存済みの実施日（perf.date）は書き換えない
+  // （評価IDが caseId__実施日__実施者 のため）。値を入れるだけでは「未保存」にしない（input/change を起こさない）
+  function applyPerfDateDefault() {
+    const el = $("sc-perf-date");
+    if (!el || el === document.activeElement) return;
+    const v = perfDateDefault(perf, el.value, visitDate(), { dirty: perfUnsaved ? perfUnsaved.isDirty() : false });
+    if (v) el.value = v;
   }
 
   async function savePerformance() {
@@ -645,7 +668,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (e.target && e.target.name === "sc-perf-mode") syncPerfMode();
   });
   // 実施の記録・トレーニング評価は保存ボタン。未保存の間は表示し、ページを離れるときに確認を出す（save-mode.js）
-  const perfUnsaved = trackUnsaved("supportPerformance", $("sc-perf-card"), "sc-perf-unsaved");
+  perfUnsaved = trackUnsaved("supportPerformance", $("sc-perf-card"), "sc-perf-unsaved");
   // トレーナーでない人は評価を保存できないので、評価欄に触っても未保存にしない（消せない表示と離れるときの確認を出さない）
   const evalUnsaved = trackUnsaved("supportEvaluation", $("sc-eval-card"), "sc-eval-unsaved",
     { active: () => isTrainer(actorId(), users(), rosterIds) });
@@ -948,5 +971,5 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (!perfUnsaved.isDirty() && !(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
+  return { refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); } };
 }
