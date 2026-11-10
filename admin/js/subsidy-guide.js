@@ -220,60 +220,61 @@ export function renderSubsidyGuideHtml(g) {
 
 export const SUBSIDY_GUIDE_STYLE = `
 .sg{width:210mm;color:#111;font-family:"Noto Sans JP","Hiragino Sans",system-ui,sans-serif;}
-/* 高さを A4 ちょうど（297mm）にすると描画の端数で1pxはみ出し、各ページのあとに白紙が入る → 296mm */
-.sgp{width:210mm;height:296mm;box-sizing:border-box;padding:11mm 12mm 9mm;background:#fff;position:relative;overflow:hidden;font-size:9.4pt;line-height:1.6;}
+/* 2026-11-10 次田さん「もう少し大きな文字に」で文字を全体に約15%大きくし、行間を1.6→1.7にした（6ページのまま収まる範囲。文字1.3倍・行間1.8で表紙がはみ出す）。
+   高さを A4 ちょうど（297mm）にすると描画の端数で1pxはみ出し、各ページのあとに白紙が入る → 296mm */
+.sgp{width:210mm;height:296mm;box-sizing:border-box;padding:11mm 12mm 9mm;background:#fff;position:relative;overflow:hidden;font-size:10.8pt;line-height:1.7;}
 .sgp p{margin:0 0 5px;}
 .sg-cover{display:flex;align-items:center;gap:12px;border-bottom:3px solid #E33535;padding-bottom:6px;margin-bottom:6px;}
 .sg-logo{height:36px;}
-.sg-title{font-size:17pt;font-weight:900;color:#E33535;letter-spacing:.02em;}
-.sg-sub{font-size:9pt;color:#555;}
-.sg-to{font-size:9pt;color:#333;margin:2px 0 6px;}
-.sg-lead{font-size:9.6pt;}
+.sg-title{font-size:19.5pt;font-weight:900;color:#E33535;letter-spacing:.02em;}
+.sg-sub{font-size:10.3pt;color:#555;}
+.sg-to{font-size:10.3pt;color:#333;margin:2px 0 6px;}
+.sg-lead{font-size:11pt;}
 .sg-bar{display:flex;align-items:baseline;gap:10px;border-bottom:2px solid #E33535;padding-bottom:4px;margin-bottom:6px;}
-.sg-bar-t{font-weight:900;color:#E33535;font-size:10.5pt;}
-.sg-bar-s{font-weight:700;font-size:10.5pt;}
-.sg-bar-n{margin-left:auto;font-size:8.5pt;color:#666;}
-.sg-keys{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;background:#FFE4EC;border-radius:6px;padding:7px 10px;margin:6px 0 4px;font-size:9pt;}
+.sg-bar-t{font-weight:900;color:#E33535;font-size:12.1pt;}
+.sg-bar-s{font-weight:700;font-size:12.1pt;}
+.sg-bar-n{margin-left:auto;font-size:9.8pt;color:#666;}
+.sg-keys{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;background:#FFE4EC;border-radius:6px;padding:7px 10px;margin:6px 0 4px;font-size:10.3pt;}
 .sg-keys b{display:inline-block;min-width:5.5em;color:#b02525;}
-.sg-h{font-size:10.6pt;font-weight:800;margin:8px 0 4px;padding-left:7px;border-left:4px solid #E33535;line-height:1.35;}
+.sg-h{font-size:12.2pt;font-weight:800;margin:8px 0 4px;padding-left:7px;border-left:4px solid #E33535;line-height:1.35;}
 .sg-red{color:#c02828;}
 .sg-flow{display:flex;align-items:center;gap:4px;margin:4px 0 2px;}
-.sg-flow>div{flex:1;background:#F5F5F5;border-radius:8px;padding:6px 6px 5px;text-align:center;font-size:9pt;font-weight:700;line-height:1.35;}
-.sg-flow>div span{display:block;margin:0 auto 3px;width:20px;height:20px;border-radius:50%;background:#E33535;color:#fff;line-height:20px;font-size:9.5pt;}
-.sg-flow>div small{display:block;color:#888;font-weight:400;font-size:7.8pt;margin-top:2px;}
-.sg-flow>i{font-style:normal;color:#E33535;font-size:16pt;font-weight:900;}
-.sg-t{width:100%;border-collapse:collapse;font-size:9pt;}
+.sg-flow>div{flex:1;background:#F5F5F5;border-radius:8px;padding:6px 6px 5px;text-align:center;font-size:10.3pt;font-weight:700;line-height:1.35;}
+.sg-flow>div span{display:block;margin:0 auto 3px;width:20px;height:20px;border-radius:50%;background:#E33535;color:#fff;line-height:20px;font-size:10.9pt;}
+.sg-flow>div small{display:block;color:#888;font-weight:400;font-size:9pt;margin-top:2px;}
+.sg-flow>i{font-style:normal;color:#E33535;font-size:18.4pt;font-weight:900;}
+.sg-t{width:100%;border-collapse:collapse;font-size:10.3pt;}
 .sg-t td,.sg-t th{border:1px solid #e3dcd0;padding:4px 6px;vertical-align:middle;}
 .sg-t th{background:#F5F5F5;text-align:left;font-weight:700;}
-.sg-amt td.v{font-weight:800;white-space:nowrap;text-align:right;color:#b02525;font-size:10pt;}
-.sg-amt td.v.small{white-space:normal;text-align:left;color:#111;font-weight:500;font-size:8.4pt;}
+.sg-amt td.v{font-weight:800;white-space:nowrap;text-align:right;color:#b02525;font-size:11.5pt;}
+.sg-amt td.v.small{white-space:normal;text-align:left;color:#111;font-weight:500;font-size:9.7pt;}
 .sg-amt td.c{text-align:center;color:#666;width:34px;}
-.sg-note{font-size:8.3pt;color:#555;}
-.sg-docs{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;border:1px dashed #E33535;border-radius:6px;padding:6px 9px;font-size:9pt;}
-.sg-docs small{color:#888;margin-left:6px;font-size:7.8pt;}
-.sg-toc{margin-top:8px;background:#F5F5F5;border-radius:6px;padding:6px 9px;font-size:8.4pt;color:#333;}
+.sg-note{font-size:9.5pt;color:#555;}
+.sg-docs{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;border:1px dashed #E33535;border-radius:6px;padding:6px 9px;font-size:10.3pt;}
+.sg-docs small{color:#888;margin-left:6px;font-size:9pt;}
+.sg-toc{margin-top:8px;background:#F5F5F5;border-radius:6px;padding:6px 9px;font-size:9.7pt;color:#333;}
 .sg-fig{margin:4px 0 6px;flex:none;}
 .sg-fig img{display:block;width:100%;height:auto;border:1px solid #d9d2c5;border-radius:3px;}
-.sg-fig figcaption{font-size:7.2pt;color:#777;margin-top:2px;}
+.sg-fig figcaption{font-size:8.3pt;color:#777;margin-top:2px;}
 .sg-two{display:flex;gap:9px;align-items:flex-start;}
 .sg-two>div,.sg-two>ol,.sg-two>ul{flex:1;min-width:0;}
 .sg-ol,.sg-ul{margin:2px 0 5px;padding-left:17px;}
 .sg-ol li,.sg-ul li{margin:2px 0;}
-.sg-ol small{color:#666;font-size:8pt;}
-.sg-warn{background:#FFF3E0;border-left:3px solid #c87a1f;padding:4px 7px;font-size:8.8pt;border-radius:0 4px 4px 0;}
+.sg-ol small{color:#666;font-size:9.2pt;}
+.sg-warn{background:#FFF3E0;border-left:3px solid #c87a1f;padding:4px 7px;font-size:10.1pt;border-radius:0 4px 4px 0;}
 .sg-val{border:1.5px solid #E33535;border-radius:6px;padding:4px 7px;margin:5px 0;background:#FFF6F8;}
-.sg-val .k{font-size:8pt;color:#b02525;font-weight:700;}
-.sg-val .v{font-size:11pt;font-weight:800;line-height:1.35;}
-.sg-check{margin-top:6px;border:1px dashed #E33535;border-radius:6px;padding:6px 8px;font-size:8.8pt;}
+.sg-val .k{font-size:9.2pt;color:#b02525;font-weight:700;}
+.sg-val .v{font-size:12.6pt;font-weight:800;line-height:1.35;}
+.sg-check{margin-top:6px;border:1px dashed #E33535;border-radius:6px;padding:6px 8px;font-size:10.1pt;}
 .sg-check b{display:block;color:#b02525;margin-bottom:2px;}
 .sg-check label{display:block;margin:2px 0;}
 .sg-timeline{display:flex;align-items:stretch;gap:4px;}
-.sg-timeline>div{flex:1;background:#F5F5F5;border-radius:8px;padding:6px 8px;font-size:8.8pt;}
-.sg-timeline>div b{display:block;color:#b02525;font-size:10pt;}
-.sg-timeline>i{align-self:center;font-style:normal;color:#E33535;font-size:16pt;font-weight:900;}
-.sg-help{margin-top:6px;background:#FFE4EC;border-radius:6px;padding:7px 10px;font-size:9pt;}
-.sg-src{font-size:7.6pt;color:#666;margin-top:5px;}
-.sg-pfoot{position:absolute;left:12mm;right:12mm;bottom:6mm;border-top:1px solid #e3dcd0;padding-top:3px;font-size:7.6pt;color:#777;}
+.sg-timeline>div{flex:1;background:#F5F5F5;border-radius:8px;padding:6px 8px;font-size:10.1pt;}
+.sg-timeline>div b{display:block;color:#b02525;font-size:11.5pt;}
+.sg-timeline>i{align-self:center;font-style:normal;color:#E33535;font-size:18.4pt;font-weight:900;}
+.sg-help{margin-top:6px;background:#FFE4EC;border-radius:6px;padding:7px 10px;font-size:10.3pt;}
+.sg-src{font-size:8.7pt;color:#666;margin-top:5px;}
+.sg-pfoot{position:absolute;left:12mm;right:12mm;bottom:6mm;border-top:1px solid #e3dcd0;padding-top:3px;font-size:8.7pt;color:#777;}
 `;
 
 // 画像の読み込みを待つ（html2canvas は描画時点で読めていない画像を空白にする）
