@@ -21,6 +21,7 @@ import { buildCopiedCase, copyActivityTexts } from "/js/case-copy.js";
 // 連絡先（担当者名・メール・電話）の訂正
 import { buildContactUpdate, contactChangeActivity, quoteNeedsEmailFix } from "/js/case-contact.js";
 import { initSupportChecklist } from "/js/support-checklist.js";
+import { dateDefault, resolveTab, activityRefLink, sessionAnchorId } from "/js/onsite-record.js";
 import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
@@ -160,6 +161,7 @@ async function saveVisitDate(value) {
   const { updatedAt: _u, ...patch } = upd;
   Object.assign(currentCase, patch);
   renderVisitExtras(currentCase, true);
+  supportChecklist?.refreshVisitDate?.(); // 当日タブの訪問日欄（未保存の表示）と実施日の初期値を新しい日へ（レビュー 中-3）
   await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${before.visitDate || "未設定"}`);
   showToast(v ? `訪問予定日を ${v} にしました` : "訪問予定日を未設定にしました");
 }
@@ -544,9 +546,27 @@ function renderTimeline(activities) {
         </div>
         ${a.subject ? `<div class="timeline-subject">${escHtml(a.subject)}</div>` : ""}
         ${a.body ? `<div class="timeline-body">${escHtml(a.body)}</div>` : ""}
+        ${refLinkHtml(a)}
       </div>
     </div>
   `).join("")}</div>`;
+}
+
+// 元の記録（伴走支援の記録・当日）への参照がある行に「〜を開く」を出す（2026-11-10・設計書 提案5）。
+// 参照の無い既存の行には何も出さない
+function refLinkHtml(a) {
+  const link = activityRefLink(a);
+  if (!link) return "";
+  return `<div style="margin-top:6px"><button type="button" class="btn btn-ghost act-ref-open" data-ref-type="${escHtml(a.refType)}" data-ref-id="${escHtml(a.refId)}" style="font-size:12px;padding:4px 10px"><i class="ti ti-external-link" aria-hidden="true"></i> ${escHtml(link.label)}</button></div>`;
+}
+
+// 当日タブへ切り替えて、該当の記録（無ければ当日タブの先頭）へスクロールする
+function openActivityRef(refType, refId) {
+  const link = activityRefLink({ refType, refId });
+  if (!link) return;
+  activateTab(link.tab);
+  const el = document.getElementById(link.anchorId) || document.getElementById(link.fallbackId);
+  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 // own: 自分の書き込みの通知か（snap.metadata.hasPendingWrites）。未保存の間に他の人が口座情報を変えたかの判定に使う
@@ -1440,7 +1460,7 @@ function sessionViewHtml(s) {
     ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:6px">編集済み ${formatDateTime(s.updatedAt)}${s.updatedBy ? `（${escHtml(s.updatedBy)}）` : ""}</div>`
     : "";
   return `
-    <div class="card" style="margin-bottom:var(--space-3)">
+    <div class="card" id="${escHtml(sessionAnchorId(s._id))}" style="margin-bottom:var(--space-3)">
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
           <strong style="font-size:14px"><i class="ti ti-calendar-event" aria-hidden="true"></i> ${escHtml(s.sessionDate || "日付未設定")}</strong>
@@ -1462,7 +1482,7 @@ function sessionEditHtml(s) {
         style="position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(184,74,74,.92);color:#fff;font-size:14px;line-height:1;cursor:pointer">×</button>
     </div>`).join("");
   return `
-    <div class="card" style="margin-bottom:var(--space-3);border-color:var(--color-primary)">
+    <div class="card" id="${escHtml(sessionAnchorId(s._id))}" style="margin-bottom:var(--space-3);border-color:var(--color-primary)">
       <div class="card-body">
         <div style="font-weight:600;font-size:13px;margin-bottom:10px"><i class="ti ti-edit" aria-hidden="true"></i> この記録を編集しています（「変更を保存」を押すと保存されます）${unsavedSpanHtml("sessEditUnsaved")}</div>
         <div class="form-row">
@@ -1583,6 +1603,7 @@ async function saveSessionEdit(sessionId) {
       subject: `伴走支援セッションを編集${sessionDate ? `（${sessionDate}）` : ""}`,
       body: summary + (removed.length ? `\n写真${removed.length}枚を削除` : "") + (addFiles.length ? `\n写真${addFiles.length}枚を追加` : ""),
       attachmentUrls: [],
+      refType: "session", refId: sessionId, // 対応記録から編集後の記録を開く（提案5）
     });
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
@@ -1629,6 +1650,18 @@ async function deleteSession(sessionId) {
   } catch (e) {
     alert(`削除に失敗しました: ${e.message}`);
   }
+}
+
+// 伴走支援の記録（新規入力欄）の実施日が空なら、当日タブの訪問日を初期値に入れる（2026-11-10・設計書 提案1）。
+// 入っている値・触って未保存の欄は変えない。値を入れるだけでは「未保存」にしない（input/change を起こさない）
+// 訪問日を直したら、自動で入れた値のまま（sessionAutoDate と同じ）の欄は新しい訪問日へ置き換える（実施の記録と同じ方式）
+let onsiteVisitDate = "";
+let sessionAutoDate = "";
+function applySessionDateDefault() {
+  const el = document.getElementById("sessionDate");
+  if (!el || el === document.activeElement) return;
+  const v = dateDefault(el.value, onsiteVisitDate, { dirty: !!sessionUnsaved?.isDirty(), lastAuto: sessionAutoDate });
+  if (v) { el.value = v; sessionAutoDate = v; }
 }
 
 async function addSession(userId, userName) {
@@ -1683,6 +1716,7 @@ async function addSession(userId, userName) {
       subject: `伴走支援セッション${sessionDate ? `（${sessionDate}）` : ""}`,
       body: summary + (urls.length ? `\n写真${urls.length}枚を添付` : ""),
       attachmentUrls: urls,
+      refType: "session", refId: sessRef.id, // 対応記録から当日タブのこの記録を開く（提案5）
     });
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
@@ -1690,6 +1724,7 @@ async function addSession(userId, userName) {
     const pc = document.getElementById("photoCount"); if (pc) pc.textContent = "";
     sessionUnsaved?.clean();
     showToast("伴走支援セッションを記録しました");
+    applySessionDateDefault(); // 次の記録の実施日も当日の訪問日から（clean の後＝未保存のままだと入らない・レビュー 中-1）
   } catch (e) {
     alert(`記録に失敗しました: ${e.message}`);
   } finally {
@@ -1805,7 +1840,8 @@ async function sendMail() {
 }
 
 // タブ切替（「次の一手」ボタンからの遷移と、タブクリックの両方がここを通る＝2026-09-14）
-function activateTab(tabName) {
+function activateTab(name) {
+  const tabName = resolveTab(name); // 旧「伴走支援」タブ（sessions）は当日タブの末尾へ移した（2026-11-10）
   document.querySelectorAll(".tab").forEach((t) => {
     const on = t.dataset.tab === tabName;
     t.classList.toggle("active", on);
@@ -1848,6 +1884,8 @@ onAuthStateChanged(auth, async (user) => {
     getUsers: () => usersList,
     getActor: () => currentUser?.displayName || currentUser?.email || "",
     getActorId: () => currentUser?.email || "",
+    getActorUid: () => currentUser?.uid || "",
+    onVisitDate: (d) => { onsiteVisitDate = d || ""; applySessionDateDefault(); },
   });
 
   // 案件データ読み込み
@@ -2146,6 +2184,12 @@ onAuthStateChanged(auth, async (user) => {
   onSnapshot(actQ, (snap) => {
     latestActivities = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
     renderTimeline(latestActivities);
+    supportChecklist?.setActivities?.(latestActivities); // 当日タブの「記録済み」の表示
+  });
+  // 対応記録の「当日の記録を開く」「伴走支援の記録を開く」（一覧は描き直されるので親で受ける）
+  document.getElementById("timelineEl").addEventListener("click", (e) => {
+    const b = e.target.closest && e.target.closest(".act-ref-open");
+    if (b) openActivityRef(b.dataset.refType, b.dataset.refId);
   });
 
   // 伴走支援セッション購読
