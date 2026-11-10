@@ -9,7 +9,7 @@ import {
   SUPPORT_DONE_STATUS, shouldAskSupportDone, supportDoneAskText,
   errorCodeOf, isAmbiguousSendError, RESEND_AFTER_UNKNOWN_CONFIRM_TEXT,
   pendingKey, savePending, loadPending, clearPending, _resetPendingMemory, jstDateOf,
-  reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT,
+  reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT, PENDING_RELEASED_CARD_TEXT,
 } from "../admin/js/record-gaps-case.js";
 import { STATUS_LABELS, LOST, STATUS_ORDER } from "../admin/js/constants.js";
 import { SUPPORT_DONE } from "../admin/js/screen-rules.js";
@@ -227,50 +227,205 @@ t("やり直しでも送信日時は最初の値のまま（事前案内の送�
 });
 
 // ===== 結線 =====
-t("結線: mail-send-guard.js（送信と記録を分ける・記録待ち・送信中・送信日時）", () => {
+t("結線: mail-send-guard.js（sessionStorage を直接触らない・照合は reconcilePending に1本化）", () => {
   const g = src("mail-send-guard.js");
-  assert.match(g, /from "\/js\/record-gaps-case\.js"/);
-  const i = g.indexOf('btnSend.addEventListener("click"');
-  assert.ok(i > 0);
-  const h = g.slice(i);
-  // 記録待ちのときはメールを送らず記録だけ（送信日時は最初の値）
-  const retry = h.indexOf("if (pending)");
-  const send = h.indexOf("await o.send(p)");
-  assert.ok(retry > 0 && send > retry);
-  assert.ok(!h.slice(retry, send).includes("o.send("), "記録だけやり直す分岐でメールを送っている");
-  assert.ok(h.slice(retry, send).includes("o.record(pending.to, pending.sentAt, targetReqId || undefined)"));
-  // 送れたか不明のあとは確認をはさむ
-  assert.ok(h.indexOf("RESEND_AFTER_UNKNOWN_CONFIRM_TEXT") < send);
-  assert.match(h, /classifySendOutcome\(\{ sendError: err \}\)/);
-  assert.match(h, /classifySendOutcome\(\{ recordError: err \}\)/);
-  // 送信成功 → 記録待ちを保存 → 記録。保存できなくても再送させない
-  const save = h.indexOf("savePending(");
-  assert.ok(send < save && save < h.indexOf("await o.record(p.to, sentAt, targetReqId || undefined)"));
-  assert.ok(h.includes("|| v;"));
-  // 記録が済んだら消し、beforeunload を外す
-  assert.match(g, /clearPending\(o\.kind, o\.caseId\);\n\s*setUnloadGuard\(key, false\);/);
-  assert.match(g, /addEventListener\("beforeunload", onBeforeUnload\)/);
-  assert.match(g, /removeEventListener\("beforeunload", onBeforeUnload\)/);
-  // 送信中は ×・キャンセルを押せない
-  assert.match(g, /if \(btnClose\) btnClose\.disabled = b;/);
-  assert.match(g, /if \(btnCancel\) btnCancel\.disabled = b;/);
-  assert.match(g, /const close = \(\) => \{\n\s*if \(busy\) return;/);
-  // 開いたとき記録待ちなら、最初から記録だけやり直す（承諾書は印で書き込み先を照合し、無ければ消して知らせ、次の送信は確認）
-  const rd = g.slice(g.indexOf("const ready = (async () => {"), i);
-  assert.ok(rd.includes("matchPendingReq(p0, o.candidateReqIds || [])"));
-  assert.match(rd, /if \(!found\) \{[^}]*clearPending\(o\.kind, o\.caseId\);[^}]*unknownSent\.add\(key\);[^}]*alert\(PENDING_TARGET_MISSING_TEXT\);/s);
-  assert.ok(rd.indexOf("targetReqId = found") < rd.indexOf("showRetry()"));
-  assert.ok(h.startsWith('btnSend.addEventListener("click", async () => {\n    await ready;'));
-  // 保存するのは印（reqKey）を作ってから。sessionStorage への書き込みは record-gaps-case.js の savePending だけ
-  assert.ok(h.indexOf("await reqKeyOf(o.reqId)") < save);
+  assert.match(g, /from "\.\/record-gaps-case\.js"/); // 相対パス（node のテストでもそのまま読める）
   const code = g.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); // コメントを除いたコード
-  assert.ok(!/sessionStorage|setItem/.test(code), "mail-send-guard.js が sessionStorage に直接書いている");
+  assert.ok(!/sessionStorage|setItem|getItem|removeItem/.test(code), "mail-send-guard.js が sessionStorage に直接触れている");
+  assert.match(g, /export async function reconcilePending\(kind, caseId, candidateReqIds\)/);
+  assert.ok(g.includes("r = await reconcilePending(o.kind, o.caseId, o.candidateReqIds)"));
+  assert.ok(!g.includes("unknownSent"), "「送れたか不明」をモジュール変数だけで持っている");
+});
+
+// ===== 再レビュー: bindMailSend を偽の DOM で実際に動かす =====
+// 依存は増やさない。document・window・sessionStorage・alert・confirm を最小の代役にする。
+// 再読み込みは「mail-send-guard.js を ?v=N で読み直す＋ record-gaps-case.js のモジュール変数を空にする（sessionStorage は残す）」で表す
+const env = (() => {
+  const store = new Map();
+  const els = new Map();
+  const winLs = new Set();
+  const log = [];
+  let confirmAns = true;
+  let ver = 0;
+  const mkEl = (id) => {
+    const ls = [];
+    const el = { id, disabled: false, value: "", innerHTML: "",
+      addEventListener: (_t, f) => ls.push(f),
+      click: () => Promise.all(ls.map((f) => f({ target: el, currentTarget: el }))) };
+    els.set(id, el);
+    return el;
+  };
+  const install = () => {
+    globalThis.sessionStorage = {
+      getItem: (k) => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: (k) => store.delete(k),
+    };
+    globalThis.document = { getElementById: (id) => els.get(id) || null };
+    globalThis.window = { addEventListener: (_t, f) => winLs.add(f), removeEventListener: (_t, f) => winLs.delete(f) };
+    globalThis.alert = (m) => log.push("ALERT:" + String(m).split("\n")[0]);
+    globalThis.confirm = (m) => { log.push("CONFIRM:" + String(m).split("\n")[0]); return confirmAns; };
+  };
+  return {
+    store, els, winLs, log,
+    set confirmAns(v) { confirmAns = v; },
+    async fresh() { // 新しいページ（sessionStorage も空）
+      install(); store.clear(); winLs.clear(); log.length = 0; confirmAns = true;
+      _resetPendingMemory();
+      return import(`../admin/js/mail-send-guard.js?v=${++ver}`);
+    },
+    async reload() { // 再読み込み（sessionStorage は残る）
+      _resetPendingMemory(); winLs.clear(); log.length = 0;
+      return import(`../admin/js/mail-send-guard.js?v=${++ver}`);
+    },
+    open(guard, { kind = "consent", caseId = "C1", reqId = "REQ_A", cands = ["REQ_A"], send, record } = {}) {
+      els.clear();
+      ["close", "cancel", "send", "to", "subject", "body"].forEach(mkEl);
+      els.get("to").value = "x@example.com";
+      const host = { innerHTML: "MODAL" };
+      const calls = { send: 0, record: [] };
+      guard.bindMailSend({
+        kind, caseId, reqId: kind === "consent" ? reqId : undefined, candidateReqIds: cands, host,
+        ids: { close: "close", cancel: "cancel", send: "send", fields: ["to", "subject", "body"] },
+        readInputs: () => ({ to: els.get("to").value, subject: "s", body: "b" }),
+        send: async (p) => { calls.send++; return send ? send(p) : undefined; },
+        record: async (to, sentAt, rid) => { calls.record.push([to, sentAt, rid]); return record ? record() : undefined; },
+        onDone: (close) => close(),
+      });
+      return { host, calls };
+    },
+    click: (id) => els.get(id).click(),
+  };
+})();
+const tick = () => new Promise((r) => setTimeout(r, 15));
+const recFail = () => { throw new Error("rec fail"); };
+const AMB = () => Object.assign(new Error("INTERNAL"), { code: "functions/internal" });
+
+ta("動かす: 送信OK・記録NG → 再読み込み → 照合が終わる前に続けて押しても、送信0回・記録1回（送信日時は最初の値）", async () => {
+  let guard = await env.fresh();
+  let m = env.open(guard, { record: recFail });
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  const sent1 = m.calls.record[0][1];
+  guard = await env.reload();
+  guard.restoreUnloadGuard("consent", "C1");
+  assert.equal(env.winLs.size, 1, "再読み込み後に beforeunload が付いていない");
+  m = env.open(guard, {});
+  await Promise.all([env.click("send"), env.click("send"), env.click("send")]);
+  await tick();
+  assert.equal(m.calls.send, 0);
+  assert.equal(m.calls.record.length, 1);
+  assert.deepEqual(m.calls.record[0], ["x@example.com", sent1, "REQ_A"]);
+  assert.equal(env.winLs.size, 0, "記録が済んでも beforeunload が外れていない");
+  assert.equal(env.store.size, 0, "記録が済んでも記録待ちが残っている");
+});
+
+ta("動かす: 照合が一致しなかったあとの送信は確認つきで、キャンセルすると送信0回（再読み込みしても）", async () => {
+  let guard = await env.fresh();
+  env.open(guard, { record: recFail });
+  await env.click("send"); await tick();
+  guard = await env.reload();
+  let m = env.open(guard, { reqId: "REQ_B", cands: ["REQ_B"] }); // 前の依頼は取り消し・作り直し
+  await tick();
+  assert.ok(env.log.some((l) => l.startsWith("ALERT:前回メールを送った承諾書の依頼が見つかりません")));
+  assert.ok(![...env.store.keys()].some((k) => k.startsWith("kjk.mailRecordPending.")), "記録待ちが消えていない");
+  assert.equal(env.winLs.size, 0);
+  env.confirmAns = false;
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 0);
+  assert.ok(env.log.some((l) => l.startsWith("CONFIRM:前回の送信は、送れたかどうか確認できませんでした")));
+  // 再読み込みしても、まだ確認が出る（中-2）
+  guard = await env.reload();
+  env.confirmAns = false;
+  m = env.open(guard, { reqId: "REQ_B", cands: ["REQ_B"] });
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 0);
+  // 確認のうえ送ると1回だけ送り、不明の印は消える
+  env.confirmAns = true;
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  assert.equal(env.store.size, 0);
+});
+
+ta("動かす: 送信中に押す・閉じるでは、送信は1回だけでモーダルも閉じない。送信中は beforeunload が付く", async () => {
+  const guard = await env.fresh();
+  let release; const gate = new Promise((r) => (release = r));
+  const m = env.open(guard, { kind: "preGuide", send: () => gate });
+  await tick();
+  const p1 = env.click("send"); await tick();
+  assert.equal(env.winLs.size, 1, "送信を始めた時点で beforeunload が付いていない（低-1）");
+  assert.equal(env.els.get("close").disabled, true);
+  assert.equal(env.els.get("cancel").disabled, true);
+  await env.click("send"); await env.click("close"); await env.click("cancel");
+  assert.equal(m.calls.send, 1);
+  assert.equal(m.host.innerHTML, "MODAL");
+  release(); await p1; await tick();
+  assert.equal(m.calls.record.length, 1);
+  assert.equal(env.winLs.size, 0);
+  assert.equal(m.host.innerHTML, ""); // 記録まで済んで閉じた
+});
+
+ta("動かす: 送信の失敗で beforeunload が外れる。送れたか不明の印は \"1\" だけ、再読み込み後も確認が出る（中-2）", async () => {
+  let guard = await env.fresh();
+  let m = env.open(guard, { kind: "preGuide", caseId: "C7", send: () => { throw AMB(); } });
+  await tick();
+  await env.click("send"); await tick();
+  assert.equal(env.winLs.size, 0);
+  assert.deepEqual([...env.store.entries()], [["kjk.mailUnknown.preGuide.C7", "1"]]);
+  guard = await env.reload();
+  env.confirmAns = false;
+  m = env.open(guard, { kind: "preGuide", caseId: "C7" });
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 0, "再読み込み後に確認なしで送れてしまう");
+  assert.ok(env.log.some((l) => l.startsWith("CONFIRM:前回の送信は")));
+  // 明確な失敗なら印は付かない
+  guard = await env.fresh();
+  m = env.open(guard, { kind: "preGuide", caseId: "C8", send: () => { throw Object.assign(new Error("x"), { code: "functions/invalid-argument" }); } });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(env.store.size, 0);
+});
+
+ta("動かす: 保存される値は、記録待ち＝to・sentAt・reqKey だけ（依頼IDの生の値なし）", async () => {
+  const guard = await env.fresh();
+  env.open(guard, { reqId: "tok_secret_REQ_A", cands: ["tok_secret_REQ_A"], record: recFail });
+  await tick(); await env.click("send"); await tick();
+  const vals = [...env.store.values()];
+  assert.equal(vals.length, 1);
+  assert.deepEqual(Object.keys(JSON.parse(vals[0])).sort(), ["reqKey", "sentAt", "to"]);
+  assert.ok(!vals[0].includes("tok_secret_REQ_A"));
+  assert.ok(!vals[0].includes("本文") && !vals[0].includes("\"b\""));
+});
+
+ta("動かす: 中-1 署名済み・取り消し済みでモーダルを開けなくても、カードの読み込み（reconcilePending）で記録待ちとキーが消え、beforeunload も外れる", async () => {
+  let guard = await env.fresh();
+  env.open(guard, { record: recFail });
+  await tick(); await env.click("send"); await tick();
+  guard = await env.reload();
+  guard.restoreUnloadGuard("consent", "C1"); // initConsentCard
+  assert.equal(env.winLs.size, 1);
+  // 事業所が署名した＝未署名の候補に一致が無い
+  const r = await guard.reconcilePending("consent", "C1", []);
+  assert.equal(r.state, "released");
+  assert.ok(![...env.store.keys()].some((k) => k.startsWith("kjk.mailRecordPending.")));
+  assert.equal(env.winLs.size, 0, "解除しても beforeunload が残っている");
+  // 次の送信の前には確認をはさむ（送れたかどうかは対応記録で確かめる）
+  assert.equal(env.store.get("kjk.mailUnknown.consent.C1"), "1");
+  assert.match(PENDING_RELEASED_CARD_TEXT, /署名済み・取り消し済みのため、記録待ちを解除しました/);
+  // 一致する依頼があれば消さない
+  guard = await env.fresh();
+  env.open(guard, { record: recFail });
+  await tick(); await env.click("send"); await tick();
+  guard = await env.reload();
+  const r2 = await guard.reconcilePending("consent", "C1", ["REQ_A"]);
+  assert.equal(r2.state, "matched");
+  assert.equal(r2.targetReqId, "REQ_A");
+  assert.equal(env.winLs.size, 1);
 });
 
 for (const [file, kind, btnId] of [["consent-admin.js", "consent", "consentMailSend"], ["pre-guide.js", "preGuide", "pgSend"]]) {
   t(`結線: ${file} は bindMailSend を使い、自分ではまとめて送らない`, () => {
     const s = src(file);
-    assert.match(s, /import \{ bindMailSend, restoreUnloadGuard \} from "\/js\/mail-send-guard\.js"/);
+    assert.match(s, /import \{ bindMailSend, restoreUnloadGuard(, reconcilePending)? \} from "\/js\/mail-send-guard\.js"/);
     assert.ok(s.includes(`kind: "${kind}", caseId: ctx.caseId`));
     assert.ok(s.includes(`send: "${btnId}"`));
     assert.ok(s.includes(`restoreUnloadGuard("${kind}", ctx.caseId)`));
@@ -281,7 +436,13 @@ for (const [file, kind, btnId] of [["consent-admin.js", "consent", "consentMailS
 t("結線: 承諾書の mailedAt は送信時刻（serverTimestamp ではない）・事前案内は送信時の JST 日付", () => {
   const ca = src("consent-admin.js");
   assert.ok(ca.includes('updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to })'));
-  assert.ok(ca.includes('candidateReqIds: requests.filter((x) => x.status === "pending").map((x) => x._id)'));
+  assert.ok(ca.includes('return requests.filter((x) => x.status === "pending").map((x) => x._id);'));
+  assert.ok(ca.includes("candidateReqIds: pendingReqIds(),"));
+  // 中-1: カードの読み込みでも照合し、解除したら1行で知らせる
+  const rl = ca.slice(ca.indexOf("async function reload()"), ca.indexOf("function pendingReqIds()"));
+  assert.ok(rl.indexOf('reconcilePending("consent", ctx.caseId, pendingReqIds())') < rl.indexOf("render();"));
+  assert.ok(rl.includes("pendingNotice = PENDING_RELEASED_CARD_TEXT"));
+  assert.ok(ca.includes("${esc(pendingNotice)}"));
   assert.ok(src("pre-guide.js").includes("preGuideMailedAt: jstDateOf(sentAtIso)"));
 });
 

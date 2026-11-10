@@ -202,7 +202,43 @@ export const PENDING_TARGET_MISSING_TEXT =
   + "対応記録に「メール送信」の行が出ているか確かめてください。出ていれば送信済みです。";
 
 /** テスト用: モジュール変数の記録待ちを空にする */
-export function _resetPendingMemory() { memPending.clear(); }
+export function _resetPendingMemory() { memPending.clear(); memUnknown.clear(); }
+
+/** カードに出す1行: 記録待ちの依頼が署名済み・取り消し済みで、記録待ちを解除したとき */
+export const PENDING_RELEASED_CARD_TEXT =
+  "前回メールを送った依頼は署名済み・取り消し済みのため、記録待ちを解除しました。対応記録に「メール送信」の行があるか確かめてください。";
+
+// ===== 「送れたか不明」の印（2026-11-10 再レビュー 中-2） =====
+// 再読み込みしても次の送信の前に確認をはさむため、sessionStorage にも持つ。キーは kjk.mailUnknown.{kind}.{caseId}、
+// 値は "1" だけ（宛先・依頼ID・本文は入れない）。sessionStorage が使えなければモジュール変数だけ
+const memUnknown = new Set();
+
+/** 「送れたか不明」の印のキー */
+export function unknownKey(kind, caseId) {
+  if (!PENDING_KINDS.includes(kind)) throw new Error(`unknown kind: ${kind}`);
+  return `kjk.mailUnknown.${kind}.${caseId || ""}`;
+}
+
+/** 「送れたか不明」の印を付ける */
+export function markSendUnknown(kind, caseId, storage) {
+  const key = unknownKey(kind, caseId);
+  memUnknown.add(key);
+  try { storageOf(storage)?.setItem(key, "1"); } catch { /* 使えなければモジュール変数だけ */ }
+}
+
+/** 「送れたか不明」の印があるか */
+export function isSendUnknown(kind, caseId, storage) {
+  const key = unknownKey(kind, caseId);
+  if (memUnknown.has(key)) return true;
+  try { return storageOf(storage)?.getItem(key) === "1"; } catch { return false; }
+}
+
+/** 「送れたか不明」の印を消す（送信成功・確認のうえ送り直した・記録待ちに移ったとき） */
+export function clearSendUnknown(kind, caseId, storage) {
+  const key = unknownKey(kind, caseId);
+  memUnknown.delete(key);
+  try { storageOf(storage)?.removeItem(key); } catch { /* 同上 */ }
+}
 
 /** 送信日時（ISO）から、事前案内の送付日（JST の YYYY-MM-DD）を出す */
 export function jstDateOf(iso) {
