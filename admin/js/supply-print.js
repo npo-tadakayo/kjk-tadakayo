@@ -9,7 +9,7 @@ import { renderPOHtml } from "/js/po-doc.js";
 import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf,
   fillInvoiceReportText, billToForReportOf, DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 // 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
-import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf } from "/js/supply-rules.js";
+import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
 import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
@@ -113,7 +113,11 @@ function renderLetterpack(s, sender, variant){
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
 // 発行日は「請求済にした日（invoicedAt）」。作り直した日にしない（再送で日付が変わらないように・2026-10-09）
 function jpDateOf(ymd){ const m = String(ymd||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[1]}年${+m[2]}月${+m[3]}日` : ""; }
-function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: jpDateOf(s.invoicedAt) || today, products, contactName, serviceType: docServiceType }); }
+// 発行日・支払期限（net14）の起点は、メール送付後に保存する値と同じ openedYmd（printInvoiceShipOf・2026-11-10）
+function renderInvoice(s, st, contactName){
+  const ps = printInvoiceShipOf(s, openedYmd);
+  return renderInvoiceHtml(ps, st, { issueDate: jpDateOf(ps.invoicedAt) || today, products, contactName, serviceType: docServiceType });
+}
 
 // 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
@@ -821,9 +825,11 @@ async function afterInvoiceMailed(d, st, dates, { pdfBase64, filename }){
     return;
   }
   Object.assign(d, r.latest, r.patch);
-  const doneMsg = r.paid
+  const doneMsg = (r.paid
     ? "請求済にしました。全額入金済みのため「入金済」にしました"
-    : `請求済にしました（請求日 ${dates.invoicedAt}・支払期限 ${dates.dueDate || "未設定"}）`;
+    : `請求済にしました（請求日 ${dates.invoicedAt}・支払期限 ${dates.dueDate || "未設定"}）`)
+    // 過入金の充当（次回の請求から引く）は、出荷の画面にしかない（この画面には他の出荷の一覧が無いため）
+    + "\n※ 同じ請求先に過入金がある場合の充当は、出荷の画面で行ってください";
   // 経理への報告: 出荷の画面と同じく、送り先が設定されていて未報告なら報告する（確認してから）
   const dest = accountingReportDestOf(st);
   if(!dest.ready){

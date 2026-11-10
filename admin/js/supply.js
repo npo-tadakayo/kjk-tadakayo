@@ -32,7 +32,7 @@ import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
 import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
 import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, paymentRemovalOf, VIEWER_LOCK_SELECTOR,
-  dueDateOf, invoiceDueOf, accountingReportDestOf } from "/js/supply-rules.js";
+  dueDateOf, invoiceDueOf, accountingReportDestOf, invoiceIssueDefaultOf, NOT_SHIPPED_MSG } from "/js/supply-rules.js";
 import { initBankImport } from "/js/bank-import.js";
 
 const app = initializeApp(firebaseConfig);
@@ -3321,7 +3321,8 @@ async function openInvoiceReport(s, opts){
   // 請求書の発行日: 新規は入力欄（既定は今日・2026-10-19 #6）。後追い報告は既存の請求日を使う（請求書の記載とズレないように）
   const dateIn = document.getElementById("invReportDate");
   document.getElementById("invReportDateWrap").style.display = invReportOnly ? "none" : "";
-  if(!invReportOnly) dateIn.value = today();
+  // 既定は今日。請求書をメールで送ってまだ請求済でない出荷は送付日（送ったPDFの発行日とそろえる・2026-11-10）。手で変えられる
+  if(!invReportOnly) dateIn.value = invoiceIssueDefaultOf(s, today());
   const invoicedAt = invReportOnly ? (s.invoicedAt || today()) : dateIn.value;
   // 支払期限は請求書の記載と一致させる（dueRule:'net14' は発行日＋14日・従来は請求月の翌月末）
   const due = invoiceDueOf(s, invoicedAt);
@@ -3452,7 +3453,8 @@ async function doInvoiceReport(){
       // 請求前に入金明細などで全額入っていた出荷は、請求済にした時点で入金済にする（2026-10-21 レビュー指摘）。
       // 残額は最新の記録で判定する（画面を開いたあとに入金が記録されている場合があるため tx で読む）。
       // 書き込みは invoice-mark.js（印刷画面のメール送付後の「請求済にする」と共通・2026-11-10）
-      const r = await markInvoiced(db, s._id, { invoicedAt, dueDate, today: today() });
+      // requireShipped: モーダルを開いたまま別の画面で請求済にされていたら書かない（二重の記録・二重の経理報告を防ぐ）
+      const r = await markInvoiced(db, s._id, { invoicedAt, dueDate, today: today(), requireShipped: true });
       paidOnInvoice = r.paid;
       cur = { ...r.latest, ...r.patch };
     }
@@ -3508,6 +3510,13 @@ async function doInvoiceReport(){
     // 3) 同じ請求先に未充当の過入金があれば、その場で「次回の請求から引く」を提案する（従来の挙動を維持）
     if(!wasReportOnly && creditBalanceForBillTo(cur)>0) openCreditModal(cur);
   }catch(e){
+    // 別の画面で先に請求済などにされていた（何も書いていない）。窓を閉じて知らせる。一覧は onSnapshot で最新の状態に描き直される
+    if((e && e.message)===NOT_SHIPPED_MSG){
+      document.getElementById("invReportModal").classList.remove("open");
+      invReportShip = null;
+      toast(NOT_SHIPPED_MSG);
+      return;
+    }
     err.textContent = `失敗: ${e.message||e}`; err.style.display="block";
   }finally{ btn.disabled=false; btn.innerHTML=orig; }
 }

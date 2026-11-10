@@ -419,5 +419,14 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.ok(notes[0].hint.includes("発行を記録"));
   assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("請求済にする"));
   assert.deepEqual(mailedPendingNotes(null), []);
+  // 2026-11-10 レビュー指摘3: 下書き・依頼済は「発送後に」の案内（その状態では「請求済にする」のボタンが出ない）
+  for (const st of ["draft", "requested"]) {
+    const h = mailedPendingNotes({ status: st, invoiceMailedAt: "2026-11-10" })[0].hint;
+    assert.ok(h.includes("発送後に「請求済にする」で記録"), st);
+    assert.ok(!h.includes("出荷の画面の「請求済にする」"), st);
+  }
+  assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("出荷の画面の「請求済にする」"));
+  // 指摘1: 発行日は送付日に合わせる旨
+  assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("発行日は送付日に合わせます"));
   console.log("OK test-ship-flow 追加: 送付済み・記録待ち");
 }

@@ -214,8 +214,12 @@ export function mailedPendingOf(s) {
 export function mailedPendingNotes(s) {
   const m = mailedPendingOf(s);
   const out = [];
+  // 下書き・依頼済では「請求済にする」のボタンが出ないので、発送後に記録する案内にする（2026-11-10 レビュー指摘3）。
+  // 発行日の既定は送付日（supply-rules.js の invoiceIssueDefaultOf）
   if (m.invoice) out.push({ key: "invoice", label: `請求書 ${MAILED_PENDING_LABEL}`,
-    hint: `請求書はメールで送付済みです（${s.invoiceMailedAt}）。出荷の画面の「請求済にする」で記録してください` });
+    hint: shipStatusOf(s) === "shipped"
+      ? `請求書はメールで送付済みです（${s.invoiceMailedAt}）。出荷の画面の「請求済にする」で記録してください（発行日は送付日に合わせます）`
+      : `請求書はメールで送付済みです（${s.invoiceMailedAt}）。発送後に「請求済にする」で記録してください（発行日は送付日に合わせます）` });
   if (m.receipt) out.push({ key: "receipt", label: `領収証 ${MAILED_PENDING_LABEL}`,
     hint: `領収証はメールで送付済みです（${s.receiptMailedAt}）。領収証ページの「発行を記録」で記録してください` });
   return out;
