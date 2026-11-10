@@ -19,7 +19,7 @@ import {
 } from "/js/fs.js";
 import { isPracticeMode } from "/js/mode.js";
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
-import { classifySendOutcome, recordRetryFailedText, RECORD_RETRY_LABEL, CLOSE_WITH_PENDING_RECORD_TEXT } from "/js/record-gaps.js";
+import { bindMailSend, restoreUnloadGuard } from "/js/mail-send-guard.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -281,53 +281,25 @@ function openMailModal(r, url) {
         </div>
       </div>
     </div>`;
-  // 送信の成否と記録の成否を分ける（2026-11-10・点検4）。送れたあと記録だけ失敗したら、
-  // 送信ボタンを「記録だけやり直す」に変え、メールは二度と送らない（sentTo が入っている間は再送しない）
-  let sentTo = "";
-  const close = () => {
-    if (sentTo && !confirm(CLOSE_WITH_PENDING_RECORD_TEXT)) return;
-    host.innerHTML = "";
-  };
-  const record = (to) => updateDoc(doc(ctx.db, "consentRequests", r._id), { mailedAt: serverTimestamp(), mailedTo: to });
-  const done = async () => {
-    sentTo = "";
-    ctx.toast("署名依頼メールを送信しました");
-    close();
-    await reload();
-  };
-  document.getElementById("consentMailClose").addEventListener("click", close);
-  document.getElementById("consentMailCancel").addEventListener("click", close);
-  document.getElementById("consentMailSend").addEventListener("click", async (e) => {
-    const btn = e.currentTarget;
-    if (sentTo) { // 送信済み・記録待ち: 記録だけやり直す
-      btn.disabled = true;
-      try { await record(sentTo); } catch (err) { alert(recordRetryFailedText(err)); btn.disabled = false; return; }
-      await done();
-      return;
-    }
-    const to = normalizeEmail(document.getElementById("cmTo").value);
-    const subject = document.getElementById("cmSubject").value.trim();
-    const body = document.getElementById("cmBody").value;
-    if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }
-    btn.disabled = true;
-    try {
-      await ctx.sendMail({ to, subject, body, caseId: ctx.caseId });
-    } catch (err) {
-      alert(classifySendOutcome({ sendError: err }).message);
-      btn.disabled = false;
-      return;
-    }
-    sentTo = to;
-    try {
-      await record(to);
-    } catch (err) {
-      alert(classifySendOutcome({ recordError: err }).message);
-      ["cmTo", "cmSubject", "cmBody"].forEach((id) => { const el = document.getElementById(id); if (el) el.disabled = true; });
-      btn.innerHTML = `<i class="ti ti-refresh" aria-hidden="true"></i> ${RECORD_RETRY_LABEL}`;
-      btn.disabled = false;
-      return;
-    }
-    await done();
+  // 送信 → 記録は mail-send-guard.js（送信と記録の成否を分ける・記録待ちを覚える・送信中は閉じさせない。2026-11-10 点検4）。
+  // mailedAt は送信が成功した時点の時刻（記録だけやり直しても同じ値）
+  bindMailSend({
+    kind: "consent", caseId: ctx.caseId, reqId: r._id, host,
+    ids: { close: "consentMailClose", cancel: "consentMailCancel", send: "consentMailSend", fields: ["cmTo", "cmSubject", "cmBody"] },
+    readInputs: () => {
+      const to = normalizeEmail(document.getElementById("cmTo").value);
+      const subject = document.getElementById("cmSubject").value.trim();
+      const body = document.getElementById("cmBody").value;
+      if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return null; }
+      return { to, subject, body };
+    },
+    send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
+    record: (to, sentAtIso) => updateDoc(doc(ctx.db, "consentRequests", r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
+    onDone: async (close) => {
+      ctx.toast("署名依頼メールを送信しました");
+      close();
+      await reload();
+    },
   });
 }
 
@@ -348,5 +320,6 @@ export async function initConsentCard(options) {
     m.id = "consentMailModal";
     document.body.appendChild(m);
   }
+  restoreUnloadGuard("consent", ctx.caseId); // 送信済み・記録待ちのまま再読み込みしたときも、離れる前に確認
   await reload();
 }
