@@ -80,7 +80,7 @@ t("点検3: 画面のつなぎ（supply-print.js・supply.js）", () => {
   const dun = su.slice(su.indexOf("async function sendDunning"), su.indexOf("// ===== 請求済にする＋経理へ"));
   has(dun, /billingMailActivityOf\(\{ kind:"dunning"/);
   has(dun, /catch\(e2\)\{[\s\S]*mailRecordFailedText\(e2\)/); // 記録の失敗は内側で受ける
-  has(su, /payInfo \+= mailSentNotesOf\(s\)/);
+  has(su, /payInfo \+= mailSentNotesOf\(s, /);
   hasNot(su, /s\.invoiceMailedAt \? `<div/); // 請求済・入金済の中だけに出していた古い表示は残さない
 });
 
@@ -243,6 +243,47 @@ t("点検7: 倉庫の発送済・受け渡し済は、本番と同じく対応�
     const stub = fnBody(ps, `  async ${name}(`, "\n  },\n");
     hasNot(stub, /await activity\(/, `練習の ${name} が対応記録を書いている`);
   }
+});
+
+// ===== PR #62 独立レビューの指摘への対応（2026-11-10） =====
+t("指摘1: キャンセル済み・全額返金は出さない、一部返金は差引額で出す", () => {
+  assert.equal(prepaidNoteOf({ status: "canceled", payments: [{ amount: 1000, date: "2026-11-01" }], refunds: [{ amount: 1000 }] }), null);
+  assert.equal(prepaidNoteOf({ status: "canceled", payments: [{ amount: 1000, date: "2026-11-01" }] }), null);
+  assert.equal(prepaidNoteOf({ status: "shipped", payments: [{ amount: 1000, date: "2026-11-01" }], refunds: [{ amount: 1000 }] }), null);
+  assert.equal(prepaidNoteOf({ status: "shipped", payments: [{ amount: 1000 }], refunds: [{ amount: 1500 }] }), null); // 差引マイナス
+  const p = prepaidNoteOf({ status: "shipped", payments: [{ amount: 1000, date: "2026-11-01" }], refunds: [{ amount: 300 }] });
+  assert.equal(p.net, 700);
+  assert.equal(p.text, "入金済 ¥700（請求前に記録・2026-11-01・返金差引後）");
+});
+t("指摘1: 渡した出荷のオブジェクトを書き換えない（入金・返金・状態に触らない）", () => {
+  const cases = [
+    { status: "canceled", payments: [{ amount: 1000, date: "2026-11-01" }], refunds: [{ amount: 1000 }] },
+    { status: "shipped", payments: [{ amount: 1000, date: "2026-11-01" }], refunds: [{ amount: 300 }] },
+    { status: "invoiced", payments: [{ amount: 1 }], dunningSentAt: "2026-11-01" },
+  ];
+  for (const s of cases) {
+    const before = JSON.stringify(s);
+    prepaidNoteOf(s); mailSentNotesOf(s); mailSentNotesOf(s, { dunningOnButton: true });
+    assert.equal(JSON.stringify(s), before);
+  }
+});
+t("指摘3: 催促ボタンに日付が出ている行では、催促の行を出さない（二重にしない）", () => {
+  const s = { status: "invoiced", invoiceMailedAt: "2026-10-20", dunningSentAt: "2026-11-05", dunningCount: 1 };
+  assert.deepEqual(mailSentNotesOf(s, { dunningOnButton: true }).map((x) => x.key), ["invoice"]);
+  assert.deepEqual(mailSentNotesOf(s).map((x) => x.key), ["invoice", "dunning"]); // ボタンが出ない行（入金済など）では出す
+  const su = read("admin/js/supply.js");
+  has(su, /const dunningOnButton = st==="invoiced" && od>0 && !!s\.dunningSentAt;\s*payInfo \+= mailSentNotesOf\(s, \{ dunningOnButton \}\)/);
+  // ボタンの表示条件（請求済の分岐の中で od>0）と合っていること
+  has(su, /\(od>0\?`<button class="btn btn-secondary dun-ship"[^\n]*s\.dunningSentAt\?`（/);
+});
+t("指摘2: 対応記録のあと cases.updatedAt だけを更新し、失敗は記録の成否にしない", () => {
+  const sp = read("admin/js/supply-print.js");
+  const fn = sp.slice(sp.indexOf("async function logBillingMailActivity"), sp.indexOf("async function afterInvoiceMailed"));
+  has(fn, /try\{ await updateDoc\(doc\(db,"cases",act\.caseId\), \{ updatedAt: serverTimestamp\(\) \}\); \}\s*catch\(e2\)/);
+  const su = read("admin/js/supply.js");
+  const dun = su.slice(su.indexOf("async function sendDunning"), su.indexOf("// ===== 請求済にする＋経理へ"));
+  has(dun, /try\{ await updateDoc\(doc\(db,"cases",act\.caseId\),\{ updatedAt:serverTimestamp\(\) \}\); \}\s*catch\(e3\)/);
+  for (const src of [fn, dun]) hasNot(src, /updateDoc\(doc\(db,"cases"[^)]*\),\s*\{[^}]*\b(?!updatedAt)\w+:/, "cases に updatedAt 以外を書いている");
 });
 
 console.log(`OK test-record-gaps: ${n} 件合格`);

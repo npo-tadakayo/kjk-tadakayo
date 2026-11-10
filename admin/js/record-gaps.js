@@ -46,13 +46,15 @@ export function mailRecordFailedText(err) {
  * 以前は請求済・入金済の行の中だけに出していたので、発送済（未請求）の行では見えなかった。
  * @returns {{key:string, text:string}[]}
  */
-export function mailSentNotesOf(s) {
+// opts.dunningOnButton … その行の「催促メールを送る」ボタンに送信日（「（MM-DD送信済）」）が出ているとき true。
+//   そのときは催促の行を出さない（同じ日付が二重に出ないように・2026-11-10 PR #62 レビュー指摘）
+export function mailSentNotesOf(s, opts = {}) {
   if (!s) return [];
   const md = (v) => String(v || "").slice(5); // YYYY-MM-DD → MM-DD（一覧の他の日付と同じ短さ）
   const out = [];
   if (s.invoiceMailedAt) out.push({ key: "invoice", text: `請求書をメール送付済み ${md(s.invoiceMailedAt)}` });
   if (s.receiptMailedAt) out.push({ key: "receipt", text: `領収証をメール送付済み ${md(s.receiptMailedAt)}` });
-  if (s.dunningSentAt) {
+  if (s.dunningSentAt && !opts.dunningOnButton) {
     const n = Number(s.dunningCount) || 0;
     out.push({ key: "dunning", text: `催促メール送信済み ${md(s.dunningSentAt)}${n > 1 ? `（${n}回目）` : ""}` });
   }
@@ -79,13 +81,16 @@ export function receiptSaveInfoOf(s) {
 // 入金の記録・消込・状態は一切変えない（ここは読むだけ）。請求済・入金済は従来の表示のまま（null を返す）。
 // 金額は ship-flow.js の netPaidOf（入金 − 返金）＝ supply.js の netPaid と同じ数え方。
 const yenText = (n) => "¥" + Number(n || 0).toLocaleString("ja-JP"); // supply.js の yen と同じ書き方
+// キャンセルした出荷・返金して手元に残っていない（差引 0 円以下）出荷は出さない（2026-11-10 PR #62 レビュー指摘。
+// 全額返金でも「入金済 ¥0」と緑で出ていた）。
 export function prepaidNoteOf(s) {
   if (!s) return null;
   const st = shipStatusOf(s);
-  if (st === "invoiced" || st === "paid") return null;
+  if (st === "invoiced" || st === "paid" || st === "canceled") return null;
   const pays = paymentsOf(s);
   if (!pays.length) return null;
   const net = netPaidOf(s);
+  if (!(net > 0)) return null;
   const last = String((pays[pays.length - 1] || {}).date || "");
   const refunded = net !== pays.reduce((a, p) => a + (Number(p.amount) || 0), 0);
   return {

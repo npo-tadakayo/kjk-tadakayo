@@ -838,6 +838,9 @@ async function logBillingMailActivity(d, kind, { to, cc, subject, body, attachme
     const u = auth.currentUser;
     await addDoc(collection(db,"activities"), { ...act, occurredAt: serverTimestamp(),
       userId: u?.uid || null, userName: u?.displayName || u?.email || "" });
+    // 本番の sendCaseEmail と同じく案件の更新日時も進める（updatedAt だけ。失敗しても記録の成否にしない）
+    try{ await updateDoc(doc(db,"cases",act.caseId), { updatedAt: serverTimestamp() }); }
+    catch(e2){ console.warn("案件の更新日時の更新に失敗", e2); }
     return "";
   }catch(e){
     console.warn("メール送付の対応記録に失敗", e);

@@ -2673,7 +2673,9 @@ function renderShipments(ships, dv){
     const pre = prepaidNoteOf(s);
     if(pre) payInfo += `<div style="font-size:12px;color:var(--color-success)">${esc(pre.text)}</div>`;
     // 請求先へのメール送付の記録（請求書・領収証・催促）。状態を問わず出す（2026-11-10 点検3。以前は請求済・入金済の行だけ）
-    payInfo += mailSentNotesOf(s).map(n=>`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(n.text)}</div>`).join("");
+    // 期限超過の請求済の行は「催促メールを送る（MM-DD送信済）」ボタンに日付が出るので、催促の行は出さない（二重にしない）
+    const dunningOnButton = st==="invoiced" && od>0 && !!s.dunningSentAt;
+    payInfo += mailSentNotesOf(s, { dunningOnButton }).map(n=>`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(n.text)}</div>`).join("");
     let lifeBtns="";
     // 帳票リンク・修正／種別変更／削除は全状態で共通（表示条件は元のまま）。
     // 状態ごとに並び順だけ変えられるよう部品化する（2026-09-14 ボタン文言・並び順の整理）。
@@ -3306,8 +3308,13 @@ async function sendDunning(){
     let recFail="";
     try{
       const act=billingMailActivityOf({ kind:"dunning", ship:s, to, subject, body });
-      if(act) await addDoc(collection(db,"activities"),{ ...act, occurredAt:serverTimestamp(),
-        userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"" });
+      if(act){
+        await addDoc(collection(db,"activities"),{ ...act, occurredAt:serverTimestamp(),
+          userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"" });
+        // 本番の sendCaseEmail と同じく案件の更新日時も進める（updatedAt だけ。失敗しても記録の成否にしない）
+        try{ await updateDoc(doc(db,"cases",act.caseId),{ updatedAt:serverTimestamp() }); }
+        catch(e3){ console.warn("案件の更新日時の更新に失敗", e3); }
+      }
     }catch(e2){ console.warn("催促メールの対応記録に失敗", e2); recFail=mailRecordFailedText(e2); }
     if(recFail) alert(`${s.soNumber} の催促メールを送信しました。\n\n※ ${recFail}`);
     else toast(`${s.soNumber} の催促メールを送信しました`);
