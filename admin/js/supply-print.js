@@ -2,7 +2,7 @@ import { normalizeEmail } from "/js/normalize.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serverTimestamp } from "/js/fs.js";
+import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, addDoc, serverTimestamp } from "/js/fs.js";
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
@@ -13,6 +13,8 @@ import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, pri
 import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
+// 送ったメールを案件の対応記録に残す（設計書 §3 点検3・2026-11-10）
+import { billingMailActivityOf, mailRecordFailedText } from "/js/record-gaps.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -779,7 +781,10 @@ function setupMailDoc(kind, d, st, userEmail){
       const encl = [document.getElementById("mailDocReport")?.checked && kind==="invoice" ? "支援報告書" : "",
                     document.getElementById("mailDocGuide")?.checked && (kind==="receipt" || kind==="invoice") ? "助成金申請の手順" : "",
                     document.getElementById("mailDocFurikomi")?.checked && kind==="invoice" ? "お振込方法のご案内" : ""].filter(Boolean);
-      alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`);
+      // 案件の対応記録に1件足す（2026-11-10 点検3）。送信は済んでいるので、記録の失敗は「送信の失敗」にしない
+      const recFail = await logBillingMailActivity(d, kind, { to, cc, subject, body, attachments: [filename, ...encl] });
+      alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`
+        + (recFail ? `\n\n※ ${recFail}` : ""));
       // 領収証を送ったら、発行として記録するか確認する（2026-11-10）。
       // 送信と発行記録が別操作で、「メール送信済みなのに画面は領収証を出すのまま」の出荷が出ていたため。
       // 送信は取り消せないので、記録の確認は送信成功の後に出す。キャンセルなら従来どおり後から「発行を記録」で記録できる。
@@ -809,6 +814,23 @@ function setupMailDoc(kind, d, st, userEmail){
       sendBtn.disabled = false; sendBtn.innerHTML = orig;
     }
   };
+}
+
+// 送った請求書・領収証のメールを、案件の対応記録（activities）に残す（2026-11-10 設計書 §3 点検3）。
+// 戻り値: 記録できた（または案件にひも付かず記録先が無い）なら ""、記録だけ失敗したら知らせる文。
+// 例外は外に出さない（呼び出し側の catch に落ちると「送信に失敗しました」と出て、二重送信を招くため）。
+async function logBillingMailActivity(d, kind, { to, cc, subject, body, attachments }){
+  try{
+    const act = billingMailActivityOf({ kind, ship: d, to, cc, subject, body, attachments });
+    if(!act) return "";
+    const u = auth.currentUser;
+    await addDoc(collection(db,"activities"), { ...act, occurredAt: serverTimestamp(),
+      userId: u?.uid || null, userName: u?.displayName || u?.email || "" });
+    return "";
+  }catch(e){
+    console.warn("メール送付の対応記録に失敗", e);
+    return mailRecordFailedText(e);
+  }
 }
 
 // 請求書のメール送付が成功した直後の「請求済にする」と経理への報告（2026-11-10）。
