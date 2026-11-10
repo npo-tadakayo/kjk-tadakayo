@@ -6,6 +6,7 @@ import {
   nextStatus, notifyOnTransition, deductsOnTransition, shipNotifyShown, primaryAction, shipActions,
   qtyDelta, needsResendPrompt, shipStepsDone, todoCounts, paymentsOf, netPaidOf, CANCEL_BLOCKED_BY_PAYMENT,
   notifyInFlight, NOTIFY_IN_FLIGHT_MSG, LP_PICKUP_NOTICE, lpPickupNotice,
+  MAILED_PENDING_LABEL, mailedPendingOf, mailedPendingNotes,
 } from "../admin/js/ship-flow.js";
 
 let n = 0;
@@ -391,4 +392,41 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.equal(F.nextStatus("requested", "markShipped"), "shipped");
   assert.equal(F.stockDeducted(pick), true);
   console.log("OK test-ship-flow 追加: 持ち出し");
+}
+
+// ===== 送付済み・記録待ち（2026-11-10）=====
+{
+  // 請求書: 送ったが請求済でない
+  assert.deepEqual(mailedPendingOf({ status: "shipped", invoiceMailedAt: "2026-11-10" }), { invoice: true, receipt: false });
+  assert.deepEqual(mailedPendingOf({ status: "requested", invoiceMailedAt: "2026-11-10" }), { invoice: true, receipt: false });
+  // 請求済・入金済になっていれば出さない
+  assert.equal(mailedPendingOf({ status: "invoiced", invoiceMailedAt: "2026-11-10" }).invoice, false);
+  assert.equal(mailedPendingOf({ status: "paid", invoiceMailedAt: "2026-11-10", receiptIssuedAt: "2026-11-10" }).invoice, false);
+  // 領収証: 送ったが発行の記録が無い
+  assert.deepEqual(mailedPendingOf({ status: "paid", receiptMailedAt: "2026-11-10" }), { invoice: false, receipt: true });
+  assert.equal(mailedPendingOf({ status: "paid", receiptMailedAt: "2026-11-10", receiptIssuedAt: "2026-11-10" }).receipt, false);
+  // 送っていなければ出さない・キャンセルは出さない
+  assert.deepEqual(mailedPendingOf({ status: "shipped" }), { invoice: false, receipt: false });
+  assert.deepEqual(mailedPendingOf({ status: "canceled", invoiceMailedAt: "x", receiptMailedAt: "y" }), { invoice: false, receipt: false });
+  // 「発行済み」「請求済」の判定自体は変えていない（送付だけでは丸が埋まらない）
+  const s = { status: "paid", receiptMailedAt: "2026-11-10" };
+  assert.equal(shipStepsDone(s).receipt, false);
+  assert.equal(todoCounts([s]).noReceipt, 1);
+  assert.equal(todoCounts([{ status: "shipped", invoiceMailedAt: "2026-11-10" }]).unbilled, 1);
+  const notes = mailedPendingNotes({ status: "paid", receiptMailedAt: "2026-11-10" });
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].label, `領収証 ${MAILED_PENDING_LABEL}`);
+  assert.ok(notes[0].hint.includes("発行を記録"));
+  assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("請求済にする"));
+  assert.deepEqual(mailedPendingNotes(null), []);
+  // 2026-11-10 レビュー指摘3: 下書き・依頼済は「発送後に」の案内（その状態では「請求済にする」のボタンが出ない）
+  for (const st of ["draft", "requested"]) {
+    const h = mailedPendingNotes({ status: st, invoiceMailedAt: "2026-11-10" })[0].hint;
+    assert.ok(h.includes("発送後に「請求済にする」で記録"), st);
+    assert.ok(!h.includes("出荷の画面の「請求済にする」"), st);
+  }
+  assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("出荷の画面の「請求済にする」"));
+  // 指摘1: 発行日は送付日に合わせる旨
+  assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("発行日は送付日に合わせます"));
+  console.log("OK test-ship-flow 追加: 送付済み・記録待ち");
 }

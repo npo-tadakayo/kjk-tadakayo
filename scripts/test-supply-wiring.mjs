@@ -9,7 +9,10 @@ import {
   dupView, filterDupOnly, othersToCancel, stockAdviceShown, guessMapping, toMapRowsMapping,
   initialSelection, groupByShipment, bankPaymentOf, bankTxnDocOf, remainOf, applyBankPayments,
   payConfirmText, aliasLearnings, invoicePatchOf, paymentRemovalOf,
+  dueDateOf, invoiceDueOf, askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf,
+  printInvoiceShipOf, invoiceIssueDefaultOf, markInvoicedPlanOf, NOT_SHIPPED_MSG,
 } from "../admin/js/supply-rules.js";
+import { fillInvoiceReportText, billToForReportOf, paymentDueText } from "../admin/js/invoice-doc.js";
 
 let n = 0;
 const t = async (name, fn) => {
@@ -281,9 +284,14 @@ await t("入金明細から記録した入金を取り消すと bankTxns も消�
 
 await t("supply.js のつなぎ（請求済にする・入金の取消）", () => {
   const src = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
-  assert.match(src, /import \{[^}]*invoicePatchOf, paymentRemovalOf[^}]*\} from "\/js\/supply-rules\.js"/);
-  // 請求済にするは tx で最新を読んで invoicePatchOf の結果を書く（status:"invoiced" の決め打ちが残っていない）
-  assert.match(src, /invoicePatchOf\(latest, \{ invoicedAt, dueDate, today: today\(\) \}\)/);
+  assert.match(src, /import \{[^}]*paymentRemovalOf[^}]*\} from "\/js\/supply-rules\.js"/);
+  // 請求済にするは tx で最新を読んで invoicePatchOf の結果を書く（status:"invoiced" の決め打ちが残っていない）。
+  // 2026-11-10 から書き込みは invoice-mark.js の markInvoiced（印刷画面のメール送付後と共通）
+  assert.match(src, /import \{ markInvoiced \} from "\/js\/invoice-mark\.js"/);
+  assert.match(src, /markInvoiced\(db, s\._id, \{ invoicedAt, dueDate, today: today\(\), requireShipped: true \}\)/);
+  const mark = readFileSync(fileURLToPath(new URL("../admin/js/invoice-mark.js", import.meta.url)), "utf8");
+  assert.match(mark, /markInvoicedPlanOf\(latest, \{ invoicedAt, dueDate, today, requireShipped \}\)/);
+  assert.match(mark, /runTransaction\(db/);
   assert.doesNotMatch(src, /updateDoc\(doc\(db,"shipments",s\._id\),\{ status:"invoiced", invoicedAt/);
   // 入金の取消は同じ tx で bankTxns を消す
   const del = src.slice(src.indexOf("async function deletePayment"), src.indexOf("// ===== 過入金を次回の請求に充当する"));
@@ -365,6 +373,126 @@ await t("倉庫ロール: role.js のゲート・サイドバー・練習モー�
   assert.match(users, /collection\(db,"locations"\)/);
   assert.match(uh, /<option value="viewer">/);
   assert.match(uh, /<option value="trainee">/);
+});
+
+
+// ===== 2026-11-10 請求書をメールで送ったあとの「請求済にする」 =====
+await t("請求書メール送付後に聞く条件（発送済だけ・下書き/依頼済/請求済以降は聞かない）", () => {
+  assert.equal(askInvoicedAfterMail({ status: "shipped" }), true);
+  assert.equal(askInvoicedAfterMail({}), true); // 状態なし＝古い発送済
+  for (const st of ["draft", "requested", "invoiced", "paid", "canceled"]) assert.equal(askInvoicedAfterMail({ status: st }), false, st);
+  assert.equal(askInvoicedAfterMail(null), false);
+});
+
+await t("メール送付後に保存する発行日・支払期限＝送ったPDFに印字したもの", () => {
+  // net14: 画面を開いた日＋14日（invoice-doc.js の paymentDueText と同じ日付）
+  const a = { status: "shipped", dueRule: "net14", shipDate: "2026-11-01" };
+  const da = mailedInvoiceDatesOf(a, "2026-11-10");
+  assert.deepEqual(da, { invoicedAt: "2026-11-10", dueDate: "2026-11-24" });
+  assert.match(paymentDueText({ ...a, invoicedAt: da.invoicedAt }), /^2026年11月24日/);
+  // 従来の出荷: 発行月の翌月末（請求書の文言「請求書発行月の翌月末」と同じ規則）
+  assert.deepEqual(mailedInvoiceDatesOf({ status: "shipped", shipDate: "2026-10-30" }, "2026-11-10"),
+    { invoicedAt: "2026-11-10", dueDate: "2026-12-31" });
+  // 出荷に invoicedAt が残っていれば、印刷画面はその日を発行日として印字するので同じ日を使う
+  assert.equal(mailedInvoiceDatesOf({ status: "shipped", invoicedAt: "2026-11-05", dueRule: "net14" }, "2026-11-10").invoicedAt, "2026-11-05");
+  // 支払期限が確定済みなら最優先（dueDateOf の①）
+  assert.equal(mailedInvoiceDatesOf({ status: "shipped", dueDate: "2026-12-15", dueRule: "net14" }, "2026-11-10").dueDate, "2026-12-15");
+  assert.equal(invoiceDueOf({ dueRule: "net14" }, "2026-11-10"), dueDateOf({ dueRule: "net14", status: "invoiced", invoicedAt: "2026-11-10" }));
+});
+
+await t("メール送付後の請求済＝出荷の画面と同じ規則（invoicePatchOf に送ったPDFの日付を渡す）", () => {
+  const s = { status: "shipped", items: [{ sku: "R", qty: 1, unitPrice: 10000 }], payments: [] };
+  const d = mailedInvoiceDatesOf(s, "2026-11-10");
+  const r = invoicePatchOf(s, { ...d, today: "2026-11-10" });
+  assert.equal(r.patch.status, "invoiced");
+  assert.equal(r.patch.invoicedAt, "2026-11-10");
+});
+
+await t("経理報告の送り先・文面（出荷の画面と印刷画面で共通）", () => {
+  assert.equal(accountingReportDestOf({}).ready, false);
+  assert.equal(accountingReportDestOf({ accountingEmail: " a@x.jp " }).acctEmail, "a@x.jp");
+  assert.equal(accountingReportDestOf({ accountingChatWebhookUrl: "https://h", accountingChatWebhookEnabled: false }).ready, false);
+  assert.equal(accountingReportDestOf({ accountingChatWebhookUrl: "https://h" }).ready, true);
+  const txt = fillInvoiceReportText("{{経理担当}}/{{請求書番号}}/{{請求先}}/{{支払期限}}/{{出荷番号}}",
+    { invNo: "INV-1", billTo: "A社", due: "", soNumber: "SH-1" });
+  assert.equal(txt, "経理ご担当/INV-1/A社/（未設定）/SH-1");
+  assert.equal(billToForReportOf({ shipType: "dropship", partnerEmail: "p@x" }), "p@x");
+  assert.equal(billToForReportOf({ company: "C", officeName: "O" }), "C");
+});
+
+await t("印刷画面のつなぎ（請求書のメール送付成功の後に確認→markInvoiced→経理報告）", () => {
+  const src = readFileSync(fileURLToPath(new URL("../admin/js/supply-print.js", import.meta.url)), "utf8");
+  const sup = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  assert.match(src, /import \{ markInvoiced \} from "\/js\/invoice-mark\.js"/);
+  // 送るPDFを作る時点で発行日・支払期限を控える
+  assert.match(src, /const invoiceDates = kind === "invoice" \? mailedInvoiceDatesOf\(d, openedYmd\) : null;/);
+  // 確認は送信成功（sendPartnerMailFn）の後・発送済のときだけ
+  const send = src.indexOf("await sendPartnerMailFn(");
+  const ask = src.indexOf('if(kind === "invoice" && invoiceDates && askInvoicedAfterMail(d))');
+  assert.ok(send > 0 && ask > send);
+  const fn = src.slice(src.indexOf("async function afterInvoiceMailed"), src.indexOf("onAuthStateChanged(auth"));
+  assert.match(fn, /confirm\("請求書を送りました。請求済として記録しますか？/);
+  // キャンセルなら何もしない（confirm の直後に return）
+  assert.match(fn, /if\(!confirm\("請求書を送りました。[^"]*"\)\) return;/);
+  // 出荷の画面と同じ書き込み。最新が発送済でなければ書かない
+  assert.match(fn, /markInvoiced\(db, id, \{ invoicedAt: dates\.invoicedAt, dueDate: dates\.dueDate, today: todayJst\(\), requireShipped: true \}\)/);
+  // 経理報告は出荷の画面と同じ関数・同じ文面・送ったPDF
+  assert.match(fn, /reportInvoiceFn\(\{/);
+  assert.match(fn, /fillInvoiceReportText\(st\.invoiceMailSubject \|\| DEFAULT_INVOICE_MAIL_SUBJECT, vars\)/);
+  assert.match(fn, /accountingReportDestOf\(st\)/);
+  assert.match(sup, /fillInvoiceReportText\(t, \{/);
+  assert.match(sup, /accountingReportDestOf\(st\)/);
+  assert.match(src, /httpsCallable\(functions, "reportInvoiceToAccounting"\)/);
+  // 出荷の画面から dueDateOf の複製が消えている（正本は supply-rules.js）
+  assert.doesNotMatch(sup, /function dueDateOf\(/);
+});
+
+await t("一覧の「送付済み・記録待ち」の結線", () => {
+  const sup = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  assert.match(sup, /mailedPendingNotes\(s\)\.map\(/);
+});
+
+
+// ===== 2026-11-10 PR #58 独立レビューの指摘（1〜4）=====
+await t("指摘1: 出荷の画面の発行日の既定＝請求書の送付日（まだ請求済でない出荷）", () => {
+  assert.equal(invoiceIssueDefaultOf({ status: "shipped", invoiceMailedAt: "2026-11-03" }, "2026-11-10"), "2026-11-03");
+  assert.equal(invoiceIssueDefaultOf({ status: "requested", invoiceMailedAt: "2026-11-03" }, "2026-11-10"), "2026-11-03");
+  assert.equal(invoiceIssueDefaultOf({ status: "shipped" }, "2026-11-10"), "2026-11-10");          // 送っていない
+  assert.equal(invoiceIssueDefaultOf({ status: "invoiced", invoiceMailedAt: "2026-11-03" }, "2026-11-10"), "2026-11-10");
+  assert.equal(invoiceIssueDefaultOf({ status: "shipped", invoiceMailedAt: "不正" }, "2026-11-10"), "2026-11-10");
+  // 送付日を発行日にすると、保存する支払期限も送ったPDF（送付日に開いた印刷画面）と一致する
+  const s = { status: "shipped", dueRule: "net14", invoiceMailedAt: "2026-11-03" };
+  assert.equal(invoiceDueOf(s, invoiceIssueDefaultOf(s, "2026-11-10")), mailedInvoiceDatesOf(s, "2026-11-03").dueDate);
+  const sup = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  assert.match(sup, /dateIn\.value = invoiceIssueDefaultOf\(s, today\(\)\);/);
+});
+
+await t("指摘2: 記録の直前に発送済でなければ書かない（requireShipped の分岐を実行）", () => {
+  const base = { items: [{ sku: "R", qty: 1, unitPrice: 10000 }], payments: [] };
+  const o = { invoicedAt: "2026-11-10", dueDate: "2026-11-24", today: "2026-11-10" };
+  assert.equal(markInvoicedPlanOf({ ...base, status: "shipped" }, { ...o, requireShipped: true }).patch.status, "invoiced");
+  for (const st of ["invoiced", "paid", "draft", "requested", "canceled"]) {
+    assert.throws(() => markInvoicedPlanOf({ ...base, status: st }, { ...o, requireShipped: true }), { message: NOT_SHIPPED_MSG }, st);
+  }
+  // requireShipped なし（後方互換）は止めない
+  assert.equal(markInvoicedPlanOf({ ...base, status: "invoiced" }, o).patch.status, "invoiced");
+  const sup = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  assert.match(sup, /if\(\(e && e\.message\)===NOT_SHIPPED_MSG\)\{/);
+});
+
+await t("指摘4: 印字する支払期限（net14）の起点＝保存と同じ openedYmd（実行時刻に依らない）", () => {
+  const s = { status: "shipped", dueRule: "net14" };
+  const ps = printInvoiceShipOf(s, "2026-11-10");
+  assert.equal(ps.invoicedAt, "2026-11-10");
+  assert.equal(s.invoicedAt, undefined); // 元の出荷は書き換えない
+  assert.match(paymentDueText(ps), /^2026年11月24日/);
+  assert.equal(mailedInvoiceDatesOf(s, "2026-11-10").dueDate, "2026-11-24");
+  // 請求済の出荷は保存済みの請求日のまま
+  assert.equal(printInvoiceShipOf({ status: "invoiced", invoicedAt: "2026-10-01" }, "2026-11-10").invoicedAt, "2026-10-01");
+  const src = readFileSync(fileURLToPath(new URL("../admin/js/supply-print.js", import.meta.url)), "utf8");
+  assert.match(src, /const ps = printInvoiceShipOf\(s, openedYmd\);/);
+  // 指摘5: 完了メッセージに過入金の充当の案内
+  assert.match(src, /過入金がある場合の充当は、出荷の画面で行ってください/);
 });
 
 console.log(`OK test-supply-wiring: ${n} 件合格`);

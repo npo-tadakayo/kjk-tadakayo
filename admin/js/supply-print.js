@@ -6,7 +6,11 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, serv
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf } from "/js/invoice-doc.js";
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf,
+  fillInvoiceReportText, billToForReportOf, DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
+// 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
+import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
+import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
 
@@ -15,6 +19,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app, "asia-northeast1");
 const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
+const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
 
 // 接続方式（USB Type-A / Type-C / Bluetooth）は新しい明細には焼き込まれているが、
 // それ以前の出荷には入っていないので、商品マスタから引けるように読んでおく。
@@ -33,6 +38,8 @@ function yen(n){ const v=Number(n||0); return (v<0?"−":"")+"¥"+Math.abs(v).to
 // 発行日は必ず日本時間で数える（toISOString はUTCなので、午前9時前に発行すると前日日付になる）
 function todayJst(){ return new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}); }
 const today = new Date().toLocaleDateString("ja-JP",{timeZone:"Asia/Tokyo",year:"numeric",month:"long",day:"numeric"});
+// 上の today と同じ瞬間の日付（YYYY-MM-DD）。請求書に印字した発行日と、メール送付後に請求済にするときの発行日をそろえる
+const openedYmd = todayJst();
 
 // 発注元（NPO法人タダカヨ）情報の既定値。設定(appConfig/settings.po*)で上書き可
 const PO_DEFAULT = {
@@ -106,7 +113,11 @@ function renderLetterpack(s, sender, variant){
 // 請求書の描画は invoice-doc.js の renderInvoiceHtml に統合（経理報告のPDF生成と共通化）
 // 発行日は「請求済にした日（invoicedAt）」。作り直した日にしない（再送で日付が変わらないように・2026-10-09）
 function jpDateOf(ymd){ const m = String(ymd||"").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${+m[1]}年${+m[2]}月${+m[3]}日` : ""; }
-function renderInvoice(s, st, contactName){ return renderInvoiceHtml(s, st, { issueDate: jpDateOf(s.invoicedAt) || today, products, contactName, serviceType: docServiceType }); }
+// 発行日・支払期限（net14）の起点は、メール送付後に保存する値と同じ openedYmd（printInvoiceShipOf・2026-11-10）
+function renderInvoice(s, st, contactName){
+  const ps = printInvoiceShipOf(s, openedYmd);
+  return renderInvoiceHtml(ps, st, { issueDate: jpDateOf(ps.invoicedAt) || today, products, contactName, serviceType: docServiceType });
+}
 
 // 領収証（請求書と同じ発行元・角印・登録番号。入金済み出荷に対し発行。
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
@@ -725,6 +736,8 @@ function setupMailDoc(kind, d, st, userEmail){
       let dataUri;
       // 領収証は、送るPDFと同じ瞬間の明細・金額を控えておく（送信後の「発行として記録」でこれを使う）
       const issueSnap = kind === "receipt" ? collectReceiptSnapshot() : null;
+      // 請求書は、送るPDFに印字した発行日・支払期限を控えておく（送信後の「請求済にする」でこれを保存する）
+      const invoiceDates = kind === "invoice" ? mailedInvoiceDatesOf(d, openedYmd) : null;
       try{
         // A4 1枚に収める（フッターだけが2ページ目に出ていた・2026-10-01）
         dataUri = await buildOnePagePdf(clone);
@@ -782,6 +795,13 @@ function setupMailDoc(kind, d, st, userEmail){
           }
         }catch(_){ /* 送信は成功済み。記録は後からでもできる */ }
       }
+      // 請求書を送ったら、請求済として記録するか確認する（2026-11-10）。
+      // メール送付は invoiceMailedAt しか書かず、状態・請求日・支払期限は出荷の画面の「請求済にする」でしか付かなかったため、
+      // 送ったのに未請求の件数に残り、支払期限も入らず、経理への報告にも乗らなかった。
+      // 発送済（未請求）のときだけ聞く。下書き・依頼済（まだ発送していない）・請求済以降は聞かない。
+      if(kind === "invoice" && invoiceDates && askInvoicedAfterMail(d)){
+        await afterInvoiceMailed(d, st, invoiceDates, { pdfBase64, filename });
+      }
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;
       err.style.display = "block";
@@ -789,6 +809,57 @@ function setupMailDoc(kind, d, st, userEmail){
       sendBtn.disabled = false; sendBtn.innerHTML = orig;
     }
   };
+}
+
+// 請求書のメール送付が成功した直後の「請求済にする」と経理への報告（2026-11-10）。
+// 出荷の画面の「請求済にする」と同じ書き込み（invoice-mark.js）・同じ文面（fillInvoiceReportText）・同じ報告（reportInvoiceToAccounting）。
+// 発行日・支払期限は、送ったPDFに印字したもの（dates）を保存する。報告には送ったPDFそのものを添付する。
+// 送信は済んでいるので、ここで失敗しても送信の失敗にはしない（出荷の画面から後で記録・報告できる）。
+async function afterInvoiceMailed(d, st, dates, { pdfBase64, filename }){
+  if(!confirm("請求書を送りました。請求済として記録しますか？\n\nOK＝請求済にする ／ キャンセル＝あとで記録する（出荷の画面の「請求済にする」から）")) return;
+  let r;
+  try{
+    r = await markInvoiced(db, id, { invoicedAt: dates.invoicedAt, dueDate: dates.dueDate, today: todayJst(), requireShipped: true });
+  }catch(e){
+    alert(`請求済の記録に失敗しました: ${e.message || e}\n出荷の画面の「請求済にする」から記録してください`);
+    return;
+  }
+  Object.assign(d, r.latest, r.patch);
+  const doneMsg = (r.paid
+    ? "請求済にしました。全額入金済みのため「入金済」にしました"
+    : `請求済にしました（請求日 ${dates.invoicedAt}・支払期限 ${dates.dueDate || "未設定"}）`)
+    // 過入金の充当（次回の請求から引く）は、出荷の画面にしかない（この画面には他の出荷の一覧が無いため）
+    + "\n※ 同じ請求先に過入金がある場合の充当は、出荷の画面で行ってください";
+  // 経理への報告: 出荷の画面と同じく、送り先が設定されていて未報告なら報告する（確認してから）
+  const dest = accountingReportDestOf(st);
+  if(!dest.ready){
+    alert(`${doneMsg}\n\n経理への報告先が未設定のため、経理へは報告していません（「設定」画面の「経理への請求書発行報告」で登録してください）`);
+    return;
+  }
+  if(d.accountingReportedAt){ alert(`${doneMsg}\n\nこの出荷は ${d.accountingReportedAt} に経理へ報告済みのため、報告はしていません`); return; }
+  const destText = [dest.webhook ? "経理スペースへChat投稿" : "", dest.acctEmail ? `${dest.acctEmail} へPDF添付メール` : ""].filter(Boolean).join("・");
+  if(!confirm(`${doneMsg}\n\n続けて経理へ報告しますか？（${destText}）\n\nOK＝報告する ／ キャンセル＝あとで報告する（出荷の画面の「経理へ報告する」から）`)) return;
+  try{
+    const invNo = invoiceNoOf(d);
+    const vars = {
+      contactName: dest.contactName, invNo, billTo: billToForReportOf(d),
+      deliverTo: [d.company, d.officeName].filter(Boolean).join(" / "),
+      // 出荷の画面の billableIncl と同じ（税込合計 − 過入金の充当）
+      amountText: yen(Math.max(0, invoiceTotals(d).total - (Number(d.creditApplied)||0))),
+      due: dates.dueDate, soNumber: d.soNumber, shipDate: d.shipDate,
+    };
+    const res = await reportInvoiceFn({
+      shipmentId: id, pdfBase64, filename,
+      subject: fillInvoiceReportText(st.invoiceMailSubject || DEFAULT_INVOICE_MAIL_SUBJECT, vars),
+      body: fillInvoiceReportText(st.invoiceMailBody || DEFAULT_INVOICE_MAIL_BODY, vars),
+      invNo, billName: vars.billTo, deliverTo: vars.deliverTo, amountText: vars.amountText,
+      dueDate: dates.dueDate || "", soNumber: d.soNumber || "", shipDate: d.shipDate || "",
+    });
+    const warn = (res && res.data && res.data.warnings) || [];
+    alert(warn.length ? `経理への報告に一部失敗しました: ${warn[0]}` : "経理へ報告しました");
+  }catch(e){
+    alert(`経理への報告に失敗しました: ${e.message || e}\n出荷の画面の「経理へ報告する」から報告してください（請求済の記録は済んでいます）`);
+  }
 }
 
 onAuthStateChanged(auth, async (user)=>{

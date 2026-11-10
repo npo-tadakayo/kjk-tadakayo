@@ -26,7 +26,7 @@ import { initPreGuideCard } from "/js/pre-guide.js";
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
-import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone, isPickup } from "/js/ship-flow.js";
+import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone, isPickup, mailedPendingNotes } from "/js/ship-flow.js";
 // 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
 import { completionWarnings } from "/js/case-complete-check.js";
 import { isCompleting, completionConfirmText, completionActivityNote,
@@ -700,7 +700,6 @@ function shipStepperHtml(s) {
 function shipNextAction(s) {
   const st = shipStatusOf(s);
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
-  const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
   const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
   // 出荷の二段階化（2026-10-21）: 下書きは「出荷を依頼する」。依頼済は倉庫の担当が発送して「発送済」にするので、
   // 依頼した人は押す操作がない（waiting: 状態の案内だけ・2026-11-08）。
@@ -711,7 +710,8 @@ function shipNextAction(s) {
     if (s.warehouseIssue) return { label: "倉庫から差し戻し：直して再送してください", icon: "alert-triangle", url: soUrl, external: false, waiting: true, issue: true };
     return { label: isPickup(s) ? "倉庫の受け渡し待ち" : "倉庫の発送待ち", icon: "truck-delivery", url: soUrl, external: false, waiting: true };
   }
-  if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invUrl, external: true };
+  // 「請求書を出す」の飛び先は screen-rules.js の invoicePromptUrl が正本（出荷の画面の「請求済にする」へ・2026-11-10 そろえた）
+  if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invoicePromptUrl({ notInvoiced: [s] }), external: false };
   if (st === "invoiced") return { label: "入金を記録する", icon: "cash", url: soUrl, external: false };
   if (st === "paid") {
     if (!s.receiptIssuedAt) return { label: "領収証を出す", icon: "receipt-2", url: receiptUrl, external: true };
@@ -734,6 +734,11 @@ function shipNextActionHtml(s) {
   }
   const targetAttrs = a.external ? ` target="_blank" rel="noopener"` : "";
   return `<a class="btn btn-primary" href="${a.url}"${targetAttrs}><i class="ti ti-${a.icon}" aria-hidden="true"></i> ${a.label}</a>`;
+}
+// 送付済み・記録待ち（メールで送ったが「請求済にする」「発行を記録」がまだ・2026-11-10）。判定は ship-flow.js の mailedPendingNotes
+function shipMailedPendingHtml(s) {
+  return mailedPendingNotes(s).map((n) =>
+    `<div class="ship-next-msg" style="color:var(--color-warn,#c87a1f);margin-top:4px"><i class="ti ti-mail-check" aria-hidden="true"></i> ${escHtml(n.label)}：${escHtml(n.hint)}</div>`).join("");
 }
 
 // 未完了（canceled 以外・領収証未発行）の出荷一覧
@@ -769,7 +774,7 @@ function shipCardHtml(s) {
       ${canceled
         ? `<p style="font-size:13px;color:var(--color-ink-muted);margin:0">この出荷はキャンセルされています。</p>`
         : shipStepperHtml(s)
-          + `<div class="ship-next">${shipNextActionHtml(s)}</div>`
+          + `<div class="ship-next">${shipNextActionHtml(s)}${shipMailedPendingHtml(s)}</div>`
       }
       <div class="ship-links">${links.join("")}</div>
     </div>`;

@@ -222,6 +222,89 @@ export function invoicePatchOf(cur, { invoicedAt, dueDate, today }) {
   return { patch, paid, remain: Math.max(0, remain) };
 }
 
+// ===== 支払期限・請求書メール送付後の「請求済にする」（2026-11-10）=====
+// 支払期限（請求書の記載と同じ）。supply.js から移した（印刷画面のメール送付後の記録でも同じ規則で使う）。
+//   ① shipments.dueDate があればそれを最優先（請求済にしたときに確定値を保存する）
+//   ② dueRule:'net14'（2026-10-19 以降に「発送済にする」を押した出荷）＝ 請求書の発行日＋14日（納品日＝発行日）
+//   ③ それ以外（従来の出荷）＝ 請求月の翌月末。すでに発送済み・請求済みの出荷の期限は変えない
+//   請求書の文言は invoice-doc.js の paymentDueText と同じ規則にすること
+function addDaysYmd(ymd, n) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(ymd || ""));
+  if (!m) return "";
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + n)).toISOString().slice(0, 10);
+}
+export function dueDateOf(s) {
+  if (s.dueDate) return s.dueDate;
+  const base = s.invoicedAt || s.shipDate || "";
+  if (s.dueRule === "net14") return addDaysYmd(base, 14);
+  const m = /^(\d{4})-(\d{2})/.exec(base);
+  if (!m) return "";
+  const d = new Date(Number(m[1]), Number(m[2]) + 1, 0); // 翌月末
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+/** 「請求済にする」で保存する支払期限（発行日 invoicedAt で請求済にしたとき）。出荷の画面と印刷画面で共通 */
+export function invoiceDueOf(s, invoicedAt) {
+  return dueDateOf({ ...s, status: "invoiced", invoicedAt }) || "";
+}
+/**
+ * 請求書をメールで送った直後に「請求済として記録しますか？」と聞くか。
+ * 発送済（未請求）のときだけ聞く。下書き・依頼済（まだ発送していない）・請求済・入金済・キャンセルは聞かない。
+ */
+export function askInvoicedAfterMail(s) {
+  return !!s && shipStatusOf(s) === "shipped";
+}
+/**
+ * 印刷画面で送った請求書PDFに印字される発行日・支払期限（＝請求済にするときに保存する値）。
+ * 印刷画面は「請求済にした日（invoicedAt）」、無ければ画面を開いた日を発行日として印字する（supply-print.js の renderInvoice）。
+ * @param {object} s 出荷（画面を開いたときに読んだもの）
+ * @param {string} openedYmd 画面を開いた日（JST・YYYY-MM-DD）
+ * @returns {{invoicedAt:string, dueDate:string}}
+ */
+export function mailedInvoiceDatesOf(s, openedYmd) {
+  const invoicedAt = (s && s.invoicedAt) || openedYmd;
+  return { invoicedAt, dueDate: invoiceDueOf(s || {}, invoicedAt) };
+}
+/**
+ * 印刷画面で描く請求書の出荷（発行日・支払期限の起点を、保存と同じ openedYmd にそろえる・2026-11-10 レビュー指摘4）。
+ * 請求済でない出荷は invoicedAt が無く、paymentDueText が「描いた瞬間の今日」を起点にしていたため、
+ * 日付をまたぐと印字と保存（mailedInvoiceDatesOf）が1日ずれる余地があった。
+ */
+export function printInvoiceShipOf(s, openedYmd) {
+  return { ...(s || {}), invoicedAt: mailedInvoiceDatesOf(s, openedYmd).invoicedAt };
+}
+/**
+ * 出荷の画面の「請求済にする」の発行日の既定値（2026-11-10 レビュー指摘1）。
+ * 請求書をメールで送ったがまだ請求済でない出荷は、送付日（invoiceMailedAt・JST の YYYY-MM-DD）を既定にする
+ * （送ったPDFの発行日と、保存する invoicedAt・dueDate をそろえる）。それ以外は今日。日付欄は手で変えられる。
+ */
+export function invoiceIssueDefaultOf(s, todayYmd) {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String((s && s.invoiceMailedAt) || ""));
+  const st = shipStatusOf(s);
+  if (m && s && (st === "draft" || st === "requested" || st === "shipped")) return m[1];
+  return todayYmd;
+}
+// 「請求済にする」の記録の直前に、最新の状態が発送済でないとき（別の画面で先に請求済にした等）の文言
+export const NOT_SHIPPED_MSG = "この出荷はもう発送済（未請求）ではありません（ほかの画面で請求済などにした可能性があります）。一覧の最新の状態を確かめてください";
+/**
+ * 「請求済にする」で書く内容（最新の出荷 latest から）。requireShipped なら発送済でないとき NOT_SHIPPED_MSG で止める。
+ * invoice-mark.js の markInvoiced がトランザクションの中で呼ぶ（判定を node のテストで実行できるようにここに置く）。
+ */
+export function markInvoicedPlanOf(latest, { invoicedAt, dueDate, today, requireShipped = false }) {
+  if (requireShipped && shipStatusOf(latest) !== "shipped") throw new Error(NOT_SHIPPED_MSG);
+  return invoicePatchOf(latest, { invoicedAt, dueDate, today });
+}
+/**
+ * 経理への請求書発行報告の送り先（設定画面の値）。出荷の画面の「請求済にする」と印刷画面で共通。
+ * Chat は設定画面の「有効／停止」に従う（未定義は有効。停止中は投稿しない＝functions の resolveWebhook と同じ）
+ */
+export function accountingReportDestOf(st) {
+  st = st || {};
+  const contactName = (st.accountingContactName || "").trim();
+  const acctEmail = (st.accountingEmail || "").trim();
+  const webhook = st.accountingChatWebhookEnabled === false ? "" : (st.accountingChatWebhookUrl || "").trim();
+  return { contactName, acctEmail, webhook, ready: !!(webhook || acctEmail) };
+}
+
 // 同じ入金か（画面を開いた時点の記録と、最新の記録を突き合わせる）
 function samePayment(a, b) {
   if (!a || !b) return false;
