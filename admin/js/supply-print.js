@@ -489,15 +489,19 @@ function collectReceiptSnapshot(){
     note: document.getElementById("rcptNoteText")?.textContent || "",
   };
 }
-async function saveReceiptIssue(s, shipmentId, userEmail){
-  if(!confirmContactFilled("この領収証")) return;
+// opts.snap: 送付PDFを作った時点で取った明細（メール送信後の記録で使う。送ったPDFと記録を一致させる）
+// opts.skipContactCheck: メール送信側で連絡先の確認を済ませている場合に二重で聞かない
+// 戻り値: 記録できたら true
+async function saveReceiptIssue(s, shipmentId, userEmail, opts={}){
+  if(!opts.skipContactCheck && !confirmContactFilled("この領収証")) return false;
   const btn=document.getElementById("rcptSaveBtn");
   const info=document.getElementById("rcptSaveInfo");
-  const snap=collectReceiptSnapshot();
-  if(!(snap.amountIncl>0)){ info.textContent="金額が0円です（明細を入力してください）"; return; }
+  const snap=opts.snap||collectReceiptSnapshot();
+  if(!(snap.amountIncl>0)){ if(info) info.textContent="金額が0円です（明細を入力してください）"; return false; }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
   const issuedAt=receiptDateOf(s)||todayJst();   // 発行日＝入金日
-  btn.disabled=true;
+  if(btn) btn.disabled=true;
+  let ok=false;
   try{
     await setDoc(doc(db,"receipts",shipmentId),{
       receiptNo: rcptNo, shipmentId, soNumber:s.soNumber||"",
@@ -512,10 +516,14 @@ async function saveReceiptIssue(s, shipmentId, userEmail){
       receiptNo: rcptNo, receiptIssuedAt:issuedAt, receiptIssuedBy:userEmail,
       receiptAmountIncl:snap.amountIncl, updatedAt:serverTimestamp(),
     });
-    info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`;
-    btn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
-  }catch(e){ info.textContent=`記録に失敗: ${e.message}`; }
-  finally{ btn.disabled=false; }
+    // 画面内の状態も更新（メール送信後の記録でも、以後「記録を更新」の扱いになる）
+    s.receiptNo=rcptNo; s.receiptIssuedAt=issuedAt; s.receiptIssuedBy=userEmail; s.receiptAmountIncl=snap.amountIncl;
+    if(info) info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`;
+    if(btn) btn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
+    ok=true;
+  }catch(e){ if(info) info.textContent=`記録に失敗: ${e.message}`; }
+  finally{ if(btn) btn.disabled=false; }
+  return ok;
 }
 
 const TITLES={po:"発注書 ",ship:"送付状 ",letterpack:"宛名 ",plabel:"宛名 ",invoice:"請求書 ",receipt:"領収証 ",refund:"返金明細書 "};
@@ -645,7 +653,7 @@ function subsidyGuideData(d){
            aIncl: yenNum("aIncl"), bIncl: yenNum("bIncl"), units, readerName };
 }
 
-function setupMailDoc(kind, d, st){
+function setupMailDoc(kind, d, st, userEmail){
   const btn = document.getElementById("mailDocBtn");
   if(!btn) return;
   btn.style.display = "inline-flex";
@@ -715,6 +723,8 @@ function setupMailDoc(kind, d, st){
       // （html2canvas は @media print を適用しないので、画面の #body をそのまま渡すと編集UIが写る）
       const { clone, cleanup } = printableClone();
       let dataUri;
+      // 領収証は、送るPDFと同じ瞬間の明細・金額を控えておく（送信後の「発行として記録」でこれを使う）
+      const issueSnap = kind === "receipt" ? collectReceiptSnapshot() : null;
       try{
         // A4 1枚に収める（フッターだけが2ページ目に出ていた・2026-10-01）
         dataUri = await buildOnePagePdf(clone);
@@ -757,6 +767,21 @@ function setupMailDoc(kind, d, st){
                     document.getElementById("mailDocGuide")?.checked && (kind==="receipt" || kind==="invoice") ? "助成金申請の手順" : "",
                     document.getElementById("mailDocFurikomi")?.checked && kind==="invoice" ? "お振込方法のご案内" : ""].filter(Boolean);
       alert(`${MAIL_DOC_LABEL[kind]}${encl.length ? "と" + encl.join("・") : ""}を ${to} へ送付しました`);
+      // 領収証を送ったら、発行として記録するか確認する（2026-11-10）。
+      // 送信と発行記録が別操作で、「メール送信済みなのに画面は領収証を出すのまま」の出荷が出ていたため。
+      // 送信は取り消せないので、記録の確認は送信成功の後に出す。キャンセルなら従来どおり後から「発行を記録」で記録できる。
+      if(kind === "receipt" && issueSnap){
+        try{
+          if(d.receiptIssuedAt){
+            // 発行済みなら聞かずに、送ったPDFと同じ内容へ記録を更新する（再送で記録だけ古いまま残らないように）
+            const ok = await saveReceiptIssue(d, id, userEmail, { snap: issueSnap, skipContactCheck: true });
+            alert(ok ? "発行記録を、送った領収証の内容に更新しました" : "発行記録の更新に失敗しました。領収証ページの「記録を更新」から記録してください");
+          }else if(confirm("領収証を送りました。発行として記録しますか？\n\nOK＝記録する ／ キャンセル＝あとで記録する（領収証ページの「発行を記録」から）")){
+            const ok = await saveReceiptIssue(d, id, userEmail, { snap: issueSnap, skipContactCheck: true });
+            if(!ok) alert("発行の記録に失敗しました。領収証ページの「発行を記録」から記録してください");
+          }
+        }catch(_){ /* 送信は成功済み。記録は後からでもできる */ }
+      }
     }catch(ex){
       err.textContent = `送信に失敗しました: ${ex.message || ex}`;
       err.style.display = "block";
@@ -839,7 +864,7 @@ onAuthStateChanged(auth, async (user)=>{
         : type==="refund" ? renderRefundStatement(d, settings)
         : renderReceipt(d, settings, savedReceipt, docContactName);
       // 請求書・領収証はメールでも送れる（送付状・宛名・発注書は対象外）
-      if(type==="invoice" || type==="receipt") setupMailDoc(type, d, settings);
+      if(type==="invoice" || type==="receipt") setupMailDoc(type, d, settings, user.email);
       // 返金明細書: 発行記録のボタンを出す（返金がある出荷のみ意味を持つ）
       if(type==="refund"){
         const ctrl=document.getElementById("rfControls");
