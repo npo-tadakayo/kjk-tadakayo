@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import {
   classifySendOutcome, recordRetryFailedText, RECORD_RETRY_LABEL, CLOSE_WITH_PENDING_RECORD_TEXT,
-  SUPPORT_DONE_STATUS, shouldAskSupportDone, supportDoneAskText,
+  SUPPORT_DONE_STATUS, ORDER_CONFIRMED_STATUS, shouldAskSupportDone, supportDoneAskText,
   errorCodeOf, isAmbiguousSendError, RESEND_AFTER_UNKNOWN_CONFIRM_TEXT,
   pendingKey, savePending, loadPending, clearPending, _resetPendingMemory, jstDateOf,
   reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT, PENDING_RELEASED_CARD_TEXT,
@@ -452,13 +452,24 @@ t("SUPPORT_DONE_STATUS は constants.js の「伴走支援実施済」・screen-
   assert.equal(SUPPORT_DONE_STATUS, SUPPORT_DONE);
 });
 
-t("伴走支援実施済より前（新規受信〜伴走支援待ち）では聞く", () => {
-  for (const s of [1, 2, 3, 5, 6, 7]) assert.equal(shouldAskSupportDone({ status: s }), true, `status ${s}`);
+t("ORDER_CONFIRMED_STATUS は constants.js の「受注確定」", () => {
+  assert.equal(STATUS_LABELS[ORDER_CONFIRMED_STATUS], "受注確定");
+});
+
+t("受注確定〜伴走支援待ちでは聞く", () => {
+  for (const s of [3, 5, 6, 7]) assert.equal(shouldAskSupportDone({ status: s }), true, `status ${s}`);
   assert.equal(shouldAskSupportDone({ status: "7" }), true);       // セレクトの文字列でもよい
-  assert.equal(shouldAskSupportDone({ status: undefined }), true); // 状態なし＝新規受信
-  // パイプライン順で 8 より前のものと一致（失注は末尾なので入らない）
-  const before = STATUS_ORDER.slice(0, STATUS_ORDER.indexOf(8));
-  assert.deepEqual(before, [1, 2, 3, 5, 6, 7]);
+  assert.deepEqual([3, 5, 6, 7].map((s) => STATUS_LABELS[s]), ["受注確定", "担当者決定", "事前準備中", "伴走支援待ち"]);
+  // パイプライン順で 受注確定 から 8 の手前までと一致（失注は末尾なので入らない）
+  assert.deepEqual(STATUS_ORDER.slice(STATUS_ORDER.indexOf(3), STATUS_ORDER.indexOf(8)), [3, 5, 6, 7]);
+});
+
+t("受注前（新規受信・確認中・状態なし）では聞かない（2026-11-10 決定）", () => {
+  for (const s of [1, 2, "1", "2"]) assert.equal(shouldAskSupportDone({ status: s }), false, `status ${s}`);
+  assert.deepEqual([1, 2].map((s) => STATUS_LABELS[s]), ["新規受信", "確認中"]);
+  assert.equal(shouldAskSupportDone({ status: undefined }), false); // 状態なし＝新規受信
+  assert.equal(shouldAskSupportDone({ status: "" }), false);
+  assert.equal(shouldAskSupportDone({ status: 0 }), false);
 });
 
 t("伴走支援実施済以降・完了・失注では聞かない", () => {
@@ -470,7 +481,7 @@ t("伴走支援実施済以降・完了・失注では聞かない", () => {
 t("対象外（archived）・閲覧のみでは聞かない", () => {
   assert.equal(shouldAskSupportDone({ status: 7, archived: true }), false);
   assert.equal(shouldAskSupportDone({ status: 7, canChangeStatus: false }), false);
-  assert.equal(shouldAskSupportDone(), true); // 引数なし＝新規受信・変更可
+  assert.equal(shouldAskSupportDone(), false); // 引数なし＝新規受信（受注前）なので聞かない
 });
 
 t("確認文に今の状態と変更先が入る", () => {

@@ -250,20 +250,27 @@ export function jstDateOf(iso) {
 /** 伴走支援実施済（constants.js の 8） */
 export const SUPPORT_DONE_STATUS = 8;
 
-// パイプライン順（STATUS_ORDER）で伴走支援実施済より前の状態。失注(4)は末尾にあるので入らない
-const BEFORE_SUPPORT_DONE = STATUS_ORDER.slice(0, STATUS_ORDER.indexOf(SUPPORT_DONE_STATUS));
+/** 受注確定（constants.js の 3） */
+export const ORDER_CONFIRMED_STATUS = 3;
+
+// 聞く状態: パイプライン順（STATUS_ORDER）で受注確定〜伴走支援実施済の手前（受注確定・担当者決定・事前準備中・伴走支援待ち）。
+// 受注前（新規受信・確認中）は聞かない（2026-11-10 次田さん決定）。受注確定を通らずに実施済へ進むと受注日 orderedAt が付かず、
+// 「見積もり発行済（未申込）」の絞り込みに残るため。失注(4)は STATUS_ORDER の末尾にあるので入らない
+const ASK_SUPPORT_DONE = STATUS_ORDER.slice(
+  STATUS_ORDER.indexOf(ORDER_CONFIRMED_STATUS), STATUS_ORDER.indexOf(SUPPORT_DONE_STATUS));
 
 /**
  * 伴走支援の記録を保存したあとに「伴走支援実施済にしますか」と聞くか。
- * 聞く: パイプライン順で伴走支援実施済より前（新規受信〜伴走支援待ち）。
- * 聞かない: 伴走支援実施済以降・完了・失注・対象外（archived）・状態を変えられない人（閲覧のみ）。
+ * 聞く: 受注確定・担当者決定・事前準備中・伴走支援待ち。
+ * 聞かない: 受注前（新規受信・確認中・状態が空）・伴走支援実施済以降・完了・失注・対象外（archived）・
+ *          状態を変えられない人（閲覧のみ）。聞かないときも記録の保存はそのまま（追加の文言も出さない）。
  * @param {{status:unknown, archived?:boolean, canChangeStatus?:boolean}} c
  */
 export function shouldAskSupportDone({ status, archived = false, canChangeStatus = true } = {}) {
   if (archived || !canChangeStatus) return false;
-  const s = Number(status || 1); // 状態が空の案件は新規受信（画面の表示と同じ）
+  const s = Number(status || 1); // 状態が空の案件は新規受信（画面の表示と同じ）＝受注前なので聞かない
   if (s === LOST) return false;
-  return BEFORE_SUPPORT_DONE.includes(s);
+  return ASK_SUPPORT_DONE.includes(s);
 }
 
 /** 確認ダイアログの本文 */

@@ -449,7 +449,7 @@ erDiagram
 | `cases` | 案件（問い合わせ〜完了の中心データ） |
 | `offices` | 介護事業所マスタ。住所は `prefecture`/`city`/`addressDetail` と、それをつなげた `address`。`officeCode`＝介護保険の事業所番号（10桁・2026-11-01〜 事業所画面の新規登録で入る。それ以前の事業所には無い） |
 | `activities` | 対応記録（電話・メール・訪問・メモ・メール送信）。任意の `refType`（"session"＝伴走支援の記録／"onsite"＝当日の確定）・`refId`（sessionId／案件ID）・`refDate`（onsite の訪問日）で元の記録を指す（2026-11-10〜。それ以前の行には無い） |
-| `sessions` | 伴走支援セッション（日付・メモ・写真）。新規保存のあと、案件の `status` が `STATUS_ORDER` で 8 より前（1,2,3,5,6,7）なら「伴走支援実施済にしますか」と確認し、OK のときだけ `#statusSelect` に change を起こして既存の状態変更を通す（自動では変えない・失注/対象外/閲覧のみ/編集では聞かない・`admin/js/record-gaps-case.js` の `shouldAskSupportDone`・2026-11-10 点検5） |
+| `sessions` | 伴走支援セッション（日付・メモ・写真）。新規保存のあと、案件の `status` が `STATUS_ORDER` で受注確定(3)〜8 の手前（3,5,6,7）なら「伴走支援実施済にしますか」と確認し（受注前の 1・2・空は聞かない＝`orderedAt` を付けずに実施済へ進ませない。2026-11-10 次田さん決定）、OK のときだけ `#statusSelect` に change を起こして既存の状態変更を通す（自動では変えない・受注前/失注/対象外/閲覧のみ/編集では聞かない・`admin/js/record-gaps-case.js` の `shouldAskSupportDone`・2026-11-10 点検5） |
 | `documentChecklists / subsidyApplications` | 書類チェック・助成金申請情報 |
 | `products / inventoryMovements` | 商品マスタ・在庫増減ログ |
 | `purchaseOrders / shipments` | 発注（→AB Circle）・出荷（→事業所） |
