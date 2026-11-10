@@ -12,6 +12,8 @@ import { normalizeEmail } from "/js/normalize.js";
 import {
   doc, updateDoc, serverTimestamp,
 } from "/js/fs.js";
+import { bindMailSend, restoreUnloadGuard } from "/js/mail-send-guard.js";
+import { jstDateOf } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -101,30 +103,29 @@ function openModal() {
         </div>
       </div>
     </div>`;
-  const close = () => { host.innerHTML = ""; };
-  document.getElementById("pgClose").addEventListener("click", close);
-  document.getElementById("pgCancel").addEventListener("click", close);
-  document.getElementById("pgSend").addEventListener("click", async (e) => {
-    const to = normalizeEmail(document.getElementById("pgTo").value);
-    const subject = document.getElementById("pgSubject").value.trim();
-    const body = document.getElementById("pgBody").value;
-    if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }
-    e.target.disabled = true;
-    try {
-      await ctx.sendMail({ to, subject, body, caseId: ctx.caseId });
-      await updateDoc(doc(ctx.db, "cases", ctx.caseId), {
-        preGuideMailedAt: new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }),
-        preGuideMailedTo: to,
-        updatedAt: serverTimestamp(),
-      });
-      const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  // 送信 → 記録は mail-send-guard.js（送信と記録の成否を分ける・記録待ちを覚える・送信中は閉じさせない。2026-11-10 点検4）。
+  // 送付日は送信が成功した時点の JST の日付（記録だけやり直しが日をまたいでも同じ）
+  bindMailSend({
+    kind: "preGuide", caseId: ctx.caseId, host,
+    ids: { close: "pgClose", cancel: "pgCancel", send: "pgSend", fields: ["pgTo", "pgSubject", "pgBody"] },
+    readInputs: () => {
+      const to = normalizeEmail(document.getElementById("pgTo").value);
+      const subject = document.getElementById("pgSubject").value.trim();
+      const body = document.getElementById("pgBody").value;
+      if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return null; }
+      return { to, subject, body };
+    },
+    send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
+    record: (to, sentAtIso) => updateDoc(doc(ctx.db, "cases", ctx.caseId), {
+      preGuideMailedAt: jstDateOf(sentAtIso),
+      preGuideMailedTo: to,
+      updatedAt: serverTimestamp(),
+    }).then(() => { const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = jstDateOf(sentAtIso); }),
+    onDone: (close) => {
       ctx.toast("事前準備のご案内を送信しました");
       close();
       render();
-    } catch (err) {
-      alert(`送信に失敗しました: ${err.message || err}`);
-      e.target.disabled = false;
-    }
+    },
   });
 }
 
@@ -138,5 +139,6 @@ export function initPreGuideCard(options) {
     host.id = "preGuideCard";
     pre.insertBefore(host, pre.firstChild);
   }
+  restoreUnloadGuard("preGuide", ctx.caseId); // 送信済み・記録待ちのまま再読み込みしたときも、離れる前に確認
   render();
 }

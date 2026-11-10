@@ -19,10 +19,13 @@ import {
 } from "/js/fs.js";
 import { isPracticeMode } from "/js/mode.js";
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
+import { bindMailSend, restoreUnloadGuard, reconcilePending } from "/js/mail-send-guard.js";
+import { PENDING_RELEASED_CARD_TEXT } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 let ctx = null;          // { db, caseId, getCase, sendMail, toast, userName }
+let pendingNotice = "";   // 記録待ちを解除したときにカードへ出す1行（PENDING_RELEASED_CARD_TEXT）
 let requests = [];       // この案件の consentRequests（作成日降順）
 let openedQrToken = null;
 
@@ -47,7 +50,18 @@ async function reload() {
   requests = qs.docs
     .map((d) => ({ _id: d.id, ...d.data() }))
     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  // 送信済み・記録待ちの依頼が署名済み・取り消し済みになっていたら、記録待ちを解除してカードに1行で知らせる
+  // （署名済みのカードには「メールで依頼を送る」が無く、モーダルからは解除できないため。2026-11-10 再レビュー 中-1）
+  try {
+    const rc = await reconcilePending("consent", ctx.caseId, pendingReqIds());
+    if (rc.state === "released") pendingNotice = PENDING_RELEASED_CARD_TEXT;
+  } catch { /* 照合できなくてもカードは出す */ }
   render();
+}
+
+// この案件の未署名の依頼ID（記録待ちの書き込み先の照合に使う。署名済み・取り消し済みは入れない）
+function pendingReqIds() {
+  return requests.filter((x) => x.status === "pending").map((x) => x._id);
 }
 
 function current() {
@@ -150,7 +164,9 @@ function render() {
         ${statusBadge(r)}
         <span style="margin-left:auto;font-size:11.5px;color:var(--color-ink-muted)">署名をいただいてから伴走支援を始めます</span>
       </div>
-      <div class="card-body">${bodyHtml}</div>
+      <div class="card-body">${pendingNotice
+        ? `<div role="status" style="font-size:12.5px;color:var(--color-warning,#B45309);background:#FBF3E4;border-radius:8px;padding:8px 10px;margin-bottom:10px">${esc(pendingNotice)}</div>`
+        : ""}${bodyHtml}</div>
     </div>`;
 
   wire(r, url);
@@ -280,25 +296,29 @@ function openMailModal(r, url) {
         </div>
       </div>
     </div>`;
-  const close = () => { host.innerHTML = ""; };
-  document.getElementById("consentMailClose").addEventListener("click", close);
-  document.getElementById("consentMailCancel").addEventListener("click", close);
-  document.getElementById("consentMailSend").addEventListener("click", async (e) => {
-    const to = normalizeEmail(document.getElementById("cmTo").value);
-    const subject = document.getElementById("cmSubject").value.trim();
-    const body = document.getElementById("cmBody").value;
-    if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return; }
-    e.target.disabled = true;
-    try {
-      await ctx.sendMail({ to, subject, body, caseId: ctx.caseId });
-      await updateDoc(doc(ctx.db, "consentRequests", r._id), { mailedAt: serverTimestamp(), mailedTo: to });
+  // 送信 → 記録は mail-send-guard.js（送信と記録の成否を分ける・記録待ちを覚える・送信中は閉じさせない。2026-11-10 点検4）。
+  // mailedAt は送信が成功した時点の時刻（記録だけやり直しても同じ値）
+  bindMailSend({
+    kind: "consent", caseId: ctx.caseId, reqId: r._id, host,
+    // 記録待ちの書き込み先の照合に使う（この案件の未署名の依頼。取り消し・署名済みは入れない）
+    candidateReqIds: pendingReqIds(),
+    ids: { close: "consentMailClose", cancel: "consentMailCancel", send: "consentMailSend", fields: ["cmTo", "cmSubject", "cmBody"] },
+    readInputs: () => {
+      const to = normalizeEmail(document.getElementById("cmTo").value);
+      const subject = document.getElementById("cmSubject").value.trim();
+      const body = document.getElementById("cmBody").value;
+      if (!to || !subject || !body) { alert("宛先・件名・本文を入力してください"); return null; }
+      return { to, subject, body };
+    },
+    send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
+    // reqId は照合で決まった書き込み先（記録待ちを開き直したとき、いま開いている依頼と違うことがある）
+    record: (to, sentAtIso, reqId) => updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
+    onDone: async (close) => {
+      pendingNotice = ""; // 新しく送って記録まで済んだら、前回の解除のお知らせは消す
       ctx.toast("署名依頼メールを送信しました");
       close();
       await reload();
-    } catch (err) {
-      alert(`送信に失敗しました: ${err.message || err}`);
-      e.target.disabled = false;
-    }
+    },
   });
 }
 
@@ -319,5 +339,6 @@ export async function initConsentCard(options) {
     m.id = "consentMailModal";
     document.body.appendChild(m);
   }
+  restoreUnloadGuard("consent", ctx.caseId); // 送信済み・記録待ちのまま再読み込みしたときも、離れる前に確認
   await reload();
 }

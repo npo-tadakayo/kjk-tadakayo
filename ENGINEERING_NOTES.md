@@ -449,7 +449,7 @@ erDiagram
 | `cases` | 案件（問い合わせ〜完了の中心データ） |
 | `offices` | 介護事業所マスタ。住所は `prefecture`/`city`/`addressDetail` と、それをつなげた `address`。`officeCode`＝介護保険の事業所番号（10桁・2026-11-01〜 事業所画面の新規登録で入る。それ以前の事業所には無い） |
 | `activities` | 対応記録（電話・メール・訪問・メモ・メール送信）。任意の `refType`（"session"＝伴走支援の記録／"onsite"＝当日の確定）・`refId`（sessionId／案件ID）・`refDate`（onsite の訪問日）で元の記録を指す（2026-11-10〜。それ以前の行には無い） |
-| `sessions` | 伴走支援セッション（日付・メモ・写真） |
+| `sessions` | 伴走支援セッション（日付・メモ・写真）。新規保存のあと、案件の `status` が `STATUS_ORDER` で受注確定(3)〜8 の手前（3,5,6,7）なら「伴走支援実施済にしますか」と確認し（受注前の 1・2・空は聞かない＝`orderedAt` を付けずに実施済へ進ませない。2026-11-10 次田さん決定）、OK のときだけ `#statusSelect` に change を起こして既存の状態変更を通す（自動では変えない・受注前/失注/対象外/閲覧のみ/編集では聞かない・`admin/js/record-gaps-case.js` の `shouldAskSupportDone`・2026-11-10 点検5） |
 | `documentChecklists / subsidyApplications` | 書類チェック・助成金申請情報 |
 | `products / inventoryMovements` | 商品マスタ・在庫増減ログ |
 | `purchaseOrders / shipments` | 発注（→AB Circle）・出荷（→事業所） |
@@ -458,7 +458,7 @@ erDiagram
 | `quotes` | 見積もり（2026-09-06〜）。1案件に v1, v2… を積む。`estNo` は案件で引き継ぎ、版だけ上げる。`items[{sku,connector,subsidyQty,extraQty}]` は**品番ベース**、`amounts` は**サーバ計算のみ**（`functions/estimate-pricing.js`＝`js/estimate-pricing.js` と同一内容・`scripts/check-pricing-sync.sh`）。`status`: issued / accepted / superseded。`createdVia`: web（見積もりツール）/ staff（CRM「見積もりを作る」・2026-09-14）。`accessToken` は事業所側の操作（PDF送付・申込）の鍵。`pdfPath/pdfUrl/mailedAt` は PDF 送付済みの印。`groupId/groupIndex/groupSize` は同一法人の複数事業所まとめ見積もり（2026-09-14）。`validUntil`=発行＋30日（期限切れは画面で判定・status は書き換えない） |
 | `leadTokens` | 継続トークン（128bit 乱数・30日）。LP問い合わせの応答で発行し `mitsumori.html?t=` で事業所情報を引き継ぐ。`get` のみ公開・`list` はスタッフ・書き込みは Functions のみ |
 | `locations` | 保管場所マスタ（2026-09-12）。`products.stockByLocation` と `shipments.originLocationId` が参照 |
-| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない） |
+| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない）。`mailedAt/mailedTo` は依頼メールを送った印。送信と記録は別に扱い、送信後に記録だけ失敗したら「記録だけやり直す」（メールは再送しない・2026-11-10 点検4）。結線は `admin/js/mail-send-guard.js`、判定は `admin/js/record-gaps-case.js`。送信エラーの code が internal／deadline-exceeded／unavailable／unknown なら「送れたか不明」（次の送信の前に確認）。記録待ちは sessionStorage `kjk.mailRecordPending.{consent\|preGuide}.{caseId}`（宛先・送信日時ISO・承諾書は照合用の印 `reqKey`＝依頼IDの SHA-256 の16進の先頭16文字。依頼IDそのものは入れない。開いたとき未署名の依頼から印を計算して書き込み先を決め、無ければ記録待ちを消す。`crypto.subtle` が無ければ承諾書は sessionStorage に書かない。生の `reqId` 入りの古い形式は読んだ時点で捨てる）。照合は `mail-send-guard.js` の `reconcilePending` に1本化し、モーダルを開いたときと承諾書カードの読み込みの両方で呼ぶ（一致が無ければ記録待ちを消し、カードに1行出す）。「送れたか不明」の印は sessionStorage `kjk.mailUnknown.{kind}.{caseId}`＝"1"（値はこれだけ）。`beforeunload` は送信開始〜記録完了の間。`mailedAt` は送信成功時点の端末時刻（Date。やり直しでも同じ値）。事前準備のご案内の `cases.preGuideMailedAt/To` も同じ（送付日は同じ時刻の JST 日付） |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定。**2026-10-21〜 読めるのは登録スタッフ・書けるのは管理者だけ**（`match /appConfig/{docId}`）。`settings.js`・`pricing.js`・`simulator.js` はいずれも管理者画面 |
 | `bankTxns/{hash}` | 入金明細の取込記録（2026-10-21）。**記録した行だけ**を最小限（日付・金額・正規化名義・出荷）で残し、同じ行の二重取り込みを防ぐ。CSV 全体は保存しない。職員が書く（catch-all のまま） |
 | `bankConfig/{presets,payerAliases}` | 銀行CSVの列割り当てプリセットと、名義の学習（2026-10-21）。**appConfig に置かない**（staff が書くため）。職員が書く |
