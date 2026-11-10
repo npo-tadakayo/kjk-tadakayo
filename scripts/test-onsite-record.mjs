@@ -104,4 +104,98 @@ t("PR #57 の未保存の見張りはそのまま（伴走支援の記録とそ�
   assert.match(cd, /sessionEditUnsaved = trackUnsaved\("sessionEdit", document\.getElementById\("sessionsEl"\), "sessEditUnsaved",/);
 });
 
+// ===== 提案5: 当日の記録を確定 =====
+const STEP_KEYS = ["portalReg", "certInstall", "mynaApp", "crConnect", "webSetup", "operationTest", "userNotice"];
+const CP_KEYS = ["clientInstall", "certInstall", "licenseApply", "csvExport", "csvImport", "testSend"];
+
+t("確定の要約は訪問日と完了した工程の数だけ（done が true のものだけ数える）", () => {
+  const onsite = { visitDate: "2026-11-12", notes: "山田太郎様 宅で実施", steps: {
+    portalReg: { done: true, memo: "被保険者番号 1234567890" }, certInstall: { done: true }, mynaApp: { done: false }, crConnect: { memo: "x" } } };
+  const cp = { steps: { clientInstall: { done: true } } };
+  const r = R.onsiteConfirmSummary({ onsite, cp, visitDate: "2026-11-12", stepKeys: STEP_KEYS, cpStepKeys: CP_KEYS });
+  assert.equal(r.subject, "当日の記録を確定（2026-11-12）");
+  assert.equal(r.body, "介護情報基盤の当日工程: 2/7 完了\nケアプラン連携の導入作業: 1/6 完了");
+  // 所感・メモ（利用者氏名や番号が入りうる）は写さない
+  assert.ok(!/山田|1234567890|被保険者/.test(r.subject + r.body));
+});
+
+t("ケアプラン連携が導入済みなら省略と書く・工程が空でも 0 件で出る", () => {
+  const r = R.onsiteConfirmSummary({ onsite: {}, cp: { installStatus: "installed" }, visitDate: "2026-11-12", stepKeys: STEP_KEYS, cpStepKeys: CP_KEYS, cpInstalled: true });
+  assert.equal(r.body, "介護情報基盤の当日工程: 0/7 完了\nケアプラン連携: 導入済みのため省略");
+});
+
+t("二重防止: 同じ案件・同じ訪問日の確定があれば見つける。別の日・別の案件・参照なしは見つけない", () => {
+  const acts = [
+    { _id: "a1", type: "visit", subject: "伴走支援セッション（2026-11-12）" },                                  // 参照なし（既存）
+    { _id: "a2", refType: "session", refId: "S1" },
+    { _id: "a3", refType: "onsite", refId: "C1", refDate: "2026-11-01" },
+    { _id: "a4", refType: "onsite", refId: "C2", refDate: "2026-11-12" },
+  ];
+  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-12"), null);
+  acts.push({ _id: "a5", refType: "onsite", refId: "C1", refDate: "2026-11-12" });
+  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-12")._id, "a5");
+  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-01")._id, "a3");
+  assert.equal(R.findOnsiteConfirmation(acts, "C1", ""), null);
+  assert.equal(R.findOnsiteConfirmation(null, "C1", "2026-11-12"), null);
+});
+
+t("確定で書く対応記録は既存の種別（訪問・対面）に refType/refId/refDate を付けたもの", () => {
+  const summary = { subject: "当日の記録を確定（2026-11-12）", body: "介護情報基盤の当日工程: 7/7 完了" };
+  const a = R.onsiteConfirmActivity({ caseId: "C1", visitDate: "2026-11-12", summary, userId: "u1", userName: "次田" });
+  assert.deepEqual(a, { caseId: "C1", type: "visit", userId: "u1", userName: "次田", subject: summary.subject, body: summary.body,
+    attachmentUrls: [], refType: "onsite", refId: "C1", refDate: "2026-11-12" });
+  // 書いた行は二重防止の判定で見つかる
+  assert.ok(R.findOnsiteConfirmation([a], "C1", "2026-11-12"));
+});
+
+// ===== 提案5: 対応記録のリンク先 =====
+t("ref のある行のリンク先（伴走支援の記録→その記録、当日→当日タブの先頭）", () => {
+  assert.deepEqual(R.activityRefLink({ refType: "session", refId: "S1" }),
+    { label: "伴走支援の記録を開く", tab: "onsite", anchorId: "session-S1", fallbackId: "tab-onsite" });
+  assert.deepEqual(R.activityRefLink({ refType: "onsite", refId: "C1" }),
+    { label: "当日の記録を開く", tab: "onsite", anchorId: "tab-onsite", fallbackId: "tab-onsite" });
+  assert.equal(R.sessionAnchorId("S1"), "session-S1");
+});
+
+t("ref の無い既存の行・知らない種類・refId 空にはリンクを出さない", () => {
+  for (const a of [{}, { type: "visit" }, { refType: "session" }, { refType: "session", refId: "" }, { refType: "quote", refId: "Q1" }, null])
+    assert.equal(R.activityRefLink(a), null);
+});
+
+// ===== 提案5: 画面の配線 =====
+t("伴走支援の記録の追加・編集の対応記録に ref を付ける（追加は既存の1回の書き込みに足すだけ）", () => {
+  const add = cd.slice(cd.indexOf("async function addSession("), cd.indexOf("// ===== AIアシスタント ====="));
+  assert.equal((add.match(/addDoc\(collection\(db, "activities"\)/g) || []).length, 1, "追加で対応記録を2回書いている");
+  assert.match(add, /refType: "session", refId: sessRef\.id/);
+  const edit = cd.slice(cd.indexOf("async function saveSessionEdit("), cd.indexOf("async function deleteSession("));
+  assert.match(edit, /refType: "session", refId: sessionId/);
+  const del = cd.slice(cd.indexOf("async function deleteSession("), cd.indexOf("function applySessionDateDefault"));
+  assert.ok(!/refType/.test(del), "削除した記録へのリンクは付けない");
+});
+
+t("伴走支援の記録のカード（表示・編集とも）にリンク先の id がある", () => {
+  const n2 = (cd.match(/<div class="card" id="\$\{escHtml\(sessionAnchorId\(s\._id\)\)\}"/g) || []).length;
+  assert.equal(n2, 2);
+});
+
+t("対応記録の一覧にリンクを出し、押すと当日タブへ切り替えてスクロールする", () => {
+  assert.match(cd, /\$\{refLinkHtml\(a\)\}/);
+  assert.match(cd, /data-ref-type="\$\{escHtml\(a\.refType\)\}" data-ref-id="\$\{escHtml\(a\.refId\)\}"/);
+  const open = cd.slice(cd.indexOf("function openActivityRef("), cd.indexOf("function openActivityRef(") + 500);
+  assert.match(open, /activateTab\(link\.tab\);/);
+  assert.match(open, /document\.getElementById\(link\.anchorId\) \|\| document\.getElementById\(link\.fallbackId\)/);
+  assert.match(cd, /closest\("\.act-ref-open"\)/);
+});
+
+t("当日タブに「当日の記録を確定」。二重防止は押した時点で読み直し、自動保存は変えない", () => {
+  assert.match(sc, /\$\{cardCpEvidence\(\)\}\$\{cardOnsiteConfirm\(\)\}`;/);
+  assert.match(sc, /id="sc-onsite-confirm"/);
+  const body = sc.slice(sc.indexOf("async function confirmOnsite("), sc.indexOf("const confirmBtn ="));
+  assert.match(body, /getDocs\(query\(collection\(db, "activities"\), where\("caseId", "==", caseId\)\)\)/);
+  assert.match(body, /if \(findOnsiteConfirmation\(acts, caseId, d\)\) \{ showConfirmStatus\(`記録済み/);
+  assert.ok(body.indexOf("findOnsiteConfirmation") < body.indexOf("addDoc("), "書く前に確かめる");
+  assert.match(sc, /async function saveSection\(sec\) \{\n\s+await setDoc\(ref, \{ \[sec\]: state\[sec\], updatedAt: serverTimestamp\(\) \}, \{ merge: true \}\);\n\s+\}/);
+  assert.match(cd, /supportChecklist\?\.setActivities\?\.\(latestActivities\);/);
+});
+
 console.log(`ok ${n} tests`);

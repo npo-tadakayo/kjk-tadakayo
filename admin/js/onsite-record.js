@@ -31,6 +31,55 @@ export function perfDateDefault(savedPerf, current, visitDate, { dirty = false }
   return dateDefault(current, visitDate, { dirty });
 }
 
+const doneCount = (steps, keys) => keys.filter((k) => steps && steps[k] && steps[k].done === true).length;
+
+// 「当日の記録を確定」で対応記録に入れる1行。利用者氏名・被保険者証番号は入れない（件数と日付だけ）
+// stepKeys: 介護情報基盤の当日工程のキー／cpStepKeys: ケアプラン連携の導入作業のキー
+export function onsiteConfirmSummary({ onsite, cp, visitDate, stepKeys = [], cpStepKeys = [], cpInstalled = false }) {
+  const kiban = doneCount(onsite && onsite.steps, stepKeys);
+  const lines = [`介護情報基盤の当日工程: ${kiban}/${stepKeys.length} 完了`];
+  if (cpInstalled) lines.push("ケアプラン連携: 導入済みのため省略");
+  else lines.push(`ケアプラン連携の導入作業: ${doneCount(cp && cp.steps, cpStepKeys)}/${cpStepKeys.length} 完了`);
+  return {
+    subject: `当日の記録を確定（${visitDate}）`,
+    body: lines.join("\n"),
+  };
+}
+
+// 同じ訪問日の確定が既に対応記録にあるか（あればその行を返す）
+export function findOnsiteConfirmation(activities, caseId, visitDate) {
+  if (!Array.isArray(activities) || !visitDate) return null;
+  return activities.find((a) => a && a.refType === "onsite" && a.refId === caseId && a.refDate === visitDate) || null;
+}
+
+// 当日の確定を対応記録に書くときの項目（type は既存の「訪問・対面」）
+export function onsiteConfirmActivity({ caseId, visitDate, summary, userId = "", userName = "" }) {
+  return {
+    caseId,
+    type: "visit",
+    userId,
+    userName,
+    subject: summary.subject,
+    body: summary.body,
+    attachmentUrls: [],
+    refType: "onsite",
+    refId: caseId,
+    refDate: visitDate,
+  };
+}
+
+// 伴走支援の記録の見出しカードの id（対応記録のリンクからスクロールする先）
+export const sessionAnchorId = (sessionId) => `session-${sessionId}`;
+export const ONSITE_ANCHOR_ID = "tab-onsite";
+
+// 対応記録の行から開く先。ref が無い・知らない種類なら null（リンクを出さない）
+export function activityRefLink(a) {
+  if (!a || typeof a.refId !== "string" || !a.refId) return null;
+  if (a.refType === "session") return { label: "伴走支援の記録を開く", tab: "onsite", anchorId: sessionAnchorId(a.refId), fallbackId: ONSITE_ANCHOR_ID };
+  if (a.refType === "onsite") return { label: "当日の記録を開く", tab: "onsite", anchorId: ONSITE_ANCHOR_ID, fallbackId: ONSITE_ANCHOR_ID };
+  return null;
+}
+
 // 旧タブ名 → いまのタブ名（「伴走支援」タブは当日タブの末尾へ移した）
 export const TAB_ALIAS = { sessions: "onsite" };
 export const resolveTab = (name) => TAB_ALIAS[name] || name;

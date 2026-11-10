@@ -14,7 +14,7 @@
 //     supportEvaluations に保存。独り立ち可ならトレーナーがバッジを付与（supportBadges）。
 //     判定・検証の純粋関数は support-evaluation.js（scripts/test-support-evaluation.mjs）
 
-import { doc, setDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp, getProdFirestore }
+import { doc, setDoc, updateDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp, getProdFirestore }
   from "/js/fs.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
@@ -26,7 +26,7 @@ import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
 import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
-import { effectiveVisitDate, perfDateDefault } from "./onsite-record.js";
+import { effectiveVisitDate, perfDateDefault, onsiteConfirmSummary, findOnsiteConfirmation, onsiteConfirmActivity } from "./onsite-record.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -382,8 +382,25 @@ function cardEvaluation() {
     </div>`;
 }
 
+// ===== 当日の記録を確定（設計書 提案5）=====
+// チェックは変更のたびに自動保存されるので、そのたびに対応記録へ入れると行があふれる。
+// このボタンを押したときだけ、訪問日と完了した工程の数を対応記録に1行残す（同じ訪問日では1回だけ）
+function cardOnsiteConfirm() {
+  return `
+    <div class="card" id="sc-onsite-confirm-card" style="margin-top:var(--space-4)">
+      <div class="card-header">
+        ${cardTitle("当日の記録を確定", "押すと対応記録に1行残ります（チェックの内容はそのつど自動で保存されています）")}
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">訪問日と、完了した工程の数を対応記録に残します。同じ訪問日では1回だけ残ります。</p>
+        <button type="button" class="btn btn-primary" id="sc-onsite-confirm" style="min-height:44px"><i class="ti ti-circle-check" aria-hidden="true"></i> 当日の記録を確定</button>
+        <span id="sc-onsite-confirm-status" role="status" aria-live="polite" style="font-size:13px;margin-left:10px;color:var(--color-ink-muted)"></span>
+      </div>
+    </div>`;
+}
+
 function renderOnsite() {
-  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div><div id="sc-perf-warn" role="status" style="display:none;font-size:13px;color:var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardEvaluation()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}`;
+  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div><div id="sc-perf-warn" role="status" style="display:none;font-size:13px;color:var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardEvaluation()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}${cardOnsiteConfirm()}`;
 }
 
 // ===== アフタータブ =====
@@ -506,7 +523,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   // 伴走支援の記録を消さないよう、チェックリストは #onsiteChecklist にだけ描く（無い古い画面ではタブ全体）
   const elOnsite = document.getElementById("onsiteChecklist") || document.getElementById("tab-onsite");
   const elAfter = document.getElementById("tab-after");
-  if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {} }; // タブが無ければ何もしない
+  if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {}, setActivities() {} }; // タブが無ければ何もしない
 
   // スケルトンを1回だけ描画（ケアプラン連携は各フェーズに統合）
   elPre.innerHTML = renderPre();
@@ -535,6 +552,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   const visitDate = () => effectiveVisitDate(state.onsite, opts.getCase ? opts.getCase() : null);
   function notifyVisitDate() {
     applyPerfDateDefault();
+    refreshConfirmStatus();
     if (opts.onVisitDate) opts.onVisitDate(visitDate());
   }
 
@@ -950,6 +968,56 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (del) onPhotoDelete(Number(del.dataset.idx));
   });
 
+  // ----- 当日の記録を確定 -----
+  let knownActivities = null; // case-detail.js が対応記録の購読から渡す（setActivities）
+  let confirmBusy = false;
+  function showConfirmStatus(text, isError = false) {
+    const el = $("sc-onsite-confirm-status");
+    if (!el) return;
+    el.style.color = isError ? "var(--color-danger)" : "var(--color-ink-muted)";
+    el.textContent = text;
+  }
+  function refreshConfirmStatus() {
+    if (confirmBusy || !knownActivities) return;
+    const d = visitDate();
+    showConfirmStatus(findOnsiteConfirmation(knownActivities, caseId, d) ? `記録済み（訪問日 ${d}）` : "");
+  }
+  async function confirmOnsite() {
+    if (confirmBusy) return;
+    const d = visitDate();
+    if (!d) { showConfirmStatus("訪問日を入れてから確定してください", true); return; }
+    const btn = $("sc-onsite-confirm");
+    confirmBusy = true;
+    if (btn) btn.disabled = true;
+    try {
+      // 二重に足さない: 押した時点の対応記録を読み直して確かめる（購読の到着待ちで漏れないように）
+      const snap = await getDocs(query(collection(db, "activities"), where("caseId", "==", caseId)));
+      const acts = snap.docs.map((x) => ({ _id: x.id, ...x.data() }));
+      if (findOnsiteConfirmation(acts, caseId, d)) { showConfirmStatus(`記録済み（訪問日 ${d}）`); return; }
+      // 訪問日欄に案件の訪問予定日を出しているだけ（未保存）なら、確定した訪問日として保存する
+      if (!state.onsite.visitDate) { state.onsite.visitDate = d; await saveSection("onsite"); }
+      const summary = onsiteConfirmSummary({
+        onsite: state.onsite, cp: state.cp, visitDate: d,
+        stepKeys: ONSITE_STEPS.map((i) => i.key), cpStepKeys: CP_STEPS.map((i) => i.key), cpInstalled: cpInstalled(state.cp),
+      });
+      await addDoc(collection(db, "activities"), {
+        ...onsiteConfirmActivity({ caseId, visitDate: d, summary,
+          userId: opts.getActorUid ? opts.getActorUid() : "", userName: opts.getActor ? opts.getActor() : "" }),
+        occurredAt: serverTimestamp(),
+      });
+      await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
+      showConfirmStatus(`対応記録に残しました（訪問日 ${d}）`);
+    } catch (e) {
+      showConfirmStatus("記録に失敗しました（時間をおいて再試行）", true);
+      console.error("[supportChecklist] onsite confirm failed", e);
+    } finally {
+      confirmBusy = false;
+      if (btn) btn.disabled = false;
+    }
+  }
+  const confirmBtn = $("sc-onsite-confirm");
+  if (confirmBtn) confirmBtn.addEventListener("click", confirmOnsite);
+
   onSnapshot(ref, (snap) => {
     const data = snap.exists() ? snap.data() : {};
     state.pre = data.pre || {};
@@ -971,5 +1039,8 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (!perfUnsaved.isDirty() && !(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); } };
+  return {
+    // 対応記録の購読が届くたびに呼ぶ（「記録済み」の表示）
+    setActivities(list) { knownActivities = Array.isArray(list) ? list : []; refreshConfirmStatus(); },
+    refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); } };
 }
