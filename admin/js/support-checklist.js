@@ -24,6 +24,7 @@ import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvalu
   buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
 import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
+import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
 
 function escapeHtml(s) {
@@ -108,8 +109,15 @@ function rowStep(sec, item) {
     </div>`;
 }
 
-function savedSpan(sec) {
-  return `<span class="sc-saved" id="sc-saved-${sec}" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>`;
+// 「保存しました HH:MM」を出す場所。自動保存のカードごとに1つ置き、変更した欄があるカードの分に出す（markSaved）。
+// 同じ sec（cp など）が複数のタブ・カードにまたがるので、2つ目以降は part で id を分ける
+function savedSpan(sec, part) {
+  return `<span class="sc-saved" id="sc-saved-${sec}${part ? `-${part}` : ""}" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>`;
+}
+
+// カード見出しの左側（タイトル＋保存のしかたの説明＋未保存の表示）
+function cardTitle(title, note, extra = "") {
+  return `<div><span style="font-weight:600;font-size:14px">${title}</span>${saveModeNoteHtml(note)}${extra}</div>`;
 }
 
 function selectGroup(id, sec, path, label, opts) {
@@ -141,7 +149,7 @@ function cardCpPre() {
   return `
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 事前確認</span>
+        ${cardTitle("ケアプラン連携 — 事前確認", AUTO_SAVE_NOTE)}
         ${savedSpan("cp")}
       </div>
       <div class="card-body">
@@ -174,7 +182,7 @@ function renderPre() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — 事前確認（訪問前）</span>
+        ${cardTitle("介護情報基盤 — 事前確認（訪問前）", AUTO_SAVE_NOTE)}
         ${savedSpan("pre")}
       </div>
       <div class="card-body">
@@ -194,7 +202,7 @@ function cardVisitInfo() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">当日 — 訪問情報</span>
+        ${cardTitle("当日 — 訪問情報", AUTO_SAVE_NOTE)}
         ${savedSpan("onsite")}
       </div>
       <div class="card-body">
@@ -230,7 +238,8 @@ function cardOnsiteSteps() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — 当日工程</span>
+        ${cardTitle("介護情報基盤 — 当日工程", AUTO_SAVE_NOTE)}
+        ${savedSpan("onsite", "steps")}
       </div>
       <div class="card-body">
         ${ONSITE_STEPS.map((i) => rowStep("onsite", i)).join("")}
@@ -246,7 +255,8 @@ function cardCpSteps() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 導入作業</span>
+        ${cardTitle("ケアプラン連携 — 導入作業", AUTO_SAVE_NOTE)}
+        ${savedSpan("cp", "onsite")}
       </div>
       <div class="card-body">
         ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
@@ -261,7 +271,7 @@ function cardCpEvidence() {
   return `
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — 証憑写真（ライセンス／電子証明書の有効期間）</span>
+        ${cardTitle("ケアプラン連携 — 証憑写真（ライセンス／電子証明書の有効期間）", AUTO_SAVE_NOTE)}
       </div>
       <div class="card-body">
         ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
@@ -286,9 +296,9 @@ function cardPerformance() {
           <input type="radio" name="sc-perf-mode" value="${m.v}"> <span>${m.t}</span>
         </label>`).join("");
   return `
-    <div class="card" style="margin-bottom:var(--space-4)">
+    <div class="card" id="sc-perf-card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">実施の記録（誰が実施したか）</span>
+        ${cardTitle("実施の記録（誰が実施したか）", manualSaveNote("実施の記録を保存"), unsavedSpanHtml("sc-perf-unsaved"))}
         <span id="sc-perf-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
       </div>
       <div class="card-body">
@@ -339,7 +349,7 @@ function cardEvaluation() {
   return `
     <div class="card" id="sc-eval-card" style="margin-bottom:var(--space-4);display:none">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">トレーニング評価（トレーナーが記入）</span>
+        ${cardTitle("トレーニング評価（トレーナーが記入）", manualSaveNote("評価を保存"), unsavedSpanHtml("sc-eval-unsaved"))}
         <span id="sc-eval-saved" aria-live="polite" style="font-size:12px;color:var(--color-ink-muted)"></span>
       </div>
       <div class="card-body">
@@ -391,7 +401,8 @@ function cardCpAfter() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">ケアプラン連携 — ライセンス・運用・アフター</span>
+        ${cardTitle("ケアプラン連携 — ライセンス・運用・アフター", AUTO_SAVE_NOTE)}
+        ${savedSpan("cp", "after")}
       </div>
       <div class="card-body">
         <div class="form-row">
@@ -419,7 +430,7 @@ function renderAfter() {
   return `
     <div class="card" style="margin-bottom:var(--space-4)">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">介護情報基盤 — アフターフォロー</span>
+        ${cardTitle("介護情報基盤 — アフターフォロー", AUTO_SAVE_NOTE)}
         ${savedSpan("after")}
       </div>
       <div class="card-body">
@@ -458,7 +469,8 @@ function renderAfter() {
     ${cardCpAfter()}
     <div class="card">
       <div class="card-header">
-        <span style="font-weight:600;font-size:14px">個人情報の取扱い確認（Pマーク準拠）</span>
+        ${cardTitle("個人情報の取扱い確認（Pマーク準拠）", AUTO_SAVE_NOTE)}
+        ${savedSpan("after", "privacy")}
       </div>
       <div class="card-body">
         ${PRIVACY_ITEMS.map((i) => `
@@ -629,6 +641,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       // 既存の pre/onsite/cp/after を壊さないよう merge で書く
       await setDoc(ref, { performance: r.performance, updatedAt: serverTimestamp() }, { merge: true });
       perf = r.performance;
+      perfUnsaved.clean();
       renderPerfSummary();
       renderPerfWarn();
       await loadPriorOk();
@@ -643,6 +656,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   elOnsite.addEventListener("change", (e) => {
     if (e.target && e.target.name === "sc-perf-mode") syncPerfMode();
   });
+  // 実施の記録・トレーニング評価は保存ボタン。未保存の間は表示し、ページを離れるときに確認を出す（save-mode.js）
+  const perfUnsaved = trackUnsaved("supportPerformance", $("sc-perf-card"), "sc-perf-unsaved");
+  const evalUnsaved = trackUnsaved("supportEvaluation", $("sc-eval-card"), "sc-eval-unsaved");
   const perfSaveBtn = $("sc-perf-save");
   if (perfSaveBtn) perfSaveBtn.addEventListener("click", savePerformance);
 
@@ -744,11 +760,11 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   function renderEval() {
     const card = $("sc-eval-card");
     if (!card) return;
-    if (!evaluationEligible(perf)) { card.style.display = "none"; return; } // トレーナーなし・見学・単独は対象外
+    if (!evaluationEligible(perf)) { card.style.display = "none"; evalUnsaved.clean(); return; } // トレーナーなし・見学・単独は対象外（隠れた欄の未保存は数えない）
     card.style.display = "";
     $("sc-eval-who").textContent = `受講者：${perf.performerName}／トレーナー：${perf.trainerName}／実施日：${perf.date}`;
     renderLearningLine();
-    const busy = document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-");
+    const busy = (document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-eval-")) || evalUnsaved.isDirty();
     const ev = caseEvals.find((e) => e._id === myEvalId());
     if (!busy) {
       ITEMS.forEach((i) => { $(`sc-eval-${i.n}`).value = (ev && ev.scores && ev.scores[i.n]) || ""; });
@@ -779,6 +795,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     try {
       // 同じ案件・日付・受講者の評価は上書き（OJT 1回＝シート1枚）
       await setDoc(doc(db, "supportEvaluations", myEvalId()), { ...r.evaluation, updatedAt: serverTimestamp() });
+      evalUnsaved.clean();
       $("sc-eval-saved").textContent = `保存しました ${new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
     } catch (e) {
       errEl.textContent = "保存に失敗しました（時間をおいて再試行）"; errEl.style.display = "inline";
@@ -815,11 +832,17 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   onSnapshot(query(collection(db, "supportEvaluations"), where("caseId", "==", caseId)),
     (snap) => { caseEvals = snap.docs.map((d) => ({ _id: d.id, ...d.data() })); renderEval(); }, () => {});
 
-  function markSaved(sec) {
-    const el = document.getElementById(`sc-saved-${sec}`);
-    if (!el) return;
+  // 変更した欄があるカードの「保存しました」に出す。cp は事前確認・当日・アフターの3タブにまたがるため、
+  // sec ごとの id（sc-saved-cp は事前確認の見出しにしか無い）で探すと別タブに出てしまっていた（2026-11-10 修正）
+  function savedSpanFor(el) {
+    const card = el && el.closest ? el.closest(".card") : null;
+    return (card && card.querySelector(".sc-saved")) || document.getElementById(`sc-saved-${el.dataset.sec}`);
+  }
+  function markSaved(el) {
+    const sv = savedSpanFor(el);
+    if (!sv) return;
     const t = new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
-    el.textContent = `保存しました ${t}`;
+    sv.textContent = `保存しました ${t}`;
   }
 
   async function saveSection(sec) {
@@ -834,9 +857,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (sec === "cp" && path === "installStatus") syncCpInstalled();
     try {
       await saveSection(sec);
-      markSaved(sec === "cp" ? "cp" : sec);
+      markSaved(el);
     } catch (e) {
-      const sv = document.getElementById(`sc-saved-${sec === "cp" ? "cp" : sec}`);
+      const sv = savedSpanFor(el);
       if (sv) sv.textContent = "保存に失敗しました（時間をおいて再試行）";
       console.error("[supportChecklist] save failed", e);
     }
@@ -924,8 +947,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     renderPerfSummary();
     renderPerfWarn();
     loadPriorOk().then(renderEval);
-    if (!(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
+    // 未保存の変更があるときも流し込まない（同じ文書の自動保存のたびに、入力途中の実施の記録が保存済みの値に戻っていた）
+    if (!perfUnsaved.isDirty() && !(document.activeElement && document.activeElement.id && document.activeElement.id.startsWith("sc-perf-"))) fillPerfForm();
   });
 
-  return { refreshPeople() { fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
+  return { refreshPeople() { if (!perfUnsaved.isDirty()) fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); } };
 }
