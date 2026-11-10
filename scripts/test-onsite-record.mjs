@@ -88,9 +88,9 @@ t("チェックリストは #onsiteChecklist にだけ描く（伴走支援の�
 });
 
 t("初期値の配線: 実施の記録・伴走支援の記録とも純関数を通し、保存済みの実施日は流し込みで戻す", () => {
-  assert.match(sc, /perfDateDefault\(perf, el\.value, visitDate\(\), \{ dirty: perfUnsaved \? perfUnsaved\.isDirty\(\) : false \}\)/);
+  assert.match(sc, /perfDateDefault\(perf, el\.value, visitDate\(\), \{ dirty: perfUnsaved \? perfUnsaved\.isDirty\(\) : false, lastAuto: perfAutoDate \}\)/);
   assert.match(sc, /\$\("sc-perf-date"\)\.value = \(perf && perf\.date\) \|\| "";/);
-  assert.match(cd, /dateDefault\(el\.value, onsiteVisitDate, \{ dirty: !!sessionUnsaved\?\.isDirty\(\) \}\)/);
+  assert.match(cd, /dateDefault\(el\.value, onsiteVisitDate, \{ dirty: !!sessionUnsaved\?\.isDirty\(\), lastAuto: sessionAutoDate \}\)/);
   assert.match(cd, /onVisitDate: \(d\) => \{ onsiteVisitDate = d \|\| ""; applySessionDateDefault\(\); \}/);
   // 初期値を入れるだけでは未保存にしない（イベントを起こさない）
   for (const body of [sc.slice(sc.indexOf("function applyPerfDateDefault"), sc.indexOf("function applyPerfDateDefault") + 600),
@@ -124,19 +124,24 @@ t("ケアプラン連携が導入済みなら省略と書く・工程が空で�
   assert.equal(r.body, "介護情報基盤の当日工程: 0/7 完了\nケアプラン連携: 導入済みのため省略");
 });
 
-t("二重防止: 同じ案件・同じ訪問日の確定があれば見つける。別の日・別の案件・参照なしは見つけない", () => {
+t("二重防止: この案件の対応記録に同じ訪問日の確定があれば見つける。別の日・参照なし・伴走支援の参照は見つけない", () => {
   const acts = [
-    { _id: "a1", type: "visit", subject: "伴走支援セッション（2026-11-12）" },                                  // 参照なし（既存）
-    { _id: "a2", refType: "session", refId: "S1" },
+    { _id: "a1", type: "visit", subject: "当日の記録を確定（2026-11-12）" },                                    // 参照なし（既存）
+    { _id: "a2", refType: "session", refId: "S1", refDate: "2026-11-12" },
     { _id: "a3", refType: "onsite", refId: "C1", refDate: "2026-11-01" },
-    { _id: "a4", refType: "onsite", refId: "C2", refDate: "2026-11-12" },
   ];
-  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-12"), null);
+  assert.equal(R.findOnsiteConfirmation(acts, "2026-11-12"), null);
   acts.push({ _id: "a5", refType: "onsite", refId: "C1", refDate: "2026-11-12" });
-  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-12")._id, "a5");
-  assert.equal(R.findOnsiteConfirmation(acts, "C1", "2026-11-01")._id, "a3");
-  assert.equal(R.findOnsiteConfirmation(acts, "C1", ""), null);
-  assert.equal(R.findOnsiteConfirmation(null, "C1", "2026-11-12"), null);
+  assert.equal(R.findOnsiteConfirmation(acts, "2026-11-12")._id, "a5");
+  assert.equal(R.findOnsiteConfirmation(acts, "2026-11-01")._id, "a3");
+  assert.equal(R.findOnsiteConfirmation(acts, ""), null);
+  assert.equal(R.findOnsiteConfirmation(null, "2026-11-12"), null);
+});
+
+t("低-2: 案件統合で付け替わった確定（refId が統合元のまま）も同じ訪問日なら記録済みとみなす", () => {
+  // 統合後: activities の caseId は残る案件 C1 に付け替わるが、refId は統合元 C9 のまま
+  const merged = [{ _id: "m1", caseId: "C1", refType: "onsite", refId: "C9", refDate: "2026-11-12" }];
+  assert.equal(R.findOnsiteConfirmation(merged, "2026-11-12")?._id, "m1");
 });
 
 t("確定で書く対応記録は既存の種別（訪問・対面）に refType/refId/refDate を付けたもの", () => {
@@ -145,7 +150,7 @@ t("確定で書く対応記録は既存の種別（訪問・対面）に refType
   assert.deepEqual(a, { caseId: "C1", type: "visit", userId: "u1", userName: "次田", subject: summary.subject, body: summary.body,
     attachmentUrls: [], refType: "onsite", refId: "C1", refDate: "2026-11-12" });
   // 書いた行は二重防止の判定で見つかる
-  assert.ok(R.findOnsiteConfirmation([a], "C1", "2026-11-12"));
+  assert.ok(R.findOnsiteConfirmation([a], "2026-11-12"));
 });
 
 // ===== 提案5: 対応記録のリンク先 =====
@@ -192,10 +197,60 @@ t("当日タブに「当日の記録を確定」。二重防止は押した時�
   assert.match(sc, /id="sc-onsite-confirm"/);
   const body = sc.slice(sc.indexOf("async function confirmOnsite("), sc.indexOf("const confirmBtn ="));
   assert.match(body, /getDocs\(query\(collection\(db, "activities"\), where\("caseId", "==", caseId\)\)\)/);
-  assert.match(body, /if \(findOnsiteConfirmation\(acts, caseId, d\)\) \{ showConfirmStatus\(`記録済み/);
+  assert.match(body, /if \(findOnsiteConfirmation\(acts, d\)\) \{ showConfirmStatus\(`記録済み/);
   assert.ok(body.indexOf("findOnsiteConfirmation") < body.indexOf("addDoc("), "書く前に確かめる");
   assert.match(sc, /async function saveSection\(sec\) \{\n\s+await setDoc\(ref, \{ \[sec\]: state\[sec\], updatedAt: serverTimestamp\(\) \}, \{ merge: true \}\);\n\s+\}/);
   assert.match(cd, /supportChecklist\?\.setActivities\?\.\(latestActivities\);/);
+});
+
+// ===== 独立レビューの指摘（2026-11-10） =====
+t("中-2: 自動で入れた値のままの欄は、訪問日を直すと新しい訪問日に置き換わる", () => {
+  // 11-12 を自動で入れた欄 → 訪問日を 11-15 に直す
+  assert.equal(R.dateDefault("2026-11-12", "2026-11-15", { lastAuto: "2026-11-12" }), "2026-11-15");
+  assert.equal(R.perfDateDefault(null, "2026-11-12", "2026-11-15", { lastAuto: "2026-11-12" }), "2026-11-15");
+});
+t("中-2: 人が入れた値・未保存の欄・保存済みの performance.date は置き換えない", () => {
+  assert.equal(R.dateDefault("2026-11-10", "2026-11-15", { lastAuto: "2026-11-12" }), null, "人が入れた値");
+  assert.equal(R.dateDefault("2026-11-12", "2026-11-15", { lastAuto: "2026-11-12", dirty: true }), null, "未保存");
+  assert.equal(R.dateDefault("2026-11-12", "2026-11-15"), null, "自動で入れていない欄");
+  assert.equal(R.perfDateDefault({ date: "2026-11-12" }, "2026-11-12", "2026-11-15", { lastAuto: "2026-11-12" }), null, "保存済み");
+  assert.equal(R.dateDefault("2026-11-12", "", { lastAuto: "2026-11-12" }), null, "訪問日が空になっても消さない");
+});
+t("中-2: 配線は両方の欄とも最後に自動で入れた値を覚えて渡す", () => {
+  assert.match(sc, /lastAuto: perfAutoDate \}\);\n\s+if \(v\) \{ el\.value = v; perfAutoDate = v; \}/);
+  assert.match(cd, /lastAuto: sessionAutoDate \}\);\n\s+if \(v\) \{ el\.value = v; sessionAutoDate = v; \}/);
+});
+
+t("中-1: 伴走支援の記録を追加したあと、未保存を消してから実施日の初期値を入れる", () => {
+  const add = cd.slice(cd.indexOf("async function addSession("), cd.indexOf("// ===== AIアシスタント ====="));
+  const clean = add.indexOf("sessionUnsaved?.clean();");
+  const fill = add.indexOf("applySessionDateDefault();");
+  assert.ok(clean > 0 && fill > clean, "applySessionDateDefault が clean より前にある");
+  // 未保存のままなら入らない（順番が逆だと初期値が入らない理由）
+  assert.equal(R.dateDefault("", "2026-11-12", { dirty: true }), null);
+  assert.equal(R.dateDefault("", "2026-11-12", { dirty: false }), "2026-11-12");
+});
+
+t("中-3: 確定は画面の訪問日欄の値を使い、保存済みと違えば保存してから確定する", () => {
+  assert.deepEqual(R.confirmVisitDate("2026-11-15", ""), { date: "2026-11-15", needsSave: true });
+  assert.deepEqual(R.confirmVisitDate("2026-11-15", "2026-11-12"), { date: "2026-11-15", needsSave: true });
+  assert.deepEqual(R.confirmVisitDate("2026-11-12", "2026-11-12"), { date: "2026-11-12", needsSave: false });
+  assert.deepEqual(R.confirmVisitDate("", "2026-11-12"), { date: "", needsSave: false });
+  const body = sc.slice(sc.indexOf("async function confirmOnsite("), sc.indexOf("const confirmBtn ="));
+  assert.match(body, /confirmVisitDate\(\(\$\("sc-onsite-visitDate"\) \|\| \{\}\)\.value, state\.onsite\.visitDate\)/);
+  assert.match(body, /if \(vd\.needsSave\) \{ state\.onsite\.visitDate = d; await saveSection\("onsite"\); \}/);
+});
+t("中-3: ヘッダーの訪問予定日を保存したら、当日タブの表示と初期値を更新する", () => {
+  const save = cd.slice(cd.indexOf("async function saveVisitDate("), cd.indexOf("function visitSnapshot("));
+  assert.ok(save.indexOf("supportChecklist?.refreshVisitDate?.();") > save.indexOf("Object.assign(currentCase, patch);"));
+  assert.match(sc, /refreshVisitDate\(\) \{ fillOnsiteDefaults\(\); notifyVisitDate\(\); \}/);
+});
+
+t("低-1: 届いた performance を先に更新してから populate（実施日の初期値の判定）", () => {
+  const snap = sc.slice(sc.lastIndexOf("onSnapshot(ref, (snap) => {"));
+  const i = snap.indexOf("perf = data.performance || null;");
+  const j = snap.indexOf("populate();");
+  assert.ok(i > 0 && j > i, "perf の更新が populate より後");
 });
 
 console.log(`ok ${n} tests`);

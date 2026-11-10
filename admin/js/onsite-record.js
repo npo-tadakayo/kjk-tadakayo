@@ -18,17 +18,29 @@ export function effectiveVisitDate(onsite, caseDoc) {
 
 // 入力欄に初期値を入れるか。入れるなら入れる値、入れないなら null。
 // current: いま欄に入っている値／dirty: 利用者が触って未保存（自分で消した場合も含む）
-export function dateDefault(current, visitDate, { dirty = false } = {}) {
+// lastAuto: この欄に最後に自動で入れた値。欄の値がそれと同じ（＝人が入れた値ではない）なら、
+//           訪問日が変わったときに新しい訪問日へ置き換える（2026-11-10 レビュー 中-2）
+export function dateDefault(current, visitDate, { dirty = false, lastAuto = "" } = {}) {
   if (dirty) return null;
-  if (current != null && String(current).trim() !== "") return null;
   if (!visitDate) return null;
-  return visitDate;
+  const cur = current == null ? "" : String(current).trim();
+  if (cur === "") return visitDate;
+  if (lastAuto && cur === lastAuto && cur !== visitDate) return visitDate;
+  return null;
 }
 
 // 実施の記録の実施日の初期値。保存済みの performance に実施日があれば絶対に入れない
-export function perfDateDefault(savedPerf, current, visitDate, { dirty = false } = {}) {
+export function perfDateDefault(savedPerf, current, visitDate, { dirty = false, lastAuto = "" } = {}) {
   if (savedPerf && savedPerf.date) return null;
-  return dateDefault(current, visitDate, { dirty });
+  return dateDefault(current, visitDate, { dirty, lastAuto });
+}
+
+// 「当日の記録を確定」で使う訪問日。画面の訪問日欄に表示されている値を正にする（表示と保存を食い違わせない）。
+// 保存済みの onsite.visitDate と違えば（案件の訪問予定日を表示しているだけ等）、その日を保存してから確定する
+export function confirmVisitDate(displayed, saved) {
+  const date = displayed == null ? "" : String(displayed).trim();
+  if (!date) return { date: "", needsSave: false };
+  return { date, needsSave: date !== (saved || "") };
 }
 
 const doneCount = (steps, keys) => keys.filter((k) => steps && steps[k] && steps[k].done === true).length;
@@ -46,10 +58,12 @@ export function onsiteConfirmSummary({ onsite, cp, visitDate, stepKeys = [], cpS
   };
 }
 
-// 同じ訪問日の確定が既に対応記録にあるか（あればその行を返す）
-export function findOnsiteConfirmation(activities, caseId, visitDate) {
+// 同じ訪問日の確定が既に対応記録にあるか（あればその行を返す）。
+// activities はこの案件の分（caseId で絞って取得したもの）を渡す。refId は見ない
+// （案件を統合すると activities の caseId だけ付け替わり、refId は統合元のまま残るため・レビュー 低-2）
+export function findOnsiteConfirmation(activities, visitDate) {
   if (!Array.isArray(activities) || !visitDate) return null;
-  return activities.find((a) => a && a.refType === "onsite" && a.refId === caseId && a.refDate === visitDate) || null;
+  return activities.find((a) => a && a.refType === "onsite" && a.refDate === visitDate) || null;
 }
 
 // 当日の確定を対応記録に書くときの項目（type は既存の「訪問・対面」）

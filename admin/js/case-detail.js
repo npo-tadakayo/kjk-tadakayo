@@ -161,6 +161,7 @@ async function saveVisitDate(value) {
   const { updatedAt: _u, ...patch } = upd;
   Object.assign(currentCase, patch);
   renderVisitExtras(currentCase, true);
+  supportChecklist?.refreshVisitDate?.(); // 当日タブの訪問日欄（未保存の表示）と実施日の初期値を新しい日へ（レビュー 中-3）
   await logActivity(`訪問予定日変更 → ${v || "未設定"}`, `変更前: ${before.visitDate || "未設定"}`);
   showToast(v ? `訪問予定日を ${v} にしました` : "訪問予定日を未設定にしました");
 }
@@ -1648,12 +1649,14 @@ async function deleteSession(sessionId) {
 
 // 伴走支援の記録（新規入力欄）の実施日が空なら、当日タブの訪問日を初期値に入れる（2026-11-10・設計書 提案1）。
 // 入っている値・触って未保存の欄は変えない。値を入れるだけでは「未保存」にしない（input/change を起こさない）
+// 訪問日を直したら、自動で入れた値のまま（sessionAutoDate と同じ）の欄は新しい訪問日へ置き換える（実施の記録と同じ方式）
 let onsiteVisitDate = "";
+let sessionAutoDate = "";
 function applySessionDateDefault() {
   const el = document.getElementById("sessionDate");
   if (!el || el === document.activeElement) return;
-  const v = dateDefault(el.value, onsiteVisitDate, { dirty: !!sessionUnsaved?.isDirty() });
-  if (v) el.value = v;
+  const v = dateDefault(el.value, onsiteVisitDate, { dirty: !!sessionUnsaved?.isDirty(), lastAuto: sessionAutoDate });
+  if (v) { el.value = v; sessionAutoDate = v; }
 }
 
 async function addSession(userId, userName) {
@@ -1713,10 +1716,10 @@ async function addSession(userId, userName) {
     await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
 
     dateEl.value = ""; summaryEl.value = ""; filesEl.value = "";
-    applySessionDateDefault(); // 次の記録の実施日も当日の訪問日から
     const pc = document.getElementById("photoCount"); if (pc) pc.textContent = "";
     sessionUnsaved?.clean();
     showToast("伴走支援セッションを記録しました");
+    applySessionDateDefault(); // 次の記録の実施日も当日の訪問日から（clean の後＝未保存のままだと入らない・レビュー 中-1）
   } catch (e) {
     alert(`記録に失敗しました: ${e.message}`);
   } finally {

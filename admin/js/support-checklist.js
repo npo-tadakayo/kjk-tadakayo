@@ -26,7 +26,7 @@ import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
 import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
-import { effectiveVisitDate, perfDateDefault, onsiteConfirmSummary, findOnsiteConfirmation, onsiteConfirmActivity } from "./onsite-record.js";
+import { effectiveVisitDate, perfDateDefault, confirmVisitDate, onsiteConfirmSummary, findOnsiteConfirmation, onsiteConfirmActivity } from "./onsite-record.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -523,7 +523,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   // 伴走支援の記録を消さないよう、チェックリストは #onsiteChecklist にだけ描く（無い古い画面ではタブ全体）
   const elOnsite = document.getElementById("onsiteChecklist") || document.getElementById("tab-onsite");
   const elAfter = document.getElementById("tab-after");
-  if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {}, setActivities() {} }; // タブが無ければ何もしない
+  if (!elPre || !elOnsite || !elAfter) return { refreshPeople() {}, setActivities() {}, refreshVisitDate() {} }; // タブが無ければ何もしない
 
   // スケルトンを1回だけ描画（ケアプラン連携は各フェーズに統合）
   elPre.innerHTML = renderPre();
@@ -641,11 +641,13 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
 
   // 実施日が空なら当日の訪問日を初期値に入れる。保存済みの実施日（perf.date）は書き換えない
   // （評価IDが caseId__実施日__実施者 のため）。値を入れるだけでは「未保存」にしない（input/change を起こさない）
+  // 訪問日を直したら、自動で入れた実施日（perfAutoDate と同じ値のまま）は新しい訪問日へ置き換える。人が入れた値は変えない
+  let perfAutoDate = "";
   function applyPerfDateDefault() {
     const el = $("sc-perf-date");
     if (!el || el === document.activeElement) return;
-    const v = perfDateDefault(perf, el.value, visitDate(), { dirty: perfUnsaved ? perfUnsaved.isDirty() : false });
-    if (v) el.value = v;
+    const v = perfDateDefault(perf, el.value, visitDate(), { dirty: perfUnsaved ? perfUnsaved.isDirty() : false, lastAuto: perfAutoDate });
+    if (v) { el.value = v; perfAutoDate = v; }
   }
 
   async function savePerformance() {
@@ -980,11 +982,13 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   function refreshConfirmStatus() {
     if (confirmBusy || !knownActivities) return;
     const d = visitDate();
-    showConfirmStatus(findOnsiteConfirmation(knownActivities, caseId, d) ? `記録済み（訪問日 ${d}）` : "");
+    showConfirmStatus(findOnsiteConfirmation(knownActivities, d) ? `記録済み（訪問日 ${d}）` : "");
   }
   async function confirmOnsite() {
     if (confirmBusy) return;
-    const d = visitDate();
+    // 画面の訪問日欄に表示されている値で確定する（表示と保存を食い違わせない・レビュー 中-3）
+    const vd = confirmVisitDate(($("sc-onsite-visitDate") || {}).value, state.onsite.visitDate);
+    const d = vd.date;
     if (!d) { showConfirmStatus("訪問日を入れてから確定してください", true); return; }
     const btn = $("sc-onsite-confirm");
     confirmBusy = true;
@@ -993,9 +997,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       // 二重に足さない: 押した時点の対応記録を読み直して確かめる（購読の到着待ちで漏れないように）
       const snap = await getDocs(query(collection(db, "activities"), where("caseId", "==", caseId)));
       const acts = snap.docs.map((x) => ({ _id: x.id, ...x.data() }));
-      if (findOnsiteConfirmation(acts, caseId, d)) { showConfirmStatus(`記録済み（訪問日 ${d}）`); return; }
-      // 訪問日欄に案件の訪問予定日を出しているだけ（未保存）なら、確定した訪問日として保存する
-      if (!state.onsite.visitDate) { state.onsite.visitDate = d; await saveSection("onsite"); }
+      if (findOnsiteConfirmation(acts, d)) { showConfirmStatus(`記録済み（訪問日 ${d}）`); return; }
+      // 訪問日欄の値が保存済みと違う（案件の訪問予定日を出しているだけ等）なら、その日を訪問日として保存する
+      if (vd.needsSave) { state.onsite.visitDate = d; await saveSection("onsite"); }
       const summary = onsiteConfirmSummary({
         onsite: state.onsite, cp: state.cp, visitDate: d,
         stepKeys: ONSITE_STEPS.map((i) => i.key), cpStepKeys: CP_STEPS.map((i) => i.key), cpInstalled: cpInstalled(state.cp),
@@ -1028,9 +1032,10 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     state.cp = data.cp || { steps: {}, evidencePhotos: [] };
     if (!state.cp.steps) state.cp.steps = {};
     if (!Array.isArray(state.cp.evidencePhotos)) state.cp.evidencePhotos = [];
+    // 保存済みの実施の記録を先に更新する（populate → 実施日の初期値の判定が古い perf を見ないように・レビュー 低-1）
+    perf = data.performance || null;
     populate();
     // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
-    perf = data.performance || null;
     perfUnsaved.observe(perf, { own: !!(snap.metadata && snap.metadata.hasPendingWrites) }); // 未保存の間に他の人が更新したら知らせる
     renderPerfSummary();
     renderPerfWarn();
@@ -1042,5 +1047,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   return {
     // 対応記録の購読が届くたびに呼ぶ（「記録済み」の表示）
     setActivities(list) { knownActivities = Array.isArray(list) ? list : []; refreshConfirmStatus(); },
+    // 案件の訪問予定日（ヘッダー）を変えたあとに呼ぶ。当日タブの訪問日欄（未保存の表示）と、実施日の初期値を新しい日へ
+    refreshVisitDate() { fillOnsiteDefaults(); notifyVisitDate(); },
     refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); } };
 }
