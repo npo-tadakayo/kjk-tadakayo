@@ -25,6 +25,8 @@ import { httpsCallable } from "/js/fn.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
 import { todayYmdJst, ACCEPT_CHANNELS, PAY_METHODS, buildGroupChoices, buildAcceptPayload,
   summarizeAcceptResult, acceptMailTo } from "/js/screen-rules.js";
+// ご案内メール・見積書PDFの送付の記録（設計書 CRM改善_設計書_20261110 §3 点検8・2026-11-10）
+import { quoteMailNotesOf } from "/js/record-gaps.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -87,6 +89,14 @@ function quoteDocBtn(q) {
   return `<a class="btn btn-secondary" href="/quote-print.html?quote=${esc(q._id)}" target="_blank" rel="noopener">
     <i class="ti ti-file-description" aria-hidden="true"></i> 見積書を表示
   </a>`;
+}
+
+// メール送付の記録（ご案内メール・見積書PDF）。どの画面にも出ていなかった（2026-11-10 点検8）
+function mailNotesLine(q) {
+  const notes = quoteMailNotesOf(q);
+  if (!notes.length) return "";
+  return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:6px">${notes.map((n) =>
+    `<span style="font-size:12px;color:${n.warn ? "var(--color-danger)" : "var(--color-ink-muted)"}"><i class="ti ti-mail${n.warn ? "-x" : "-check"}" aria-hidden="true"></i> ${esc(n.text)}</span>`).join("")}</div>`;
 }
 
 function createdMetaLine(q) {
@@ -155,6 +165,7 @@ function rowHtml(q, isLatest) {
         <span>自己負担 <strong>${yen(q.amounts?.selfPay)}</strong></span>
         <span style="color:var(--color-ink-muted)">有効期限 ${esc(ymdJst(q.validUntil)) || "—"}</span>
       </div>
+      ${mailNotesLine(q)}
       <div style="margin-bottom:10px">${createdMetaLine(q)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${quoteDocBtn(q)}

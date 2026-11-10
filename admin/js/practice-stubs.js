@@ -183,10 +183,24 @@ function newToken() {
   return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// functions/index.js の PRODUCT_NAMES / CONNECTION_LABELS / shipmentItemsFromQuote と同じ
+// functions/index.js の PRODUCT_NAMES / CONNECTION_LABELS / shipmentItemsFromQuote と同じ。
+// 以前は品名を見積の表示名（P.BT_LABEL / P.USB_LABEL）にしていて、受注確定で作る出荷の下書きの品名が本番と違っていた
+// （USB の Type-A と Type-C が同じ名前になり、宛名の台数のまとめ〔shipQtySummary〕の短い名前も変わる）。
+// 2026-11-10 設計書 §3 点検7 で本番の文字列にそろえた。functions/index.js を変えたらここも合わせる
+// （scripts/test-record-gaps.mjs が両方の中身の一致を確かめる）。
+const PRODUCT_NAMES = {
+  "cir415a-01": "介護情報基盤 汎用カードリーダ CIR415A",
+  "cir315a-02": "介護情報基盤 汎用カードリーダ CIR315A（Type-A）",
+  "cir315a-04": "介護情報基盤 汎用カードリーダ CIR315A（Type-C）",
+};
+const CONNECTION_LABELS = {
+  "cir415a-01": "Bluetooth／USB Type-C",
+  "cir315a-02": "USB Type-A",
+  "cir315a-04": "USB Type-C",
+};
 function shipmentItemsFromQuote(P, q) {
-  const NAMES = { [P.SKU.BT]: P.BT_LABEL, [P.SKU.USB_A]: P.USB_LABEL, [P.SKU.USB_C]: P.USB_LABEL };
-  const CONN = { [P.SKU.BT]: "Bluetooth／USB Type-C", [P.SKU.USB_A]: "USB Type-A", [P.SKU.USB_C]: "USB Type-C" };
+  const NAMES = PRODUCT_NAMES;
+  const CONN = CONNECTION_LABELS;
   const items = [];
   for (const it of (q.items || [])) {
     const qty = (Number(it.subsidyQty) || 0) + (Number(it.extraQty) || 0);
@@ -359,6 +373,9 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
       if (have < need[sku]) throw fail(`在庫が足りません: ${prods[sku].name || sku}（いま ${have} / 必要 ${need[sku]}）`);
     }
     const locName = (locs.find((l) => l.id === locId) || {}).name || "";
+    // 受注（認定事業者から）にひも付く出荷なら、受注も「出荷済」にする（本物の warehouseComplete と同じ・2026-11-10 点検7）。
+    // 読み取りは書き込みより前に済ませる（Firestore トランザクションの決まり）
+    const po = cur.partnerOrderId ? await tx.get(doc(db(), "partnerOrders", String(cur.partnerOrderId))) : null;
     tx.update(ref, {
       status: "shipped", confirmedAt: serverTimestamp(),
       ...(skus.length ? { originLocationId: locId, originLocationName: locName } : {}),
@@ -373,6 +390,7 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
         createdAt: serverTimestamp(), userName: u.name,
       });
     }
+    if (po && po.exists()) tx.update(po.ref, { status: "shipped", updatedAt: serverTimestamp() });
   });
   return { soNumber, caseId };
 }
@@ -1118,10 +1136,10 @@ export const PRACTICE_STUBS = {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(shipDate || ""))) throw fail("発送日を入れてください");
     const lp = ["light", "plus"].includes(letterPackType) ? letterPackType : null;
     const tn = String(trackingNumber || "").trim().slice(0, 100);
-    const { soNumber, caseId } = await whMarkShipped(shipmentId, "ship", {
+    await whMarkShipped(shipmentId, "ship", {
       shipDate, ...(lp ? { letterPackType: lp } : {}), ...(tn ? { trackingNumber: tn } : {}),
     });
-    await activity(caseId, "memo", `倉庫: 発送済にしました（${soNumber}）`, `${PRACTICE_NOTE}\n倉庫の画面から発送済にしました（担当: ${me().name}）。`);
+    // 本物（warehouseShip）は対応記録を書かないので、練習でも書かない（2026-11-10 点検7。以前は練習だけ「倉庫: 発送済にしました」が残った）
     showPracticeNotice("発送済にしました（練習のため、依頼した人への連絡はありません）");
     return { ok: true };
   },
@@ -1129,10 +1147,10 @@ export const PRACTICE_STUBS = {
   async warehouseHandover({ shipmentId, date }) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) throw fail("受け渡し日を入れてください");
     const u = me();
-    const { soNumber, caseId } = await whMarkShipped(shipmentId, "pickup", {
+    await whMarkShipped(shipmentId, "pickup", {
       shipDate: date, handedOverAt: serverTimestamp(), handedOverByEmail: u.email, handedOverByName: u.name,
     });
-    await activity(caseId, "memo", `倉庫: 受け渡し済にしました（${soNumber}）`, `${PRACTICE_NOTE}\n倉庫の画面から受け渡し済にしました（担当: ${u.name}）。`);
+    // 本物（warehouseHandover）は対応記録を書かないので、練習でも書かない（2026-11-10 点検7）
     showPracticeNotice("受け渡し済にしました");
     return { ok: true };
   },
