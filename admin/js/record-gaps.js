@@ -119,3 +119,15 @@ export function quoteMailNotesOf(q) {
   else if (q.mailError) out.push({ key: "pdfError", warn: true, text: `見積書PDFの送付に失敗（${q.mailError}）` });
   return out;
 }
+
+// ===== 点検10: 案件を手で「受注確定」にしたとき、受注日（orderedAt）を補う =====
+// 受注日は Web の申込・電話等の受注確定（staffAcceptQuote）でしか付かず、ステータスの手変更で「受注確定」にした案件は
+// orderedAt が空のまま残り、案件一覧の絞り込み「見積済（未申込）」（latestQuoteId あり・orderedAt なし）に残り続けた。
+// 手で 3（受注確定）にした瞬間に、まだ受注日が無ければその操作の日時を受注日にする。すでにあれば上書きしない
+// （Web・スタッフ受注と同じく「最初の申込の日を保つ」）。既存データの一括補正はしない。
+export const ORDER_CONFIRMED_STATUS = 3;
+export const ORDERED_AT_FILLED_NOTE = "受注日が入っていなかったため、この操作の日を受注日として記録しました";
+export function orderedAtFillNeeded(prevStatus, newStatus, kase) {
+  return Number(newStatus) === ORDER_CONFIRMED_STATUS && Number(prevStatus) !== ORDER_CONFIRMED_STATUS
+    && !(kase && kase.orderedAt);
+}

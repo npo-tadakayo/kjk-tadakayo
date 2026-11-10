@@ -14,6 +14,8 @@ import {
 import { visitShort } from "/js/schedule-core.js";
 import { serviceTypeBadge } from "/js/service-types.js"; // 事業種別のラベル（2026-11-01）
 import { askLostReason } from "/js/case-detail-util.js";
+// 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
+import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 // 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
 import { completionWarnings } from "/js/case-complete-check.js";
@@ -217,6 +219,9 @@ async function changeStatus(id, newStatus) {
   const prev = c.status;
   // 失注にするときは理由を聞く（キャンセルなら何も変えない）。失注から戻すときは理由を消す
   const patch = { status: newStatus, updatedAt: serverTimestamp() };
+  // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
+  const fillOrderedAt = orderedAtFillNeeded(prev, newStatus, c);
+  if (fillOrderedAt) patch.orderedAt = serverTimestamp();
   let lostNote = "";
   if (newStatus === LOST) {
     const r = await askLostReason(LOST_REASONS);
@@ -269,7 +274,8 @@ async function changeStatus(id, newStatus) {
       caseId: id, type: "memo", occurredAt: serverTimestamp(),
       userId: currentUser.uid, userName: currentUser.displayName || currentUser.email,
       subject: `ステータス変更 ${STATUS_LABELS[prev]} → ${STATUS_LABELS[newStatus]}`,
-      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : ""), attachmentUrls: [],
+      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : "")
+        + (fillOrderedAt ? `\n${ORDERED_AT_FILLED_NOTE}` : ""), attachmentUrls: [],
     });
     toast(`#${c.caseNumber} ${c.officeName} → ${STATUS_LABELS[newStatus]}`);
     // 読み込みを待ったあとなので新しいタブは止められることがある。止められたらこの画面で開く

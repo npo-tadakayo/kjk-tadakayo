@@ -34,6 +34,8 @@ import { completionWarnings } from "/js/case-complete-check.js";
 import { isCompleting, completionConfirmText, completionActivityNote,
   caseDuplicateBanner, preShipCountAfterMerge,
   isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
+// 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
+import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -963,12 +965,17 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
   const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
   // 13 以外 → 13 にしたときだけ完了日時を残す（13 のまま保存し直しても上書きしない）
   if (isCompleting(currentCase?.status, newStatus)) patch.completedAt = serverTimestamp();
+  // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
+  const fillOrderedAt = orderedAtFillNeeded(currentCase?.status, newStatus, currentCase);
+  if (fillOrderedAt) patch.orderedAt = serverTimestamp();
   if (lost) {
     patch.lostReason = lost.reason; patch.lostReasonNote = lost.note || null;
   } else if (Number(currentCase?.status) === LOST) {
     patch.lostReason = null; patch.lostReasonNote = null;
   }
   await updateDoc(doc(db, "cases", caseId), patch);
+  // 画面内の案件にも受注日を入れておく（同じ画面で 3→他→3 と変えたときに、補った受注日を上書きしないため）
+  if (fillOrderedAt && currentCase) currentCase.orderedAt = new Date();
   if (lost) { currentCase.lostReason = lost.reason; currentCase.lostReasonNote = lost.note || null; }
   else if (patch.lostReason === null) { currentCase.lostReason = null; currentCase.lostReasonNote = null; }
   // 活動の記録だけが失敗しても、ステータスはもう変わっている。画面を元に戻さず知らせるだけにする（2026-11-08 レビュー指摘）
@@ -980,7 +987,8 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
       userId,
       userName,
       subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
-      body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}` : (warnNote || ""),
+      body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}`
+        : [warnNote, fillOrderedAt ? ORDERED_AT_FILLED_NOTE : ""].filter(Boolean).join("\n"),
       attachmentUrls: [],
     });
   } catch (err) {

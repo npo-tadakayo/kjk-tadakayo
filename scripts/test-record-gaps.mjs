@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   BILLING_MAIL_KIND_LABEL, billingMailActivityOf, mailRecordFailedText, mailSentNotesOf,
   receiptSaveInfoOf, prepaidNoteOf, ymdJstOf, quoteMailNotesOf,
+  ORDER_CONFIRMED_STATUS, ORDERED_AT_FILLED_NOTE, orderedAtFillNeeded,
 } from "../admin/js/record-gaps.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
@@ -170,6 +171,31 @@ t("点検8: 見積もり一覧（quote-admin.js）のつなぎ", () => {
   const qa = read("admin/js/quote-admin.js");
   has(qa, /import \{ quoteMailNotesOf \} from "\/js\/record-gaps\.js"/);
   has(qa, /\$\{mailNotesLine\(q\)\}/);
+});
+
+// ===== 点検10: 手で「受注確定」にしたとき受注日を補う =====
+t("点検10: 受注日が無い案件を 3 にしたときだけ補う", () => {
+  assert.equal(ORDER_CONFIRMED_STATUS, 3);
+  assert.equal(orderedAtFillNeeded(2, 3, { status: 2 }), true);
+  assert.equal(orderedAtFillNeeded(1, "3", {}), true);       // セレクトの値は文字列
+  assert.equal(orderedAtFillNeeded(4, 3, null), true);       // 失注から戻した
+  assert.equal(orderedAtFillNeeded(2, 3, { orderedAt: { seconds: 1 } }), false); // すでにある（上書きしない）
+  assert.equal(orderedAtFillNeeded(3, 3, {}), false);        // 3 のまま
+  assert.equal(orderedAtFillNeeded(2, 5, {}), false);        // 受注確定以外は触らない
+  assert.equal(orderedAtFillNeeded(3, 13, {}), false);
+});
+t("点検10: 案件詳細・カンバンのつなぎ（受注日を書く・対応記録に一言）", () => {
+  const cd = read("admin/js/case-detail.js");
+  has(cd, /import \{ orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE \} from "\/js\/record-gaps\.js"/);
+  has(cd, /const fillOrderedAt = orderedAtFillNeeded\(currentCase\?\.status, newStatus, currentCase\);\s*if \(fillOrderedAt\) patch\.orderedAt = serverTimestamp\(\);/);
+  has(cd, /fillOrderedAt \? ORDERED_AT_FILLED_NOTE/);
+  has(cd, /if \(fillOrderedAt && currentCase\) currentCase\.orderedAt = new Date\(\);/);
+  const kb = read("admin/js/kanban.js");
+  has(kb, /const fillOrderedAt = orderedAtFillNeeded\(prev, newStatus, c\);\s*if \(fillOrderedAt\) patch\.orderedAt = serverTimestamp\(\);/);
+  has(kb, /ORDERED_AT_FILLED_NOTE/);
+  assert.match(ORDERED_AT_FILLED_NOTE, /受注日/);
+  // 既存データの一括補正や本番への書き込みスクリプトは作らない
+  hasNot(read("admin/js/record-gaps.js"), /updateDoc|setDoc|writeBatch|getDocs/);
 });
 
 console.log(`OK test-record-gaps: ${n} 件合格`);
