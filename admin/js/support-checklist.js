@@ -14,7 +14,7 @@
 //     supportEvaluations に保存。独り立ち可ならトレーナーがバッジを付与（supportBadges）。
 //     判定・検証の純粋関数は support-evaluation.js（scripts/test-support-evaluation.mjs）
 
-import { doc, setDoc, updateDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp, getProdFirestore }
+import { doc, setDoc, updateDoc, addDoc, getDoc, getDocs, collection, query, where, onSnapshot, serverTimestamp, getProdFirestore, runTransaction }
   from "/js/fs.js";
 import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject }
   from "/js/st.js";
@@ -27,6 +27,11 @@ import { QUIZZES } from "./learning-quiz.js";
 import { AUTO_SAVE_NOTE, manualSaveNote, saveModeNoteHtml, unsavedSpanHtml, trackUnsaved, shouldRefillForm } from "./save-mode.js";
 import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
 import { effectiveVisitDate, perfDateDefault, confirmVisitDate, onsiteConfirmSummary, findOnsiteConfirmation, onsiteConfirmActivity } from "./onsite-record.js";
+// 当日の記録を「同じ事業所の他の案件にも写す」（2026-11-10・設計書 提案2 案B）。判定・組み立ては onsite-copy.js（scripts/test-onsite-copy.mjs）
+import { copyCandidates, copyUnavailableReason, buildCopiedOnsite, hasCopyableContent, overwriteCheck, overwriteConfirmText,
+  copyFingerprint, copiedFromRecord, copiedToRecord, copiedFromText, copiedToText, copyActivities, copyResultText, caseLabel, formatJst } from "./onsite-copy.js";
+import { STATUS_LABELS } from "./constants.js";
+import { serviceTypeLabel } from "./service-types.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -399,8 +404,35 @@ function cardOnsiteConfirm() {
     </div>`;
 }
 
+// ===== 同じ事業所の他の案件にも写す（設計書 提案2・複写方式）=====
+// 1回の訪問で同じ事業所の複数の案件（事業種別ごとの案件）を支援したとき、当日の記録を他の案件へ写す。
+// 写すのは当日工程のチェックとメモ・所感・訪問日だけ（写さない項目は onsite-copy.js の COPY_SECTIONS / COPY_EXCLUDE_KEYS）
+function cardCopy() {
+  return `
+    <div class="card" id="sc-copy-card" style="margin-top:var(--space-4)">
+      <div class="card-header">
+        ${cardTitle("同じ事業所の他の案件にも写す", "写し先を選んで「写す」を押すと、その案件の当日の記録に書き込みます")}
+      </div>
+      <div class="card-body">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">写すのは「介護情報基盤の当日工程」のチェックとメモ、当日の所感、訪問日です。ケアプラン連携（導入済み欄・導入作業・証憑写真）、実施の記録、伴走支援の記録は写しません。写したあと片方だけ直すと内容がずれるので、直すときは写し元を直してもう一度写してください。</p>
+        <p id="sc-copy-reason" role="status" style="display:none;font-size:13px;margin:0 0 10px;color:var(--color-ink-muted)"></p>
+        <p id="sc-copy-to" style="display:none;font-size:13px;margin:0 0 10px"></p>
+        <button type="button" class="btn btn-secondary" id="sc-copy-open" style="min-height:44px;display:none"><i class="ti ti-copy" aria-hidden="true"></i> 同じ事業所の他の案件にも写す</button>
+        <div id="sc-copy-panel" style="display:none;margin-top:10px">
+          <fieldset style="border:0;padding:0;margin:0">
+            <legend class="form-label" style="margin-bottom:6px">写し先（同じ事業所の他の案件）</legend>
+            <div id="sc-copy-list" style="font-size:13px"></div>
+          </fieldset>
+          <button type="button" class="btn btn-primary" id="sc-copy-run" style="min-height:44px;margin-top:8px"><i class="ti ti-copy" aria-hidden="true"></i> 選んだ案件に写す</button>
+          <button type="button" class="btn btn-ghost" id="sc-copy-close" style="min-height:44px;margin-top:8px">閉じる</button>
+        </div>
+        <p id="sc-copy-status" role="status" aria-live="polite" style="font-size:13px;margin:10px 0 0;color:var(--color-ink-muted)"></p>
+      </div>
+    </div>`;
+}
+
 function renderOnsite() {
-  return `<div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div><div id="sc-perf-warn" role="status" style="display:none;font-size:13px;color:var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardEvaluation()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}${cardOnsiteConfirm()}`;
+  return `<div id="sc-copy-banner" role="status" style="display:none;font-size:13px;margin:0 0 var(--space-3);padding:8px 12px;border-radius:6px;background:var(--color-bg-subtle, #faf7f2)"></div><div id="sc-perf-summary" style="display:none;font-size:13px;font-weight:600;margin:0 0 var(--space-3)"></div><div id="sc-perf-warn" role="status" style="display:none;font-size:13px;color:var(--color-danger);background:var(--color-danger-soft);padding:8px 12px;border-radius:6px;margin:0 0 var(--space-3)"></div>${cardPerformance()}${cardEvaluation()}${cardVisitInfo()}${cardOnsiteSteps()}${cardCpSteps()}${cardCpEvidence()}${cardOnsiteConfirm()}`;
 }
 
 // ===== アフタータブ =====
@@ -528,10 +560,12 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   // スケルトンを1回だけ描画（ケアプラン連携は各フェーズに統合）
   elPre.innerHTML = renderPre();
   elOnsite.innerHTML = renderOnsite();
+  elOnsite.insertAdjacentHTML("beforeend", cardCopy()); // 同じ事業所の他の案件にも写す（当日の記録を確定の下）
   elAfter.innerHTML = renderAfter();
 
   const ref = doc(db, "supportChecklists", caseId);
   const state = { pre: {}, onsite: { steps: {} }, after: { privacy: {} }, cp: { steps: {}, evidencePhotos: [] } };
+  let docData = {}; // 届いた文書の中身そのまま（写した印 copiedFrom / copiedTo の表示に使う）
 
   function populate() {
     document.querySelectorAll("#tab-pre [data-path], #tab-onsite [data-path], #tab-after [data-path]").forEach((el) => {
@@ -884,8 +918,19 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     sv.textContent = `保存しました ${t}`;
   }
 
+  // 書き込み中の保存（他の案件へ写す前に、全部終わるのを待つ）と、最後の保存が失敗したか
+  const pendingSaves = new Set();
+  let lastSaveFailed = false;
   async function saveSection(sec) {
     await setDoc(ref, { [sec]: state[sec], updatedAt: serverTimestamp() }, { merge: true });
+  }
+  // 入力の変更による保存を見張る（書き込み中の一覧に入れ、終わったら外す。失敗したら印を付ける）。
+  // 戻り値の settle(ok) を保存の成否が分かったところで呼ぶ
+  function startSave() {
+    let done;
+    const p = new Promise((r) => { done = r; });
+    pendingSaves.add(p);
+    return (ok) => { lastSaveFailed = !ok; pendingSaves.delete(p); done(); };
   }
 
   async function onChange(el) {
@@ -894,10 +939,13 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const value = el.type === "checkbox" ? el.checked : el.value;
     setByPath(state[sec], path, value);
     if (sec === "cp" && path === "installStatus") syncCpInstalled();
+    const settle = startSave();
     try {
       await saveSection(sec);
       markSaved(el);
+      settle(true);
     } catch (e) {
+      settle(false);
       const sv = savedSpanFor(el);
       if (sv) sv.textContent = "保存に失敗しました（時間をおいて再試行）";
       console.error("[supportChecklist] save failed", e);
@@ -1022,6 +1070,165 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
   const confirmBtn = $("sc-onsite-confirm");
   if (confirmBtn) confirmBtn.addEventListener("click", confirmOnsite);
 
+  // ----- 同じ事業所の他の案件にも写す（設計書 提案2）-----
+  let copyBusy = false;
+  let copyCands = [];
+  const canEdit = () => (opts.canEdit ? !!opts.canEdit() : true);
+  function showCopyStatus(text, isError = false) {
+    const el = $("sc-copy-status");
+    if (!el) return;
+    el.style.color = isError ? "var(--color-danger)" : "var(--color-ink-muted)";
+    el.textContent = text;
+  }
+  // 写した印（写し先: 「#◯◯ から写した記録」／写し元: 「#◯◯・#△△ へ写した」）
+  function renderCopyMarks() {
+    const from = copiedFromText(docData);
+    const to = copiedToText(docData);
+    const banner = $("sc-copy-banner");
+    if (banner) {
+      banner.textContent = [from, to].filter(Boolean).join("／");
+      banner.style.display = from || to ? "block" : "none";
+    }
+    const toEl = $("sc-copy-to");
+    if (toEl) { toEl.textContent = to; toEl.style.display = to ? "block" : "none"; }
+  }
+  // ボタンを出すか。事業所が未登録（officeId なし）なら理由を出す。閲覧のみの人には出さない
+  function renderCopyAvailability() {
+    const btn = $("sc-copy-open"), reasonEl = $("sc-copy-reason");
+    if (!btn || !reasonEl) return;
+    const c = opts.getCase ? opts.getCase() : null;
+    const reason = !canEdit() ? "閲覧のみの権限では写せません" : copyUnavailableReason(c);
+    reasonEl.textContent = reason;
+    reasonEl.style.display = reason ? "block" : "none";
+    btn.style.display = reason ? "none" : "";
+    if (reason) { const panel = $("sc-copy-panel"); if (panel) panel.style.display = "none"; }
+  }
+  async function openCopyPanel() {
+    const c = opts.getCase ? opts.getCase() : null;
+    const reason = copyUnavailableReason(c);
+    if (reason) { renderCopyAvailability(); return; }
+    const panel = $("sc-copy-panel"), list = $("sc-copy-list");
+    panel.style.display = "block";
+    list.textContent = "同じ事業所の案件を読み込んでいます…";
+    try {
+      const snap = await getDocs(query(collection(db, "cases"), where("officeId", "==", c.officeId)));
+      copyCands = copyCandidates(c, snap.docs.map((d) => ({ _id: d.id, ...d.data() })));
+    } catch (e) {
+      copyCands = [];
+      list.textContent = "案件を読み込めませんでした（時間をおいて再試行）";
+      console.error("[supportChecklist] copy candidates failed", e);
+      return;
+    }
+    if (!copyCands.length) { list.textContent = "同じ事業所の他の案件はありません"; $("sc-copy-run").disabled = true; return; }
+    $("sc-copy-run").disabled = false;
+    const prev = (docData && docData.copiedTo) || {};
+    list.innerHTML = copyCands.map((x) => {
+      const last = prev[x._id] ? `（前回 ${escapeHtml(formatJst(prev[x._id].copiedAtMs))} に写した）` : "";
+      return `
+        <label class="checklist-check" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 0;min-height:44px">
+          <input type="checkbox" data-copy-target="${escapeHtml(x._id)}">
+          <span><strong>${escapeHtml(caseLabel(x.caseNumber))}</strong> ${escapeHtml(serviceTypeLabel(x))}／${escapeHtml(STATUS_LABELS[Number(x.status)] || "状態不明")}${last}</span>
+        </label>`;
+    }).join("");
+  }
+
+  async function runCopy() {
+    if (copyBusy) return;
+    const c = opts.getCase ? opts.getCase() : null;
+    if (copyUnavailableReason(c) || !canEdit()) { renderCopyAvailability(); return; }
+    const ids = Array.from(document.querySelectorAll("#sc-copy-list [data-copy-target]:checked")).map((x) => x.dataset.copyTarget);
+    const targets = copyCands.filter((x) => ids.includes(x._id));
+    if (!targets.length) { showCopyStatus("写し先を選んでください", true); return; }
+    const btn = $("sc-copy-run");
+    copyBusy = true;
+    if (btn) btn.disabled = true;
+    try {
+      // 未保存の入力が写し元にあるときは、先に保存させる（保存中なら終わるまで待つ。失敗していたら写さない）
+      if (pendingSaves.size) { showCopyStatus("入力を保存しています…"); await Promise.allSettled([...pendingSaves]); }
+      if (lastSaveFailed) { showCopyStatus("保存できていない入力があります。入力し直して「保存しました」と出てから写してください", true); return; }
+      // 画面の訪問日欄に出ている日を正にする（「当日の記録を確定」と同じ。案件の訪問予定日を出しているだけなら先に保存する）
+      const vd = confirmVisitDate(($("sc-onsite-visitDate") || {}).value, state.onsite.visitDate);
+      if (!hasCopyableContent(state.onsite, vd.date)) { showCopyStatus("写す内容がありません（当日工程・所感・訪問日が空です）", true); return; }
+      if (vd.needsSave) { state.onsite.visitDate = vd.date; await saveSection("onsite"); }
+
+      // 写し先を読んで、上書きになる入力の件数を数える
+      showCopyStatus("写し先を確かめています…");
+      const reads = await Promise.all(targets.map((t) => getDoc(doc(db, "supportChecklists", t._id))));
+      const plans = targets.map((t, i) => {
+        const tdoc = reads[i].exists() ? reads[i].data() : null;
+        const chk = overwriteCheck(tdoc, caseId, buildCopiedOnsite(state.onsite, tdoc && tdoc.onsite, { visitDate: vd.date }));
+        return { t, count: chk.count, caseNumber: t.caseNumber, expected: copyFingerprint(tdoc && tdoc.onsite) };
+      });
+      const names = targets.map((t) => caseLabel(t.caseNumber)).join("・");
+      const msg = overwriteConfirmText(plans) || `${names} へ当日の記録を写します。よろしいですか？`;
+      if (!confirm(msg)) { showCopyStatus("写すのをやめました"); return; }
+
+      const actorName = opts.getActor ? opts.getActor() : "";
+      const actorId = opts.getActorId ? opts.getActorId() : "";
+      const userId = opts.getActorUid ? opts.getActorUid() : "";
+      const nowMs = Date.now();
+      const acts = copyActivities({ sourceCaseId: caseId, sourceCaseNumber: c.caseNumber, targets: targets.map((t) => ({ caseId: t._id, caseNumber: t.caseNumber })),
+        visitDate: vd.date, userId, userName: actorName });
+      const results = [];
+      // 1件ずつ書く（1件の写し先・写し元の印・写し先の対応記録を1つのトランザクションで）。途中で失敗しても残りは続け、結果を全部出す
+      for (const [i, p] of plans.entries()) {
+        showCopyStatus(`写しています… ${i + 1}/${plans.length}`);
+        const tRef = doc(db, "supportChecklists", p.t._id);
+        try {
+          await runTransaction(db, async (tx) => {
+            const srcSnap = await tx.get(ref);
+            const tSnap = await tx.get(tRef);
+            if (!srcSnap.exists()) throw new Error("写し元の記録が見つかりません");
+            const tdoc = tSnap.exists() ? tSnap.data() : null;
+            // 確認のあとに写し先が変わっていたら、確かめていない入力を上書きしないよう止める
+            if (copyFingerprint(tdoc && tdoc.onsite) !== p.expected) throw new Error("確認のあとに写し先が変更されました。もう一度写してください");
+            const newOnsite = buildCopiedOnsite(srcSnap.data().onsite, tdoc && tdoc.onsite, { visitDate: vd.date });
+            const copiedFrom = { ...copiedFromRecord({ sourceCaseId: caseId, sourceCaseNumber: c.caseNumber, nowMs, actorName, actorId, newOnsite }), copiedAt: serverTimestamp() };
+            const payload = { onsite: newOnsite, copiedFrom, updatedAt: serverTimestamp() };
+            // onsite は丸ごと置き換える（merge だと写し元に無い工程が写し先に残る）。ほかの節（cp・performance など）は触らない
+            if (tSnap.exists()) tx.update(tRef, payload); else tx.set(tRef, payload);
+            tx.update(ref, { [`copiedTo.${p.t._id}`]: { ...copiedToRecord({ targetCaseNumber: p.t.caseNumber, nowMs, actorName, actorId }), copiedAt: serverTimestamp() } });
+            tx.set(doc(collection(db, "activities")), { ...acts.target({ caseId: p.t._id, caseNumber: p.t.caseNumber }), occurredAt: serverTimestamp() });
+            tx.update(doc(db, "cases", p.t._id), { updatedAt: serverTimestamp() });
+          });
+          results.push({ caseNumber: p.t.caseNumber, ok: true });
+        } catch (e) {
+          results.push({ caseNumber: p.t.caseNumber, ok: false, error: e && e.message ? e.message : "失敗" });
+          console.error("[supportChecklist] copy failed", p.t._id, e);
+        }
+      }
+      // 写し元の対応記録（写せた案件だけを書く）
+      let sourceLogError = "";
+      const okTargets = plans.filter((p, i) => results[i].ok).map((p) => ({ caseId: p.t._id, caseNumber: p.t.caseNumber }));
+      if (okTargets.length) {
+        try {
+          const srcAct = copyActivities({ sourceCaseId: caseId, sourceCaseNumber: c.caseNumber, targets: okTargets, visitDate: vd.date, userId, userName: actorName }).source;
+          await addDoc(collection(db, "activities"), { ...srcAct, occurredAt: serverTimestamp() });
+          await updateDoc(doc(db, "cases", caseId), { updatedAt: serverTimestamp() });
+        } catch (e) {
+          sourceLogError = "時間をおいて対応記録にメモを残してください";
+          console.error("[supportChecklist] copy source activity failed", e);
+        }
+      }
+      const r = copyResultText(results, sourceLogError);
+      showCopyStatus(r.text, !r.allOk);
+      if (okTargets.length) await openCopyPanel(); // 「前回写した」の表示を新しくする
+    } catch (e) {
+      showCopyStatus("写せませんでした（時間をおいて再試行）", true);
+      console.error("[supportChecklist] copy failed", e);
+    } finally {
+      copyBusy = false;
+      if (btn) btn.disabled = !copyCands.length;
+    }
+  }
+  const copyOpenBtn = $("sc-copy-open");
+  if (copyOpenBtn) copyOpenBtn.addEventListener("click", openCopyPanel);
+  const copyRunBtn = $("sc-copy-run");
+  if (copyRunBtn) copyRunBtn.addEventListener("click", runCopy);
+  const copyCloseBtn = $("sc-copy-close");
+  if (copyCloseBtn) copyCloseBtn.addEventListener("click", () => { $("sc-copy-panel").style.display = "none"; });
+  renderCopyAvailability();
+
   onSnapshot(ref, (snap) => {
     const data = snap.exists() ? snap.data() : {};
     state.pre = data.pre || {};
@@ -1034,7 +1241,9 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (!Array.isArray(state.cp.evidencePhotos)) state.cp.evidencePhotos = [];
     // 保存済みの実施の記録を先に更新する（populate → 実施日の初期値の判定が古い perf を見ないように・レビュー 低-1）
     perf = data.performance || null;
+    docData = data;
     populate();
+    renderCopyMarks();
     // 実施の記録は入力途中の内容を上書きしない（フォーカスが記録欄にあるときは流し込まない）
     perfUnsaved.observe(perf, { own: !!(snap.metadata && snap.metadata.hasPendingWrites) }); // 未保存の間に他の人が更新したら知らせる
     renderPerfSummary();
@@ -1049,5 +1258,5 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     setActivities(list) { knownActivities = Array.isArray(list) ? list : []; refreshConfirmStatus(); },
     // 案件の訪問予定日（ヘッダー）を変えたあとに呼ぶ。当日タブの訪問日欄（未保存の表示）と、実施日の初期値を新しい日へ
     refreshVisitDate() { fillOnsiteDefaults(); notifyVisitDate(); },
-    refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); } };
+    refreshPeople() { if (perfUnsaved.isDirty()) fillPerfOptions(true); else fillPerfForm(); renderEval(); renderPerfWarn(); fillOnsiteDefaults(); notifyVisitDate(); renderCopyAvailability(); } };
 }
