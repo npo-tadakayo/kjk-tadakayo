@@ -79,9 +79,11 @@ export const CLOSE_WITH_PENDING_RECORD_TEXT =
 
 // ===== 記録待ち（送信済み・記録失敗）を覚えておく（2026-11-10 レビュー 中-B） =====
 // モーダルを閉じても・再読み込みしても再送させないため、sessionStorage（このタブだけ）に持つ。
-// キーは「種類（consent＝承諾書／preGuide＝事前案内）＋案件ID」。値は宛先・送信日時（ISO）と、
-// 承諾書なら書き込み先の依頼ID（reqId）だけ。本文・氏名は入れない。
-// sessionStorage が使えない（例外を投げる）ときはモジュール変数だけで動く（そのタブを開いている間は効く）
+// キーは「種類（consent＝承諾書／preGuide＝事前案内）＋案件ID」。保存する値は宛先・送信日時（ISO）と、
+// 承諾書なら書き込み先の依頼を照合する印 reqKey（依頼IDの SHA-256 の16進の先頭16文字）だけ。
+// 依頼IDそのもの（署名ページの URL の鍵）・本文・氏名は sessionStorage に入れない（2026-11-10 追加修正）。
+// 同じページの中ではモジュール変数に依頼IDを持ってよい（照合が要らない）。
+// sessionStorage が使えない（例外を投げる）とき・印が計算できない（crypto.subtle が無い）ときはモジュール変数だけで動く
 
 export const PENDING_KINDS = ["consent", "preGuide"];
 const memPending = new Map();
@@ -97,45 +99,107 @@ function storageOf(storage) {
   try { return globalThis.sessionStorage || null; } catch { return null; }
 }
 
-/** 保存する値をそろえる（余計な値は落とす） */
-function pickPending(v) {
-  if (!v || typeof v !== "object" || !v.to || !v.sentAt) return null;
+function subtleOf(subtle) {
+  if (subtle !== undefined) return subtle;
+  try { return globalThis.crypto?.subtle || null; } catch { return null; }
+}
+
+/**
+ * 依頼IDから照合用の印を作る（SHA-256 の16進の先頭16文字）。計算できなければ ""。
+ * @param {string} reqId
+ * @param {SubtleCrypto|null} [subtle]  省略時 globalThis.crypto.subtle（テストでは null を渡して「無い」環境にする）
+ */
+export async function reqKeyOf(reqId, subtle) {
+  const s = subtleOf(subtle);
+  if (!reqId || !s || typeof s.digest !== "function") return "";
+  try {
+    const buf = await s.digest("SHA-256", new TextEncoder().encode(String(reqId)));
+    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+  } catch { return ""; }
+}
+
+// sessionStorage に書く値（宛先・送信日時・reqKey だけ。reqId は決して入れない）
+function storedValueOf(v) {
   const out = { to: String(v.to), sentAt: String(v.sentAt) };
-  if (v.reqId) out.reqId = String(v.reqId);
+  if (v.reqKey) out.reqKey = String(v.reqKey);
   return out;
 }
 
 /**
- * 記録待ちを保存する。storage は省略時 sessionStorage（テストでは代役を渡す）
+ * 記録待ちを保存する。storage は省略時 sessionStorage（テストでは代役を渡す）。
+ * 承諾書（reqId あり）で印 reqKey が無いときは、照合できないので sessionStorage には書かずモジュール変数だけ。
  * @param {"consent"|"preGuide"} kind
  * @param {string} caseId
- * @param {{to:string, sentAt:string, reqId?:string}} v
+ * @param {{to:string, sentAt:string, reqId?:string, reqKey?:string}} v
+ * @returns {{to:string, sentAt:string, reqId?:string, reqKey?:string}|null}  モジュール変数に持った値（reqId を含みうる）
  */
 export function savePending(kind, caseId, v, storage) {
   const key = pendingKey(kind, caseId);
-  const val = pickPending(v);
-  if (!val) return null;
-  memPending.set(key, val);
-  try { storageOf(storage)?.setItem(key, JSON.stringify(val)); } catch { /* 使えなければモジュール変数だけ */ }
-  return val;
+  if (!v || typeof v !== "object" || !v.to || !v.sentAt) return null;
+  const mem = { to: String(v.to), sentAt: String(v.sentAt) };
+  if (v.reqId) mem.reqId = String(v.reqId);
+  if (v.reqKey) mem.reqKey = String(v.reqKey);
+  memPending.set(key, mem);
+  if (mem.reqId && !mem.reqKey) return mem; // 印が無い承諾書は sessionStorage に書かない
+  try { storageOf(storage)?.setItem(key, JSON.stringify(storedValueOf(mem))); } catch { /* 使えなければモジュール変数だけ */ }
+  return mem;
 }
 
-/** 記録待ちを読む（無ければ null） */
+/**
+ * 記録待ちを読む（無ければ null）。同じページの中のモジュール変数を先に見る。
+ * sessionStorage に古い形式（生の reqId 入り）が残っていたら、読んだ時点で捨てる。
+ */
 export function loadPending(kind, caseId, storage) {
   const key = pendingKey(kind, caseId);
+  if (memPending.has(key)) return memPending.get(key);
+  let st = null;
+  try { st = storageOf(storage); } catch { st = null; }
   try {
-    const raw = storageOf(storage)?.getItem(key);
-    if (raw) { const v = pickPending(JSON.parse(raw)); if (v) return v; }
-  } catch { /* 壊れた値・使えないときはモジュール変数を見る */ }
-  return memPending.get(key) || null;
+    const raw = st?.getItem(key);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    if (!v || typeof v !== "object" || "reqId" in v || !v.to || !v.sentAt) { // 古い形式・壊れた値は捨てる
+      try { st.removeItem(key); } catch { /* 同上 */ }
+      return null;
+    }
+    return storedValueOf(v);
+  } catch {
+    try { st?.removeItem(key); } catch { /* 同上 */ }
+    return null;
+  }
 }
 
-/** 記録待ちを消す（記録が成功したとき） */
+/** 記録待ちを消す（記録が成功したとき・記録先が見つからないとき） */
 export function clearPending(kind, caseId, storage) {
   const key = pendingKey(kind, caseId);
   memPending.delete(key);
   try { storageOf(storage)?.removeItem(key); } catch { /* 同上 */ }
 }
+
+/**
+ * 承諾書の記録待ちの書き込み先を、画面が読み込んでいる依頼（未署名）の ID から探す。
+ * モジュール変数の reqId があればそのまま照合、無ければ印 reqKey を各候補から計算して照合する。
+ * @param {{reqId?:string, reqKey?:string}|null} pending
+ * @param {string[]} candidateIds  この案件の未署名の依頼ID
+ * @param {SubtleCrypto|null} [subtle]
+ * @returns {Promise<string|null>}  一致した依頼ID（無ければ null）
+ */
+export async function matchPendingReq(pending, candidateIds, subtle) {
+  if (!pending) return null;
+  const ids = (candidateIds || []).filter(Boolean).map(String);
+  if (pending.reqId) return ids.includes(pending.reqId) ? pending.reqId : null;
+  if (!pending.reqKey) return null;
+  for (const id of ids) {
+    if ((await reqKeyOf(id, subtle)) === pending.reqKey) return id;
+  }
+  return null;
+}
+
+/** 記録待ちの書き込み先（依頼）が見つからないときの文言 */
+export const PENDING_TARGET_MISSING_TEXT =
+  "前回メールを送った承諾書の依頼が見つかりません（取り消された・署名済みになった等）。\n"
+  + "前回の送信の記録先が無いため、記録待ちは消しました。\n"
+  + "対応記録に「メール送信」の行が出ているか確かめてください。出ていれば送信済みです。";
 
 /** テスト用: モジュール変数の記録待ちを空にする */
 export function _resetPendingMemory() { memPending.clear(); }

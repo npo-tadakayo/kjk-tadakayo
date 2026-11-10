@@ -285,6 +285,8 @@ function openMailModal(r, url) {
   // mailedAt は送信が成功した時点の時刻（記録だけやり直しても同じ値）
   bindMailSend({
     kind: "consent", caseId: ctx.caseId, reqId: r._id, host,
+    // 記録待ちの書き込み先の照合に使う（この案件の未署名の依頼。取り消し・署名済みは入れない）
+    candidateReqIds: requests.filter((x) => x.status === "pending").map((x) => x._id),
     ids: { close: "consentMailClose", cancel: "consentMailCancel", send: "consentMailSend", fields: ["cmTo", "cmSubject", "cmBody"] },
     readInputs: () => {
       const to = normalizeEmail(document.getElementById("cmTo").value);
@@ -294,7 +296,8 @@ function openMailModal(r, url) {
       return { to, subject, body };
     },
     send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
-    record: (to, sentAtIso) => updateDoc(doc(ctx.db, "consentRequests", r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
+    // reqId は照合で決まった書き込み先（記録待ちを開き直したとき、いま開いている依頼と違うことがある）
+    record: (to, sentAtIso, reqId) => updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
     onDone: async (close) => {
       ctx.toast("署名依頼メールを送信しました");
       close();

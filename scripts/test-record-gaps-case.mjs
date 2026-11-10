@@ -3,11 +3,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 import {
   classifySendOutcome, recordRetryFailedText, RECORD_RETRY_LABEL, CLOSE_WITH_PENDING_RECORD_TEXT,
   SUPPORT_DONE_STATUS, shouldAskSupportDone, supportDoneAskText,
   errorCodeOf, isAmbiguousSendError, RESEND_AFTER_UNKNOWN_CONFIRM_TEXT,
   pendingKey, savePending, loadPending, clearPending, _resetPendingMemory, jstDateOf,
+  reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT,
 } from "../admin/js/record-gaps-case.js";
 import { STATUS_LABELS, LOST, STATUS_ORDER } from "../admin/js/constants.js";
 import { SUPPORT_DONE } from "../admin/js/screen-rules.js";
@@ -87,12 +89,15 @@ t("明確な失敗（invalid-argument・permission-denied・unauthenticated・fa
   assert.match(RESEND_AFTER_UNKNOWN_CONFIRM_TEXT, /対応記録/);
 });
 
-// ===== レビュー 中-B・低-D: 記録待ちの保存・復元・消去 =====
+// ===== レビュー 中-B・低-D・追加修正: 記録待ちの保存・復元・消去（依頼IDは sessionStorage に入れない） =====
 const fakeStorage = () => {
   const m = new Map();
   return { m, getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
 };
 const throwing = { getItem() { throw new Error("SecurityError"); }, setItem() { throw new Error("QuotaExceeded"); }, removeItem() { throw new Error("x"); } };
+const SENT = "2026-11-10T02:30:00.000Z";
+const REQ = "tok_9f8e7d6c5b4a39281706f5e4d3c2b1a0"; // 署名ページの URL の鍵に当たる値（テスト用の架空の値）
+const allStored = (st) => [...st.m.values()].join("\n");
 
 t("キーは種類＋案件ID・知らない種類は例外", () => {
   assert.equal(pendingKey("consent", "C1"), "kjk.mailRecordPending.consent.C1");
@@ -100,55 +105,125 @@ t("キーは種類＋案件ID・知らない種類は例外", () => {
   assert.throws(() => pendingKey("invoice", "C1"));
 });
 
-t("保存 → 復元 → 消去（sessionStorage の代役）", () => {
+const asyncTests = [];
+const ta = (name, fn) => asyncTests.push([name, fn]);
+
+ta("印 reqKey は SHA-256 の16進の先頭16文字（依頼IDそのものではない）", async () => {
+  const k = await reqKeyOf(REQ);
+  assert.match(k, /^[0-9a-f]{16}$/);
+  assert.equal(k, createHash("sha256").update(REQ).digest("hex").slice(0, 16));
+  assert.ok(!REQ.includes(k));
+  assert.equal(await reqKeyOf(REQ), k); // 同じ値なら同じ印
+  assert.notEqual(await reqKeyOf(REQ + "x"), k);
+});
+
+ta("保存した JSON に依頼IDの生の値が含まれない（宛先・送信日時・reqKey だけ）", async () => {
   _resetPendingMemory();
   const st = fakeStorage();
-  const sentAt = "2026-11-10T02:30:00.000Z";
-  const v = savePending("consent", "C1", { to: "a@example.com", sentAt, reqId: "R1", body: "本文", name: "氏名" }, st);
-  assert.deepEqual(v, { to: "a@example.com", sentAt, reqId: "R1" });
-  // 本文・氏名など余計な値は入れない
-  const raw = JSON.parse(st.getItem("kjk.mailRecordPending.consent.C1"));
-  assert.deepEqual(Object.keys(raw).sort(), ["reqId", "sentAt", "to"]);
-  // 再読み込みを想定: モジュール変数を空にしても storage から戻る
+  const reqKey = await reqKeyOf(REQ);
+  const mem = savePending("consent", "C1", { to: "a@example.com", sentAt: SENT, reqId: REQ, reqKey, body: "本文", name: "氏名" }, st);
+  assert.equal(mem.reqId, REQ); // 同じページの中（モジュール変数）には持つ
+  const raw = st.getItem(pendingKey("consent", "C1"));
+  assert.ok(!raw.includes(REQ), "依頼IDの生の値が sessionStorage に入っている");
+  assert.ok(!allStored(st).includes(REQ));
+  assert.deepEqual(Object.keys(JSON.parse(raw)).sort(), ["reqKey", "sentAt", "to"]);
+  assert.ok(!raw.includes("本文") && !raw.includes("氏名"));
+});
+
+ta("再読み込み後: 印が一致する依頼があれば復元される（書き込み先はその依頼）", async () => {
   _resetPendingMemory();
-  assert.deepEqual(loadPending("consent", "C1", st), { to: "a@example.com", sentAt, reqId: "R1" });
-  // 種類・案件が違えば別物
-  assert.equal(loadPending("preGuide", "C1", st), null);
-  assert.equal(loadPending("consent", "C2", st), null);
+  const st = fakeStorage();
+  savePending("consent", "C1", { to: "a@example.com", sentAt: SENT, reqId: REQ, reqKey: await reqKeyOf(REQ) }, st);
+  _resetPendingMemory(); // 再読み込み＝モジュール変数が空
+  const p = loadPending("consent", "C1", st);
+  assert.deepEqual(p, { to: "a@example.com", sentAt: SENT, reqKey: await reqKeyOf(REQ) });
+  assert.equal(await matchPendingReq(p, ["other_req", REQ]), REQ);
+  // 送信日時は最初の値のまま（承諾書の mailedAt に書く値）
+  assert.equal(p.sentAt, SENT);
+});
+
+ta("印が一致する依頼が無ければ復元しない（呼び出し側が記録待ちを消す）", async () => {
+  _resetPendingMemory();
+  const st = fakeStorage();
+  savePending("consent", "C1", { to: "a@example.com", sentAt: SENT, reqId: REQ, reqKey: await reqKeyOf(REQ) }, st);
+  _resetPendingMemory();
+  const p = loadPending("consent", "C1", st);
+  assert.equal(await matchPendingReq(p, ["other_req"]), null); // 取り消された・署名済みで候補から外れた
+  assert.equal(await matchPendingReq(p, []), null);
   clearPending("consent", "C1", st);
   assert.equal(loadPending("consent", "C1", st), null);
   assert.equal(st.m.size, 0);
-  // 宛先・送信日時が無いものは保存しない
-  assert.equal(savePending("preGuide", "C1", { to: "a@example.com" }, st), null);
+  // 同じページの中（reqId をモジュール変数に持つ）なら、ID そのものの一致で決まる
+  _resetPendingMemory();
+  const mem = savePending("consent", "C2", { to: "a@example.com", sentAt: SENT, reqId: REQ }, null);
+  assert.equal(await matchPendingReq(mem, [REQ]), REQ);
+  assert.equal(await matchPendingReq(mem, ["other_req"]), null);
+  assert.equal(await matchPendingReq(null, [REQ]), null);
+});
+
+ta("crypto.subtle が無くても落ちない（印は作らず、sessionStorage にも書かずモジュール変数だけ）", async () => {
+  _resetPendingMemory();
+  assert.equal(await reqKeyOf(REQ, null), "");
+  assert.equal(await reqKeyOf(REQ, { digest() { throw new Error("NotSupported"); } }), "");
+  assert.equal(await reqKeyOf(REQ, {}), "");
+  const st = fakeStorage();
+  const mem = savePending("consent", "C3", { to: "a@example.com", sentAt: SENT, reqId: REQ, reqKey: "" }, st);
+  assert.equal(st.m.size, 0, "印が無いのに sessionStorage へ書いている");
+  assert.deepEqual(loadPending("consent", "C3", st), mem); // 同じページの中では効く
+  assert.equal(await matchPendingReq(mem, [REQ], null), REQ);
+  // 印しか無い記録待ちを、印を計算できない環境で照合しても落ちない（一致しない＝null）
+  assert.equal(await matchPendingReq({ to: "a", sentAt: SENT, reqKey: "0123456789abcdef" }, [REQ], null), null);
+});
+
+t("古い形式（生の reqId 入り）を読むと捨てる", () => {
+  _resetPendingMemory();
+  const st = fakeStorage();
+  st.setItem(pendingKey("consent", "C4"), JSON.stringify({ to: "a@example.com", sentAt: SENT, reqId: REQ }));
+  assert.equal(loadPending("consent", "C4", st), null);
+  assert.equal(st.m.size, 0, "古い形式が残っている");
+  // 壊れた値も捨てる
+  st.setItem(pendingKey("consent", "C4"), "{壊れ");
+  assert.equal(loadPending("consent", "C4", st), null);
+  assert.equal(st.m.size, 0);
+});
+
+t("事前案内: 保存 → 復元 → 消去（sessionStorage の代役）", () => {
+  _resetPendingMemory();
+  const st = fakeStorage();
+  const v = savePending("preGuide", "C1", { to: "a@example.com", sentAt: SENT, body: "本文" }, st);
+  assert.deepEqual(v, { to: "a@example.com", sentAt: SENT });
+  assert.deepEqual(Object.keys(JSON.parse(st.getItem(pendingKey("preGuide", "C1")))).sort(), ["sentAt", "to"]);
+  _resetPendingMemory();
+  assert.deepEqual(loadPending("preGuide", "C1", st), { to: "a@example.com", sentAt: SENT });
+  assert.equal(loadPending("consent", "C1", st), null);   // 種類が違えば別物
+  assert.equal(loadPending("preGuide", "C2", st), null);  // 案件が違えば別物
+  clearPending("preGuide", "C1", st);
+  assert.equal(loadPending("preGuide", "C1", st), null);
+  assert.equal(savePending("preGuide", "C1", { to: "a@example.com" }, st), null); // 送信日時が無いものは保存しない
 });
 
 t("sessionStorage が例外を投げても落ちず、モジュール変数で動く", () => {
   _resetPendingMemory();
-  const sentAt = "2026-11-10T02:30:00.000Z";
-  assert.doesNotThrow(() => savePending("preGuide", "C9", { to: "b@example.com", sentAt }, throwing));
-  assert.deepEqual(loadPending("preGuide", "C9", throwing), { to: "b@example.com", sentAt });
+  assert.doesNotThrow(() => savePending("preGuide", "C9", { to: "b@example.com", sentAt: SENT }, throwing));
+  assert.deepEqual(loadPending("preGuide", "C9", throwing), { to: "b@example.com", sentAt: SENT });
   assert.doesNotThrow(() => clearPending("preGuide", "C9", throwing));
   assert.equal(loadPending("preGuide", "C9", throwing), null);
-  // storage が null（使えない環境）でも同じ
-  savePending("consent", "C9", { to: "b@example.com", sentAt }, null);
+  savePending("consent", "C9", { to: "b@example.com", sentAt: SENT }, null);
   assert.equal(loadPending("consent", "C9", null).to, "b@example.com");
-  // 壊れた値はモジュール変数へ
-  const st = fakeStorage(); st.setItem(pendingKey("consent", "C9"), "{壊れ");
-  assert.equal(loadPending("consent", "C9", st).to, "b@example.com");
   _resetPendingMemory();
 });
 
-t("やり直しでも送信日時は最初の値のまま（承諾書の mailedAt・事前案内の送付日）", () => {
+t("やり直しでも送信日時は最初の値のまま（事前案内の送付日は送信時の JST 日付）", () => {
   _resetPendingMemory();
   const st = fakeStorage();
   const sentAt = "2026-11-10T14:59:00.000Z"; // JST 11/10 23:59
-  savePending("consent", "C1", { to: "a@example.com", sentAt, reqId: "R1" }, st);
   savePending("preGuide", "C1", { to: "a@example.com", sentAt }, st);
   _resetPendingMemory();
-  // 日をまたいでやり直しても、復元した値は送信時のもの
-  assert.equal(new Date(loadPending("consent", "C1", st).sentAt).toISOString(), sentAt);
+  assert.equal(loadPending("preGuide", "C1", st).sentAt, sentAt);
   assert.equal(jstDateOf(loadPending("preGuide", "C1", st).sentAt), "2026-11-10");
   assert.equal(jstDateOf("2026-11-10T15:00:00.000Z"), "2026-11-11");
+  assert.match(PENDING_TARGET_MISSING_TEXT, /記録先が無い/);
+  assert.match(PENDING_TARGET_MISSING_TEXT, /対応記録/);
 });
 
 // ===== 結線 =====
@@ -163,14 +238,14 @@ t("結線: mail-send-guard.js（送信と記録を分ける・記録待ち・送
   const send = h.indexOf("await o.send(p)");
   assert.ok(retry > 0 && send > retry);
   assert.ok(!h.slice(retry, send).includes("o.send("), "記録だけやり直す分岐でメールを送っている");
-  assert.ok(h.slice(retry, send).includes("o.record(pending.to, pending.sentAt)"));
+  assert.ok(h.slice(retry, send).includes("o.record(pending.to, pending.sentAt, targetReqId || undefined)"));
   // 送れたか不明のあとは確認をはさむ
   assert.ok(h.indexOf("RESEND_AFTER_UNKNOWN_CONFIRM_TEXT") < send);
   assert.match(h, /classifySendOutcome\(\{ sendError: err \}\)/);
   assert.match(h, /classifySendOutcome\(\{ recordError: err \}\)/);
   // 送信成功 → 記録待ちを保存 → 記録。保存できなくても再送させない
   const save = h.indexOf("savePending(");
-  assert.ok(send < save && save < h.indexOf("await o.record(p.to, sentAt)"));
+  assert.ok(send < save && save < h.indexOf("await o.record(p.to, sentAt, targetReqId || undefined)"));
   assert.ok(h.includes("|| v;"));
   // 記録が済んだら消し、beforeunload を外す
   assert.match(g, /clearPending\(o\.kind, o\.caseId\);\n\s*setUnloadGuard\(key, false\);/);
@@ -180,8 +255,16 @@ t("結線: mail-send-guard.js（送信と記録を分ける・記録待ち・送
   assert.match(g, /if \(btnClose\) btnClose\.disabled = b;/);
   assert.match(g, /if \(btnCancel\) btnCancel\.disabled = b;/);
   assert.match(g, /const close = \(\) => \{\n\s*if \(busy\) return;/);
-  // 開いたとき記録待ちなら、最初から記録だけやり直す
-  assert.match(g, /if \(pending\) \{ showRetry\(\); setUnloadGuard\(key, true\); \}/);
+  // 開いたとき記録待ちなら、最初から記録だけやり直す（承諾書は印で書き込み先を照合し、無ければ消して知らせ、次の送信は確認）
+  const rd = g.slice(g.indexOf("const ready = (async () => {"), i);
+  assert.ok(rd.includes("matchPendingReq(p0, o.candidateReqIds || [])"));
+  assert.match(rd, /if \(!found\) \{[^}]*clearPending\(o\.kind, o\.caseId\);[^}]*unknownSent\.add\(key\);[^}]*alert\(PENDING_TARGET_MISSING_TEXT\);/s);
+  assert.ok(rd.indexOf("targetReqId = found") < rd.indexOf("showRetry()"));
+  assert.ok(h.startsWith('btnSend.addEventListener("click", async () => {\n    await ready;'));
+  // 保存するのは印（reqKey）を作ってから。sessionStorage への書き込みは record-gaps-case.js の savePending だけ
+  assert.ok(h.indexOf("await reqKeyOf(o.reqId)") < save);
+  const code = g.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); // コメントを除いたコード
+  assert.ok(!/sessionStorage|setItem/.test(code), "mail-send-guard.js が sessionStorage に直接書いている");
 });
 
 for (const [file, kind, btnId] of [["consent-admin.js", "consent", "consentMailSend"], ["pre-guide.js", "preGuide", "pgSend"]]) {
@@ -196,7 +279,9 @@ for (const [file, kind, btnId] of [["consent-admin.js", "consent", "consentMailS
   });
 }
 t("結線: 承諾書の mailedAt は送信時刻（serverTimestamp ではない）・事前案内は送信時の JST 日付", () => {
-  assert.ok(src("consent-admin.js").includes('{ mailedAt: new Date(sentAtIso), mailedTo: to }'));
+  const ca = src("consent-admin.js");
+  assert.ok(ca.includes('updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to })'));
+  assert.ok(ca.includes('candidateReqIds: requests.filter((x) => x.status === "pending").map((x) => x._id)'));
   assert.ok(src("pre-guide.js").includes("preGuideMailedAt: jstDateOf(sentAtIso)"));
 });
 
@@ -253,5 +338,9 @@ t("結線: case-detail.js は保存成功のあとだけ聞き、既存の状態
   // 既存の状態変更の処理は statusSelect の change で動いている
   assert.match(s, /getElementById\("statusSelect"\)\.addEventListener\("change", async \(e\) => \{/);
 });
+
+for (const [name, fn] of asyncTests) {
+  try { await fn(); n++; } catch (e) { console.error(`✗ ${name}`); throw e; }
+}
 
 console.log(`OK test-record-gaps-case (${n} 件)`);
