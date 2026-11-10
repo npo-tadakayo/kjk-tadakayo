@@ -68,6 +68,9 @@ const ONSITE_STEPS = [
   { key: "userNotice", label: "利用者周知（ポスター/リーフレット案内）" },
 ];
 
+// 上書きの確認に出す工程名（「初回利用登録（ポータル）のメモ」など）
+const STEP_LABELS = Object.fromEntries(ONSITE_STEPS.map((i) => [i.key, i.label]));
+
 // ケアプラン連携 導入作業
 const CP_STEPS = [
   { key: "clientInstall", label: "クライアント（製品）DL・インストール" },
@@ -918,19 +921,28 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     sv.textContent = `保存しました ${t}`;
   }
 
-  // 書き込み中の保存（他の案件へ写す前に、全部終わるのを待つ）と、最後の保存が失敗したか
+  // 当日（onsite）の節の書き込み中の保存（他の案件へ写す前に、終わるのを待つ）と、保存が失敗したままか。
+  // 写すのは onsite だけなので、事前確認・アフター・ケアプラン連携の保存は見ない（レビュー 低-4）。
+  // onsite の保存は節を丸ごと書くので、失敗のあとに「後から始めた保存」が成功すれば失敗は解消（順番で判定）
   const pendingSaves = new Set();
-  let lastSaveFailed = false;
+  let saveSeq = 0, okSeq = 0, failedSeq = 0;
+  const onsiteSaveFailed = () => failedSeq > okSeq;
+  const SAVE_WAIT_MS = 10000; // 保存の完了待ちの上限
   async function saveSection(sec) {
     await setDoc(ref, { [sec]: state[sec], updatedAt: serverTimestamp() }, { merge: true });
   }
   // 入力の変更による保存を見張る（書き込み中の一覧に入れ、終わったら外す。失敗したら印を付ける）。
   // 戻り値の settle(ok) を保存の成否が分かったところで呼ぶ
-  function startSave() {
+  function startSave(sec) {
+    if (sec !== "onsite") return () => {};
+    const seq = ++saveSeq;
     let done;
     const p = new Promise((r) => { done = r; });
     pendingSaves.add(p);
-    return (ok) => { lastSaveFailed = !ok; pendingSaves.delete(p); done(); };
+    return (ok) => {
+      if (ok) okSeq = Math.max(okSeq, seq); else failedSeq = Math.max(failedSeq, seq);
+      pendingSaves.delete(p); done();
+    };
   }
 
   async function onChange(el) {
@@ -939,7 +951,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const value = el.type === "checkbox" ? el.checked : el.value;
     setByPath(state[sec], path, value);
     if (sec === "cp" && path === "installStatus") syncCpInstalled();
-    const settle = startSave();
+    const settle = startSave(sec);
     try {
       await saveSection(sec);
       markSaved(el);
@@ -1144,8 +1156,17 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     if (btn) btn.disabled = true;
     try {
       // 未保存の入力が写し元にあるときは、先に保存させる（保存中なら終わるまで待つ。失敗していたら写さない）
-      if (pendingSaves.size) { showCopyStatus("入力を保存しています…"); await Promise.allSettled([...pendingSaves]); }
-      if (lastSaveFailed) { showCopyStatus("保存できていない入力があります。入力し直して「保存しました」と出てから写してください", true); return; }
+      if (pendingSaves.size) {
+        showCopyStatus("入力を保存しています…");
+        let timer;
+        const finished = await Promise.race([
+          Promise.allSettled([...pendingSaves]).then(() => true),
+          new Promise((r) => { timer = setTimeout(() => r(false), SAVE_WAIT_MS); }),
+        ]);
+        clearTimeout(timer);
+        if (!finished) { showCopyStatus("保存が終わらないため写せません。通信を確かめてください", true); return; }
+      }
+      if (onsiteSaveFailed()) { showCopyStatus("保存できていない入力があります。入力し直して「保存しました」と出てから写してください", true); return; }
       // 画面の訪問日欄に出ている日を正にする（「当日の記録を確定」と同じ。案件の訪問予定日を出しているだけなら先に保存する）
       const vd = confirmVisitDate(($("sc-onsite-visitDate") || {}).value, state.onsite.visitDate);
       if (!hasCopyableContent(state.onsite, vd.date)) { showCopyStatus("写す内容がありません（当日工程・所感・訪問日が空です）", true); return; }
@@ -1157,10 +1178,10 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       const plans = targets.map((t, i) => {
         const tdoc = reads[i].exists() ? reads[i].data() : null;
         const chk = overwriteCheck(tdoc, caseId, buildCopiedOnsite(state.onsite, tdoc && tdoc.onsite, { visitDate: vd.date }));
-        return { t, count: chk.count, caseNumber: t.caseNumber, expected: copyFingerprint(tdoc && tdoc.onsite) };
+        return { t, count: chk.count, paths: chk.paths, caseNumber: t.caseNumber, expected: copyFingerprint(tdoc && tdoc.onsite) };
       });
       const names = targets.map((t) => caseLabel(t.caseNumber)).join("・");
-      const msg = overwriteConfirmText(plans) || `${names} へ当日の記録を写します。よろしいですか？`;
+      const msg = overwriteConfirmText(plans, STEP_LABELS) || `${names} へ当日の記録を写します。よろしいですか？`;
       if (!confirm(msg)) { showCopyStatus("写すのをやめました"); return; }
 
       const actorName = opts.getActor ? opts.getActor() : "";

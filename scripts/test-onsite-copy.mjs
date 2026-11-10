@@ -41,6 +41,10 @@ t("候補: officeId が無い案件では候補を出さず、理由を出す", 
   assert.equal(C.copyUnavailableReason(null), "案件を読み込んでいます");
 });
 
+t("低-5: 統合などで対象外（archived）の案件は写し元になれない", () => {
+  assert.equal(C.copyUnavailableReason({ _id: "A", officeId: "O1", archived: true }), "統合などで対象外になった案件のため写せません");
+});
+
 // ===== 写す内容 =====
 t("写すもの: 当日工程のチェック・メモ・所感・訪問日。訪問場所と時刻（除外キー）は写さず写し先の値を残す", () => {
   const target = { visitPlace: "online", visitTimeFrom: "13:00" };
@@ -90,8 +94,29 @@ t("Storage の参照（写真・ファイル）は写さず、写し先の値を
   assert.equal(out.steps.portalReg.photo, undefined, "写真は写さない");
   assert.deepEqual(out.files, [{ url: "u2", path: "documents/B/g.pdf" }], "写し先の写真を残す");
   assert.equal(out.link, undefined);
-  assert.equal(C.hasStorageRef("https://firebasestorage.googleapis.com/x"), true);
+  assert.equal(C.hasStorageRef("https://firebasestorage.googleapis.com/x"), false, "本文の中の URL は参照扱いしない（中-1）");
+  assert.equal(C.hasStorageRef("gs://bucket/a.jpg"), true);
+  assert.equal(C.hasStorageRef({ storagePath: "documents/A/a.jpg" }), true);
   assert.equal(C.hasStorageRef("ふつうのメモ"), false);
+});
+
+t("中-1: メモ本文に firebasestorage の URL があっても、そのメモは写り、写し先の同じ工程のメモは写し元の値になる", () => {
+  const url = "https://firebasestorage.googleapis.com/v0/b/x/o/a.pdf";
+  const s = { steps: { portalReg: { done: true, memo: `手順 ${url} 参照` } }, notes: `資料 ${url}` };
+  const out = C.buildCopiedOnsite(s, { steps: { portalReg: { done: false, memo: "先のメモ" } } }, {});
+  assert.deepEqual(out.steps.portalReg, { done: true, memo: `手順 ${url} 参照` });
+  assert.equal(out.notes, `資料 ${url}`);
+});
+
+t("低-3: 写し元に訪問日が無く画面の欄も空なら、写し先の保存済みの訪問日を残す", () => {
+  const out = C.buildCopiedOnsite({ steps: { portalReg: { done: true } } }, { visitDate: "2026-11-05" }, { visitDate: "" });
+  assert.equal(out.visitDate, "2026-11-05");
+  const chk = C.overwriteCheck({ onsite: { visitDate: "2026-11-05" } }, "A", out);
+  assert.equal(chk.needsConfirm, false, "訪問日は消えないので上書きに数えない");
+  // 写し元に訪問日があれば、写し先の訪問日は写し元の値になる（上書きに数える）
+  const out2 = C.buildCopiedOnsite({ visitDate: "2026-11-12" }, { visitDate: "2026-11-05" }, {});
+  assert.equal(out2.visitDate, "2026-11-12");
+  assert.deepEqual(C.overwriteCheck({ onsite: { visitDate: "2026-11-05" } }, "A", out2).paths, ["visitDate"]);
 });
 
 t("写す内容が無ければ写さない", () => {
@@ -146,11 +171,50 @@ t("もう一度写す: 別の案件から写した記録なら、写し元由来
   assert.equal(C.overwriteCheck(tdoc, "A", newOnsite).needsConfirm, true);
 });
 
+t("低-1: 末端が配列でも、同じ中身なら上書きに数えない", () => {
+  const tdoc = { onsite: { steps: { a: { tags: ["x", "y"] } } } };
+  const next = C.buildCopiedOnsite({ steps: { a: { tags: ["x", "y"] } } }, tdoc.onsite, {});
+  assert.equal(C.overwriteCheck(tdoc, "A", next).needsConfirm, false);
+  const next2 = C.buildCopiedOnsite({ steps: { a: { tags: ["x"] } } }, tdoc.onsite, {});
+  assert.deepEqual(C.overwriteCheck(tdoc, "A", next2).paths, ["steps.a.tags"]);
+});
+
+t("低-2: 除外キーをあとで足しても、過去の複写は「写したあと変更あり」にならない", () => {
+  const prev = C.buildCopiedOnsite(SRC_ONSITE, null, {});
+  const cf = C.copiedFromRecord({ sourceCaseId: "A", sourceCaseNumber: 12, nowMs: 0, newOnsite: prev });
+  assert.deepEqual(cf.excludeKeys, C.COPY_EXCLUDE_KEYS, "写した時点の除外キーを残す");
+  // 「写した時点の一覧」には visitPlace が無く、そのあと一覧に足された、という状況を再現する
+  const past = ["onsite.visitTimeFrom", "onsite.visitTimeTo"];
+  const written = { ...prev, visitPlace: "office" };
+  const old = C.copiedFromRecord({ sourceCaseId: "A", sourceCaseNumber: 12, nowMs: 0, newOnsite: written, exclude: past });
+  assert.notEqual(old.fingerprint, C.copyFingerprint(written), "今の一覧で計算すると指紋は違う");
+  assert.equal(C.changedSinceCopy({ onsite: written, copiedFrom: old }), false, "保存されている一覧で計算し直すので変更なし");
+  assert.equal(C.overwriteCheck({ onsite: written, copiedFrom: old }, "A", newOnsiteFor(written)).needsConfirm, false);
+  // 写したあと本当に変えたときは、変更ありになる
+  assert.equal(C.changedSinceCopy({ onsite: { ...written, notes: "変えた" }, copiedFrom: old }), true);
+  // excludeKeys を持たない古い記録は今の一覧で比べる
+  const legacy = { caseId: "A", fingerprint: C.copyFingerprint(prev) };
+  assert.equal(C.changedSinceCopy({ onsite: prev, copiedFrom: legacy }), false);
+});
+function newOnsiteFor(prev) { return C.buildCopiedOnsite({ ...SRC_ONSITE, notes: "新しい所感" }, prev, {}); }
+
 t("指紋: キーの順番・false と未入力の違い・除外キーの変更に左右されない", () => {
   const a = { steps: { a: { done: true, memo: "x" }, b: { done: false } }, visitPlace: "office" };
   const b = { visitPlace: "online", steps: { a: { memo: "x", done: true } } };
   assert.equal(C.copyFingerprint(a), C.copyFingerprint(b));
   assert.notEqual(C.copyFingerprint(a), C.copyFingerprint({ steps: { a: { done: true, memo: "y" } } }));
+});
+
+t("低-3: 確認の文面に上書き・消去される項目の名前（多いときは先頭3件＋ほか◯件）", () => {
+  const labels = { portalReg: "初回利用登録（ポータル）", certInstall: "電子証明書 インストール" };
+  assert.equal(C.pathLabel("visitDate"), "訪問日");
+  assert.equal(C.pathLabel("notes"), "所感");
+  assert.equal(C.pathLabel("steps.portalReg.memo", labels), "初回利用登録（ポータル）のメモ");
+  assert.equal(C.pathLabel("steps.certInstall.done", labels), "電子証明書 インストールのチェック");
+  const s = C.overwriteConfirmText([{ caseNumber: 13, count: 5,
+    paths: ["notes", "steps.certInstall.done", "steps.portalReg.memo", "steps.x.done", "visitDate"] }], labels);
+  assert.match(s, /#13: 5件（所感・電子証明書 インストールのチェック・初回利用登録（ポータル）のメモ ほか2件）/);
+  assert.match(C.overwriteConfirmText([{ caseNumber: 14, count: 1, paths: ["visitDate"] }]), /#14: 1件（訪問日）/);
 });
 
 t("確認の文面: 件数つき。件数0の写し先は出さない", () => {
@@ -243,12 +307,17 @@ t("写し先の onsite は丸ごと置き換え（update/set）、写し元に�
 
 t("未保存の入力（保存中・保存失敗）があるときは写さない", () => {
   const run = sc.slice(sc.indexOf("async function runCopy("), sc.indexOf("const copyOpenBtn"));
-  const i = run.indexOf("await Promise.allSettled([...pendingSaves])");
+  const i = run.indexOf("Promise.allSettled([...pendingSaves])");
   const oc = sc.slice(sc.indexOf("async function onChange("), sc.indexOf("// 証憑写真アップロード"));
-  assert.ok(oc.indexOf("const settle = startSave();") < oc.indexOf("await saveSection(sec);"), "入力の変更による保存を見張っている");
+  assert.ok(oc.indexOf("const settle = startSave(sec);") < oc.indexOf("await saveSection(sec);"), "入力の変更による保存を見張っている");
   assert.match(oc, /settle\(true\);/);
   assert.match(oc, /settle\(false\);/);
-  const j = run.indexOf("if (lastSaveFailed)");
+  // 低-4: 見るのは onsite の節だけ。失敗は「後から始めた保存」の成功で解消（順番で判定）。待つのは上限つき
+  assert.match(sc, /if \(sec !== "onsite"\) return \(\) => \{\};/);
+  assert.match(sc, /const onsiteSaveFailed = \(\) => failedSeq > okSeq;/);
+  assert.match(sc, /const SAVE_WAIT_MS = 10000;/);
+  assert.match(run, /保存が終わらないため写せません。通信を確かめてください/);
+  const j = run.indexOf("if (onsiteSaveFailed())");
   const k = run.indexOf("runTransaction(");
   assert.ok(i > 0 && j > i && k > j);
 });

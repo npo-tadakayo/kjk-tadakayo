@@ -12,7 +12,7 @@
 //   - onsite 以外の節（COPY_SECTIONS に無いもの）: cp（ケアプラン連携。導入済み欄 cp.installStatus に連動するので案件ごとの値を尊重）、
 //     pre（事前確認）、after（アフター）、performance（実施の記録・実施日）、copiedFrom / copiedTo
 //   - 別のコレクション: 伴走支援の記録（sessions）、対応記録（activities。「当日の記録を確定」の行を含む）、トレーニング評価
-//   - Storage の参照を含む値（写真・ファイル。url / path / gs:// / firebasestorage を持つもの）
+//   - Storage の参照の項目（写真・ファイル。{url, path} の形・storagePath・"gs://" で始まる値）。メモ本文の中の URL は写す
 //   - COPY_EXCLUDE_KEYS に書いた項目
 
 // 写す節。ここに無い節は一切写さない
@@ -21,6 +21,8 @@ export const COPY_SECTIONS = ["onsite"];
 // 写さない項目（supportChecklists の文書の中のパス。"onsite.steps.userNotice" のように書くと、その工程だけ写さない）。
 // ⚠ 現場に「事業種別ごとに中身が違う工程があるか」を確認中。回答が来たら、その工程のパスをここに足すだけでよい
 //   （足した項目は写し先の値がそのまま残り、上書きの確認の件数にも数えない）。
+//   写した記録の指紋は、写した時点の一覧（copiedFrom.excludeKeys）で比べるので、足しても過去の複写が
+//   「写したあと変更あり」にはならない。
 // 訪問場所・時刻は「写すもの」（工程の状態・メモと訪問日）に入っていないので写さない（2026-11-10 の指示どおり）。
 export const COPY_EXCLUDE_KEYS = [
   "onsite.visitPlace",
@@ -36,9 +38,11 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 
 const excludedPath = (path, exclude) => exclude.some((p) => path === p || path.startsWith(`${p}.`));
 
-// Storage の参照を含むか（写真・ファイル）。配列・入れ子も見る
+// Storage の参照を含むか（写真・ファイルの項目）。配列・入れ子も見る。
+// 参照と見なすのは {url, path} の形のオブジェクト・storagePath・"gs://" で始まる値だけ。
+// メモ・所感の本文の中の URL（https://firebasestorage… を含む）は普通の文字として写す（レビュー 中-1）
 export function hasStorageRef(v) {
-  if (typeof v === "string") return /^gs:\/\//.test(v) || /firebasestorage\.googleapis\.com|\.firebasestorage\.app/.test(v);
+  if (typeof v === "string") return /^gs:\/\//.test(v.trim());
   if (Array.isArray(v)) return v.some(hasStorageRef);
   if (v && typeof v === "object") {
     if (typeof v.toMillis === "function") return false;
@@ -115,9 +119,15 @@ export function copyFingerprint(sectionData, section = "onsite", exclude = COPY_
 // visitDate: 写し元の画面に出ている訪問日（保存済みの onsite.visitDate と違う場合はこちらを使う）
 export function buildCopiedOnsite(sourceOnsite, targetOnsite, { visitDate = "", exclude = COPY_EXCLUDE_KEYS } = {}) {
   const src = isPlainObject(sourceOnsite) ? sourceOnsite : {};
+  const tgt = isPlainObject(targetOnsite) ? targetOnsite : {};
   const copy = split(src, "onsite", exclude).copy;
-  if (visitDate && !excludedPath("onsite.visitDate", exclude)) copy.visitDate = visitDate;
-  const keep = split(isPlainObject(targetOnsite) ? targetOnsite : {}, "onsite", exclude).keep;
+  if (!excludedPath("onsite.visitDate", exclude)) {
+    if (visitDate) copy.visitDate = visitDate;
+    // 写し元に訪問日が無い（画面の欄も空）ときは、写し先の保存済みの訪問日を消さずに残す（レビュー 低-3）
+    const has = (v) => typeof v === "string" && v.trim() !== "";
+    if (!has(copy.visitDate) && has(tgt.visitDate)) copy.visitDate = tgt.visitDate;
+  }
+  const keep = split(tgt, "onsite", exclude).keep;
   const onsite = deepMerge(copy, keep);
   if (!isPlainObject(onsite.steps)) onsite.steps = {};
   return onsite;
@@ -141,10 +151,12 @@ export function overwriteCheck(targetDoc, sourceCaseId, newOnsite) {
   const t = targetDoc || {};
   const cur = filledLeaves(copyablePart(t.onsite));
   const next = filledLeaves(copyablePart(newOnsite));
-  const paths = Object.keys(cur).filter((p) => next[p] !== cur[p]).sort();
+  // 配列などは中身で比べる（同じ中身を「上書きあり」と数えない・レビュー 低-1）
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const paths = Object.keys(cur).filter((p) => !same(next[p], cur[p])).sort();
   const cf = t.copiedFrom;
   const unchangedSinceCopy = !!(cf && cf.caseId === sourceCaseId && typeof cf.fingerprint === "string"
-    && cf.fingerprint === copyFingerprint(t.onsite));
+    && cf.fingerprint === fingerprintAsCopied(t.onsite, cf));
   const needsConfirm = paths.length > 0 && !unchangedSinceCopy;
   return { needsConfirm, count: needsConfirm ? paths.length : 0, paths: needsConfirm ? paths : [] };
 }
@@ -153,7 +165,15 @@ export function overwriteCheck(targetDoc, sourceCaseId, newOnsite) {
 export function changedSinceCopy(targetDoc) {
   const cf = targetDoc && targetDoc.copiedFrom;
   if (!cf || typeof cf.fingerprint !== "string") return false;
-  return cf.fingerprint !== copyFingerprint(targetDoc.onsite);
+  return cf.fingerprint !== fingerprintAsCopied(targetDoc.onsite, cf);
+}
+
+// 写した時点の除外キーの一覧（copiedFrom.excludeKeys）で指紋を計算し直す。
+// COPY_EXCLUDE_KEYS に後から工程を足しても、過去の複写が「写したあと変更あり」にならないように（レビュー 低-2）。
+// excludeKeys を持たない記録（この仕組みより前）は今の一覧で計算する
+function fingerprintAsCopied(onsite, cf) {
+  const ex = cf && Array.isArray(cf.excludeKeys) ? cf.excludeKeys : COPY_EXCLUDE_KEYS;
+  return copyFingerprint(onsite, "onsite", ex);
 }
 
 // 写し先の候補: 同じ officeId の他の案件（自分・統合などで対象外にした案件は出さない）。案件番号の順
@@ -168,6 +188,7 @@ export function copyCandidates(currentCase, cases) {
 // ボタンを出せない理由（出せるなら ""）
 export function copyUnavailableReason(currentCase) {
   if (!currentCase) return "案件を読み込んでいます";
+  if (currentCase.archived) return "統合などで対象外になった案件のため写せません";
   if (!currentCase.officeId) return "事業所が未登録のため写せません";
   return "";
 }
@@ -184,14 +205,15 @@ export function formatJst(ms) {
 }
 
 // 写し先に残す印
-export function copiedFromRecord({ sourceCaseId, sourceCaseNumber, nowMs, actorName = "", actorId = "", newOnsite }) {
+export function copiedFromRecord({ sourceCaseId, sourceCaseNumber, nowMs, actorName = "", actorId = "", newOnsite, exclude = COPY_EXCLUDE_KEYS }) {
   return {
     caseId: sourceCaseId,
     caseNumber: sourceCaseNumber ?? null,
     copiedAtMs: nowMs,
     copiedBy: actorName,
     copiedById: actorId,
-    fingerprint: copyFingerprint(newOnsite),
+    fingerprint: copyFingerprint(newOnsite, "onsite", exclude),
+    excludeKeys: [...exclude], // 指紋を計算したときの除外キー（あとで一覧が増えても同じ条件で比べる）
   };
 }
 
@@ -220,9 +242,29 @@ export function copiedToText(sourceDoc) {
   return `${list.map((x) => `${caseLabel(x.caseNumber)}（${formatJst(x.copiedAtMs)}）`).join("・")}へ写した`;
 }
 
-// 上書きの確認の文面。checks: [{ caseNumber, count }]（count>0 のものだけ）
-export function overwriteConfirmText(checks) {
-  const lines = checks.filter((c) => c.count > 0).map((c) => `${caseLabel(c.caseNumber)}: ${c.count}件`);
+// 上書き・消去される項目の名前（"visitDate"→訪問日、"steps.portalReg.memo"→「初回利用登録 のメモ」）。
+// stepLabels: { portalReg: "初回利用登録（ポータル）", ... }（画面の工程名）
+export function pathLabel(path, stepLabels = {}) {
+  if (path === "visitDate") return "訪問日";
+  if (path === "notes") return "所感";
+  const m = /^steps\.([^.]+)\.(done|memo)$/.exec(path);
+  if (m) return `${stepLabels[m[1]] || m[1]}の${m[2] === "done" ? "チェック" : "メモ"}`;
+  return path;
+}
+const NAMES_SHOWN = 3;
+export function pathsSummary(paths, stepLabels = {}) {
+  const names = (paths || []).map((p) => pathLabel(p, stepLabels));
+  if (!names.length) return "";
+  const head = names.slice(0, NAMES_SHOWN).join("・");
+  return names.length > NAMES_SHOWN ? `${head} ほか${names.length - NAMES_SHOWN}件` : head;
+}
+
+// 上書きの確認の文面。checks: [{ caseNumber, count, paths }]（count>0 のものだけ出す）
+export function overwriteConfirmText(checks, stepLabels = {}) {
+  const lines = checks.filter((c) => c.count > 0).map((c) => {
+    const names = pathsSummary(c.paths, stepLabels);
+    return `${caseLabel(c.caseNumber)}: ${c.count}件${names ? `（${names}）` : ""}`;
+  });
   if (!lines.length) return "";
   return `写し先の入力が上書きされます。\n${lines.join("\n")}\n\nよろしいですか？`;
 }
