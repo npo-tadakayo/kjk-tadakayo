@@ -25,6 +25,7 @@ import { dateDefault, resolveTab, activityRefLink, sessionAnchorId } from "/js/o
 import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js";
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
+import { shouldAskSupportDone, supportDoneAskText, SUPPORT_DONE_STATUS } from "/js/record-gaps.js";
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
@@ -1727,10 +1728,24 @@ async function addSession(userId, userName) {
     applySessionDateDefault(); // 次の記録の実施日も当日の訪問日から（clean の後＝未保存のままだと入らない・レビュー 中-1）
   } catch (e) {
     alert(`記録に失敗しました: ${e.message}`);
+    return;
   } finally {
     btn.disabled = false;
     progress.style.display = "none";
   }
+  askSupportDone();
+}
+
+// 伴走支援の記録を保存したあと、案件の状態が伴走支援実施済より前なら「伴走支援実施済にしますか」と聞く（2026-11-10・設計書 §3 点検5）。
+// 自動では変えない。OK のときだけ、ヘッダーの状態の選択を 8 にして change を起こし、既存の状態変更の処理
+// （請求書の確認・対応記録・次の一手）をそのまま通す。判定は record-gaps.js の shouldAskSupportDone
+function askSupportDone() {
+  const sel = document.getElementById("statusSelect");
+  if (!sel || sel.disabled || !currentCase) return;
+  if (!shouldAskSupportDone({ status: currentCase.status, archived: !!currentCase.archived, canChangeStatus: canCopy })) return;
+  if (!confirm(supportDoneAskText(currentCase.status))) return;
+  sel.value = String(SUPPORT_DONE_STATUS);
+  sel.dispatchEvent(new Event("change"));
 }
 
 // ===== AIアシスタント =====
