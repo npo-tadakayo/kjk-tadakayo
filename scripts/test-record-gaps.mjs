@@ -5,10 +5,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   BILLING_MAIL_KIND_LABEL, billingMailActivityOf, mailRecordFailedText, mailSentNotesOf,
+  receiptSaveInfoOf,
 } from "../admin/js/record-gaps.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 let n = 0;
+// ソースの照合は、外れたときにファイル全体を出さない（assert.match は入力を丸ごと表示する）
+const has = (src, re, msg) => assert.ok(re.test(src), msg || `見つからない: ${re}`);
+const hasNot = (src, re, msg) => assert.ok(!re.test(src), msg || `残っている: ${re}`);
 const t = (name, fn) => {
   try { fn(); n++; } catch (e) { console.error(`NG ${name}`); throw e; }
 };
@@ -60,23 +64,46 @@ t("点検3: 送付済みの記録は状態を問わず出す（発送済でも�
 });
 t("点検3: 画面のつなぎ（supply-print.js・supply.js）", () => {
   const sp = read("admin/js/supply-print.js");
-  assert.match(sp, /import \{ billingMailActivityOf, mailRecordFailedText \} from "\/js\/record-gaps\.js"/);
-  assert.match(sp, /addDoc, serverTimestamp \} from "\/js\/fs\.js"/);
+  has(sp, /import \{ billingMailActivityOf, mailRecordFailedText[^}]*\} from "\/js\/record-gaps\.js"/);
+  has(sp, /addDoc, serverTimestamp \} from "\/js\/fs\.js"/);
   // 送信の直後・送付の知らせより前に記録し、失敗は知らせに添える（catch の「送信に失敗しました」に落とさない）
   const send = sp.indexOf("await sendPartnerMailFn(");
   const log = sp.indexOf("await logBillingMailActivity(d, kind");
   const done = sp.indexOf("へ送付しました`");
   assert.ok(send > 0 && log > send && done > log, "送信 → 記録 → 送付の知らせ の順になっていない");
   const fn = sp.slice(sp.indexOf("async function logBillingMailActivity"), sp.indexOf("async function afterInvoiceMailed"));
-  assert.match(fn, /try\{/);
-  assert.match(fn, /catch\(e\)\{[\s\S]*return mailRecordFailedText\(e\)/);
+  has(fn, /try\{/);
+  has(fn, /catch\(e\)\{[\s\S]*return mailRecordFailedText\(e\)/);
   const su = read("admin/js/supply.js");
-  assert.match(su, /import \{ billingMailActivityOf, mailRecordFailedText, mailSentNotesOf \} from "\/js\/record-gaps\.js"/);
+  has(su, /import \{ billingMailActivityOf, mailRecordFailedText, mailSentNotesOf \} from "\/js\/record-gaps\.js"/);
   const dun = su.slice(su.indexOf("async function sendDunning"), su.indexOf("// ===== 請求済にする＋経理へ"));
-  assert.match(dun, /billingMailActivityOf\(\{ kind:"dunning"/);
-  assert.match(dun, /catch\(e2\)\{[\s\S]*mailRecordFailedText\(e2\)/); // 記録の失敗は内側で受ける
-  assert.match(su, /payInfo \+= mailSentNotesOf\(s\)/);
-  assert.doesNotMatch(su, /s\.invoiceMailedAt \? `<div/); // 請求済・入金済の中だけに出していた古い表示は残さない
+  has(dun, /billingMailActivityOf\(\{ kind:"dunning"/);
+  has(dun, /catch\(e2\)\{[\s\S]*mailRecordFailedText\(e2\)/); // 記録の失敗は内側で受ける
+  has(su, /payInfo \+= mailSentNotesOf\(s\)/);
+  hasNot(su, /s\.invoiceMailedAt \? `<div/); // 請求済・入金済の中だけに出していた古い表示は残さない
+});
+
+// ===== 点検11: 領収証を送って「キャンセル」した出荷に「送付済み・記録待ち」 =====
+t("点検11: 送付済み・未記録は「領収証 送付済み・記録待ち」", () => {
+  const s = { status: "paid", receiptMailedAt: "2026-11-10", receiptMailedTo: "office@example.com" };
+  assert.equal(receiptSaveInfoOf(s),
+    "領収証 送付済み・記録待ち（2026-11-10 に office@example.com へ送付）。「発行を記録」で記録してください");
+  assert.match(receiptSaveInfoOf({ status: "paid", receiptMailedAt: "2026-11-10" }), /2026-11-10 に送付）/);
+});
+t("点検11: 発行済みは「発行済」、キャンセル・未送付は何も出さない", () => {
+  assert.equal(receiptSaveInfoOf({ status: "paid", receiptMailedAt: "2026-11-10", receiptIssuedAt: "2026-11-09", receiptNo: "RCPT-2026-0001" }),
+    "発行済 2026-11-09（RCPT-2026-0001）");
+  assert.equal(receiptSaveInfoOf({ status: "canceled", receiptMailedAt: "2026-11-10" }), "");
+  assert.equal(receiptSaveInfoOf({ status: "paid" }), "");
+  assert.equal(receiptSaveInfoOf(null), "");
+});
+t("点検11: 領収証ページのつなぎ（読み込み時と、送信後の確認でキャンセルしたとき）", () => {
+  const sp = read("admin/js/supply-print.js");
+  has(sp, /receiptSaveInfoOf \} from "\/js\/record-gaps\.js"/);
+  const after = sp.slice(sp.indexOf('if(kind === "receipt" && issueSnap)'), sp.indexOf("// 請求書を送ったら、請求済として記録するか確認する"));
+  has(after, /if\(!d\.receiptIssuedAt\) showReceiptSaveInfo\(d\)/);
+  const load = sp.slice(sp.indexOf('const saveBtn=document.getElementById("rcptSaveBtn")'));
+  has(load, /showReceiptSaveInfo\(d\);\s*saveBtn\.addEventListener/);
 });
 
 console.log(`OK test-record-gaps: ${n} 件合格`);

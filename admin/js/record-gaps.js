@@ -1,6 +1,7 @@
 // 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3 全体の点検・2026-11-10）。
 // 画面（supply.js / supply-print.js / quote-admin.js / case-detail.js / kanban.js）から呼ぶ純関数だけを置く。
 // Firestore にも DOM にも触らない（node scripts/test-record-gaps.mjs でそのまま試せるように）。
+import { MAILED_PENDING_LABEL, mailedPendingOf } from "./ship-flow.js";
 
 // ===== 点検3: 請求書・領収証・催促のメールを、案件の対応記録（activities）に残す =====
 // 送信は Cloud Functions の sendPartnerMail が行い、出荷には invoiceMailedAt / receiptMailedAt / dunningSentAt を書くが、
@@ -56,4 +57,18 @@ export function mailSentNotesOf(s) {
     out.push({ key: "dunning", text: `催促メール送信済み ${md(s.dunningSentAt)}${n > 1 ? `（${n}回目）` : ""}` });
   }
   return out;
+}
+
+// ===== 点検11: 領収証を送ったあとの確認で「キャンセル」を押した出荷に「送付済み・記録待ち」と出す =====
+// 一覧のバッジ・案件詳細の出荷カードは PR #58 の mailedPendingNotes（ship-flow.js）で出ている。
+// 領収証ページの「発行を記録」の横は、発行済みのときしか状態を出しておらず、送ったのに何も出なかった。
+// 判定は mailedPendingOf と同じ（キャンセルした出荷・発行済みは「記録待ち」にしない）。
+export function receiptSaveInfoOf(s) {
+  if (!s) return "";
+  if (s.receiptIssuedAt) return `発行済 ${s.receiptIssuedAt}（${s.receiptNo || ""}）`;
+  if (mailedPendingOf(s).receipt) {
+    return `領収証 ${MAILED_PENDING_LABEL}（${s.receiptMailedAt}${s.receiptMailedTo ? ` に ${s.receiptMailedTo} へ送付` : " に送付"}）。`
+      + "「発行を記録」で記録してください";
+  }
+  return "";
 }

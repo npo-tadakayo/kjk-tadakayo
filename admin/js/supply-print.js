@@ -14,7 +14,7 @@ import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
 // 送ったメールを案件の対応記録に残す（設計書 §3 点検3・2026-11-10）
-import { billingMailActivityOf, mailRecordFailedText } from "/js/record-gaps.js";
+import { billingMailActivityOf, mailRecordFailedText, receiptSaveInfoOf } from "/js/record-gaps.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -531,7 +531,7 @@ async function saveReceiptIssue(s, shipmentId, userEmail, opts={}){
     });
     // 画面内の状態も更新（メール送信後の記録でも、以後「記録を更新」の扱いになる）
     s.receiptNo=rcptNo; s.receiptIssuedAt=issuedAt; s.receiptIssuedBy=userEmail; s.receiptAmountIncl=snap.amountIncl;
-    if(info) info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`;
+    if(info){ info.textContent=`発行を記録しました（${rcptNo}・${issuedAt}・${yen(snap.amountIncl)}）`; info.style.color=""; } // 記録待ちの注意の色を戻す
     if(btn) btn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
     ok=true;
   }catch(e){ if(info) info.textContent=`記録に失敗: ${e.message}`; }
@@ -799,6 +799,9 @@ function setupMailDoc(kind, d, st, userEmail){
             if(!ok) alert("発行の記録に失敗しました。領収証ページの「発行を記録」から記録してください");
           }
         }catch(_){ /* 送信は成功済み。記録は後からでもできる */ }
+        // キャンセル・記録の失敗のときは「送付済み・記録待ち」を出す（2026-11-10 点検11）。
+        // 記録できたときは saveReceiptIssue の「発行を記録しました（…）」を残す
+        if(!d.receiptIssuedAt) showReceiptSaveInfo(d);
       }
       // 請求書を送ったら、請求済として記録するか確認する（2026-11-10）。
       // メール送付は invoiceMailedAt しか書かず、状態・請求日・支払期限は出荷の画面の「請求済にする」でしか付かなかったため、
@@ -814,6 +817,15 @@ function setupMailDoc(kind, d, st, userEmail){
       sendBtn.disabled = false; sendBtn.innerHTML = orig;
     }
   };
+}
+
+// 領収証ページの「発行を記録」の横の状態（発行済／送付済み・記録待ち）。発行を記録したあとの文は saveReceiptIssue が上書きする
+function showReceiptSaveInfo(d){
+  const el=document.getElementById("rcptSaveInfo");
+  if(!el) return;
+  const txt=receiptSaveInfoOf(d);
+  el.textContent=txt;
+  el.style.color = (!d.receiptIssuedAt && txt) ? "#c87a1f" : ""; // 記録待ちは #58 の「送付済み・記録待ち」と同じ注意の色
 }
 
 // 送った請求書・領収証のメールを、案件の対応記録（activities）に残す（2026-11-10 設計書 §3 点検3）。
@@ -990,8 +1002,9 @@ onAuthStateChanged(auth, async (user)=>{
         if(saveBtn){
           if(d.receiptIssuedAt){
             saveBtn.innerHTML='<i class="ti ti-device-floppy"></i> 記録を更新';
-            if(saveInfo) saveInfo.textContent=`発行済 ${d.receiptIssuedAt}（${d.receiptNo||""}）`;
           }
+          // 発行済み／メールで送付済み・記録待ち（2026-11-10 点検11）の表示は receiptSaveInfoOf に寄せる
+          showReceiptSaveInfo(d);
           saveBtn.addEventListener("click",()=>saveReceiptIssue(d, docId, user.email));
         }
       }
