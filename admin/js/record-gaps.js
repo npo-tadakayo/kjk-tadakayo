@@ -1,7 +1,7 @@
 // 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3 全体の点検・2026-11-10）。
 // 画面（supply.js / supply-print.js / quote-admin.js / case-detail.js / kanban.js）から呼ぶ純関数だけを置く。
 // Firestore にも DOM にも触らない（node scripts/test-record-gaps.mjs でそのまま試せるように）。
-import { MAILED_PENDING_LABEL, mailedPendingOf } from "./ship-flow.js";
+import { MAILED_PENDING_LABEL, mailedPendingOf, shipStatusOf, paymentsOf, netPaidOf } from "./ship-flow.js";
 
 // ===== 点検3: 請求書・領収証・催促のメールを、案件の対応記録（activities）に残す =====
 // 送信は Cloud Functions の sendPartnerMail が行い、出荷には invoiceMailedAt / receiptMailedAt / dunningSentAt を書くが、
@@ -71,4 +71,25 @@ export function receiptSaveInfoOf(s) {
       + "「発行を記録」で記録してください";
   }
   return "";
+}
+
+// ===== 点検12: 請求前に入金を記録した出荷でも、一覧の行に入金を出す（表示だけ） =====
+// 出荷一覧の入金・未集金の欄は請求済・入金済の行だけに出していたので、銀行明細の取り込みなどで
+// 発送済（未請求）のうちに入金を記録した出荷は、行を見ても入金が分からなかった。
+// 入金の記録・消込・状態は一切変えない（ここは読むだけ）。請求済・入金済は従来の表示のまま（null を返す）。
+// 金額は ship-flow.js の netPaidOf（入金 − 返金）＝ supply.js の netPaid と同じ数え方。
+const yenText = (n) => "¥" + Number(n || 0).toLocaleString("ja-JP"); // supply.js の yen と同じ書き方
+export function prepaidNoteOf(s) {
+  if (!s) return null;
+  const st = shipStatusOf(s);
+  if (st === "invoiced" || st === "paid") return null;
+  const pays = paymentsOf(s);
+  if (!pays.length) return null;
+  const net = netPaidOf(s);
+  const last = String((pays[pays.length - 1] || {}).date || "");
+  const refunded = net !== pays.reduce((a, p) => a + (Number(p.amount) || 0), 0);
+  return {
+    net, count: pays.length, lastDate: last,
+    text: `入金済 ${yenText(net)}（請求前に記録${last ? `・${last}` : ""}${pays.length > 1 ? `・${pays.length}回` : ""}${refunded ? "・返金差引後" : ""}）`,
+  };
 }

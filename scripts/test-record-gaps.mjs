@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   BILLING_MAIL_KIND_LABEL, billingMailActivityOf, mailRecordFailedText, mailSentNotesOf,
-  receiptSaveInfoOf,
+  receiptSaveInfoOf, prepaidNoteOf,
 } from "../admin/js/record-gaps.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
@@ -75,7 +75,7 @@ t("点検3: 画面のつなぎ（supply-print.js・supply.js）", () => {
   has(fn, /try\{/);
   has(fn, /catch\(e\)\{[\s\S]*return mailRecordFailedText\(e\)/);
   const su = read("admin/js/supply.js");
-  has(su, /import \{ billingMailActivityOf, mailRecordFailedText, mailSentNotesOf \} from "\/js\/record-gaps\.js"/);
+  has(su, /import \{ billingMailActivityOf, mailRecordFailedText, mailSentNotesOf[^}]*\} from "\/js\/record-gaps\.js"/);
   const dun = su.slice(su.indexOf("async function sendDunning"), su.indexOf("// ===== 請求済にする＋経理へ"));
   has(dun, /billingMailActivityOf\(\{ kind:"dunning"/);
   has(dun, /catch\(e2\)\{[\s\S]*mailRecordFailedText\(e2\)/); // 記録の失敗は内側で受ける
@@ -104,6 +104,35 @@ t("点検11: 領収証ページのつなぎ（読み込み時と、送信後の�
   has(after, /if\(!d\.receiptIssuedAt\) showReceiptSaveInfo\(d\)/);
   const load = sp.slice(sp.indexOf('const saveBtn=document.getElementById("rcptSaveBtn")'));
   has(load, /showReceiptSaveInfo\(d\);\s*saveBtn\.addEventListener/);
+});
+
+// ===== 点検12: 請求前に入金を記録した出荷でも一覧の行に入金を出す（表示だけ） =====
+t("点検12: 発送済で入金があれば出す", () => {
+  const p = prepaidNoteOf({ status: "shipped", payments: [{ amount: 30000, date: "2026-11-08" }] });
+  assert.equal(p.net, 30000);
+  assert.equal(p.text, "入金済 ¥30,000（請求前に記録・2026-11-08）");
+  const p2 = prepaidNoteOf({ status: "requested", payments: [{ amount: 10000, date: "2026-11-01" }, { amount: 5000, date: "2026-11-05" }], refunds: [{ amount: 2000 }] });
+  assert.equal(p2.text, "入金済 ¥13,000（請求前に記録・2026-11-05・2回・返金差引後）");
+  // 旧形式（paymentAmount/paidAt）も読む（ship-flow.js の paymentsOf と同じ）
+  assert.equal(prepaidNoteOf({ status: "draft", paymentAmount: 500, paidAt: "2026-10-01" }).text, "入金済 ¥500（請求前に記録・2026-10-01）");
+  // 状態が未設定の古い出荷は発送済扱い
+  assert.ok(prepaidNoteOf({ payments: [{ amount: 1, date: "" }] }));
+  assert.equal(prepaidNoteOf({ payments: [{ amount: 1, date: "" }] }).text, "入金済 ¥1（請求前に記録）");
+});
+t("点検12: 請求済・入金済は従来の表示のまま（null）、入金なしも null", () => {
+  assert.equal(prepaidNoteOf({ status: "invoiced", payments: [{ amount: 1 }] }), null);
+  assert.equal(prepaidNoteOf({ status: "paid", payments: [{ amount: 1 }] }), null);
+  assert.equal(prepaidNoteOf({ status: "shipped" }), null);
+  assert.equal(prepaidNoteOf({ status: "shipped", payments: [] }), null);
+  assert.equal(prepaidNoteOf(null), null);
+});
+t("点検12: 入力の出荷を書き換えない（表示だけ）・画面のつなぎ", () => {
+  const s = { status: "shipped", payments: [{ amount: 100, date: "2026-11-01" }] };
+  const before = JSON.stringify(s);
+  prepaidNoteOf(s);
+  assert.equal(JSON.stringify(s), before);
+  const su = read("admin/js/supply.js");
+  has(su, /const pre = prepaidNoteOf\(s\);\s*if\(pre\) payInfo \+=/);
 });
 
 console.log(`OK test-record-gaps: ${n} 件合格`);

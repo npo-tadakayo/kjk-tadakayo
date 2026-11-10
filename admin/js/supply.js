@@ -25,7 +25,7 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
   netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
   isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary, mailedPendingNotes } from "/js/ship-flow.js";
 // 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3・2026-11-10）
-import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf } from "/js/record-gaps.js";
+import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf } from "/js/record-gaps.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
@@ -2669,6 +2669,9 @@ function renderShipments(ships, dv){
             ? `<div style="font-size:12px;color:var(--color-ink-muted)">経理へ報告済み ${esc(String(s.accountingReportedAt).slice(5))}</div>`
             : `<div style="font-size:12px;color:var(--color-warn,#c87a1f)">経理へ未報告</div>`);
     }
+    // 請求前に記録した入金（発送済のうちに銀行明細から入金を記録したなど）。表示だけ（2026-11-10 点検12。入金・消込の処理は変えない）
+    const pre = prepaidNoteOf(s);
+    if(pre) payInfo += `<div style="font-size:12px;color:var(--color-success)">${esc(pre.text)}</div>`;
     // 請求先へのメール送付の記録（請求書・領収証・催促）。状態を問わず出す（2026-11-10 点検3。以前は請求済・入金済の行だけ）
     payInfo += mailSentNotesOf(s).map(n=>`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(n.text)}</div>`).join("");
     let lifeBtns="";
