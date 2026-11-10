@@ -24,6 +24,7 @@ import { ITEMS, GRADES, JUDGEMENTS, judgementLabel, suggestJudgement, buildEvalu
   buildGrant, badgeHolders, soloWarning, isTrainer } from "./support-evaluation.js";
 import { evaluationLine } from "./learning-core.js";
 import { QUIZZES } from "./learning-quiz.js";
+import { CP_INSTALL_OPTS, CP_SKIP_PRE_TEXT, CP_SKIP_ONSITE_TEXT, cpInstalled, applyCpInstalled } from "./support-cp-install.js";
 
 function escapeHtml(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
@@ -120,6 +121,11 @@ function selectGroup(id, sec, path, label, opts) {
     </div>`;
 }
 
+// ケアプラン連携が「導入済み」のときに出す省略の表示（support-cp-install.js の applyCpInstalled が切り替える）
+function cpSkipNote(text) {
+  return `<p data-cp-skip-note style="display:none;font-size:13px;margin:0 0 12px;padding:8px 12px;border-radius:6px;background:var(--color-bg-subtle, #faf7f2)">${text}</p>`;
+}
+
 function checkOnly(sec, id, path, label) {
   return `
     <div class="form-group">
@@ -139,6 +145,9 @@ function cardCpPre() {
         ${savedSpan("cp")}
       </div>
       <div class="card-body">
+        ${selectGroup("sc-cp-installStatus", "cp", "installStatus", "ケアプランデータ連携システムの導入状況", CP_INSTALL_OPTS)}
+        ${cpSkipNote(CP_SKIP_PRE_TEXT)}
+        <div data-cp-skip>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px">介護情報基盤を入れた事業所はKJ-ID・電子証明書が整っていることが多く、ケアプランデータ連携の導入が容易（同じ電子請求受付システムを使う）。</p>
         ${row3state("cp", { key: "software", label: "介護ソフトが標準仕様に対応しているか" })}
         ${selectGroup("sc-cp-ebilling", "cp", "eBilling", "介護電子請求の有無（電子証明書の種類判定）", [
@@ -152,6 +161,7 @@ function cardCpPre() {
           { v: "careplan", t: "介護DX証明書（無料・旧称：請求委任事業所用ケアプラン証明書）" },
           { v: "none", t: "未取得" },
         ])}
+        </div>
         <div class="form-group">
           <label class="form-label" for="sc-cp-partner">主な連携相手（取引先）の本システム導入状況</label>
           <input class="form-control" type="text" id="sc-cp-partner" data-sec="cp" data-path="partnerStatus">
@@ -239,7 +249,10 @@ function cardCpSteps() {
         <span style="font-weight:600;font-size:14px">ケアプラン連携 — 導入作業</span>
       </div>
       <div class="card-body">
+        ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
+        <div data-cp-skip>
         ${CP_STEPS.map((i) => rowStep("cp", i)).join("")}
+        </div>
       </div>
     </div>`;
 }
@@ -251,6 +264,8 @@ function cardCpEvidence() {
         <span style="font-weight:600;font-size:14px">ケアプラン連携 — 証憑写真（ライセンス／電子証明書の有効期間）</span>
       </div>
       <div class="card-body">
+        ${cpSkipNote(CP_SKIP_ONSITE_TEXT)}
+        <div data-cp-skip>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">利用申請完了画面・ライセンス情報や、電子証明書の有効期間がわかる画面の写真を保存できます。個人情報（パスワード等）が写り込まないよう注意。</p>
         <input type="file" id="sc-cp-photo-input" accept="image/*" multiple style="display:none">
         <button type="button" class="btn btn-secondary" id="sc-cp-photo-btn" style="min-height:44px">
@@ -258,6 +273,7 @@ function cardCpEvidence() {
         </button>
         <span id="sc-cp-photo-progress" aria-live="polite" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-left:10px"></span>
         <div id="sc-cp-photos" style="margin-top:10px"></div>
+        </div>
       </div>
     </div>`;
 }
@@ -495,6 +511,12 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     });
     fillOnsiteDefaults();
     renderPhotos();
+    syncCpInstalled();
+  }
+
+  // ケアプラン連携が「導入済み」なら、事前確認の一部と当日の工程・証憑を畳む（データは消さない）
+  function syncCpInstalled() {
+    [elPre, elOnsite].forEach((root) => applyCpInstalled(root, cpInstalled(state.cp)));
   }
 
   // 当日タブの訪問日・時刻・場所は、保存済みの値が空のときだけ案件の値を初期表示する（二重入力を減らす）。
@@ -809,6 +831,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
     const path = el.dataset.path;
     const value = el.type === "checkbox" ? el.checked : el.value;
     setByPath(state[sec], path, value);
+    if (sec === "cp" && path === "installStatus") syncCpInstalled();
     try {
       await saveSection(sec);
       markSaved(sec === "cp" ? "cp" : sec);
