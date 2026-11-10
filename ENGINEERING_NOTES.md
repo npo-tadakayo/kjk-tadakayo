@@ -582,6 +582,15 @@ stateDiagram-v2
 
 **重複警告・在庫の目安**: `admin/js/ship-dup.js` の `findDuplicateDrafts`（案件ごとに draft/requested が2件以上・残す候補は `cases.shipmentId`）と `stockAdvice(items, products, locations)`。「こちらを残す」は同じ案件のほかの出荷を、既存のキャンセルの画面で理由「重複登録」にして1件ずつキャンセルする（**削除ではない**）。判定は `supply-rules.js`（`stockAdviceShown`）・`screen-rules.js`（`caseDuplicateBanner`・`preShipCountAfterMerge`）。
 
+**記録のずれの点検対応（2026-11-10・設計書 `06_介護情報基盤事業/docs/CRM改善_設計書_20261110.md` §3・ブランチ `fix/record-gaps-billing`）**: 判定は `admin/js/record-gaps.js`（純関数・`scripts/test-record-gaps.mjs`）。functions/・firestore.rules は不変。
+- 点検3: 請求書・領収証（supply-print.js）・催促（supply.js `sendDunning`）のメール送信成功後に、画面から `activities` へ1件（`type:"gmail_sent"`・件名「メール送信: …」・本文「宛先: …」＝ sendCaseEmail と同じ書式。`caseId` の無い出荷は書かない）。記録だけ失敗したら `mailRecordFailedText`（「送信済み・記録だけ失敗・もう一度送らない」）を出し、送信失敗の catch に落とさない。出荷一覧の「…をメール送付済み」「催促メール送信済み」は状態を問わず出す（`mailSentNotesOf`）
+- 点検11: 領収証ページの `#rcptSaveInfo` に「領収証 送付済み・記録待ち（日付 に 宛先 へ送付）」（`receiptSaveInfoOf`＝ ship-flow.js `mailedPendingOf` と同じ条件）。一覧・案件詳細は #58 の `mailedPendingNotes` で既に出ていた
+- 点検12: 下書き・依頼済・発送済で `payments` があれば出荷一覧の行に「入金済 ¥…（請求前に記録…）」（`prepaidNoteOf`・`netPaidOf`）。表示だけで入金・消込・状態の処理は不変
+- 点検8: 見積もりカード（quote-admin.js）の各版に `noticeMailedAt/To`（ご案内メール）・`mailedAt/To`（見積書PDF）・未送付の `mailError` を表示（`quoteMailNotesOf`）
+- 点検10: 案件詳細のステータス変更・カンバンで 3（受注確定）以外 → 3 のとき、`orderedAt` が無ければ `serverTimestamp()` を入れる（`orderedAtFillNeeded`・上書きしない・既存データの一括補正なし）。案件一覧の絞り込み「見積済」（`latestQuoteId && !orderedAt`）から外れる。月ごとの受注の集計にはその日で入る
+- 点検7: 練習の代役（practice-stubs.js）を本番にそろえた: 受注確定の下書きの品名を functions の `PRODUCT_NAMES`/`CONNECTION_LABELS` と同じに／倉庫の発送済・受け渡し済で対応記録を書かない（本物も書かない）／`partnerOrderId` のある出荷を倉庫で発送済にしたら受注も `shipped`（本物の `warehouseComplete` と同じ）
+- 点検9（保留）: 出荷をキャンセルしても `partnerOrders.status` が `shipped`／`confirmed` のまま。`shipped` のままだと受注一覧に「出荷へ」が出ず出し直せない。戻し先（`confirmed`／`received`／`canceled`）が状態遷移から一意に決まらないため、次田さんの判断待ち
+
 ## §C8 通知・受注確定・認可（Functions・2026-10-21）
 
 | 関数 | 種別 | 役割 | 要点 |
