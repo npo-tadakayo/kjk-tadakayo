@@ -93,3 +93,29 @@ export function prepaidNoteOf(s) {
     text: `入金済 ${yenText(net)}（請求前に記録${last ? `・${last}` : ""}${pays.length > 1 ? `・${pays.length}回` : ""}${refunded ? "・返金差引後" : ""}）`,
   };
 }
+
+// ===== 点検8: 見積もりの「ご案内メール」の送信記録を見積もり一覧に出す =====
+// staffCreateQuote（functions/index.js）が見積もり作成時のご案内メールを送ると quotes に noticeMailedAt / noticeMailedTo を書くが、
+// どの画面もこれを表示していなかった（PDF送付の mailedAt / mailedTo は「事業所へ再送」の文言にしか使っていなかった）。
+// 日時は Firestore の Timestamp（toDate）・Date・ミリ秒・{seconds} のどれでも読む。日本時間の YYYY-MM-DD で出す。
+export function ymdJstOf(ts) {
+  if (!ts) return "";
+  let d;
+  if (typeof ts.toDate === "function") d = ts.toDate();
+  else if (ts instanceof Date) d = ts;
+  else if (typeof ts === "number") d = new Date(ts);
+  else if (ts.seconds != null) d = new Date(Number(ts.seconds) * 1000);
+  else if (typeof ts === "string") d = new Date(ts);
+  if (!d || Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+/** @returns {{key:string, text:string, warn?:boolean}[]} 見積もり1版ぶんのメール送付の記録 */
+export function quoteMailNotesOf(q) {
+  if (!q) return [];
+  const out = [];
+  const at = (ts) => ymdJstOf(ts) || "日付不明";
+  if (q.noticeMailedAt) out.push({ key: "notice", text: `ご案内メール送信 ${at(q.noticeMailedAt)}${q.noticeMailedTo ? `（${q.noticeMailedTo}）` : ""}` });
+  if (q.mailedAt) out.push({ key: "pdf", text: `見積書PDFを送付 ${at(q.mailedAt)}${q.mailedTo ? `（${q.mailedTo}）` : ""}` });
+  else if (q.mailError) out.push({ key: "pdfError", warn: true, text: `見積書PDFの送付に失敗（${q.mailError}）` });
+  return out;
+}

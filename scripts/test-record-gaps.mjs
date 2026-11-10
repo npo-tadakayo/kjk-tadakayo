@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
   BILLING_MAIL_KIND_LABEL, billingMailActivityOf, mailRecordFailedText, mailSentNotesOf,
-  receiptSaveInfoOf, prepaidNoteOf,
+  receiptSaveInfoOf, prepaidNoteOf, ymdJstOf, quoteMailNotesOf,
 } from "../admin/js/record-gaps.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
@@ -133,6 +133,43 @@ t("点検12: 入力の出荷を書き換えない（表示だけ）・画面の�
   assert.equal(JSON.stringify(s), before);
   const su = read("admin/js/supply.js");
   has(su, /const pre = prepaidNoteOf\(s\);\s*if\(pre\) payInfo \+=/);
+});
+
+// ===== 点検8: 見積もりの「ご案内メール」の送信記録を一覧に出す =====
+// 2026-11-09 15:30 UTC = 2026-11-10 00:30 JST（日本時間で日付を出す）
+const ts = (iso) => ({ toDate: () => new Date(iso) });
+t("点検8: ご案内メールと見積書PDFの送付を出す（日本時間の日付）", () => {
+  const notes = quoteMailNotesOf({
+    noticeMailedAt: ts("2026-11-09T15:30:00Z"), noticeMailedTo: "office@example.com",
+    mailedAt: ts("2026-11-10T01:00:00Z"), mailedTo: "office@example.com",
+  });
+  assert.deepEqual(notes.map((x) => x.text), [
+    "ご案内メール送信 2026-11-10（office@example.com）",
+    "見積書PDFを送付 2026-11-10（office@example.com）",
+  ]);
+});
+t("点検8: 送っていない版は何も出さない・PDFの失敗は警告で出す", () => {
+  assert.deepEqual(quoteMailNotesOf({ mailedAt: null, noticeMailedAt: null }), []);
+  assert.deepEqual(quoteMailNotesOf(null), []);
+  const e = quoteMailNotesOf({ mailError: "Gmail送信に失敗しました（403）" });
+  assert.equal(e.length, 1);
+  assert.equal(e[0].warn, true);
+  assert.equal(e[0].text, "見積書PDFの送付に失敗（Gmail送信に失敗しました（403））");
+  // 送れていれば以前の失敗は出さない
+  assert.deepEqual(quoteMailNotesOf({ mailedAt: ts("2026-11-10T01:00:00Z"), mailError: "x" }).map((x) => x.key), ["pdf"]);
+});
+t("点検8: 日付の読み取り（Timestamp・Date・ミリ秒・{seconds}・不正）", () => {
+  assert.equal(ymdJstOf(new Date("2026-11-09T15:30:00Z")), "2026-11-10");
+  assert.equal(ymdJstOf(Date.parse("2026-11-09T14:59:00Z")), "2026-11-09");
+  assert.equal(ymdJstOf({ seconds: Date.parse("2026-11-09T15:00:00Z") / 1000 }), "2026-11-10");
+  assert.equal(ymdJstOf("not a date"), "");
+  assert.equal(ymdJstOf(null), "");
+  assert.equal(quoteMailNotesOf({ noticeMailedAt: "x" })[0].text, "ご案内メール送信 日付不明");
+});
+t("点検8: 見積もり一覧（quote-admin.js）のつなぎ", () => {
+  const qa = read("admin/js/quote-admin.js");
+  has(qa, /import \{ quoteMailNotesOf \} from "\/js\/record-gaps\.js"/);
+  has(qa, /\$\{mailNotesLine\(q\)\}/);
 });
 
 console.log(`OK test-record-gaps: ${n} 件合格`);
