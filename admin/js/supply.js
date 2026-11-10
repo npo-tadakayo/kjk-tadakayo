@@ -24,6 +24,8 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
   canDelete, canCancel, nextStatus, shipNotifyShown, shipActions, needsResendPrompt, qtyDelta,
   netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
   isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary, mailedPendingNotes } from "/js/ship-flow.js";
+// 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3・2026-11-10）
+import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf } from "/js/record-gaps.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
@@ -2662,14 +2664,18 @@ function renderShipments(ships, dv){
         ? `<div style="font-size:12px;color:var(--color-danger)">未集金 ${yen(remain)}${netPaid(s)>0?`（入金済 ${yen(netPaid(s))}）`:""}</div>${dueTxt?`<div style="font-size:12px;color:var(--color-ink-muted)">${dueTxt}</div>`:""}`
         : `<div style="font-size:12px;color:var(--color-success)">入金済 ${yen(netPaid(s))}${s.paidAt?`（${esc(s.paidAt)}）`:""}</div>`)
         + payCount + refTxt + creditTxt + balTxt + usedTxt
-        // 請求先への帳票メール送付の記録（supply-print のメール送付が書く）
-        + (s.invoiceMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">請求書をメール送付済み ${esc(String(s.invoiceMailedAt).slice(5))}</div>` : "")
-        + (s.receiptMailedAt ? `<div style="font-size:12px;color:var(--color-ink-muted)">領収証をメール送付済み ${esc(String(s.receiptMailedAt).slice(5))}</div>` : "")
         // 経理への請求書発行報告（未報告なら気づけるように出す）
         + (s.accountingReportedAt
             ? `<div style="font-size:12px;color:var(--color-ink-muted)">経理へ報告済み ${esc(String(s.accountingReportedAt).slice(5))}</div>`
             : `<div style="font-size:12px;color:var(--color-warn,#c87a1f)">経理へ未報告</div>`);
     }
+    // 請求前に記録した入金（発送済のうちに銀行明細から入金を記録したなど）。表示だけ（2026-11-10 点検12。入金・消込の処理は変えない）
+    const pre = prepaidNoteOf(s);
+    if(pre) payInfo += `<div style="font-size:12px;color:var(--color-success)">${esc(pre.text)}</div>`;
+    // 請求先へのメール送付の記録（請求書・領収証・催促）。状態を問わず出す（2026-11-10 点検3。以前は請求済・入金済の行だけ）
+    // 期限超過の請求済の行は「催促メールを送る（MM-DD送信済）」ボタンに日付が出るので、催促の行は出さない（二重にしない）
+    const dunningOnButton = st==="invoiced" && od>0 && !!s.dunningSentAt;
+    payInfo += mailSentNotesOf(s, { dunningOnButton }).map(n=>`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(n.text)}</div>`).join("");
     let lifeBtns="";
     // 帳票リンク・修正／種別変更／削除は全状態で共通（表示条件は元のまま）。
     // 状態ごとに並び順だけ変えられるよう部品化する（2026-09-14 ボタン文言・並び順の整理）。
@@ -3298,7 +3304,20 @@ async function sendDunning(){
     await sendPartnerMailFn({ to, subject, body, shipmentId:s._id, kind:"dunning" });
     document.getElementById("dunModal").classList.remove("open");
     dunningShip=null;
-    toast(`${s.soNumber} の催促メールを送信しました`);
+    // 案件の対応記録に1件足す（2026-11-10 点検3）。送信は済んでいるので、記録の失敗は送信の失敗と分けて知らせる
+    let recFail="";
+    try{
+      const act=billingMailActivityOf({ kind:"dunning", ship:s, to, subject, body });
+      if(act){
+        await addDoc(collection(db,"activities"),{ ...act, occurredAt:serverTimestamp(),
+          userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"" });
+        // 本番の sendCaseEmail と同じく案件の更新日時も進める（updatedAt だけ。失敗しても記録の成否にしない）
+        try{ await updateDoc(doc(db,"cases",act.caseId),{ updatedAt:serverTimestamp() }); }
+        catch(e3){ console.warn("案件の更新日時の更新に失敗", e3); }
+      }
+    }catch(e2){ console.warn("催促メールの対応記録に失敗", e2); recFail=mailRecordFailedText(e2); }
+    if(recFail) alert(`${s.soNumber} の催促メールを送信しました。\n\n※ ${recFail}`);
+    else toast(`${s.soNumber} の催促メールを送信しました`);
   }catch(e){ err.textContent=`送信に失敗: ${e.message||e}`; err.style.display="block"; }
   finally{ btn.disabled=false; btn.innerHTML=orig; }
 }
