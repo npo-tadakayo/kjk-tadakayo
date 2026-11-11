@@ -331,10 +331,10 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   const fl = readFileSync(new URL("../admin/js/ship-flow.js", import.meta.url), "utf8");
   const fn = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
   assert.equal(pick(fn), pick(fl));
-  // 出荷指示: 見出し・副題・本文2行目・カード先頭に台数
-  assert.match(fn, /const q = shipQtySummary\(s\.items\);/);
-  assert.match(fn, /`🔢 台数: \$\{q\.total\}台（\$\{q\.detail\}）← 箱に入れる前に数えてください`/);
-  assert.match(fn, /— カードリーダー \$\{q\.total\}台`, subtitle: `[^`]*【合計 \$\{q\.total\}台】`/);
+  // 出荷の依頼の知らせ（2026-11-12 から短い文面・送6）: 見出しの行に台数を出す（ship-steps-rules の shipStepChatText）
+  const SS = await import("../admin/js/ship-steps-rules.js");
+  const head = SS.shipStepChatText("request", { soNumber: "SH-1", region: "【大阪府 豊中市】", qty: 3, desiredDeliveryDate: "2026-11-20", requester: "<users/1>" }).split("\n")[0];
+  assert.match(head, /SH-1 【大阪府 豊中市】 3台$/);
   // 宛名印刷: 宛名枠の台数と梱包の確認（チェック4つ）
   // 宛名ラベルの部品は letterpack-label.js（2026-11-01 倉庫の宛名印刷と共通化）。印刷ページ側は lpPage
   const lp = readFileSync(new URL("../admin/js/letterpack-label.js", import.meta.url), "utf8");

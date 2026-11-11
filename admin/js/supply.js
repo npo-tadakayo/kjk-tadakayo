@@ -36,6 +36,9 @@ import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
 import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, paymentRemovalOf, VIEWER_LOCK_SELECTOR,
   dueDateOf, invoiceDueOf, accountingReportDestOf, invoiceIssueDefaultOf, NOT_SHIPPED_MSG } from "/js/supply-rules.js";
 import { initBankImport } from "/js/bank-import.js";
+// 発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12 藤田さんの要望）。判定は ship-steps-rules.js が正本
+import { stepOf, stepCounts, STEP_LABEL, STEP_LISTS, STEP_BADGE, finalConfirmOn, requestMissing, requestMissingText,
+  canFinalConfirm, letterpackCount, LP_PER_PACK, sortByDesired, packTypeOf, PACK_TYPES } from "/js/ship-steps-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -45,6 +48,7 @@ const sendSupplierOrderFn = httpsCallable(functions, "sendSupplierOrder");
 const sendPartnerMailFn = httpsCallable(functions, "sendPartnerMail");
 const reportInvoiceFn = httpsCallable(functions, "reportInvoiceToAccounting");
 const notifyShipmentFn = httpsCallable(functions, "notifyShipment"); // 出荷指示の投稿（2026-10-19 #4）
+const shipStepDoneFn = httpsCallable(functions, "shipStepDone"); // 発送完了の知らせ（依頼者へ・対応記録・2026-11-12 送5）
 const storage = getStorage(app);
 
 let products = [];
@@ -962,7 +966,7 @@ async function resendShipNotice(s){
 //         "record"  … すでに発送済（記録のみ）（"ship" と同じ確認。出荷指示は送らない）
 // 以前の「出荷指示を送らない」チェックは廃止した（送らない場合は「すでに発送済（記録のみ）」を使う・2026-10-21）
 const SHIP_DIALOG = {
-  request: { title:"出荷を依頼する", dateLabel:"希望出荷日", button:"出荷を依頼する",
+  request: { title:"出荷を依頼する", dateLabel:"出荷予定日（任意・倉庫が決めます）", button:"出荷を依頼する",
     note:"「出荷を依頼する」を押すと、出荷指示の投稿先へ指示を投稿します（投稿先が未設定・停止中のときは投稿せず、依頼の記録だけ残ります）。在庫はまだ引き落としません（倉庫の担当が発送したのを確認して「発送済にする」を押したときに引き落とします）。" },
   ship: { title:"発送済にする", dateLabel:"発送日", button:"発送済にする",
     note:"倉庫の担当が発送したのを確認してから押してください。在庫を引き落とし、請求の起点になります。出荷指示は投稿しません（依頼のときに投稿済みです）。" },
@@ -992,7 +996,7 @@ async function loadPickupUsers(){
 let shipDoneCtx = null; // { resolve, items, usesStock, mode }
 // allowPickup … 依頼のとき送付方法（発送／持ち出し）を選ばせる。pickupUsers … 持ち出す人の候補
 // initialMode / initialPickupBy … 依頼し直すときの前回の送付方法（"ship"|"pickup"）と持ち出す人のメール
-function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers, shippingMethod, initialMode, initialPickupBy }){
+function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, letterPackType, trackingNumber, items, hint, allowPickup, pickupUsers, shippingMethod, initialMode, initialPickupBy, desiredDeliveryDate }){
   const m = SHIP_DIALOG[mode] ? mode : "ship";
   const cfg = SHIP_DIALOG[m];
   return new Promise((resolve)=>{
@@ -1001,7 +1005,12 @@ function askShipDetails({ mode, title, summaryHtml, usesStock, locId, date, lett
     document.getElementById("shipDoneTitle").textContent = title || cfg.title;
     document.getElementById("shipDoneSummary").innerHTML = summaryHtml || "";
     document.getElementById("shipDoneDateLabel").textContent = cfg.dateLabel;
-    document.getElementById("shipDoneDate").value = date || today();
+    document.getElementById("shipDoneDate").value = m==="request" ? (date || "") : (date || today());
+    // 納品希望日（依頼のときだけ・必須・2026-11-12 送1）
+    document.getElementById("shipDoneDesiredWrap").style.display = m==="request" ? "" : "none";
+    document.getElementById("shipDoneDesired").value = desiredDeliveryDate || "";
+    document.getElementById("shipDoneDateWrap").style.display = ""; // 依頼の持ち出しで隠したのを戻す（syncShipDoneMode が依頼のときだけ合わせ直す）
+    document.getElementById("shipDoneDateReq").style.display = "";
     document.getElementById("shipDoneLp").value = letterPackOrDefault(letterPackType); // 未設定はプラス（赤）
     // 追跡番号は発送済にするとき・記録のみのときだけ（任意）
     const isHandover = m==="handover" || m==="recordHandover";
@@ -1042,7 +1051,11 @@ function syncShipDoneMode(){
   const m = shipDoneCtx.mode;
   if(m==="request"){
     document.getElementById("shipDoneLpWrap").style.display = pickup ? "none" : "";
-    document.getElementById("shipDoneDateLabel").textContent = pickup ? "持ち出し予定日" : SHIP_DIALOG.request.dateLabel;
+    // 依頼のときの日付: 納品希望日は必須。出荷予定日（以前の希望出荷日）は倉庫が決めるので任意。持ち出しは持ち出し予定日＝納品希望日の1つだけ
+    document.getElementById("shipDoneDateWrap").style.display = pickup ? "none" : "";
+    document.getElementById("shipDoneDateReq").style.display = "none";
+    document.getElementById("shipDoneDesiredLabel").textContent = pickup ? "持ち出し予定日（納品希望日）" : "納品希望日";
+    document.getElementById("shipDoneDateLabel").textContent = SHIP_DIALOG.request.dateLabel;
     document.getElementById("shipDoneNote").textContent = pickup
       ? "「出荷を依頼する」を押すと、倉庫へ「持ち出し」の指示を投稿します。在庫はまだ引き落としません（倉庫の担当が受け渡したときに引き落とします）。送料の区分は「郵送なし」にします。"
       : SHIP_DIALOG.request.note;
@@ -1083,10 +1096,16 @@ function doShipDone(){
   const m = shipDoneCtx.mode, cfg = SHIP_DIALOG[m];
   const err = document.getElementById("shipDoneError"); err.style.display = "none";
   const fail = (msg)=>{ err.textContent = msg; err.style.display = "block"; };
-  const shipDate = document.getElementById("shipDoneDate").value;
+  let shipDate = document.getElementById("shipDoneDate").value;
   const pickup = !!shipDoneCtx.allowPickup && document.getElementById("shipDoneMode").value==="pickup";
-  const dateLabel = pickup ? "持ち出し予定日" : cfg.dateLabel;
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail(`${dateLabel}を入れてください`);
+  let desiredDeliveryDate = "";
+  if(m==="request"){
+    // 納品希望日は必須（2026-11-12 送1）。持ち出しは持ち出し予定日＝納品希望日（日付は1つだけ）。出荷予定日は任意
+    desiredDeliveryDate = document.getElementById("shipDoneDesired").value;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(desiredDeliveryDate)) return fail(`${pickup ? "持ち出し予定日（納品希望日）" : "納品希望日"}を入れてください`);
+    if(pickup) shipDate = desiredDeliveryDate;
+    else if(shipDate && !/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail("出荷予定日を正しく入れてください");
+  }else if(!/^\d{4}-\d{2}-\d{2}$/.test(shipDate)) return fail(`${cfg.dateLabel}を入れてください`);
   let pickupByEmail = "", pickupByName = "";
   if(pickup){
     const ps = document.getElementById("shipDonePickupBy");
@@ -1111,7 +1130,7 @@ function doShipDone(){
       if(!confirm(`在庫が足りません: ${short.join("、")}\n依頼は出せますが、「${pickup?"受け渡し済":"発送済"}にする」の時点で在庫が必要です（足りないと${pickup?"受け渡し済":"発送済"}にできません）。依頼を続けますか？`)) return;
     }
   }
-  closeShipDone({ shipDate, originLocationId, letterPackType: pickup ? "" : (document.getElementById("shipDoneLp").value || ""),
+  closeShipDone({ shipDate, desiredDeliveryDate, originLocationId, letterPackType: pickup ? "" : (document.getElementById("shipDoneLp").value || ""),
     deliveryMode: pickup ? "pickup" : "ship", pickupByEmail, pickupByName,
     trackingNumber: (m==="request" || m==="handover" || m==="recordHandover") ? "" : document.getElementById("shipDoneTrack").value.trim() });
 }
@@ -1134,19 +1153,29 @@ async function requestDraftShipment(s){
   const pickupUsers = await loadPickupUsers();
   const ans = await askShipDetails({ mode:"request", hint: hint||"",
     title: `出荷を依頼する（${s.soNumber||""}）`, summaryHtml: shipSummaryHtml(s),
-    usesStock, locId: shipLocationOf(s), date: s.shipDate||today(), letterPackType: s.letterPackType, items: s.items,
+    usesStock, locId: shipLocationOf(s), date: s.shipDate||"", letterPackType: s.letterPackType, items: s.items, // 出荷予定日は倉庫が決める（任意）
     allowPickup: canPickup(s), pickupUsers, // 直送は持ち出しにできない（選択肢を出さない）
     initialMode: isPickup(s) ? "pickup" : "ship", initialPickupBy: s.pickupByEmail || "",
     shippingMethod: s.shippingMethod,
+    // 納品希望日の初期値: 前に入れた値 → 申込のときのご希望日 → 持ち出し予定日（2026-11-12）
+    desiredDeliveryDate: s.desiredDeliveryDate || s.preferredDate || s.pickupDate || "",
   });
   if(!ans) return;
   if(ans.deliveryMode==="pickup" && !canPickup(s)){ alert("直送（AB Circleから直接）の出荷は持ち出しにできません"); return; }
+  // 依頼の必須項目（担当者名だけ任意・1つでも欠けたら依頼できない・2026-11-12 送1）。サーバー（notifyShipment）でも同じ確認をする
+  {
+    const its0 = usesStock ? stockItems(s.items) : [];
+    const missing = requestMissing({ ...s, deliveryMode: ans.deliveryMode, desiredDeliveryDate: ans.desiredDeliveryDate,
+      originLocationId: its0.length ? ans.originLocationId : (usesStock ? (s.originLocationId || shipLocationOf(s)) : ""),
+      pickupByEmail: ans.pickupByEmail, requestedBy: currentUser.displayName||currentUser.email, status: "requested" });
+    if(missing.length){ alert(`${requestMissingText(missing)}。\n「送付先・数量を直す」で入れてから、もう一度依頼してください。`); return; }
+  }
   const its = usesStock ? stockItems(s.items) : [];
   // 持ち出し（送料0円・郵送なし）を取り消して発送で依頼し直すときは、送料を0円のまま請求しないよう
-  // レターパックの送料（受注から出荷を作るときと同じ計算: 3台で1通）に戻す。必ず確認を出す（Codex 指摘2回目）。
+  // レターパックの送料（受注から出荷を作るときと同じ計算: 6台で1通・2026-11-12）に戻す。必ず確認を出す（Codex 指摘2回目）。
   // ゆうパックなど別の送り方なら、依頼のあと「送付先・数量を直す」で直してもらう
   const backToShip = ans.deliveryMode==="ship" && isPickup(s) && !isLocked(s);
-  const lpPacks = Math.max(1, Math.ceil(stockItems(s.items).reduce((a,i)=>a+(Number(i.qty)||0),0)/3));
+  const lpPacks = letterpackCount(stockItems(s.items).reduce((a,i)=>a+(Number(i.qty)||0),0)); // 1通に6台（2026-11-12 送4）
   const lpPatch = { shippingMethod:"letterpack", shippingFee: taxExcl(lpPacks*letterpackFee()), shippingLabel:`送料（レターパック ${lpPacks}通）` };
   if(backToShip && !confirm(`持ち出しから発送に変えました。送料を確認してください。\n送料を「${lpPatch.shippingLabel}」${yen(lpPatch.shippingFee)}（税抜）にして依頼します。\nゆうパックなど別の送り方のときは、依頼のあと「送付先・数量を直す」で直してください。`)) return;
   const ref = doc(db,"shipments",s._id);
@@ -1168,8 +1197,10 @@ async function requestDraftShipment(s){
       const restore = backToShip && isPickup(cur) && !isLocked(cur) ? lpPatch : {};
       feeRestored = !!restore.shippingMethod;
       tx.update(ref, {
-        status:"requested", shipDate:ans.shipDate,
-        ...(its.length ? { originLocationId: ans.originLocationId, originLocationName: locationName(ans.originLocationId) } : {}),
+        status:"requested", shipDate:ans.shipDate, desiredDeliveryDate: ans.desiredDeliveryDate,
+        ...(its.length ? { originLocationId: ans.originLocationId, originLocationName: locationName(ans.originLocationId) }
+          // 商品マスタに無い品だけの出荷でも、送付元の倉庫は依頼の必須項目（2026-11-12）。既定の保管場所を入れる
+          : usesStock && !s.originLocationId ? { originLocationId: shipLocationOf(s), originLocationName: locationName(shipLocationOf(s)) } : {}),
         // 送付方法。持ち出しは持ち出す人・予定日を残し、送料の区分は「郵送なし」にする（レターパックは書かない）。
         // 依頼し直したときに前回の差し戻し（倉庫から「出荷できない」）は消す
         ...(ans.deliveryMode==="pickup"
@@ -1177,6 +1208,7 @@ async function requestDraftShipment(s){
           : { deliveryMode:"ship", ...letterPackPatch(ans.letterPackType), ...restore }),
         ...requestedStampPatch(), warehouseIssue: deleteField(),
         warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField(), // 倉庫の「確認済み」も依頼し直しで外す（確認した内容と別物になるため）
+        ...stepResetPatch(), // 受付・最終確認もやり直し（2026-11-12 発送の5段）
         updatedAt: serverTimestamp() });
     });
   }catch(e){ alert(`出荷の依頼に失敗しました: ${e.message}`); return; }
@@ -1193,6 +1225,9 @@ async function requestDraftShipment(s){
 // 認定事業者の受注から作った出荷は、受注の状態も「出荷済」にする（§9 決定5）。出荷指示は投稿しない。
 async function shipWithStock(s, action){
   const pickup = isPickup(s);
+  // 発送の5段（2026-11-12）: 発送済・受け渡し済は倉庫の「発送準備」の段で押すもの。まだのときは確かめる（管理者の後片付け用に止めはしない）
+  if(action==="markShipped" && stepOfShip(s)!=="prepare"
+    && !confirm(`この出荷はいま「${STEP_LABEL[stepOfShip(s)]||""}」の段です（倉庫の受付・依頼者の最終確認がまだです）。\nそれでも${pickup?"受け渡し済":"発送済"}にしますか？`)) return;
   const mode = action==="recordShipped" ? (pickup ? "recordHandover" : "record") : (pickup ? "handover" : "ship");
   const usesStock = usesWarehouse(s);
   const ans = await askShipDetails({ mode,
@@ -1245,7 +1280,10 @@ async function shipWithStock(s, action){
     });
   }catch(e){ alert(`${doneWord}にできませんでした: ${e.message}`); return; }
   const head = `${s.soNumber} を${doneWord}にしました${moved ? "（在庫から引き落としました）" : ""}`;
-  toast(action==="recordShipped" ? `${head}。${NO_NOTICE_MSG}` : head);
+  if(action==="recordShipped"){ toast(`${head}。${NO_NOTICE_MSG}`); return; }
+  toast(head);
+  const msg = await postShipDone(s._id);
+  if(msg) toast(`${head}。${msg}`);
 }
 function markShipped(s){ return shipWithStock(s, "markShipped"); }
 function recordShippedDirect(s){ return shipWithStock(s, "recordShipped"); }
@@ -1272,10 +1310,57 @@ async function revertToDraft(s){
         shipNotifiedAt: deleteField(), shipNotifyStatus: deleteField(), shipNotifyLockAt: deleteField(),
         warehouseIssue: deleteField(), // 倉庫からの差し戻しも消す（持ち出しの項目は、依頼し直すときの初期値として残す）
         warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField(), // 倉庫の「確認済み」も外す
+        ...stepResetPatch(), // 受付・最終確認の記録も外す（2026-11-12 発送の5段）
         updatedAt: serverTimestamp() });
     });
-  }catch(e){ alert(`依頼の取り消しに失敗しました: ${e.message}`); return; }
+  }catch(e){ alert(`依頼の取り消しに失敗しました: ${e.message}`); return false; }
   toast(`${s.soNumber} を下書きへ戻しました${posted ? "。倉庫へ出荷指示の取り消しを連絡してください" : ""}`);
+  return true;
+}
+
+// ===== 発送の5段（2026-11-12 藤田さんの要望・計画 CRM改善2 §3.1）=====
+// 依頼し直す・下書きへ戻すときに消す項目（倉庫の受付・依頼者の最終確認）。発送不可（warehouseIssue）は呼ぶ側で消している
+function stepResetPatch(){
+  return { acceptStatus: deleteField(), acceptNote: deleteField(), acceptedAt: deleteField(), acceptedByEmail: deleteField(),
+    acceptedByName: deleteField(), finalConfirmedAt: deleteField(), finalConfirmedBy: deleteField(), finalConfirmedByEmail: deleteField(),
+    finalConfirmSkipped: deleteField() };
+}
+// 設定 appConfig/settings.shipFinalConfirm（既定＝行う・送3）
+function finalConfirmNow(){ return finalConfirmOn(appSettings); }
+function stepOfShip(s){ return stepOf(s, { finalConfirm: finalConfirmNow() }); }
+// 確認（STEP3）: 依頼者の最終確認の「OK」→ 発送準備リストへ。変更は「送付先・数量を直す」、キャンセルは「キャンセルにする」（既存の画面）
+async function finalConfirmShipment(s){
+  if(!canFinalConfirm(s, { finalConfirm: finalConfirmNow() })){ alert("この出荷はいま最終確認の段ではありません。画面を更新してください"); return; }
+  if(!confirm(`出荷 ${s.soNumber} の内容で発送してよいですか？\n納品希望日: ${s.desiredDeliveryDate||"—"}\n「OK」で倉庫の発送準備リストに入ります。直すときは「キャンセル」を押してから「変更する」を使ってください。`)) return;
+  const ref = doc(db,"shipments",s._id);
+  try{
+    await runTransaction(db, async (tx)=>{
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
+      const cur = snap.data();
+      if(!canFinalConfirm(cur, { finalConfirm: finalConfirmNow() })) throw new Error(`この出荷はいま「${STEP_LABEL[stepOfShip(cur)]||""}」の段です。画面を更新してください`);
+      tx.update(ref, { finalConfirmedAt: serverTimestamp(), finalConfirmedBy: currentUser.displayName||currentUser.email,
+        finalConfirmedByEmail: currentUser.email||"", updatedAt: serverTimestamp() });
+    });
+  }catch(e){ alert(`最終確認に失敗しました: ${e.message}`); return; }
+  toast(`${s.soNumber} を最終確認しました（倉庫の発送準備リストに入りました）`);
+}
+// 発送不可（在庫がなく納品希望日に間に合わない・入力の不備）のあと: 下書きへ戻して、倉庫や入力を選び直して依頼し直す
+async function reselectAndRequest(s){
+  if(!(await revertToDraft(s))) return;
+  try{
+    const snap = await getDoc(doc(db,"shipments",s._id));
+    if(snap.exists()) await requestDraftShipment({ _id: snap.id, ...snap.data() });
+  }catch(e){ alert(`依頼し直しの画面を開けませんでした: ${e.message}`); }
+}
+// 発送完了の知らせ（依頼者へ Chat でメンション＋案件の対応記録・送5）。一言を返す
+async function postShipDone(shipmentId){
+  try{
+    const r = await shipStepDoneFn({ shipmentId });
+    const d = (r && r.data) || {};
+    if(d.skipped==="already") return "";
+    return d.notified ? "依頼者へ発送完了を知らせました" : "発送完了の Chat は投稿していません（投稿先が未設定・停止中）";
+  }catch(e){ console.warn("shipStepDone:", e); return `発送完了の知らせを送れませんでした（${e.message||e}）`; }
 }
 
 // ===== 出荷の送料（料金・送料設定 appConfig を優先。デフォルト値・定数は supply-pricing.js） =====
@@ -1329,7 +1414,7 @@ function recalcShipFee(){
   document.getElementById('yupackWrap').style.display = method==='yupack' ? '' : 'none';
   // 料金表（レターパック・ゆうパック）は税込の実費 → 送料欄は税抜なので換算して入れる
   if(method==='letterpack'){
-    const packs=Math.max(1,Math.ceil(shipTotalQty()/3));
+    const packs=letterpackCount(shipTotalQty()); // レターパックプラス1通に6台（2026-11-12 送4。以前は3台）
     feeEl.value=taxExcl(packs*letterpackFee()); labelEl.value=`送料（レターパック ${packs}通）`;
   } else if(method==='none'){
     // 郵送しない（手渡し・持参・現地設置）。送料は 0 円で、出庫の記録だけ残す
@@ -1350,7 +1435,7 @@ function recalcShipFee(){
 function taxInclusiveShipFees(){
   const set=new Set();
   const lp=letterpackFee();
-  if(lp>0) for(let n=1;n<=30;n++) set.add(lp*n);       // レターパックは3台ごとに1通＝通数分の倍数になる
+  if(lp>0) for(let n=1;n<=30;n++) set.add(lp*n);       // レターパックは通数分の倍数になる（1通に6台・2026-11-12）
   const d=yupackData();
   Object.values(d.rows||{}).forEach(arr=>{
     (Array.isArray(arr)?arr:[]).forEach(v=>{ const n=Number(v)||0; if(n>0) set.add(n); });
@@ -1743,6 +1828,7 @@ function openShip(existing){
     // 既定は「登録して出荷を依頼する」（requested）。すでに届いている出荷だけチェックで発送済として登録（2026-10-21）
     const already=document.getElementById("shipAlreadyShipped"); if(already) already.checked=false;
     document.getElementById("shipDate").value=today();
+    document.getElementById("shipDesired").value="";
     ["shipPostal","shipCompany","shipOffice","shipAddress","shipContact","shipPhone","shipEmail"].forEach(id=>document.getElementById(id).value="");
     typeSel.value="direct"; typeSel.disabled=false;
     document.getElementById("shipPartner").disabled=false; // 修正モードで止めたままにしない
@@ -1758,6 +1844,7 @@ function openShip(existing){
     title.textContent=`出荷の修正（${s.soNumber||""}）`;
     label.textContent="修正を保存";
     document.getElementById("shipDate").value=s.shipDate||today();
+    document.getElementById("shipDesired").value=s.desiredDeliveryDate||"";
     document.getElementById("shipPostal").value=s.postal||"";
     document.getElementById("shipCompany").value=s.company||"";
     document.getElementById("shipOffice").value=s.officeName||"";
@@ -1914,7 +2001,9 @@ async function saveShip(){
   }
   const deliveryMode = noGoods ? "ship" : shipDeliveryModeNow();
   const pickup = !noGoods && deliveryMode==="pickup";
-  const shipDateIn=document.getElementById("shipDate").value||today();
+  const desiredIn=(document.getElementById("shipDesired")||{}).value||"";
+  // 依頼のとき: 出荷日の欄は出荷予定日（任意）。持ち出しは納品希望日＝持ち出し予定日（2026-11-12 送1）
+  const shipDateIn = (!alreadyShipped && pickup && desiredIn) ? desiredIn : (document.getElementById("shipDate").value||today());
   let pickupByEmail="", pickupByName="";
   if(pickup){
     // 手で作る出荷は自社の倉庫から出す（fulfillment 未設定＝canPickup）。持ち出す人・予定日を確かめる
@@ -1938,9 +2027,18 @@ async function saveShip(){
     : alreadyShipped
     ? `出荷を「すでに${pickup?"受け渡し済":"発送済"}」として登録します（出荷指示は送りません）。\n${pickup?"受け渡した日":"発送日"}: ${shipDateIn}`
       + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫から引き落とします）` : "") + `${how}\nよろしいですか？`
-    : `出荷を登録して、出荷を依頼します。\n${pickup?"持ち出しの予定日":"希望出荷日"}: ${shipDateIn}`
+    : `出荷を登録して、出荷を依頼します。\n${pickup?"持ち出しの予定日":"納品希望日"}: ${pickup?shipDateIn:(desiredIn||"—")}`
       + (hasStock ? `\n出荷元: ${locationName(originLocationId)}（在庫は「${pickup?"受け渡し済":"発送済"}にする」のときに引き落とします）` : "")
       + `${how}\n登録すると、出荷指示を投稿します。よろしいですか？`;
+  if(!alreadyShipped){
+    // 依頼の必須項目（担当者名だけ任意・2026-11-12 送1）。サーバー（notifyShipment）でも同じ確認をする
+    const missing = requestMissing({ items, deliveryMode, pickupByEmail, desiredDeliveryDate: desiredIn,
+      officeName: office, company: document.getElementById("shipCompany").value.trim(),
+      postal: document.getElementById("shipPostal").value.trim(), address: document.getElementById("shipAddress").value.trim(),
+      phone: document.getElementById("shipPhone").value.trim(), originLocationId: originLocationId || defaultLocationId(),
+      requestedBy: currentUser.displayName||currentUser.email, status: "requested" });
+    if(missing.length){ alert(requestMissingText(missing)); return; }
+  }
   if(!confirm(msg)) return;
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true; shipSaving=true;
   let newShipId="", soNumber="";
@@ -1954,10 +2052,13 @@ async function saveShip(){
       // 送付方法（2026-10-24）。持ち出しは持ち出す人・予定日。すでに受け渡し済なら受け渡した人（押した人）も残す
       deliveryMode,
       ...(pickup ? { pickupByEmail, pickupByName, pickupDate: shipDateIn } : {}),
+      ...(desiredIn ? { desiredDeliveryDate: desiredIn } : {}),
       ...(pickup && alreadyShipped ? { handedOverAt: serverTimestamp(), handedOverByEmail: currentUser.email||"",
         handedOverByName: currentUser.displayName||currentUser.email } : {}),
       ...(alreadyShipped ? { ...shippedStampPatch(), ...noNoticePatch(), confirmedAt: serverTimestamp() } : requestedStampPatch()),
-      originLocationId, originLocationName: locationName(originLocationId),
+      // 依頼のときは送付元の倉庫が必須（2026-11-12）。商品マスタに無い品だけで欄が出ないときは既定の保管場所
+      originLocationId: originLocationId || (alreadyShipped ? "" : defaultLocationId()),
+      originLocationName: locationName(originLocationId || (alreadyShipped ? "" : defaultLocationId())),
       shipDate:shipDateIn,
       postal:document.getElementById("shipPostal").value.trim(),
       company:document.getElementById("shipCompany").value.trim(),
@@ -2035,6 +2136,9 @@ async function saveShipEdit(){
     patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
     // 持ち出しのまだ受け渡していない出荷は、日付＝持ち出し予定日。倉庫画面と出荷指示は pickupDate を読むので一緒に直す（Codex 指摘・2026-10-24）
     if(isPickup(s0) && shipStatusOf(s0)==="requested") patch.pickupDate = patch.shipDate;
+    // 納品希望日（2026-11-12）。確認（STEP3）の「変更する」でもここで直す。空にはしない（依頼の必須項目のため）
+    const desiredEd = (document.getElementById("shipDesired")||{}).value||"";
+    if(desiredEd) patch.desiredDeliveryDate = desiredEd;
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
     { const me=manualSaveError(items); if(me){ alert(me); return; } }   // 新規と同じ検査（伴走支援費は1行まで・任意の金額は上限以下）
@@ -2543,6 +2647,32 @@ let ownersState = "loading"; // 担当情報（案件）の読み込み状態: l
 let caseShipmentIds = {}; // caseId → cases.shipmentId（下書きの重複で「残す候補」にする・2026-10-21）
 let dupOnly = false;      // サマリーの「⚠ 下書きの重複」を押したら重複している行だけに絞る
 let lastDupView = null;   // 最後に描いた重複の情報（「こちらを残す」で使う）
+let stepFilter = "";      // 発送の5段の絞り込み（""＝すべて・2026-11-12）。?step= で開いたときはその段から
+try{ const q0=new URLSearchParams(location.search).get("step"); if(q0 && STEP_LABEL[q0]) stepFilter=q0; }catch(_){ /* 読めなければ「すべて」 */ }
+// 段のチップの説明（吹き出し）。倉庫の画面と同じ言い方
+const STEP_TIPS = {
+  "": "すべての出荷を出します",
+  draft: "まだ依頼していない出荷です。「出荷を依頼する」で倉庫へ依頼します",
+  accept: "倉庫が在庫と照らして「発送可・入荷待ち・発送不可」を選ぶのを待っている依頼です",
+  confirm: "倉庫で発送できると返事があった依頼です。依頼した人が最終確認（OK・変更・キャンセル）をします",
+  wait: "発送はできるが、在庫の入荷を待っている依頼です（依頼は出したまま）",
+  ng: "倉庫で発送できなかった依頼です。倉庫を選び直すか、入力を直して依頼し直します",
+  prepare: "倉庫が宛名印刷・梱包・発送をする依頼です。納品希望日の早い順に並びます",
+  done: "発送済・受け渡し済の出荷です。請求書・入金・領収証の画面へここから進めます",
+  canceled: "キャンセルした出荷です（理由と日時）",
+};
+function renderStepBar(list){
+  const bar=document.getElementById("shipStepBar"); if(!bar) return;
+  const c=stepCounts(list, { finalConfirm: finalConfirmNow() });
+  const keys=["", "draft", ...STEP_LISTS];
+  bar.innerHTML = keys.map(k=>{
+    const n = k ? c[k] : list.length;
+    const on = stepFilter===k;
+    return `<button type="button" class="btn ${on?"btn-primary":"btn-secondary"} ship-step-chip" data-step="${esc(k)}" aria-pressed="${on}" data-tip="${esc(STEP_TIPS[k]||"")}" style="font-size:12px;padding:4px 10px">${esc(k?STEP_LABEL[k]:"すべて")} <span class="badge badge-${k?STEP_BADGE[k]:2}">${Number(n)||0}</span></button>`;
+  }).join("");
+  const note=document.getElementById("shipStepNote");
+  if(note) note.textContent = stepFilter ? (STEP_TIPS[stepFilter]||"") + (finalConfirmNow() ? "" : "（いまは依頼者の最終確認を省く設定です）") : "";
+}
 const SHIP_SORTS = {
   createdDesc: null, // Firestore の並び（createdAt の新しい順）のまま
   shipDateDesc: (a,b)=>String(b.shipDate||"").localeCompare(String(a.shipDate||"")),
@@ -2573,7 +2703,11 @@ function renderShipmentsView(){
   lastDupView = dv;
   if(dupOnly && !dv.count) dupOnly = false; // 解消し終えたら絞り込みを外す
   list = filterDupOnly(list, dv, dupOnly);
+  renderStepBar(list);
+  if(stepFilter) list = list.filter(s=>stepOfShip(s)===stepFilter);
+  // 発送準備・受付などは納品希望日の早い順（並びを選んでいないとき）
   if(cmp) list=[...list].sort(cmp);
+  else if(["accept","wait","confirm","prepare"].includes(stepFilter)) list=sortByDesired(list);
   renderShipments(list, dv);
 }
 
@@ -2625,7 +2759,9 @@ function renderShipments(ships, dv){
         ? ` <span class="badge badge-2">自社在庫から発送</span>`
         : ` <span class="badge badge-7">AB Circleから直送</span>`);
     const st=s.status||"shipped";
-    const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${shipStatusLabelOf(s)}</span>`
+    const step=stepOfShip(s);
+    const stepBadge = st==="requested" ? ` <span class="badge badge-${STEP_BADGE[step]||2}" data-tip="${esc(STEP_TIPS[step]||"")}">${esc(STEP_LABEL[step]||"")}</span>` : "";
+    const stBadge=`<span class="badge badge-${SHIP_STATUS_BADGE[st]||7}">${shipStatusLabelOf(s)}</span>` + stepBadge
       // 送付済み・記録待ち（メールで送ったが「請求済にする」「発行を記録」がまだ・2026-11-10）
       + mailedPendingNotes(s).map(n=>` <span class="badge badge-5" title="${esc(n.hint)}">${esc(n.label)}</span>`).join("");
     // 持ち出し（倉庫から直接持っていく）の印・予定日・持ち出す人。倉庫からの差し戻しがあれば警告の行を出す（2026-10-24 §9.1・§9.3）
@@ -2700,9 +2836,15 @@ function renderShipments(ships, dv){
     // ボタンの id・class・data-id はそのまま（委譲されたクリック処理が動き続ける）。
     const moreBtns = (html) => html ? `<details class="row-more"><summary aria-label="その他の操作（${esc(s.soNumber)}）">その他</summary><div class="row-more-body">${html}</div></details>` : "";
     // 依頼済の案内。倉庫からの差し戻しがあるときは「待ち」ではなく、直して再送する案内にする（再送・取り消しは外に出す）
+    // 段ごとの案内（2026-11-12 発送の5段）
+    const waitText = ({ accept:"倉庫の受付待ち", wait:"入荷待ち（倉庫で在庫を待っています）", confirm:"最終確認をしてください" })[step]
+      || (isPickup(s)?"倉庫の受け渡し待ち":"倉庫の発送待ち");
     const waitNote = wi
-      ? `<span class="ship-wait-note" style="color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 倉庫から差し戻し：直して再送してください</span>`
-      : `<span class="ship-wait-note"><i class="ti ti-truck-delivery" aria-hidden="true"></i> ${isPickup(s)?"倉庫の受け渡し待ち":"倉庫の発送待ち"}</span>`;
+      ? `<span class="ship-wait-note" style="color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 発送不可：倉庫を選び直すか、直して依頼し直してください</span>`
+      : `<span class="ship-wait-note"><i class="ti ti-${step==="wait"?"clock":"truck-delivery"}" aria-hidden="true"></i> ${esc(waitText)}</span>`;
+    const reselectBtn = `<button class="btn btn-primary reselect-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" data-tip="依頼を下書きに戻して、送付元の倉庫や入力を選び直してから、もう一度依頼します"><i class="ti ti-refresh"></i>倉庫を選び直して依頼し直す</button>`;
+    const finalOkBtn = `<button class="btn btn-primary final-ok" data-id="${s._id}" style="font-size:12px;padding:4px 8px" data-tip="この内容で発送してよいと確かめます。倉庫の発送準備リストに入ります"><i class="ti ti-circle-check"></i>OK（発送準備へ）</button>`;
+    const changeBtn = `<button class="btn btn-secondary edit-ship" data-id="${s._id}" style="font-size:12px;padding:4px 8px" data-tip="送付先・数量・納品希望日を直します。直したあと「OK」を押してください"><i class="ti ti-edit"></i>変更する</button>`;
     const revertBtn = `<button class="btn btn-secondary revert-draft" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="依頼を取り消して下書きへ戻します（取り消しの連絡は人が行います）"><i class="ti ti-arrow-back-up"></i>依頼を取り消す</button>`;
     const markShippedBtn = (primary) => `<button class="btn ${primary?"btn-primary ":"btn-secondary "}mark-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="${isPickup(s)?"持ち出す人に渡したのを確認してから押してください（在庫を引き落とします）":"倉庫の担当が発送したのを確認してから押してください（在庫を引き落とします）"}"><i class="ti ti-${isPickup(s)?"hand-grab":"truck-delivery"}"></i>${markShippedLabel(s)}</button>`;
     if(st==="draft"){
@@ -2715,16 +2857,20 @@ function renderShipments(ships, dv){
           // すでに届いている出荷（伴走支援が済んだ案件など）だけに使う小さなボタン。依頼を経ずに発送済へ・出荷指示は送らない
           + `<button class="btn btn-secondary record-shipped" data-id="${s._id}" style="font-size:12px;padding:4px 8px" title="すでに届いている出荷を、出荷指示を送らずに${isPickup(s)?"受け渡し済":"発送済"}として記録します（在庫は引き落とします）"><i class="ti ti-check"></i>${recordShippedLabel(s)}</button>`
           + cancelBtn + delBtn);
+    } else if(st==="requested" && step==="confirm"){
+      // 確認（STEP3・2026-11-12）: 依頼した人の最終確認。OK → 発送準備リストへ／変更 → 直して OK へ／キャンセル → キャンセルリストへ
+      lifeBtns = waitNote + finalOkBtn + changeBtn + cancelBtn
+        + moreBtns(notifyBtn + docLetterpack + docShipnote + docInvoice + docRefund + typeBtn + revertBtn);
     } else if(st==="requested"){
       // 依頼した人は押す操作がない（発送済は倉庫の担当が押す）。外: 倉庫の発送待ち・直す ／ その他: 発送済にする・出荷指示を再送・帳票・依頼を取り消す・キャンセル
       // 削除は出さない（出荷指示を投稿済みのため。取り消してから下書きで削除する）
-      // 差し戻しのあるときだけ「出荷指示を再送」「依頼を取り消す」を外に出す（直して再送するのが次の一手のため）
+      // 発送不可（倉庫からの差し戻し）のときは「倉庫を選び直して依頼し直す」「依頼を取り消す」を外に出す（2026-11-12）
       lifeBtns = waitNote
         + keepBtn
-        + (wi ? notifyBtn + revertBtn : "")
+        + (wi ? reselectBtn + revertBtn : "")
         + editBtn
         + moreBtns(markShippedBtn(false)
-          + (wi ? "" : notifyBtn)
+          + notifyBtn
           + docLetterpack + docShipnote + docInvoice + docRefund
           + typeBtn
           + (wi ? "" : revertBtn)
@@ -2767,11 +2913,21 @@ function renderShipments(ships, dv){
       // canceled: 記録として残すだけ。帳票リンク・修正系のボタンは出さず、理由を小さく表示する
       lifeBtns = `<div style="font-size:12px;color:var(--color-ink-muted)">理由: ${esc(s.cancelReason||"-")}${s.cancelNote?`・${esc(s.cancelNote)}`:""}</div>`;
     }
+    // 完了リスト（2026-11-12 送7）: 請求書を出す・入金の画面を開く・領収証を出す（今ある画面へのつなぎだけ。入金・消込の処理は変えない）
+    if(stepFilter==="done" && step==="done"){
+      lifeBtns = `<div class="row-actions" style="margin-bottom:4px">`
+        + `<a class="btn btn-secondary" href="/supply-print.html?type=invoice&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px" data-tip="請求書の画面を開きます（印刷・PDF・メール送付）"><i class="ti ti-receipt"></i>請求書を出す</a>`
+        + `<button class="btn btn-secondary mark-paid" data-id="${s._id}" style="font-size:12px;padding:4px 8px" data-tip="入金の記録の画面を開きます（入金の確かめ・記録）"><i class="ti ti-cash"></i>入金の画面を開く</button>`
+        + (st==="paid"
+          ? `<a class="btn btn-secondary" href="/supply-print.html?type=receipt&id=${s._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px" data-tip="領収証の画面を開きます"><i class="ti ti-receipt-2"></i>領収証を出す</a>`
+          : `<button class="btn btn-secondary" type="button" disabled style="font-size:12px;padding:4px 8px" data-tip="入金済になると領収証を出せます"><i class="ti ti-receipt-2"></i>領収証を出す</button>`)
+        + `</div>` + lifeBtns;
+    }
     // data-so: 深いリンク（?so=SH-2026-0013）で該当行を見つけてスクロールするための目印
     // canceled は行全体を薄くして「終わった記録」だと分かるようにする（既存の muted 変数・opacity のみ・新規色は使わない）
     return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}${dupBadge}</div></td>
-      <td>${esc(s.shipDate||"")}</td>
+      <td>${esc(s.shipDate||"")}${s.desiredDeliveryDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納品希望 ${esc(s.desiredDeliveryDate)}</div>`:""}${st==="canceled"&&s.canceledAt?`<div style="font-size:12px;color:var(--color-ink-muted)">キャンセル ${esc(fmtDate(s.canceledAt))}</div>`:""}</td>
       <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${pickupHtml}${issueHtml}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
       <td style="font-size:12px">${summary}${adviceHtml}</td>
       <td>
@@ -2822,6 +2978,16 @@ function renderShipments(ships, dv){
   }));
   document.querySelectorAll(".revert-draft").forEach(b=>b.addEventListener("click",()=>{
     const s=ships.find(x=>x._id===b.dataset.id); if(s) revertToDraft(s);
+  }));
+  // 発送の5段（2026-11-12）: 段の絞り込み・最終確認の OK・発送不可のあとの選び直し
+  document.querySelectorAll("#shipStepBar .ship-step-chip").forEach(b=>b.addEventListener("click",()=>{
+    stepFilter = b.dataset.step||""; renderShipmentsView();
+  }));
+  document.querySelectorAll(".final-ok").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) finalConfirmShipment(s);
+  }));
+  document.querySelectorAll(".reselect-ship").forEach(b=>b.addEventListener("click",()=>{
+    const s=ships.find(x=>x._id===b.dataset.id); if(s) reselectAndRequest(s);
   }));
   // 請求済にする → 確認ダイアログ（経理への報告を送るか選ぶ）。過入金の充当提案はダイアログ側で行う
   document.querySelectorAll(".mark-invoiced").forEach(b=>b.addEventListener("click",()=>{
@@ -3696,14 +3862,20 @@ async function shipFromOrder(o){
     summaryHtml: `<div>受注（${esc(o.partnerName||o.partnerEmail||"")}）を出荷として登録し、出荷を依頼します。</div>`
       + `<div><strong>送付先</strong>　${esc(sh.company||"")} ${esc(sh.officeName||"")}</div>`
       + `<div style="font-size:12px;color:var(--color-ink-muted)">${esc([sh.postal?`〒${sh.postal}`:"", sh.address||""].filter(Boolean).join(" "))}</div>`,
-    usesStock: true, locId: defaultLocationId(), date: today(), letterPackType: "", items,
+    usesStock: true, locId: defaultLocationId(), date: "", letterPackType: "", items,
+    desiredDeliveryDate: o.desiredDeliveryDate || "",
   });
   if(!ans) return;
   const fromLoc = ans.originLocationId || defaultLocationId();
+  { // 依頼の必須項目（2026-11-12 送1）
+    const missing = requestMissing({ ...sh, items, deliveryMode:"ship", desiredDeliveryDate: ans.desiredDeliveryDate,
+      originLocationId: fromLoc, requestedBy: currentUser.displayName||currentUser.email, status:"requested" });
+    if(missing.length){ alert(`${requestMissingText(missing)}。\n受注の送付先を直してから、もう一度依頼してください。`); return; }
+  }
   let newShipId="", soNumber="";
   try{
     soNumber=seqFmt("SH",await nextSeq("shipments"));
-    const packs=Math.max(1,Math.ceil(items.reduce((a,i)=>a+i.qty,0)/3));
+    const packs=letterpackCount(items.reduce((a,i)=>a+i.qty,0)); // 1通に6台（2026-11-12 送4）
     const newRef = await addDoc(collection(db,"shipments"),{
       soNumber, shipType:"dropship", partnerEmail:o.partnerEmail||"", partnerName:o.partnerName||"",
       status:"requested", partnerOrderId:o._id,
@@ -3711,7 +3883,7 @@ async function shipFromOrder(o){
       shippingMethod:"letterpack", shippingFee:taxExcl(packs*letterpackFee()), shippingLabel:`送料（レターパック ${packs}通）`,
       shipDate:ans.shipDate, postal:sh.postal||"", company:sh.company||"", officeName:sh.officeName||"",
       address:sh.address||"", contactName:sh.contactName||"", phone:sh.phone||"",
-      ...(o.desiredDeliveryDate ? { desiredDeliveryDate:o.desiredDeliveryDate } : {}),
+      desiredDeliveryDate: ans.desiredDeliveryDate, // 依頼の画面で確かめた納品希望日（受注の希望日が初期値・2026-11-12）
       ...letterPackPatch(ans.letterPackType), ...requestedStampPatch(),
       items, createdAt:serverTimestamp(), createdBy:currentUser.displayName||currentUser.email });
     newShipId = newRef.id;

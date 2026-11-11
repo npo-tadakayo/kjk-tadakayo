@@ -7,6 +7,7 @@ import { getFirestore } from "/js/fs.js";
 import { gateRole, showAccessDenied } from "/js/role.js";
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { ISSUE_REASONS, deliveryModeOf } from "/js/warehouse-rules.js";
+import { STEP_LABEL, ACCEPT_DECISIONS, PACK_TYPES, packTypeDefault, sortByDesired } from "/js/ship-steps-rules.js";
 import { FILTERS, buildRows, qtyOf, isUnconfirmed, filterRows, sortRows, sameDestCounts, sameDestOf, buildCsv, csvFileName } from "/js/warehouse-sheet.js";
 
 const app = initializeApp(firebaseConfig);
@@ -20,6 +21,7 @@ const rejectFn = httpsCallable(functions, "warehouseReject");
 const fixFn = httpsCallable(functions, "warehouseFixTracking");
 const confirmFn = httpsCallable(functions, "warehouseConfirm");
 const noteFn = httpsCallable(functions, "warehouseSetNote");
+const acceptFn = httpsCallable(functions, "warehouseAccept"); // 受付（発送可・入荷待ち・発送不可・2026-11-12）
 
 const ALLOWED_ROLES = ["warehouse", "admin", "staff"];
 const LOC_KEY = "warehouse.locationId";
@@ -68,7 +70,17 @@ function reasonList() {
 function reasonLabel(v) { const r = reasonList().find((x) => x.value === v); return r ? r.label : (v || ""); }
 const isPickup = (s) => deliveryModeOf(s) === "pickup";
 
-let data = { sender: null, location: null, locations: [], requested: [], done: [], stock: [] };
+let data = { sender: null, location: null, locations: [], requested: [], done: [], canceled: [], stock: [], finalConfirm: true };
+// 「出荷の依頼」タブの中の段（受付・確認待ち・入荷待ち・発送不可・発送準備）。最初は件数のある段（受付 → 発送準備の順）
+const REQ_STEPS = ["accept", "confirm", "wait", "ng", "prepare"];
+const STEP_NOTE = {
+  accept: "在庫と照らして「受付する」から、発送可・入荷待ち・発送不可を選びます。依頼した人に Chat で知らせます。",
+  confirm: "依頼した人の最終確認（OK・変更・キャンセル）を待っています。OK が出ると発送準備に移ります。",
+  wait: "入荷を待っている依頼です。在庫がそろったものは緑の枠で出ます。そろったら「受付する」で「発送可」にします。",
+  ng: "発送不可を知らせた依頼です。依頼した人が倉庫を選び直すか、直して依頼し直すのを待っています。",
+  prepare: "納品希望日の早い順です。宛名を印刷して梱包し、発送したら「発送済にする」（持ち出しは「受け渡し済にする」）。",
+};
+let reqStep = "";
 let locationId = "";
 let current = null; // モーダルで操作中の出荷
 let busy = false;
@@ -101,7 +113,9 @@ async function load(keepToast, retried) {
       locations: Array.isArray(d.locations) ? d.locations : [],
       requested: Array.isArray(d.requested) ? d.requested : [],
       done: Array.isArray(d.done) ? d.done : [],
+      canceled: Array.isArray(d.canceled) ? d.canceled : [],
       stock: Array.isArray(d.stock) ? d.stock : [],
+      finalConfirm: d.finalConfirm !== false,
     };
     // サーバーが選んだ場所を使い、保存し直す（保存した場所が無い・一覧に無いとき）
     if (data.location && data.location.id) { locationId = data.location.id; saveLoc(locationId); }
@@ -115,7 +129,14 @@ async function load(keepToast, retried) {
   }
 }
 
-function renderAll() { renderLocSelect(); renderCounts(); renderRequested(); renderDone(); renderStock(); renderSheet(); }
+function renderAll() { renderLocSelect(); renderCounts(); renderRequested(); renderDone(); renderCanceled(); renderStock(); renderSheet(); }
+// W の段（サーバーが step を付けて返す。無い古い返事は受付とみなす）
+const stepOfW = (s) => s.step || "accept";
+function stepCountsW() {
+  const c = Object.fromEntries(REQ_STEPS.map((k) => [k, 0]));
+  for (const s of data.requested) if (c[stepOfW(s)] != null) c[stepOfW(s)]++;
+  return c;
+}
 
 function renderLocSelect() {
   const sel = $("locSelect");
@@ -129,14 +150,15 @@ function renderCounts() {
   const ship = data.requested.filter((s) => !isPickup(s)).length;
   const pick = data.requested.filter(isPickup).length;
   const unconf = data.requested.filter((s) => !s.warehouseConfirmed).length;
+  const sc = stepCountsW();
   $("counts").innerHTML = `<span class="badge badge-1">依頼 ${data.requested.length}件</span>`
+    + `<span class="badge badge-5">受付 ${Number(sc.accept)}件</span><span class="badge badge-3">発送準備 ${Number(sc.prepare)}件</span>`
     + `<span class="badge badge-1">未確認 ${unconf}件</span>`
     + `<span class="badge badge-2">発送 ${ship}</span><span class="badge badge-2">持ち出し ${pick}</span>`;
   const sb = $("sheetBadge");
   sb.textContent = `未確認 ${unconf}`; sb.style.display = unconf > 0 ? "" : "none";
 }
 
-function requestedSortKey(s) { return String(isPickup(s) ? (s.pickupDate || s.desiredDate || "") : (s.desiredDate || "")) || "9999-99-99"; }
 
 function itemsHtml(s) {
   const items = Array.isArray(s.items) ? s.items : [];
@@ -153,12 +175,19 @@ function card(s, mode) {
   } else {
     const lines = [s.company, s.officeName, s.contactName ? `${s.contactName} 様` : ""].filter(Boolean).map(esc).join("<br>");
     dest = `<div class="wh-dest">${lines}<br>${s.postalCode ? "〒" + esc(s.postalCode) + " " : ""}${esc(s.address || "")}${s.phone ? `<br>電話 ${esc(s.phone)}` : ""}`
-      + `${s.desiredDate ? `<br><strong>希望出荷日：</strong>${esc(s.desiredDate)}` : ""}</div>`;
+      + `${s.desiredDate ? `<br><strong>出荷予定日：</strong>${esc(s.desiredDate)}` : ""}</div>`;
   }
+  // 納品希望日（2026-11-12 送1）。発送準備はこの日の早い順
+  const desiredHtml = mode === "requested" && s.desiredDeliveryDate ? `<div class="wh-desired">納品希望日：${esc(s.desiredDeliveryDate)}</div>` : "";
+  const step = mode === "requested" ? stepOfW(s) : mode;
+  const readyHtml = step === "wait" && s.stockReady ? `<div class="wh-ready"><i class="ti ti-circle-check" aria-hidden="true"></i> 在庫がそろいました。「受付する」で発送可にできます</div>` : "";
   const meta = [];
   if (mode === "requested") {
     if (!pickup && s.letterPackType) meta.push(`レターパック：${esc(LP_LABEL[s.letterPackType] || s.letterPackType)}`);
     meta.push(`依頼：${esc(s.requestedByName || "—")}（${esc(fmtDT(s.requestedAt))}）`);
+    if (s.acceptStatus && s.acceptedByName) meta.push(`受付：${esc(ACCEPT_DECISIONS[s.acceptStatus] || s.acceptStatus)}（${esc(s.acceptedByName)}）${s.acceptNote ? `・${esc(s.acceptNote)}` : ""}`);
+  } else if (mode === "canceled") {
+    meta.push(`キャンセル：${esc(fmtDT(s.canceledAt))}`, `理由：${esc(s.cancelReason || "—")}`);
   } else {
     if (pickup) meta.push(`受け渡し日：${esc(s.shipDate || "—")}（${esc(s.handedOverByName || "—")}）`);
     else meta.push(`発送日：${esc(s.shipDate || "—")}`, `追跡番号：${esc(s.trackingNumber || "なし")}`);
@@ -167,29 +196,47 @@ function card(s, mode) {
   const issue = s.warehouseIssue && mode === "requested"
     ? `<div class="wh-issue"><strong>倉庫から差し戻し中：</strong>${esc(reasonLabel(s.warehouseIssue.reason))}${s.warehouseIssue.note ? `（${esc(s.warehouseIssue.note)}）` : ""}<br>${esc(s.warehouseIssue.byName || "")} ${esc(fmtDT(s.warehouseIssue.at))}</div>` : "";
   let actions = "";
-  if (mode === "requested") {
+  const printBtn = pickup ? "" : `<button class="btn btn-secondary" type="button" data-act="print" data-id="${esc(s.id)}" data-tip="宛名ラベルと梱包の確認をA4で印刷します"><i class="ti ti-printer" aria-hidden="true"></i>宛名を印刷</button>`;
+  if (mode === "requested" && (step === "accept" || step === "wait")) {
+    actions = `<div class="wh-actions"><button class="btn btn-primary" type="button" data-act="acc" data-id="${esc(s.id)}" data-tip="在庫と照らして、発送可・入荷待ち・発送不可のどれかを選びます。依頼した人に Chat で知らせます"><i class="ti ti-clipboard-check" aria-hidden="true"></i>受付する</button>${printBtn}</div>`;
+  } else if (mode === "requested" && step !== "prepare") {
+    actions = printBtn ? `<div class="wh-actions">${printBtn}</div>` : "";
+  } else if (mode === "requested") {
     actions = `<div class="wh-actions">`
       + (pickup
-        ? `<button class="btn btn-primary" type="button" data-act="hand" data-id="${esc(s.id)}"><i class="ti ti-hand-grab" aria-hidden="true"></i>受け渡し済にする</button>`
-        : `<button class="btn btn-primary" type="button" data-act="ship" data-id="${esc(s.id)}"><i class="ti ti-truck-delivery" aria-hidden="true"></i>発送済にする</button>`)
-      + (pickup ? "" : `<button class="btn btn-secondary" type="button" data-act="print" data-id="${esc(s.id)}"><i class="ti ti-printer" aria-hidden="true"></i>宛名を印刷</button>`)
-      + `<button class="btn btn-secondary" type="button" data-act="rej" data-id="${esc(s.id)}"><i class="ti ti-alert-triangle" aria-hidden="true"></i>出荷できない</button></div>`;
+        ? `<button class="btn btn-primary" type="button" data-act="hand" data-id="${esc(s.id)}" data-tip="持ち出す人に渡したら押します。在庫を引き、依頼した人に Chat で知らせます"><i class="ti ti-hand-grab" aria-hidden="true"></i>受け渡し済にする</button>`
+        : `<button class="btn btn-primary" type="button" data-act="ship" data-id="${esc(s.id)}" data-tip="発送日・種別・問い合わせ番号を入れて発送済にします。在庫を引き、依頼した人に Chat で知らせます"><i class="ti ti-truck-delivery" aria-hidden="true"></i>発送済にする</button>`)
+      + printBtn
+      + `<button class="btn btn-secondary" type="button" data-act="rej" data-id="${esc(s.id)}" data-tip="発送できなくなったときに、理由を選んで依頼した人に知らせます"><i class="ti ti-alert-triangle" aria-hidden="true"></i>出荷できない</button></div>`;
+  } else if (mode === "canceled") {
+    actions = "";
   } else if (!pickup) {
     actions = `<div class="wh-actions"><button class="btn btn-secondary" type="button" data-act="fix" data-id="${esc(s.id)}"><i class="ti ti-pencil" aria-hidden="true"></i>追跡番号を直す</button>`
       + `<button class="btn btn-secondary" type="button" data-act="print" data-id="${esc(s.id)}"><i class="ti ti-printer" aria-hidden="true"></i>宛名を印刷</button></div>`;
   }
-  return `<div class="card wh-card"><div class="card-body">
-    <div class="wh-head">${mode === "requested" && !pickup ? `<label class="wh-pick"><input type="checkbox" data-sel="${esc(s.id)}" aria-label="${esc(s.soNumber || "")}を印刷に選ぶ"></label>` : ""}<span class="wh-so">${esc(s.soNumber || "")}</span>${badge}</div>
-    ${dest}${itemsHtml(s)}
+  const stepBadge = mode === "requested" ? `<span class="badge badge-2">${esc(STEP_LABEL[step] || "")}</span>` : "";
+  return `<div class="card wh-card${readyHtml ? " is-ready" : ""}"><div class="card-body">
+    <div class="wh-head">${mode === "requested" && !pickup ? `<label class="wh-pick"><input type="checkbox" data-sel="${esc(s.id)}" aria-label="${esc(s.soNumber || "")}を印刷に選ぶ"></label>` : ""}<span class="wh-so">${esc(s.soNumber || "")}</span>${badge}${stepBadge}</div>
+    ${desiredHtml}${readyHtml}${dest}${itemsHtml(s)}
     <div class="wh-meta">${meta.join("<br>")}</div>${issue}${actions}</div></div>`;
 }
 
 function renderRequested() {
-  const list = [...data.requested].sort((a, b) => requestedSortKey(a).localeCompare(requestedSortKey(b)) || toMs(a.requestedAt) - toMs(b.requestedAt));
+  const sc = stepCountsW();
+  if (!reqStep || !REQ_STEPS.includes(reqStep)) reqStep = REQ_STEPS.find((k) => sc[k] > 0 && (k === "accept" || k === "prepare")) || "accept";
+  // 段ごとの並び: 納品希望日の早い順（同じなら依頼の古い順・2026-11-12 送1）
+  const list = sortByDesired(data.requested.filter((s) => stepOfW(s) === reqStep));
+  const chips = `<div class="wh-steps" role="group" aria-label="段で切り替え">${REQ_STEPS.map((k) =>
+    `<button type="button" class="btn ${k === reqStep ? "btn-primary" : "btn-secondary"}" data-step="${esc(k)}" aria-pressed="${k === reqStep}" data-tip="${esc(STEP_NOTE[k])}">${esc(STEP_LABEL[k])} <span class="badge badge-2">${Number(sc[k])}</span></button>`).join("")}</div>`
+    + `<p class="wh-step-note">${esc(STEP_NOTE[reqStep])}${reqStep === "confirm" && !data.finalConfirm ? "（いまは最終確認を省く設定です）" : ""}</p>`;
   const hasShip = list.some((s) => !isPickup(s));
-  const bar = hasShip ? `<div class="wh-actions" style="margin-bottom:12px"><button class="btn btn-secondary" type="button" id="bulkPrint"><i class="ti ti-printer" aria-hidden="true"></i>選んだものをまとめて印刷</button></div>` : "";
-  $("tab-requested").innerHTML = bar + (list.length ? list.map((s) => card(s, "requested")).join("")
-    : `<div class="wh-empty"><i class="ti ti-circle-check" style="font-size:32px" aria-hidden="true"></i><br>いま出荷の依頼はありません</div>`);
+  const bar = hasShip ? `<div class="wh-actions" style="margin-bottom:12px"><button class="btn btn-secondary" type="button" id="bulkPrint" data-tip="チェックを入れた出荷の宛名を、まとめて印刷します"><i class="ti ti-printer" aria-hidden="true"></i>選んだものをまとめて印刷</button></div>` : "";
+  $("tab-requested").innerHTML = chips + bar + (list.length ? list.map((s) => card(s, "requested")).join("")
+    : `<div class="wh-empty"><i class="ti ti-circle-check" style="font-size:32px" aria-hidden="true"></i><br>${esc(STEP_LABEL[reqStep])}の出荷はありません</div>`);
+}
+function renderCanceled() {
+  $("tab-canceled").innerHTML = data.canceled.length ? data.canceled.map((s) => card(s, "canceled")).join("")
+    : `<div class="wh-empty">直近30日にキャンセルした出荷はありません</div>`;
 }
 function renderDone() {
   const list = [...data.done].sort((a, b) => String(b.shipDate || "").localeCompare(String(a.shipDate || "")));
@@ -379,14 +426,49 @@ function bindSheet() {
 function open(id) { $(id).classList.add("open"); }
 function close(id) { $(id).classList.remove("open"); current = null; busy = false; }
 function showErr(id, msg) { const e = $(id); e.textContent = msg; e.style.display = msg ? "block" : "none"; }
-const find = (id) => data.requested.find((s) => s.id === id) || data.done.find((s) => s.id === id);
+const find = (id) => data.requested.find((s) => s.id === id) || data.done.find((s) => s.id === id) || data.canceled.find((s) => s.id === id);
 const infoLine = (s) => `${s.soNumber || ""}　${isPickup(s) ? esc(s.pickupByName || "") : esc(s.officeName || "")}`;
 
 function openShip(s) {
   current = s; showErr("shipErr", "");
   $("shipInfo").innerHTML = infoLine(s);
-  $("shipDate").value = todayJst(); $("shipTracking").value = ""; $("shipLp").value = s.letterPackType || "";
+  // 種別の初期値: 1〜6台＝レターパックプラス、7台以上＝ゆうパック（元払い）。保存した種別があればそれ（2026-11-12 送4）
+  const qty = (Array.isArray(s.items) ? s.items : []).reduce((a, i) => a + (Number(i.qty) || 0), 0);
+  $("shipDate").value = todayJst(); $("shipTracking").value = "";
+  $("shipPack").value = PACK_TYPES[s.packType] ? s.packType : (qty >= 7 ? "yupack" : (s.letterPackType === "light" ? "light" : packTypeDefault(qty)));
   open("shipModal");
+}
+function openAcc(s) {
+  current = s; showErr("accErr", "");
+  $("accInfo").innerHTML = infoLine(s);
+  $("accDecisions").innerHTML = Object.entries(ACCEPT_DECISIONS).map(([k, v], i) =>
+    `<label class="wh-radio"><input type="radio" name="accDecision" value="${esc(k)}"${i === 0 ? " checked" : ""}>${esc(v)}</label>`).join("");
+  $("accReasons").innerHTML = reasonList().map((r, i) =>
+    `<label class="wh-radio"><input type="radio" name="accReason" value="${esc(r.value)}"${i === 0 ? " checked" : ""}>${esc(r.label)}</label>`).join("");
+  $("accShipDate").value = s.desiredDate || ""; $("accNote").value = "";
+  syncAcc();
+  open("accModal");
+}
+function syncAcc() {
+  const d = (document.querySelector('input[name="accDecision"]:checked') || {}).value || "ok";
+  $("accOkWrap").style.display = d === "ok" ? "" : "none";
+  $("accNgWrap").style.display = d === "ng" ? "" : "none";
+  $("accHint").textContent = d === "ok"
+    ? (data.finalConfirm ? "依頼した人に「発送可・最終確認をしてください」と知らせます。OK が出たら発送準備に入ります。" : "依頼した人に「発送可」と知らせ、そのまま発送準備に入ります。")
+    : d === "wait" ? "依頼した人に「入荷待ち」と知らせます。依頼はそのまま残ります。在庫がそろったらもう一度「受付する」で発送可にします。"
+      : "依頼した人に「発送不可」と理由を知らせます。依頼した人が倉庫を選び直すか、直して依頼し直します。";
+}
+function doAcc() {
+  const s = current; if (!s) return;
+  const decision = (document.querySelector('input[name="accDecision"]:checked') || {}).value || "";
+  const reason = (document.querySelector('input[name="accReason"]:checked') || {}).value || "";
+  const note = $("accNote").value.trim();
+  if (decision === "ng" && reason === "other" && !note) return showErr("accErr", "「その他」のときは、メモに理由を書いてください");
+  const payload = { shipmentId: s.id, decision, note };
+  if (decision === "ng") payload.reason = reason;
+  if (decision === "ok" && $("accShipDate").value) payload.shipDate = $("accShipDate").value;
+  return run("accOk", "accErr", "accModal", () => acceptFn(payload),
+    (r) => `${s.soNumber || ""} を「${ACCEPT_DECISIONS[decision]}」にしました${r && r.notified === false ? "（依頼した人への通知は送れませんでした。直接伝えてください）" : "。依頼した人に知らせました"}`);
 }
 function openHand(s) {
   current = s; showErr("handErr", "");
@@ -430,10 +512,10 @@ function doShip() {
   const s = current; if (!s) return;
   const date = $("shipDate").value;
   if (!date) return showErr("shipErr", "発送日を入れてください");
-  const payload = { shipmentId: s.id, shipDate: date };
+  const payload = { shipmentId: s.id, shipDate: date, packType: $("shipPack").value };
   const tr = $("shipTracking").value.trim(); if (tr) payload.trackingNumber = tr;
-  const lp = $("shipLp").value; if (lp) payload.letterPackType = lp;
-  return run("shipOk", "shipErr", "shipModal", () => shipFn(payload), `${s.soNumber || ""} を発送済にしました`);
+  return run("shipOk", "shipErr", "shipModal", () => shipFn(payload),
+    (r) => `${s.soNumber || ""} を発送済にしました${r && r.notified ? "。依頼した人に知らせました" : ""}`);
 }
 function doHand() {
   const s = current; if (!s) return;
@@ -477,7 +559,7 @@ function switchTab(name) {
   document.querySelectorAll(".wh-tabs .tab").forEach((t) => {
     const on = t.dataset.tab === name; t.classList.toggle("active", on); t.setAttribute("aria-selected", on ? "true" : "false");
   });
-  for (const n of ["requested", "done", "stock", "sheet"]) $(`tab-${n}`).classList.toggle("active", n === name);
+  for (const n of ["requested", "done", "canceled", "stock", "sheet"]) $(`tab-${n}`).classList.toggle("active", n === name);
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -509,6 +591,8 @@ onAuthStateChanged(auth, async (user) => {
   bindSheet();
   document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => close(b.dataset.close)));
   $("tab-requested").addEventListener("click", (e) => {
+    const sb = e.target.closest("button[data-step]");
+    if (sb) { reqStep = sb.dataset.step; return renderRequested(); }
     if (e.target.closest("#bulkPrint")) {
       const ids = [...document.querySelectorAll("#tab-requested input[data-sel]:checked")].map((c) => c.dataset.sel);
       return printLabels(ids.map(find).filter(Boolean));
@@ -517,6 +601,8 @@ onAuthStateChanged(auth, async (user) => {
   });
   $("tab-done").addEventListener("click", onCardClick);
   $("shipOk").addEventListener("click", doShip);
+  $("accOk").addEventListener("click", doAcc);
+  $("accDecisions").addEventListener("change", syncAcc);
   $("handOk").addEventListener("click", doHand);
   $("rejOk").addEventListener("click", doReject);
   $("fixOk").addEventListener("click", doFix);
@@ -528,5 +614,5 @@ function onCardClick(e) {
   const b = e.target.closest("button[data-act]"); if (!b) return;
   const s = find(b.dataset.id); if (!s) return;
   if (b.dataset.act === "print") return printLabels([s]);
-  ({ ship: openShip, hand: openHand, rej: openRej, fix: openFix })[b.dataset.act]?.(s);
+  ({ ship: openShip, hand: openHand, rej: openRej, fix: openFix, acc: openAcc })[b.dataset.act]?.(s);
 }

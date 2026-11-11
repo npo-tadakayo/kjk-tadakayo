@@ -44,6 +44,16 @@
             </p>
           </div>
           <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:8px;min-height:44px;cursor:pointer;font-weight:400">
+              <input type="checkbox" id="shipFinalConfirm" style="width:18px;height:18px;flex:none">
+              <span>出荷の依頼者の最終確認を行う（倉庫が「発送可」にしたあと、依頼者が OK を押してから発送準備へ）</span>
+            </label>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">
+              <strong>通常はオンのまま</strong>にします（2026-11-12 決定）。慣れてきたらオフにすると、倉庫の「発送可」でそのまま発送準備リストに入ります。
+              持ち出しは、この設定に関係なく最終確認を省きます。オフにしたあとで受付した出荷は、オンに戻しても確認待ちに戻りません。
+            </p>
+          </div>
+          <div class="form-group">
             <label class="form-label" for="gmailSender">メール送信元アドレス</label>
             <input class="form-control" id="gmailSender" type="email" placeholder="kjk-staff@tadakayo.jp">
             <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">案件詳細からのメール送信の差出人（DWD登録済みの正規アカウントのみ）。</p>

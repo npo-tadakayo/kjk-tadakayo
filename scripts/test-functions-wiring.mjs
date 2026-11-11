@@ -432,7 +432,8 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   // 一覧は保管場所を確かめ、W（projectForWarehouse）だけを返す
   const lb = blockOf("warehouseList");
   if (!/assertWarehouseLocation\(me, locationId\)/.test(lb)) throw new Error("warehouseList: 保管場所の権限を確かめていない");
-  if ((lb.match(/wr\.projectForWarehouse\(s\)/g) || []).length !== 2) throw new Error("warehouseList: requested/done を projectForWarehouse で返していない");
+  // requested / done / canceled（2026-11-12 キャンセルリスト）の3つ
+  if ((lb.match(/wr\.projectForWarehouse\(s\)/g) || []).length !== 3) throw new Error("warehouseList: requested/done/canceled を projectForWarehouse で返していない");
   if (!/wr\.warehouseActionable\(s, locationId, locs\.defaultId\)/.test(lb)) throw new Error("warehouseList: warehouseActionable を使っていない");
   // 発送・受け渡しは共通のトランザクション（supply.js の発送済にすると同じ結果）
   const wc = src.slice(src.indexOf("async function warehouseComplete"), src.indexOf("exports.warehouseShip"));
@@ -465,10 +466,12 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   if (!/WAREHOUSE_DONE_DAYS = 30/.test(src)) throw new Error("30日の定数が無い");
   // notifyShipment: 持ち出しの文面・倉庫の画面へのリンク・倉庫の人は投稿できない
   if (!/const WAREHOUSE_URL = `\$\{CRM_BASE_URL\}\/warehouse`/.test(src)) throw new Error("WAREHOUSE_URL が無い");
-  const sm = src.slice(src.indexOf("function shipmentChatMessage"), src.indexOf("async function chatMentionFor"));
-  if ((sm.match(/🏬 倉庫の画面: \$\{WAREHOUSE_URL\}/g) || []).length !== 2) throw new Error("出荷指示: 発送・持ち出しの両方に倉庫の画面へのリンクが無い");
-  if (!/【持ち出し】/.test(sm)) throw new Error("出荷指示: 持ち出しの文面が無い");
+  // 出荷の依頼の文面は短い形（2026-11-12 送6）。長い文面の関数は外した
+  if (/function shipmentChatMessage|function pickupChatMessage/.test(src)) throw new Error("出荷指示: 長い文面の関数が残っている");
   const nb = blockOf("notifyShipment");
+  if (!/ShipSteps\.requestChatText\(/.test(nb)) throw new Error("notifyShipment: 短い文面（requestChatText）を使っていない");
+  if (!/ssRules\.requestMissing\(d\)/.test(nb)) throw new Error("notifyShipment: 依頼の必須項目を確かめていない");
+  if (!/if \(!resend && d\.status === "requested" && !d\.shipNotifiedAt\)/.test(nb)) throw new Error("notifyShipment: 必須項目の確認が依頼したばかりの出荷に限られていない");
   if (!/ud\.role === "warehouse"/.test(nb)) throw new Error("notifyShipment: 倉庫の人を止めていない");
   if (!/chatMentionFor\(s\.pickupByEmail, s\.pickupByName\)/.test(nb)) throw new Error("notifyShipment: 持ち出す人へメンションしていない");
   console.log("OK test-functions-wiring 追加: 倉庫（roleAllows の表・5つの Callable・出荷指示の文面）");

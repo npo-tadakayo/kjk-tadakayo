@@ -68,6 +68,8 @@ const base = (o) => ({
   items: [{ sku: "BT", name: "カードリーダーBT", qty: 2, unitPrice: 9800, amount: 19600 }, { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 50000, nonStock: true }],
   caseId: "case-secret", quoteId: "quote-secret", total: 69600, invoiceNo: "INV-SECRET", payMethod: "before",
   requestedBy: "依頼する人", requestedByEmail: STAFF, requestedAt: TS.now(), shipDate: TODAY, letterPackType: "plus",
+  // 発送の5段（2026-11-12）: 既存の節の出荷は「発送準備」の段（受付で発送可・依頼者の最終確認済み）から始める
+  desiredDeliveryDate: TODAY, acceptStatus: "ok", finalConfirmedAt: TS.now(),
   ...o,
 });
 
@@ -210,7 +212,7 @@ check("差し戻しできる・notified true", r.ok && r.r.ok === true && r.r.no
 s = await get(sh("s5"));
 check("warehouseIssue が記録され、状態は依頼済のまま", s.status === "requested" && s.warehouseIssue && s.warehouseIssue.reason === "address" && s.warehouseIssue.note === "番地がありません" && s.warehouseIssue.byEmail === WH1 && s.warehouseIssue.byName === "倉庫1" && !!s.warehouseIssue.at, JSON.stringify(s.warehouseIssue));
 const rt = (posted[0] && posted[0].text) || "";
-check("依頼した人へメンション（<users/111111111111>）・理由・倉庫の画面", /<users\/111111111111>/.test(rt) && /届け先の情報が足りない・違う/.test(rt) && /番地がありません/.test(rt) && rt.includes("https://kjk-tadakayo-admin.web.app/warehouse"), rt);
+check("依頼した人へメンション（<users/111111111111>）・理由・倉庫の画面", /<users\/111111111111>/.test(rt) && /入力に不備がある（届け先・台数など）/.test(rt) && /番地がありません/.test(rt) && rt.includes("https://kjk-tadakayo-admin.web.app/warehouse"), rt);
 check("差し戻しの投稿に金額・案件ID が無い", !/69600|case-secret|INV-SECRET/.test(rt));
 r = await call("warehouseReject", WH1, { shipmentId: "s5", reason: "shortage", note: "" });
 check("二重の差し戻しは failed-precondition（記録は最初のまま）", !r.ok && r.code === "failed-precondition" && (await get(sh("s5"))).warehouseIssue.reason === "address", JSON.stringify(r));
@@ -219,7 +221,8 @@ r = await call("warehouseList", WH1, { locationId: "L1" });
 const w5 = r.r.requested.find((w) => w.soNumber === "SH-5") || {};
 check("一覧の warehouseIssue（byEmail は返さない）", w5.warehouseIssue && w5.warehouseIssue.reason === "address" && !("byEmail" in w5.warehouseIssue) && typeof w5.warehouseIssue.at === "string", JSON.stringify(w5.warehouseIssue));
 r = await call("warehouseShip", WH1, { shipmentId: "s5", shipDate: TODAY });
-check("差し戻し中でも発送済にでき、warehouseIssue は消える", r.ok && !(await get(sh("s5"))).warehouseIssue, JSON.stringify(r));
+// 2026-11-12 発送の5段: 差し戻し（発送不可）の出荷は、依頼者が依頼し直すまで発送済にできない（以前は発送済にでき、差し戻しが消えた）
+check("差し戻し中（発送不可）は発送済にできない・warehouseIssue は残る", !r.ok && r.code === "failed-precondition" && !!(await get(sh("s5"))).warehouseIssue && (await get(sh("s5"))).status === "requested", JSON.stringify(r));
 await db.collection("appConfig").doc("settings").update({ shippingChatWebhookEnabled: false });
 posted.length = 0;
 r = await call("warehouseReject", STAFF, { shipmentId: "s6", reason: "shortage" });
@@ -231,7 +234,7 @@ section("6. warehouseFixTracking");
 r = await call("warehouseFixTracking", WH1, { shipmentId: "done1", trackingNumber: " 999 " });
 s = await get(sh("done1"));
 check("直近30日の発送済は直せる", r.ok && s.trackingNumber === "999" && s.trackingFixedByEmail === WH1, JSON.stringify(r));
-check("追跡番号以外は変えない（状態・在庫）", s.status === "shipped" && (await prod("BT")).stockByLocation.L1 === 5);
+check("追跡番号以外は変えない（状態・在庫）", s.status === "shipped" && (await prod("BT")).stockByLocation.L1 === 6); // s5 は発送不可のまま（5段）なので 6
 r = await call("warehouseFixTracking", WH1, { shipmentId: "done2", trackingNumber: "1" });
 check("40日前の出荷は直せない", !r.ok && r.code === "failed-precondition" && (await get(sh("done2"))).trackingNumber === "222", JSON.stringify(r));
 r = await call("warehouseFixTracking", WH1, { shipmentId: "done3", trackingNumber: "1" });
@@ -263,25 +266,27 @@ await seed([
   [sh("n2"), base({ soNumber: "SH-N2", originLocationId: "L1", originLocationName: "東京倉庫" })],
 ]);
 posted.length = 0;
+await sh("n1").update({ desiredDeliveryDate: "2026-11-05" });
 r = await call("notifyShipment", STAFF, { shipmentId: "n1" });
 const pt = (posted[0] && posted[0].text) || "";
 check("持ち出しの投稿ができる", r.ok && r.r.posted === true, JSON.stringify(r));
-check("【持ち出し】・持ち出す人へメンション・予定日・保管場所・品と数", /【持ち出し】/.test(pt) && /<users\/987654321098>/.test(pt) && /2026-11-05/.test(pt) && /東京倉庫/.test(pt) && /BT（カードリーダーBT） × 2台/.test(pt), pt);
-check("持ち出しの投稿にレターパック・追跡番号・宛名印刷が無い", !/レターパック|追跡番号|宛名/.test(pt), pt);
-check("持ち出しの投稿の末尾に倉庫の画面", pt.trim().endsWith("🏬 倉庫の画面: https://kjk-tadakayo-admin.web.app/warehouse"), pt.slice(-80));
+// 2026-11-12 送6: 短い文面（誰の依頼・どこ宛て〔市区町村まで〕・何台・納品希望日・CRM へのリンク）
+check("【持ち出し】・持ち出す人へメンション・依頼者へメンション・予定日・保管場所・台数・地域", /^📦 【持ち出し】SH-N1 【東京都 千代田区】 2台/.test(pt) && /<users\/987654321098>/.test(pt) && /<users\/111111111111>/.test(pt) && /2026-11-05/.test(pt) && /東京倉庫/.test(pt), pt);
+check("持ち出しの投稿は短い（4行）・末尾は CRM（倉庫の画面）へのリンク", pt.split("\n").length === 4 && pt.trim().endsWith("👉 CRMで見る: https://kjk-tadakayo-admin.web.app/warehouse"), pt);
 posted.length = 0;
 r = await call("notifyShipment", STAFF, { shipmentId: "n2" });
 const st = (posted[0] && posted[0].text) || "";
-check("発送の投稿は従来の見出し・レターパック・宛名印刷", /^📦 出荷指示 — SH-N2/.test(st) && /■ レターパックの種類: レターパックプラス（赤）/.test(st) && /🖨 レターパックの宛名印刷:/.test(st) && /👉 CRMの出荷:/.test(st), st);
-check("発送の投稿の末尾に倉庫の画面", st.trim().endsWith("🏬 倉庫の画面: https://kjk-tadakayo-admin.web.app/warehouse") && !/【持ち出し】/.test(st), st.slice(-80));
-const btns = JSON.stringify(posted[0] && posted[0].cardsV2);
-check("カードに「倉庫の画面で開く」ボタン", /倉庫の画面で開く/.test(btns));
+check("発送の依頼の投稿: 見出し・地域・台数・納品希望日・依頼者へメンション", /^📦 出荷の依頼 — SH-N2 【東京都 千代田区】 2台/.test(st) && /納品希望日: \d{4}-\d{2}-\d{2}/.test(st) && /<users\/111111111111>/.test(st), st);
+for (const bad of ["受取人", "03-0000-0000", "千代田区1-1", "100-0001", "テスト法人", "テスト事業所", "69600", "case-secret", "レターパック"]) {
+  check(`依頼の投稿に ${bad} が無い（担当者名・電話・番地・金額を書かない）`, !st.includes(bad) && !pt.includes(bad), bad);
+}
+check("カード（cardsV2）は使わない（文面だけ）", !(posted[0] && posted[0].cardsV2));
 // 直送に持ち出しの印が残っていても、持ち出しの文面にしない（canPickup）・倉庫で受け渡しもできない
 await seed([[sh("n3"), base({ soNumber: "SH-N3", fulfillment: "direct", deliveryMode: "pickup", pickupByEmail: MOCHI, pickupByName: "持出太郎", pickupDate: "2026-11-05" })]]);
 posted.length = 0;
 r = await call("notifyShipment", STAFF, { shipmentId: "n3" });
 const dt = (posted[0] && posted[0].text) || "";
-check("直送＋pickup の出荷指示は発送の文面（【持ち出し】もメンションも無し）", r.ok && /^📦 出荷指示 — SH-N3/.test(dt) && !/【持ち出し】|<users\/987654321098>/.test(dt), dt.slice(0, 120));
+check("直送＋pickup の出荷指示は発送の文面（【持ち出し】も持ち出す人へのメンションも無し）", r.ok && /^📦 出荷の依頼 — SH-N3/.test(dt) && !/【持ち出し】|<users\/987654321098>/.test(dt), dt.slice(0, 120));
 r = await call("warehouseHandover", STAFF, { shipmentId: "n3", date: TODAY });
 check("直送の持ち出しは受け渡し済にできない", !r.ok && r.code === "failed-precondition", JSON.stringify(r));
 
@@ -393,6 +398,139 @@ r = await call("warehouseSetNote", WH1, { shipmentId: "sdraft", note: "x" });
 check("下書きには書けない", !r.ok && r.code === "failed-precondition");
 r = await call("warehouseSetNote", WH1, { shipmentId: "sd", note: "x" });
 check("直送には書けない", !r.ok && r.code === "failed-precondition");
+
+// ---------- 12. 発送の5段（2026-11-12）: 受付・確認・発送準備・発送完了・依頼の必須項目・キャンセルリスト ----------
+section("12. 発送の5段（warehouseAccept / shipStepDone / notifyShipment の必須項目 / warehouseList の段）");
+const fresh = (o) => base({ acceptStatus: null, finalConfirmedAt: null, originLocationId: "L1", originLocationName: "東京倉庫", items: [{ sku: "BT", qty: 1 }], ...o });
+await db.collection("products").doc("BT").update({ stock: 100, "stockByLocation.L1": 50, "stockByLocation.L2": 50 });
+const DAY = 86400000;
+await seed([
+  [sh("a1"), fresh({ soNumber: "SH-A1", desiredDeliveryDate: "2026-12-01" })],
+  [sh("a2"), fresh({ soNumber: "SH-A2", deliveryMode: "pickup", pickupByEmail: MOCHI, pickupByName: "持出太郎", pickupDate: TODAY })],
+  [sh("a3"), fresh({ soNumber: "SH-A3", originLocationId: "L2", originLocationName: "大阪倉庫" })],
+  [sh("a4"), fresh({ soNumber: "SH-A4" })],
+  [sh("a5"), fresh({ soNumber: "SH-A5", desiredDeliveryDate: "2026-11-25" })],
+  [sh("a6"), fresh({ soNumber: "SH-A6", acceptStatus: "wait" })],
+  [sh("a7"), fresh({ soNumber: "SH-A7", acceptStatus: "wait", items: [{ sku: "BT", qty: 999 }] })],
+  [sh("legacy2"), { status: "requested", soNumber: "SH-LG2", originLocationId: "L1", items: [{ sku: "BT", qty: 1 }], requestedBy: "旧", requestedByEmail: STAFF, requestedAt: TS.now() }],
+  [sh("cx1"), fresh({ soNumber: "SH-CX1", status: "canceled", canceledAt: TS.now(), cancelReason: "重複登録" })],
+  [sh("cx2"), fresh({ soNumber: "SH-CX2", status: "canceled", canceledAt: TS.fromMillis(Date.now() - 40 * DAY), cancelReason: "古い" })],
+  [sh("cx3"), fresh({ soNumber: "SH-CX3", status: "canceled", canceledAt: TS.now(), originLocationId: "L2", cancelReason: "別の場所" })],
+]);
+await db.collection("appConfig").doc("settings").update({ shipFinalConfirm: admin.firestore.FieldValue.delete() });
+
+// 権限・入力
+r = await call("warehouseAccept", VIEWER, { shipmentId: "a1", decision: "ok" });
+check("閲覧のみは受付できない", !r.ok && r.code === "permission-denied", JSON.stringify(r));
+r = await call("warehouseAccept", TRAINEE, { shipmentId: "a1", decision: "ok" });
+check("練習生は本番の受付をできない", !r.ok && r.code === "permission-denied");
+r = await call("warehouseAccept", WH2, { shipmentId: "a1", decision: "ok" });
+check("WH2 は L1 の出荷を受付できない", !r.ok && r.code === "permission-denied", JSON.stringify(r));
+r = await call("warehouseAccept", WH1, { shipmentId: "a1", decision: "maybe" });
+check("知らない選択は invalid-argument", !r.ok && r.code === "invalid-argument");
+r = await call("warehouseAccept", WH1, { shipmentId: "a1", decision: "ng" });
+check("発送不可は理由が要る（invalid-argument）", !r.ok && r.code === "invalid-argument");
+r = await call("warehouseAccept", WH1, { shipmentId: "nope", decision: "ok" });
+check("無い出荷は not-found", !r.ok && r.code === "not-found");
+r = await call("warehouseAccept", WH1, { shipmentId: "a2", decision: "ok" });
+check("持ち出しは受付を省く（failed-precondition）", !r.ok && r.code === "failed-precondition" && /持ち出し/.test(r.msg), JSON.stringify(r));
+r = await call("warehouseAccept", WH1, { shipmentId: "sdraft", decision: "ok" });
+check("下書きは受付できない", !r.ok && r.code === "failed-precondition");
+r = await call("warehouseShip", WH1, { shipmentId: "a1", shipDate: TODAY });
+check("受付前は発送済にできない（failed-precondition・受付の案内）", !r.ok && r.code === "failed-precondition" && /受付/.test(r.msg), JSON.stringify(r));
+
+// 発送可 → 確認待ち
+posted.length = 0;
+r = await call("warehouseAccept", WH1, { shipmentId: "a1", decision: "ok", shipDate: "2026-11-28", note: "" });
+s = await get(sh("a1"));
+check("発送可 → 確認待ち（step confirm・notified）", r.ok && r.r.step === "confirm" && r.r.notified === true, JSON.stringify(r));
+check("発送可の記録（acceptStatus・受付した人・出荷予定日・一覧の確認済み・最終確認は省かない）", s.acceptStatus === "ok" && s.acceptedByEmail === WH1 && s.acceptedByName === "倉庫1" && !!s.acceptedAt
+  && s.shipDate === "2026-11-28" && !!s.warehouseConfirmedAt && s.finalConfirmSkipped === false && s.status === "requested", JSON.stringify(s));
+const okText = (posted[0] && posted[0].text) || "";
+check("発送可の知らせ: 依頼者へメンション・最終確認のお願い・短い", /^✅ 発送可 — SH-A1 【東京都 千代田区】 1台/.test(okText) && /<users\/111111111111>/.test(okText) && /最終確認/.test(okText) && /2026-12-01/.test(okText)
+  && okText.endsWith("https://kjk-tadakayo-admin.web.app/supply.html?tab=shipments&so=SH-A1") && !/受取人|03-0000|千代田区1-1/.test(okText), okText);
+r = await call("warehouseAccept", WH1, { shipmentId: "a1", decision: "ok" });
+check("確認待ちはもう一度受付できない", !r.ok && r.code === "failed-precondition");
+r = await call("warehouseShip", WH1, { shipmentId: "a1", shipDate: TODAY });
+check("最終確認の前は発送済にできない", !r.ok && r.code === "failed-precondition" && /最終確認/.test(r.msg), JSON.stringify(r));
+// 依頼者の最終確認（画面から直接書く。ここでは同じ項目を書く）→ 発送準備
+await sh("a1").update({ finalConfirmedAt: TS.now(), finalConfirmedBy: "依頼する人" });
+r = await call("warehouseList", WH1, { locationId: "L1" });
+const wa1 = r.ok && r.r.requested.find((w) => w.soNumber === "SH-A1");
+check("一覧: 最終確認の後は発送準備・納品希望日・出荷予定日", !!wa1 && wa1.step === "prepare" && wa1.desiredDeliveryDate === "2026-12-01" && wa1.plannedShipDate === "2026-11-28" && wa1.finalConfirmed === true && wa1.acceptedByName === "倉庫1", JSON.stringify(wa1));
+
+// 発送完了（ゆうパック・問い合わせ番号）→ 依頼者へ知らせ・対応記録に1行・二重に知らせない
+posted.length = 0;
+const actBefore = (await db.collection("activities").where("caseId", "==", "case-secret").get()).size;
+r = await call("warehouseShip", WH1, { shipmentId: "a1", shipDate: TODAY, packType: "yupack", trackingNumber: "9999-1111" });
+s = await get(sh("a1"));
+check("発送準備の出荷を発送済にできる・notified", r.ok && r.r.notified === true && s.status === "shipped" && s.packType === "yupack" && s.trackingNumber === "9999-1111" && !!s.shipDoneNotifiedAt, JSON.stringify([r, s.packType]));
+check("ゆうパックではレターパックの種類を書き換えない", s.letterPackType === "plus");
+const doneText = (posted[0] && posted[0].text) || "";
+check("発送完了の知らせ: 依頼者へメンション・発送日・種別・問い合わせ番号", /^🚚 発送完了 — SH-A1/.test(doneText) && /<users\/111111111111>/.test(doneText) && /ゆうパック（元払い）/.test(doneText) && /問い合わせ番号: 9999-1111/.test(doneText) && doneText.includes(TODAY), doneText);
+const acts = (await db.collection("activities").where("caseId", "==", "case-secret").get()).docs.map((d) => d.data());
+check("案件の対応記録に1行（発送完了・問い合わせ番号）", acts.length === actBefore + 1 && acts.some((a) => a.subject === "発送完了（SH-A1）" && /9999-1111/.test(a.body) && /ゆうパック/.test(a.body)), JSON.stringify(acts.slice(-1)));
+posted.length = 0;
+r = await call("shipStepDone", STAFF, { shipmentId: "a1" });
+check("shipStepDone をもう一度呼んでも知らせない（already）", r.ok && r.r.notified === false && r.r.skipped === "already" && posted.length === 0, JSON.stringify(r));
+r = await call("shipStepDone", WH1, { shipmentId: "a1" });
+check("shipStepDone は倉庫の人は使えない（職員だけ）", !r.ok && r.code === "permission-denied");
+r = await call("shipStepDone", STAFF, { shipmentId: "a4" });
+check("まだ発送していない出荷には知らせない（not-done）", r.ok && r.r.skipped === "not-done");
+r = await call("warehouseShip", WH1, { shipmentId: "a5", shipDate: TODAY, packType: "big" });
+check("知らない種別は invalid-argument", !r.ok && r.code === "invalid-argument");
+
+// 入荷待ち → 発送不可（在庫がなく納品希望日に間に合わない）
+posted.length = 0;
+r = await call("warehouseAccept", WH1, { shipmentId: "a4", decision: "wait", note: "12月上旬に入荷" });
+s = await get(sh("a4"));
+check("入荷待ち（step wait・依頼は出したまま）", r.ok && r.r.step === "wait" && s.status === "requested" && s.acceptStatus === "wait" && s.acceptNote === "12月上旬に入荷", JSON.stringify(r));
+check("入荷待ちの知らせ（メモ入り）", /^⏳ 入荷待ち — SH-A4/.test((posted[0] || {}).text || "") && /12月上旬に入荷/.test((posted[0] || {}).text || ""), JSON.stringify(posted[0]));
+r = await call("warehouseAccept", WH1, { shipmentId: "a4", decision: "ng", reason: "shortage" });
+s = await get(sh("a4"));
+check("入荷待ちから発送不可（step ng・warehouseIssue）", r.ok && r.r.step === "ng" && s.warehouseIssue && s.warehouseIssue.reason === "shortage" && s.warehouseIssue.byEmail === WH1, JSON.stringify(r));
+check("発送不可の知らせ（理由）", /^⚠️ 発送不可 — SH-A4/.test((posted[1] || {}).text || "") && /在庫がなく、納品希望日に間に合わない/.test((posted[1] || {}).text || ""), JSON.stringify(posted[1]));
+r = await call("warehouseAccept", WH1, { shipmentId: "a4", decision: "ok" });
+check("発送不可のあとは受付できない（依頼者が依頼し直すまで）", !r.ok && r.code === "failed-precondition");
+r = await call("warehouseReject", WH1, { shipmentId: "a4", reason: "shortage" });
+check("発送不可のあとに「出荷できない」も重ねられない", !r.ok && r.code === "failed-precondition");
+
+// 最終確認を省く設定 → 発送可でそのまま発送準備。あとで設定を戻しても戻らない
+await db.collection("appConfig").doc("settings").update({ shipFinalConfirm: false });
+posted.length = 0;
+r = await call("warehouseAccept", WH1, { shipmentId: "a5", decision: "ok" });
+s = await get(sh("a5"));
+check("省く設定: 発送可 → 発送準備（finalConfirmSkipped）", r.ok && r.r.step === "prepare" && s.finalConfirmSkipped === true, JSON.stringify(r));
+check("省く設定の知らせは最終確認を頼まない", /発送の準備に入ります/.test((posted[0] || {}).text || "") && !/最終確認/.test((posted[0] || {}).text || ""));
+await db.collection("appConfig").doc("settings").update({ shipFinalConfirm: true });
+r = await call("warehouseList", WH1, { locationId: "L1" });
+check("設定を戻しても、省いて受付した出荷は発送準備のまま", r.ok && (r.r.requested.find((w) => w.soNumber === "SH-A5") || {}).step === "prepare" && r.r.finalConfirm === true);
+
+// 一覧: 段・入荷待ちの在庫・並び・キャンセルリスト・既存の依頼
+const L12 = r.r || {};
+const stepOfSo = (so) => ((L12.requested || []).find((w) => w.soNumber === so) || {}).step;
+check("段: 持ち出しは発送準備・古い依頼済は受付・入荷待ち・発送不可", stepOfSo("SH-A2") === "prepare" && stepOfSo("SH-LG2") === "accept" && stepOfSo("SH-A6") === "wait" && stepOfSo("SH-A4") === "ng", JSON.stringify((L12.requested || []).map((w) => [w.soNumber, w.step])));
+const w6 = (L12.requested || []).find((w) => w.soNumber === "SH-A6") || {}, w7 = (L12.requested || []).find((w) => w.soNumber === "SH-A7") || {};
+check("入荷待ちで在庫がそろったものは stockReady（足りないものは false）", w6.stockReady === true && w7.stockReady === false, JSON.stringify([w6.stockReady, w7.stockReady]));
+const order = (L12.requested || []).map((w) => w.desiredDeliveryDate || "9999");
+check("依頼は納品希望日の早い順（無いものは後ろ）", order.join() === [...order].sort().join(), order.join());
+check("キャンセルリスト: この場所の直近30日だけ・理由つき", JSON.stringify((L12.canceled || []).map((w) => [w.soNumber, w.cancelReason, w.step])) === JSON.stringify([["SH-CX1", "重複登録", "canceled"]]), JSON.stringify(L12.canceled));
+check("完了リストの W に step done", (L12.done || []).every((w) => w.step === "done") && (L12.done || []).some((w) => w.soNumber === "SH-A1"));
+check("返す値に依頼者・受付した人のメールが無い", !JSON.stringify(L12).includes(STAFF) && !JSON.stringify(L12).includes(WH1));
+
+// 依頼の必須項目（notifyShipment がサーバーでも確かめる）
+await seed([
+  [sh("v1"), fresh({ soNumber: "SH-V1", desiredDeliveryDate: "", phone: "" })],
+  [sh("v2"), { status: "requested", soNumber: "SH-V2", originLocationId: "L1", items: [{ sku: "BT", qty: 1 }], requestedBy: "旧", requestedByEmail: STAFF, shipNotifiedAt: TS.now(), address: "大阪府豊中市1-1" }],
+]);
+posted.length = 0;
+r = await call("notifyShipment", STAFF, { shipmentId: "v1" });
+s = await get(sh("v1"));
+check("必須項目が欠けた依頼は投稿せず失敗（failed-precondition・欠けた項目の名前）", !r.ok && r.code === "failed-precondition" && /納品希望日/.test(r.msg) && /電話番号/.test(r.msg) && posted.length === 0, JSON.stringify(r));
+check("欠けた依頼は下書きに戻る（依頼できない）", s.status === "draft" && JSON.stringify(s.requestRejectedMissing) === JSON.stringify(["電話番号", "納品希望日"]) && !s.shipNotifiedAt, JSON.stringify([s.status, s.requestRejectedMissing]));
+r = await call("notifyShipment", STAFF, { shipmentId: "v2", resend: true });
+check("項目の無い既存の依頼の再送は確かめない（投稿できる）", r.ok && r.r.posted === true && (await get(sh("v2"))).status === "requested", JSON.stringify(r));
+check("再送の知らせは（再送）と地域", /^📦 出荷の依頼（再送） — SH-V2 【大阪府 豊中市】 1台/.test((posted[0] || {}).text || "") && /納品希望日: 未入力/.test((posted[0] || {}).text || ""), (posted[0] || {}).text);
 
 console.log(results.join("\n"));
 console.log(`\n合計: ${pass}/${pass + fail} 合格`);

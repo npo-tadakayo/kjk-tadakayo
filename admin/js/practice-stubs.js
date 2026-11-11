@@ -10,7 +10,10 @@ import { getAuth } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-aut
 import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, updateDoc,
   writeBatch, runTransaction, serverTimestamp, arrayUnion, increment, deleteField, Timestamp }
   from "/js/fs.js";
-import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote } from "/js/warehouse-rules.js";
+import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote, ISSUE_REASONS, stockShortage } from "/js/warehouse-rules.js";
+// 発送の5段（2026-11-12）。本物は functions/ship-steps.js（判定は同じ ship-steps-rules）
+import { stepOf, finalConfirmOn, requestMissing, requestMissingText, validateAccept, acceptPatchOf, canAccept, canComplete,
+  completeBlockedText, sortByDesired, PACK_TYPES, packTypeOf, readerQty, ACCEPT_DECISIONS } from "/js/ship-steps-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 // 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
 import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise,
@@ -342,7 +345,7 @@ function whDefaultLocationId(locs) { return defaultLocationIdOf(locs); }
 function whShipLocation(s, defId) { return s.originLocationId || defId; }
 function whWire(id, s) {
   const w = projectForWarehouse({ ...s, id });
-  for (const k of ["requestedAt", "handedOverAt", "warehouseConfirmedAt"]) if (w[k]) w[k] = whMs(w[k]);
+  for (const k of ["requestedAt", "handedOverAt", "warehouseConfirmedAt", "canceledAt"]) if (w[k]) w[k] = whMs(w[k]);
   if (w.warehouseIssue && w.warehouseIssue.at) w.warehouseIssue = { ...w.warehouseIssue, at: whMs(w.warehouseIssue.at) };
   return { ...w, id };
 }
@@ -352,9 +355,32 @@ async function whLoadShipment(tx, shipmentId) {
   if (!snap.exists()) throw fail("この出荷は見つかりません。画面を更新してください");
   return { ref, cur: snap.data() };
 }
+// 練習DBの設定（最終確認を行うか・2026-11-12）
+async function whSettings() {
+  try { const ss = await getDoc(doc(db(), "appConfig", "settings")); return ss.exists() ? ss.data() : {}; } catch (_) { return {}; }
+}
+// 発送完了の知らせの代役（本物の notifyShipDone と同じ: 1回だけ・案件の対応記録に1行・Chat は送らない）
+async function whNotifyDone(shipmentId) {
+  const ref = doc(db(), "shipments", String(shipmentId || ""));
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return { notified: false, skipped: "not-found" };
+  const s = snap.data();
+  if (stepOf(s) !== "done") return { notified: false, skipped: "not-done" };
+  if (s.shipDoneNotifiedAt) return { notified: false, skipped: "already" };
+  await updateDoc(ref, { shipDoneNotifiedAt: serverTimestamp() });
+  const pickup = deliveryModeOf(s) === "pickup" && s.fulfillment !== "direct";
+  const packLabel = PACK_TYPES[packTypeOf(s)] || "";
+  const u = me();
+  await activity(s.caseId, "memo", `${pickup ? "受け渡し済" : "発送完了"}（${s.soNumber || ""}）`,
+    pickup ? `${PRACTICE_NOTE}\n出荷 ${s.soNumber || ""} を受け渡しました（受け渡し日 ${s.shipDate || ""}・${u.name}）。`
+      : `${PRACTICE_NOTE}\n出荷 ${s.soNumber || ""} を発送しました（発送日 ${s.shipDate || ""}・種別 ${packLabel}${s.trackingNumber ? `・問い合わせ番号 ${s.trackingNumber}` : ""}・${u.name}）。`);
+  await logSent("shipDone", { shipmentId, soNumber: s.soNumber || "", to: s.requestedByEmail || "" });
+  return { notified: true };
+}
 // 在庫を引いて発送済・受け渡し済にする（supply.js の「発送済にする」と同じ書き込み）
 async function whMarkShipped(shipmentId, expectMode, extra) {
   const u = me();
+  const fc = finalConfirmOn(await whSettings());
   const locs = await whLocations();
   const defId = whDefaultLocationId(locs);
   let soNumber = "", caseId = "";
@@ -363,6 +389,7 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
     if (cur.status !== "requested") throw fail("この出荷はすでに処理されています。画面を更新してください");
     if (deliveryModeOf(cur) !== expectMode) throw fail(expectMode === "pickup" ? "この出荷は持ち出しではありません" : "この出荷は発送ではなく持ち出しです");
     if (expectMode === "pickup" && !canPickup(cur)) throw fail("直送（AB Circleから直接）の出荷は持ち出しにできません"); // 本物と同じく直送は倉庫で扱わない
+    if (!canComplete(cur, { finalConfirm: fc })) throw fail(completeBlockedText(cur, { finalConfirm: fc })); // 発送準備の段だけ（本物と同じ）
     soNumber = cur.soNumber || ""; caseId = cur.caseId || "";
     const locId = whShipLocation(cur, defId);
     const need = {};
@@ -567,6 +594,15 @@ export const PRACTICE_STUBS = {
     // 本番（functions/index.js の NOTIFY_STATUSES）と同じ: 依頼済（requested）以降が対象。下書き・キャンセルは止める（2026-10-21 出荷の二段階化）
     if (!["requested", "shipped", "invoiced", "paid"].includes(s.status)) throw fail("出荷を依頼していない出荷（下書き・キャンセル）は投稿できません");
     if (s.shipNotifiedAt && !resend) return { posted: false, reason: "already" };
+    // 依頼の必須項目（本物と同じ: 依頼したばかりの出荷で欠けていれば下書きへ戻して止める・2026-11-12）
+    if (!resend && s.status === "requested" && !s.shipNotifiedAt) {
+      const missing = requestMissing(s);
+      if (missing.length) {
+        await updateDoc(ref, { status: "draft", requestRejectedAt: serverTimestamp(), requestRejectedMissing: missing,
+          requestRevertedAt: serverTimestamp(), requestRevertedBy: "（必須項目の確認）" });
+        throw fail(`${requestMissingText(missing)}。下書きに戻しました。直してから依頼し直してください`);
+      }
+    }
     const u = me();
     const now = serverTimestamp();
     await updateDoc(ref, {
@@ -1276,12 +1312,23 @@ export const PRACTICE_STUBS = {
     const loc = locs.find((l) => l.id === locationIdUse) || null;
     const snap = await getDocs(collection(db(), "shipments"));
     const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const requested = all.filter((s) => warehouseActionable(s, locationIdUse, defId)).map((s) => whWire(s.id, s))
-      .sort((a, b) => String(a.pickupDate || a.desiredDate || "9999").localeCompare(String(b.pickupDate || b.desiredDate || "9999")));
+    const st0 = await whSettings();
+    const finalConfirm = finalConfirmOn(st0);
+    const prodSnap0 = await getDocs(collection(db(), "products"));
+    const productsBySku = Object.fromEntries(prodSnap0.docs.map((d) => [d.id, d.data() || {}]));
+    // 本物と同じ: 段（step）・入荷待ちの在庫がそろったか（stockReady）・納品希望日の早い順（2026-11-12）
+    const requested = sortByDesired(all.filter((s) => warehouseActionable(s, locationIdUse, defId))).map((s) => {
+      const step = stepOf(s, { finalConfirm });
+      return { ...whWire(s.id, s), step, stockReady: step === "wait" ? stockShortage(s.items, productsBySku, locationIdUse).length === 0 : false };
+    });
+    const sinceMs = Date.now() - WH_DONE_DAYS * 86400e3;
+    const canceled = all.filter((s) => s.status === "canceled" && (s.fulfillment || "warehouse") !== "direct"
+      && whShipLocation(s, defId) === locationIdUse && whMs(s.canceledAt) >= sinceMs)
+      .map((s) => ({ ...whWire(s.id, s), step: "canceled" })).sort((a, b) => whMs(b.canceledAt) - whMs(a.canceledAt));
     const cutoff = new Date(Date.now() + 9 * 3600e3 - WH_DONE_DAYS * 86400e3).toISOString().slice(0, 10);
     const done = all.filter((s) => ["shipped", "invoiced", "paid"].includes(shipStatusOf(s))
       && (s.fulfillment || "warehouse") !== "direct" && whShipLocation(s, defId) === locationIdUse
-      && String(s.shipDate || "") >= cutoff).map((s) => whWire(s.id, s))
+      && String(s.shipDate || "") >= cutoff).map((s) => ({ ...whWire(s.id, s), step: "done" }))
       .sort((a, b) => String(b.shipDate || "").localeCompare(String(a.shipDate || "")));
     const prods = await getDocs(collection(db(), "products"));
     const stock = prods.docs.map((d) => {
@@ -1291,19 +1338,56 @@ export const PRACTICE_STUBS = {
     // 宛名ラベルの差出人（本物と同じ決め方。練習DBの appConfig/settings を読む。保管場所のご依頼主があれば優先）
     let st = {};
     try { const ss = await getDoc(doc(db(), "appConfig", "settings")); st = ss.exists() ? ss.data() : {}; } catch (_) {}
-    return { sender: senderForLabel(st, loc), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, stock };
+    return { sender: senderForLabel(st, loc), location: loc ? { id: loc.id, name: loc.name || "" } : null, locations: locs.map((l) => ({ id: l.id, name: l.name || "" })), requested, done, canceled, stock, finalConfirm };
   },
 
-  async warehouseShip({ shipmentId, shipDate, trackingNumber, letterPackType }) {
+  async warehouseShip({ shipmentId, shipDate, trackingNumber, letterPackType, packType }) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(shipDate || ""))) throw fail("発送日を入れてください");
-    const lp = ["light", "plus"].includes(letterPackType) ? letterPackType : null;
+    if (packType && !["plus", "light", "yupack"].includes(packType)) throw fail("梱包の種別が正しくありません");
+    const lp = ["light", "plus"].includes(packType) ? packType : (["light", "plus"].includes(letterPackType) ? letterPackType : null);
     const tn = String(trackingNumber || "").trim().slice(0, 100);
     await whMarkShipped(shipmentId, "ship", {
-      shipDate, ...(lp ? { letterPackType: lp } : {}), ...(tn ? { trackingNumber: tn } : {}),
+      shipDate, ...(lp ? { letterPackType: lp } : {}), ...(packType ? { packType } : lp ? { packType: lp } : {}), ...(tn ? { trackingNumber: tn } : {}),
     });
-    // 本物（warehouseShip）は対応記録を書かないので、練習でも書かない（2026-11-10 点検7。以前は練習だけ「倉庫: 発送済にしました」が残った）
-    showPracticeNotice("発送済にしました（練習のため、依頼した人への連絡はありません）");
-    return { ok: true };
+    // 本物（warehouseShip）は発送完了の知らせ（依頼者へ Chat・案件の対応記録に1行）を出す（2026-11-12 送5）。練習は記録だけ
+    const d = await whNotifyDone(shipmentId);
+    showPracticeNotice("発送済にしました（依頼した人への Chat は送っていません。対応記録に1行残しました）");
+    return { ok: true, notified: !!d.notified };
+  },
+
+  // 受付（STEP2・本物は functions/ship-steps.js の warehouseAccept）。Chat は送らない
+  async warehouseAccept(data) {
+    const v = validateAccept(data || {}, ISSUE_REASONS);
+    if (!v.ok) { const e = new Error(v.error); e.code = "invalid-argument"; throw e; }
+    const fc = finalConfirmOn(await whSettings());
+    const u = me();
+    let s, after;
+    await runTransaction(db(), async (tx) => {
+      const { ref, cur } = await whLoadShipment(tx, data.shipmentId);
+      if (cur.status !== "requested") throw fail("この出荷はすでに処理されています。画面を更新してください");
+      if (cur.fulfillment === "direct") throw fail("直送（AB Circleから直接）の出荷は倉庫で扱いません");
+      if (!canAccept(cur, { finalConfirm: fc })) throw fail("この出荷はいま受付できる段ではありません。画面を更新してください");
+      const patch = acceptPatchOf(v, { finalConfirm: fc });
+      if (v.decision === "ng") patch.warehouseIssue = { ...patch.warehouseIssue, at: Timestamp.now(), byEmail: u.email, byName: u.name };
+      else Object.assign(patch, { acceptedAt: serverTimestamp(), acceptedByEmail: u.email, acceptedByName: u.name,
+        warehouseConfirmedAt: serverTimestamp(), warehouseConfirmedBy: u.name });
+      tx.update(ref, { ...patch, updatedAt: serverTimestamp() });
+      s = cur; after = { ...cur, ...patch };
+    });
+    if (v.decision === "ng") {
+      await activity(s.caseId, "memo", `倉庫から：発送不可（${ISSUE_REASONS[v.reason]}）（${s.soNumber || ""}）`,
+        `${PRACTICE_NOTE}\n理由: ${ISSUE_REASONS[v.reason]}${v.note ? `\nメモ: ${v.note}` : ""}`);
+    }
+    await logSent("warehouseAccept", { shipmentId: data.shipmentId, soNumber: s.soNumber || "", decision: v.decision, qty: readerQty(s.items), to: s.requestedByEmail || "" });
+    showPracticeNotice(`「${ACCEPT_DECISIONS[v.decision]}」にしました（依頼した人への Chat は送っていません）`);
+    return { ok: true, step: stepOf(after, { finalConfirm: fc }), notified: true };
+  },
+
+  // 発送完了の知らせ（本物は functions/ship-steps.js の shipStepDone）。供給管理の「発送済にする」のあとに呼ばれる
+  async shipStepDone({ shipmentId }) {
+    const d = await whNotifyDone(shipmentId);
+    if (d.notified) showPracticeNotice("発送完了の Chat は送っていません。対応記録に1行残しました");
+    return d;
   },
 
   async warehouseHandover({ shipmentId, date }) {
@@ -1312,9 +1396,9 @@ export const PRACTICE_STUBS = {
     await whMarkShipped(shipmentId, "pickup", {
       shipDate: date, handedOverAt: serverTimestamp(), handedOverByEmail: u.email, handedOverByName: u.name,
     });
-    // 本物（warehouseHandover）は対応記録を書かないので、練習でも書かない（2026-11-10 点検7）
-    showPracticeNotice("受け渡し済にしました");
-    return { ok: true };
+    const d = await whNotifyDone(shipmentId); // 本物と同じく発送完了（受け渡し済）の知らせ・対応記録（2026-11-12）
+    showPracticeNotice("受け渡し済にしました（依頼した人への Chat は送っていません）");
+    return { ok: true, notified: !!d.notified };
   },
 
   async warehouseReject({ shipmentId, reason, note }) {

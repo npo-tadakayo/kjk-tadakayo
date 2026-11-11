@@ -580,6 +580,21 @@
 <div class="callout">解説動画（単元9）は、この変更の前の画面で撮影しています。ボタン名が「出荷を確定」などになっていますが、考え方は同じです（動画の録り直しは別に行います）。</div>
 <figure class="shot"><img src="/images/manual/shipment-row-notice.png" alt="出荷の行：出荷指示の投稿状況と「出荷指示を再送」ボタン" loading="lazy" onerror="this.closest('figure').hidden=true"><figcaption>出荷の行：出荷指示の投稿状況と「出荷指示を再送」ボタン</figcaption></figure>
 </div>
+<div class="sec" id="s-shipsteps" data-toc="発送の5段（依頼→受付→確認→発送準備→完了）"><h3>発送の5段：依頼 → 受付 → 確認 → 発送準備 → 完了 <span class="chip new">11/12 追加</span></h3>
+<p>カードリーダーの発送を、<strong>Chat ではなく CRM で管理</strong>します。Chat には短い知らせと CRM へのリンクだけが届きます。</p>
+<ol>
+  <li><strong>依頼</strong>（依頼する人・出荷・請求・入金）: 「出荷を依頼する」。<strong>納品希望日は必須</strong>。種類・台数・送付先（事業所名・郵便番号・住所・電話番号）・送付元の倉庫が1つでも欠けると依頼できません（ご担当者名だけ任意）</li>
+  <li><strong>受付</strong>（倉庫の担当・倉庫の画面）: 「受付する」→ <strong>発送可</strong>／<strong>発送可だが入荷待ち</strong>／<strong>発送不可</strong>（在庫がなく納品希望日に間に合わない・入力の不備・その他）。依頼した人に Chat で知らせます</li>
+  <li><strong>確認</strong>（依頼した人）: 「確認待ち」の出荷で <strong>OK（発送準備へ）</strong>／<strong>変更する</strong>／<strong>キャンセルにする</strong>。設定で省けます（既定は行う）</li>
+  <li><strong>発送準備</strong>（倉庫の担当）: 納品希望日の早い順。宛名印刷・梱包。<strong>1〜6台はレターパックプラス、7台以上はゆうパック（元払い）</strong>が初期値</li>
+  <li><strong>完了</strong>: 「発送済にする」で発送日・種別・問い合わせ番号。依頼した人に Chat、案件の対応記録に1行。完了の段では「請求書を出す」「入金の画面を開く」「領収証を出す」</li>
+</ol>
+<ul>
+  <li>入荷待ちで在庫がそろうと、倉庫の画面で緑の枠になります。発送不可の知らせが来たら「<strong>倉庫を選び直して依頼し直す</strong>」</li>
+  <li>持ち出しは受付と確認を省きます（受け渡したら「受け渡し済にする」）</li>
+  <li>前からある依頼済の出荷は「受付」に入ります。<strong>レターパックの送料は6台で1通</strong>（これから作る・依頼する出荷だけ。作成済みの送料は変わりません）</li>
+</ul>
+</div>
 <div class="sec" id="s-shipdup" data-toc="出荷の下書きの重複と、在庫の目安"><h3>出荷の下書きの重複と、在庫の目安 <span class="chip new">10/21 追加</span></h3>
 <p><strong>重複の警告</strong></p>
 <ul>

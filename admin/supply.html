@@ -107,6 +107,9 @@
           <span style="font-size:12px;color:var(--color-ink-muted)">担当は、出荷の元になった案件の担当営業です（案件につながらない卸の出荷は「未割当」）。下の件数・金額も絞り込みに合わせて変わります。</span>
         </div>
         <div class="alert-bar" id="shipSummary" style="margin-bottom:12px"></div>
+        <!-- 発送の5段（2026-11-12）: 段ごとのリストの切り替えと件数。押すとその段の出荷だけを出す -->
+        <div class="ship-steps-bar" id="shipStepBar" role="group" aria-label="発送の段で絞り込み" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px"></div>
+        <p id="shipStepNote" style="font-size:12px;color:var(--color-ink-muted);margin:-4px 0 12px"></p>
         <!-- 入金明細の取り込み（2026-10-21 §7）: 銀行のCSVを照合して、人が選んだものだけ入金として記録する -->
         <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px">
           <button class="btn btn-secondary" id="bankImportBtn" type="button"><i class="ti ti-file-import" aria-hidden="true"></i>入金明細を取り込む（CSV）</button>
@@ -213,7 +216,11 @@
             <select class="form-control" id="shipPartner"></select></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label" for="shipDate">出荷日（依頼のときは希望出荷日）</label><input class="form-control" type="date" id="shipDate"></div>
+          <div class="form-group"><label class="form-label" for="shipDesired">納品希望日 <span style="color:red">*</span></label><input class="form-control" type="date" id="shipDesired" aria-describedby="shipDesiredHelp">
+            <div id="shipDesiredHelp" style="font-size:11.5px;color:var(--color-ink-muted)">依頼に必須。持ち出しのときは持ち出し予定日。発送準備リストはこの日の早い順に並びます</div></div>
+          <div class="form-group"><label class="form-label" for="shipDate">出荷日（依頼のときは出荷予定日・倉庫が決めます）</label><input class="form-control" type="date" id="shipDate"></div>
+        </div>
+        <div class="form-row">
           <div class="form-group"><label class="form-label" for="shipPostal">郵便番号</label><input class="form-control" type="text" id="shipPostal" placeholder="000-0000"></div>
         </div>
         <div class="form-group"><label class="form-label" for="shipCompany">法人名</label><input class="form-control" type="text" id="shipCompany"></div>
@@ -315,7 +322,7 @@
           <label class="form-label" for="shipMethod">配送方法（送料を自動計算）</label>
           <select class="form-control" id="shipMethod">
             <option value="">指定しない / 送料を手入力</option>
-            <option value="letterpack">レターパック（事業所へ送る・3台ごとに1通）</option>
+            <option value="letterpack">レターパック（事業所へ送る・6台ごとに1通）</option>
             <option value="yupack" id="shipYupackOpt">ゆうパック（まとめ）</option>
             <option value="none">郵送なし（手渡し・持参）</option>
           </select>
@@ -498,8 +505,13 @@
           <label class="form-label" for="shipDonePickupBy">持ち出す人 <span style="color:red">*</span></label>
           <select class="form-control" id="shipDonePickupBy"></select>
         </div>
+        <!-- 納品希望日（出荷を依頼するときだけ・必須。2026-11-12 発送の5段 送1）。持ち出しでは持ち出し予定日 -->
+        <div class="form-group" id="shipDoneDesiredWrap" style="display:none">
+          <label class="form-label" for="shipDoneDesired"><span id="shipDoneDesiredLabel">納品希望日</span> <span style="color:red">*</span></label>
+          <input class="form-control" type="date" id="shipDoneDesired">
+        </div>
         <div class="form-row">
-          <div class="form-group"><label class="form-label" for="shipDoneDate"><span id="shipDoneDateLabel">出荷日</span> <span style="color:red">*</span></label>
+          <div class="form-group" id="shipDoneDateWrap"><label class="form-label" for="shipDoneDate"><span id="shipDoneDateLabel">出荷日</span> <span id="shipDoneDateReq" style="color:red">*</span></label>
             <input class="form-control" type="date" id="shipDoneDate"></div>
           <div class="form-group" id="shipDoneLpWrap"><label class="form-label" for="shipDoneLp">レターパックの種類</label>
             <select class="form-control" id="shipDoneLp">
@@ -979,5 +991,6 @@
   <script src="/js/firebase-config.js"></script>
   <script src="/js/estimate-pricing.js"></script>
   <script src="/js/supply.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script><!-- ボタンの説明の吹き出し（data-tip）2026-11-12 -->
 </body>
 </html>

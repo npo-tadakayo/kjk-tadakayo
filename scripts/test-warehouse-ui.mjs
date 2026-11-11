@@ -14,8 +14,9 @@ const ok = (c, m) => { assert.ok(c, m); n++; };
 ok(/name="viewport"/.test(html), "viewport が無い");
 ok(/\/js\/warehouse\.js" type="module"/.test(html), "warehouse.js を読んでいない");
 ok(/sidebar\.js/.test(html) && /mobilenav\.js/.test(html) && /firebase-config\.js/.test(html), "共通スクリプトが足りない");
-for (const id of ["gate", "main", "locSelect", "counts", "tab-requested", "tab-done", "tab-stock", "tab-sheet", "sheetBadge", "shipModal", "handModal", "rejModal", "fixModal", "toast"]) ok(html.includes(`id="${id}"`), `#${id} が無い`);
-for (const t of ["出荷の依頼", "発送済・受け渡し済（30日）", "在庫", "一覧"]) ok(html.includes(t), `タブ「${t}」が無い`);
+for (const id of ["gate", "main", "locSelect", "counts", "tab-requested", "tab-done", "tab-canceled", "tab-stock", "tab-sheet", "sheetBadge", "shipModal", "handModal", "rejModal", "fixModal", "accModal", "toast"]) ok(html.includes(`id="${id}"`), `#${id} が無い`);
+for (const t of ["出荷の依頼", "完了（発送済・受け渡し済・30日）", "キャンセル（30日）", "在庫", "一覧"]) ok(html.includes(t), `タブ「${t}」が無い`);
+ok(/\/js\/tooltip\.js" type="module"/.test(html), "吹き出し（tooltip.js）を読んでいない");
 ok(/min-height:44px/.test(html), "タップ領域 44px の指定が無い");
 ok(!/overflow-x:\s*scroll/.test(html), "横スクロール指定がある");
 
@@ -23,7 +24,7 @@ ok(!/overflow-x:\s*scroll/.test(html), "横スクロール指定がある");
 ok(/from "\/js\/fn\.js"/.test(js), "fn.js から httpsCallable を読んでいない");
 ok(!/firebase-functions\.js/.test(js), "Functions を直接 import している");
 const called = [...js.matchAll(/httpsCallable\(\s*functions\s*,\s*"([^"]+)"/g)].map((m) => m[1]).sort();
-assert.deepEqual(called, ["warehouseConfirm", "warehouseFixTracking", "warehouseHandover", "warehouseList", "warehouseReject", "warehouseSetNote", "warehouseShip"]); n++;
+assert.deepEqual(called, ["warehouseAccept", "warehouseConfirm", "warehouseFixTracking", "warehouseHandover", "warehouseList", "warehouseReject", "warehouseSetNote", "warehouseShip"]); n++;
 ok(!/getDocs?\(|collection\(|onSnapshot/.test(js), "倉庫の画面が Firestore を直接読んでいる");
 
 // 権限・共有ロジック
@@ -39,7 +40,7 @@ ok(/other/.test(js) && /くわしい内容を書いてください/.test(js), "�
 ok(/発送済にする/.test(js) && /受け渡し済にする/.test(js) && /出荷できない/.test(js) && /追跡番号を直す/.test(js), "ボタンの文言が足りない");
 ok(/code === "internal"/.test(js), "internal の言い換えが無い");
 // 動的に差し込む文字列はすべて esc を通す（テンプレート内の ${...} のうち生で出してよいものを許可リストで確認）
-const rawOk = /\$\{(esc\(|CSS\.escape\(|pend \&\& pend\.state|pend\.msg|p\.msg|unconf\b|vis\.length|confirmCell|shipCell|dateCell|trackCell|noteCell|sameHtml|head\b|opts\b|arrow\(|sortTh\(|sheet\.|cls\b|attrs\b|label\b|n\}|so\b|id\}|pickup \? "受け渡し済"|checked \? |disabled \? |isPickup\(s\) \? esc\(|Number\(|pickup|badge|dest|itemsHtml|meta\.join|issue|actions|infoLine|lines|reasonList|rows|list\.map|data\.|ship\b|pick\b|i === 0|s\.postalCode \?|s\.phone \?|s\.desiredDate \?|s\.warehouseIssue\.note \?|s\.contactName|mode|code|msg|errText|typeof|r && r\.notified|s\.soNumber|k\b|v\b|n\}|id\}|\()/;
+const rawOk = /\$\{(esc\(|CSS\.escape\(|pend \&\& pend\.state|pend\.msg|p\.msg|unconf\b|vis\.length|confirmCell|shipCell|dateCell|trackCell|noteCell|sameHtml|head\b|opts\b|arrow\(|sortTh\(|sheet\.|cls\b|attrs\b|label\b|n\}|so\b|id\}|pickup \? "受け渡し済"|checked \? |disabled \? |isPickup\(s\) \? esc\(|Number\(|pickup|badge|dest|itemsHtml|meta\.join|issue|actions|infoLine|lines|reasonList|rows|list\.map|data\.|ship\b|pick\b|i === 0|s\.postalCode \?|s\.phone \?|s\.desiredDate \?|s\.warehouseIssue\.note \?|s\.contactName|mode|code|msg|errText|typeof|r && r\.notified|s\.soNumber|k\b|v\b|n\}|id\}|\(|printBtn\b|readyHtml\b|stepBadge\b|desiredHtml\b|reqStep === "confirm"|ACCEPT_DECISIONS\[decision\])/; // 2026-11-12 発送の5段: どれも esc 済みの部品か定数
 for (const m of js.matchAll(/\$\{([^}]*)\}/g)) ok(rawOk.test("${" + m[1] + "}"), `エスケープ未確認の差し込み: ${m[0]}`);
 
 // 練習用の代役（5つ・2スペース字下げ・外へ出ない）
@@ -100,7 +101,7 @@ ok(/sheet\.keep\.clear\(\); load\(true\)/.test(js), "一覧タブを開いたと
 // 練習用の代役（Chat 等へ出さない・Firestore の練習 DB だけを書く）
 const confStub = stubs.slice(stubs.indexOf("async warehouseConfirm("));
 ok(/warehouseConfirmedAt: deleteField\(\)/.test(confStub) && /validateWarehouseNote/.test(confStub) && !/fetch\(/.test(confStub), "練習の代役（確認済み・備考）が本物と同じ形でない");
-ok(/"warehouseConfirmedAt"\]\) if \(w\[k\]\)/.test(stubs), "練習の whWire が確認日時を変換していない");
+ok(/"warehouseConfirmedAt", "canceledAt"\]\) if \(w\[k\]\)/.test(stubs), "練習の whWire が確認日時を変換していない");
 
 // --- 純粋関数（warehouse-sheet.js）---
 const R = (o) => ({ id: "i", mode: "requested", status: "requested", soNumber: "SH-1", items: [{ sku: "A", qty: 2 }, { sku: "B", qty: 1 }], requestedAt: "2026-11-02T00:00:00.000Z", ...o });

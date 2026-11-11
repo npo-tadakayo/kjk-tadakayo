@@ -164,7 +164,8 @@ export function qtyDelta(s, before, after) {
 // 依頼済の出荷の数量・送付先を直したとき「出荷指示を再送しますか？」と聞くか
 // （センターが古い内容で動かないように）。before は直す前の出荷、after は直した後（before に patch を重ねたもの）
 // 出荷指示（Chat）に載る項目。依頼済でこれが変わったら再送を確認する（shipDate＝希望出荷日も 2026-10-21 Codex 指摘で追加）
-const RESEND_FIELDS = ["postal", "company", "officeName", "address", "contactName", "phone", "shipDate"];
+// 納品希望日（desiredDeliveryDate）も出荷の依頼の知らせに載るので足した（2026-11-12 発送の5段）
+const RESEND_FIELDS = ["postal", "company", "officeName", "address", "contactName", "phone", "shipDate", "desiredDeliveryDate"];
 function itemsKey(items) {
   const m = {};
   (Array.isArray(items) ? items : []).forEach((i) => {
