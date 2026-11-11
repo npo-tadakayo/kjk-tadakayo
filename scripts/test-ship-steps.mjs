@@ -14,8 +14,10 @@ const R = (qty, sku = "cir415a-01") => ({ sku, name: "介護情報基盤 汎用�
 const req = (o = {}) => ({
   status: "requested", soNumber: "SH-1", officeName: "テスト事業所", postal: "100-0001", address: "東京都千代田区1-1", phone: "03-0000-0000",
   items: [R(2), { sku: "support-fee", name: "伴走支援費", qty: 1, nonStock: true }], originLocationId: "L1",
-  desiredDeliveryDate: "2026-11-20", requestedBy: "依頼する人", requestedByEmail: "irai@tadakayo.jp", ...o,
+  desiredDeliveryDate: "2026-11-20", requestedBy: "依頼する人", requestedByEmail: "irai@tadakayo.jp", shipFlow: 2, ...o,
 });
+// 本番に出す前に依頼した出荷（shipFlow の印なし）
+const legacy = (o = {}) => { const s = req(o); delete s.shipFlow; return s; };
 
 t("正本と functions のコピーが同じ", () => {
   assert.equal(read("admin/js/ship-steps-rules.js"), read("functions/ship-steps-rules.mjs"));
@@ -24,8 +26,7 @@ t("正本と functions のコピーが同じ", () => {
 
 t("段: 状態ごと（既存の出荷は書き換えずに読む）", () => {
   assert.equal(S.stepOf(req({ status: "draft" })), "draft");
-  assert.equal(S.stepOf(req()), "accept");                                   // 新しい項目の無い依頼済＝受付
-  assert.equal(S.stepOf({ status: "requested" }), "accept");                 // 古い依頼済（納品希望日も無い）も受付
+  assert.equal(S.stepOf(req()), "accept");                                   // 印のある依頼済で受付前＝受付
   assert.equal(S.stepOf(req({ acceptStatus: "wait" })), "wait");
   assert.equal(S.stepOf(req({ acceptStatus: "ok" })), "confirm");
   assert.equal(S.stepOf(req({ acceptStatus: "ok", finalConfirmedAt: 1 })), "prepare");
@@ -39,6 +40,41 @@ t("段: 状態ごと（既存の出荷は書き換えずに読む）", () => {
   assert.equal(S.stepOf({ soNumber: "SH-OLD" }), "done");                     // 状態の無い古い出荷は発送済＝完了
   assert.equal(S.stepOf(req({ status: "canceled" })), "canceled");
   assert.equal(S.stepOf(null), "draft");
+});
+
+t("移行: 印（shipFlow）の無い既存の依頼済は発送準備（今までどおり発送できる）・発送不可の印があれば発送不可", () => {
+  assert.equal(S.SHIP_FLOW, 2);
+  assert.equal(S.isNewFlow(req()), true);
+  assert.equal(S.isNewFlow(legacy()), false);
+  assert.equal(S.stepOf(legacy()), "prepare");
+  assert.equal(S.stepOf({ status: "requested" }), "prepare");                       // 項目が何も無い古い依頼済
+  assert.equal(S.stepOf(legacy({ desiredDeliveryDate: "" })), "prepare");
+  assert.equal(S.stepOf(legacy({ warehouseConfirmedAt: 1, warehouseConfirmedBy: "倉庫" })), "prepare"); // 倉庫の「確認済み」あり
+  assert.equal(S.stepOf(legacy({ labelPrintedAt: 1 })), "prepare");                  // 宛名印刷済み
+  assert.equal(S.stepOf(legacy({ warehouseIssue: { reason: "shortage" } })), "ng");  // 既存の「出荷できない」は今までどおり
+  assert.equal(S.stepOf(legacy({ shipFlow: 1 })), "prepare");                        // 印の値が違えば古い扱い
+  assert.equal(S.canComplete(legacy()), true);
+  assert.equal(S.canAccept(legacy()), false);
+  assert.equal(S.canFinalConfirm(legacy({ acceptStatus: "ok" })), false);
+  // 印があれば受付と最終確認を通らないと発送できない
+  assert.equal(S.canComplete(req()), false);
+  assert.equal(S.canComplete(req({ acceptStatus: "ok" })), false);
+  assert.equal(S.canComplete(req({ acceptStatus: "ok", finalConfirmedAt: 1 })), true);
+});
+
+t("「変更する」で直したら受付に戻すか（印のある依頼済で受付が済んだものだけ）", () => {
+  const ok = req({ acceptStatus: "ok", finalConfirmedAt: 1 });
+  assert.equal(S.stepResetNeeded(ok, { items: [R(3)] }), true);                        // 台数
+  assert.equal(S.stepResetNeeded(ok, { items: [R(2), { sku: "support-fee", qty: 2, nonStock: true }] }), false); // 品物の台数は同じ
+  assert.equal(S.stepResetNeeded(ok, { items: [R(2, "cir315a-02")] }), true);          // 種類
+  assert.equal(S.stepResetNeeded(ok, { address: "東京都千代田区2-2" }), true);          // 届け先
+  assert.equal(S.stepResetNeeded(ok, { desiredDeliveryDate: "2026-11-21" }), true);     // 納品希望日
+  assert.equal(S.stepResetNeeded(ok, { originLocationId: "L2" }), true);                // 送付元の倉庫
+  assert.equal(S.stepResetNeeded(ok, { address: "東京都千代田区1-1", desiredDeliveryDate: "2026-11-20" }), false); // 変わっていない
+  assert.equal(S.stepResetNeeded(req({ acceptStatus: "wait" }), { items: [R(5)] }), true);
+  assert.equal(S.stepResetNeeded(req(), { items: [R(5)] }), false);                     // まだ受付前（もともと受付）
+  assert.equal(S.stepResetNeeded(legacy({ acceptStatus: "ok" }), { items: [R(5)] }), false); // 印の無い既存の出荷は戻さない
+  assert.equal(S.stepResetNeeded(req({ status: "shipped", acceptStatus: "ok" }), { items: [R(5)] }), false);
 });
 
 t("最終確認の設定（既定＝行う・省くと発送可でそのまま発送準備）", () => {
@@ -251,4 +287,40 @@ t("Functions: 新しいファイル・認可・状態の確認・index.js の結
   assert.doesNotMatch(fs1, /invoiceTotals|netPaidOf|billableIncl|payments/);
 });
 
+{
+  // 依頼済にする道はすべて requestedStampPatch を通り、そこで印を付ける
+  assert.match(sup, /requestedAt: serverTimestamp\(\), requestSeq: increment\(1\), shipFlow: SHIP_FLOW \};/);
+  const paths = [...sup.matchAll(/status:\s*"requested"/g)].length;
+  assert.ok(paths >= 2);
+  for (const m of sup.matchAll(/status:\s*alreadyShipped \? "shipped" : "requested"[\s\S]{0,1200}/g)) assert.match(m[0], /requestedStampPatch\(\)/);
+  assert.match(sup, /status:"requested", partnerOrderId:o\._id,[\s\S]{0,900}requestedStampPatch\(\)/);
+  assert.match(sup, /requestedStampPatch\(\), warehouseIssue: deleteField\(\)/); // 下書きから依頼
+  // 変更で受付へ戻す
+  assert.match(sup, /const back = stepResetNeeded\(cur, patch\);/);
+  assert.match(sup, /\.\.\.\(back \? stepResetPatch\(\) : \{\}\)/);
+  // 段の無い返事は発送準備
+  assert.match(wh, /const stepOfW = \(s\) => s\.step \|\| "prepare";/);
+  // サーバーの必須項目の確認は印のある依頼だけ／発送完了の知らせは24時間以内
+  assert.match(fn, /!d\.shipNotifiedAt && ssRules\.isNewFlow\(d\)\)/);
+  assert.match(fs1, /if \(!ms \|\| Date\.now\(\) - ms > SHIP_DONE_WINDOW_MS\) return "old";/);
+  assert.match(fs1, /const SHIP_DONE_WINDOW_MS = 24 \* 3600 \* 1000;/);
+  assert.match(stubs, /if \(!shippedRecently\(s\)\) return \{ notified: false, skipped: "old" \};/);
+  assert.match(stubs, /!s\.shipNotifiedAt && isNewFlow\(s\)\)/);
+}
+{
+  // 画面の部品は "/js/…" で読み合うので、node では file: の URL に置き換えて読む
+  const src = read("admin/js/letterpack-label.js").replace('"/js/ship-flow.js"', JSON.stringify(root("admin/js/ship-flow.js").href));
+  const L = await import("data:text/javascript;base64," + Buffer.from(src).toString("base64"));
+  assert.equal(L.labelTypeOf({ packType: "yupack", letterPackType: "plus" }), "yupack");
+  assert.equal(L.labelTypeOf({ packType: "light" , letterPackType: "light" }), "light");
+  assert.equal(L.labelTypeOf({}), "plus");
+  const html = L.renderLabel({ soNumber: "SH-Y", items: [R(8)], packType: "yupack" }, {}, "yupack");
+  assert.doesNotMatch(html, /レターパック/);
+  assert.match(html, /ゆうパック（元払い）/);
+  assert.match(L.renderLabel({ soNumber: "SH-P", items: [R(1)] }, {}, "plus"), /レターパックプラス/);
+  assert.match(read("admin/js/warehouse-print.js"), /renderPage\(s, sender, labelTypeOf\(s\)/);
+  assert.match(read("admin/js/letterpack-print.js"), /let type = labelTypeOf\(s\);/);
+  assert.match(read("admin/js/supply-print.js"), /type==="letterpack" && d\.packType==="yupack"/);
+  n++; console.log("  ok レビュー #76 の直し（静的検査・宛名）");
+}
 console.log(`OK test-ship-steps: ${n} 件 合格`);

@@ -130,8 +130,9 @@ async function load(keepToast, retried) {
 }
 
 function renderAll() { renderLocSelect(); renderCounts(); renderRequested(); renderDone(); renderCanceled(); renderStock(); renderSheet(); }
-// W の段（サーバーが step を付けて返す。無い古い返事は受付とみなす）
-const stepOfW = (s) => s.step || "accept";
+// W の段（サーバーが step を付けて返す）。段の無い返事（Functions が古いまま）は「発送準備」とみなす＝今までどおり発送済にできる
+// （受付とみなすと、倉庫が何も発送できなくなる・PR #76 レビュー 中2）
+const stepOfW = (s) => s.step || "prepare";
 function stepCountsW() {
   const c = Object.fromEntries(REQ_STEPS.map((k) => [k, 0]));
   for (const s of data.requested) if (c[stepOfW(s)] != null) c[stepOfW(s)]++;

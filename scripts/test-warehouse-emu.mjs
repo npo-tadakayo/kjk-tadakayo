@@ -68,8 +68,9 @@ const base = (o) => ({
   items: [{ sku: "BT", name: "カードリーダーBT", qty: 2, unitPrice: 9800, amount: 19600 }, { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 50000, nonStock: true }],
   caseId: "case-secret", quoteId: "quote-secret", total: 69600, invoiceNo: "INV-SECRET", payMethod: "before",
   requestedBy: "依頼する人", requestedByEmail: STAFF, requestedAt: TS.now(), shipDate: TODAY, letterPackType: "plus",
-  // 発送の5段（2026-11-12）: 既存の節の出荷は「発送準備」の段（受付で発送可・依頼者の最終確認済み）から始める
-  desiredDeliveryDate: TODAY, acceptStatus: "ok", finalConfirmedAt: TS.now(),
+  // 発送の5段（2026-11-12）: 既存の節の出荷は、新しい流れの印（shipFlow:2）のある「発送準備」の段（受付で発送可・依頼者の最終確認済み）から始める。
+  // 印の無い既存の依頼済の扱いは §13（移行）で確かめる
+  shipFlow: 2, desiredDeliveryDate: TODAY, acceptStatus: "ok", finalConfirmedAt: TS.now(),
   ...o,
 });
 
@@ -509,7 +510,7 @@ check("設定を戻しても、省いて受付した出荷は発送準備のま�
 // 一覧: 段・入荷待ちの在庫・並び・キャンセルリスト・既存の依頼
 const L12 = r.r || {};
 const stepOfSo = (so) => ((L12.requested || []).find((w) => w.soNumber === so) || {}).step;
-check("段: 持ち出しは発送準備・古い依頼済は受付・入荷待ち・発送不可", stepOfSo("SH-A2") === "prepare" && stepOfSo("SH-LG2") === "accept" && stepOfSo("SH-A6") === "wait" && stepOfSo("SH-A4") === "ng", JSON.stringify((L12.requested || []).map((w) => [w.soNumber, w.step])));
+check("段: 持ち出しは発送準備・印の無い古い依頼済は発送準備・入荷待ち・発送不可", stepOfSo("SH-A2") === "prepare" && stepOfSo("SH-LG2") === "prepare" && stepOfSo("SH-A6") === "wait" && stepOfSo("SH-A4") === "ng", JSON.stringify((L12.requested || []).map((w) => [w.soNumber, w.step])));
 const w6 = (L12.requested || []).find((w) => w.soNumber === "SH-A6") || {}, w7 = (L12.requested || []).find((w) => w.soNumber === "SH-A7") || {};
 check("入荷待ちで在庫がそろったものは stockReady（足りないものは false）", w6.stockReady === true && w7.stockReady === false, JSON.stringify([w6.stockReady, w7.stockReady]));
 const order = (L12.requested || []).map((w) => w.desiredDeliveryDate || "9999");
@@ -531,6 +532,57 @@ check("欠けた依頼は下書きに戻る（依頼できない）", s.status =
 r = await call("notifyShipment", STAFF, { shipmentId: "v2", resend: true });
 check("項目の無い既存の依頼の再送は確かめない（投稿できる）", r.ok && r.r.posted === true && (await get(sh("v2"))).status === "requested", JSON.stringify(r));
 check("再送の知らせは（再送）と地域", /^📦 出荷の依頼（再送） — SH-V2 【大阪府 豊中市】 1台/.test((posted[0] || {}).text || "") && /納品希望日: 未入力/.test((posted[0] || {}).text || ""), (posted[0] || {}).text);
+
+// ---------- 13. 移行: 本番に出す前に依頼した出荷（印 shipFlow なし）は今までどおり発送できる（PR #76 レビュー 高1） ----------
+section("13. 移行（印の無い既存の依頼済・発送完了の知らせは24時間以内）");
+const legacyShip = (o) => ({ status: "requested", soNumber: o.so, officeName: "事業所", company: "法人", contactName: "担当",
+  postal: "100-0001", address: "東京都千代田区1-1", phone: "03-0000-0000", originLocationId: "L1", caseId: "case-legacy",
+  items: [{ sku: "BT", qty: 1 }], requestedBy: "依頼者", requestedByEmail: STAFF, requestedAt: TS.now(), shipDate: "2026-11-10",
+  shipNotifiedAt: TS.now(), letterPackType: "plus", ...o });
+await seed([
+  [sh("m-old"), legacyShip({ so: "M-OLD" })],
+  [sh("m-conf"), legacyShip({ so: "M-CONF", warehouseConfirmedAt: TS.now(), warehouseConfirmedBy: "倉庫1" })],
+  [sh("m-print"), legacyShip({ so: "M-PRINT", labelPrintedAt: TS.now() })],
+  [sh("m-desired"), legacyShip({ so: "M-DESIRED", desiredDeliveryDate: "2026-11-30" })], // 受注から作った既存の出荷（納品希望日あり・印なし）
+  [sh("m-pick"), legacyShip({ so: "M-PICK", deliveryMode: "pickup", pickupByEmail: MOCHI, pickupByName: "持出太郎", pickupDate: TODAY, letterPackType: null })],
+  [sh("m-issue"), legacyShip({ so: "M-ISSUE", warehouseIssue: { reason: "shortage", note: "", byName: "倉庫1" } })],
+  [sh("m-nn"), legacyShip({ so: "M-NN", shipNotifiedAt: null })],
+  [sh("m-shipped"), legacyShip({ so: "M-SHIPPED", status: "shipped", shippedAt: TS.fromMillis(Date.now() - 3 * DAY) })],
+  [sh("m-shipped0"), legacyShip({ so: "M-SHIPPED0", status: "shipped" })],
+  [sh("m-new"), fresh({ soNumber: "M-NEW" })],
+]);
+r = await call("warehouseList", WH1, { locationId: "L1" });
+const st13 = Object.fromEntries((r.r.requested || []).map((w) => [w.soNumber, w.step]));
+check("一覧: 印の無い依頼済は発送準備（確認済みあり・宛名印刷済み・納品希望日あり・どちらもなし）", ["M-OLD", "M-CONF", "M-PRINT", "M-DESIRED", "M-PICK", "M-NN"].every((so) => st13[so] === "prepare"), JSON.stringify(st13));
+check("一覧: 既存の「出荷できない」は発送不可・印のある新しい依頼は受付", st13["M-ISSUE"] === "ng" && st13["M-NEW"] === "accept", JSON.stringify([st13["M-ISSUE"], st13["M-NEW"]]));
+for (const id of ["m-old", "m-conf", "m-print", "m-desired"]) {
+  r = await call("warehouseShip", WH1, { shipmentId: id, shipDate: TODAY, packType: "plus" });
+  check(`${id}: 受付なしで warehouseShip できる`, r.ok && (await get(sh(id))).status === "shipped", JSON.stringify(r));
+}
+r = await call("warehouseHandover", WH1, { shipmentId: "m-pick", date: TODAY });
+check("印の無い持ち出しは受付なしで受け渡し済にできる", r.ok && (await get(sh("m-pick"))).status === "shipped", JSON.stringify(r));
+r = await call("warehouseAccept", WH1, { shipmentId: "m-nn", decision: "ok" });
+check("印の無い依頼済は受付の対象外（failed-precondition）", !r.ok && r.code === "failed-precondition", JSON.stringify(r));
+r = await call("warehouseShip", WH1, { shipmentId: "m-issue", shipDate: TODAY });
+check("既存の「出荷できない」の出荷は今までどおり発送済にできない（依頼者が直して依頼し直す）", !r.ok && r.code === "failed-precondition" && (await get(sh("m-issue"))).status === "requested", JSON.stringify(r));
+posted.length = 0;
+r = await call("notifyShipment", STAFF, { shipmentId: "m-nn" });
+check("印の無い既存の依頼（未投稿）は必須項目を確かめずに投稿（下書きに戻さない）", r.ok && r.r.posted === true && (await get(sh("m-nn"))).status === "requested", JSON.stringify(r));
+r = await call("warehouseShip", WH1, { shipmentId: "m-new", shipDate: TODAY });
+check("印のある依頼は受付前に発送できない", !r.ok && r.code === "failed-precondition" && /受付/.test(r.msg), JSON.stringify(r));
+r = await call("warehouseAccept", WH1, { shipmentId: "m-new", decision: "ok" });
+r = await call("warehouseShip", WH1, { shipmentId: "m-new", shipDate: TODAY });
+check("印のある依頼は最終確認の前に発送できない", !r.ok && r.code === "failed-precondition" && /最終確認/.test(r.msg), JSON.stringify(r));
+await sh("m-new").update({ finalConfirmedAt: TS.now(), finalConfirmedByEmail: LEGACY }); // 依頼者以外の職員の最終確認も通る
+r = await call("warehouseShip", WH1, { shipmentId: "m-new", shipDate: TODAY });
+check("印のある依頼は受付と最終確認のあと発送できる", r.ok && (await get(sh("m-new"))).status === "shipped", JSON.stringify(r));
+// 発送完了の知らせは発送済にしてから24時間以内だけ（昔の発送済に流さない・レビュー低1）
+posted.length = 0;
+r = await call("shipStepDone", STAFF, { shipmentId: "m-shipped" });
+check("3日前に発送済にした出荷には知らせない（old）", r.ok && r.r.notified === false && r.r.skipped === "old" && posted.length === 0 && !(await get(sh("m-shipped"))).shipDoneNotifiedAt, JSON.stringify(r));
+r = await call("shipStepDone", STAFF, { shipmentId: "m-shipped0" });
+check("発送済にした日時の無い古い出荷にも知らせない（old）", r.ok && r.r.skipped === "old" && posted.length === 0, JSON.stringify(r));
+check("倉庫が発送済にした直後は知らせが出ていた（m-old）", !!(await get(sh("m-old"))).shipDoneNotifiedAt);
 
 console.log(results.join("\n"));
 console.log(`\n合計: ${pass}/${pass + fail} 合格`);

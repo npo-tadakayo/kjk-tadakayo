@@ -877,15 +877,17 @@ stateDiagram-v2
 | 段 | 読む条件（`stepOf`） |
 |---|---|
 | draft | `status` draft |
-| accept | `requested` で下のどれでもない（**項目の無い既存の依頼済もここ**） |
+| accept | `requested`・印 `shipFlow:2` あり・下のどれでもない |
 | wait | `acceptStatus:"wait"` |
 | ng | `warehouseIssue` あり（既存の「出荷できない」と同じ項目。理由のキーも同じ・言い方だけ直した） |
 | confirm | `acceptStatus:"ok"` で `finalConfirmedAt`・`finalConfirmSkipped` が無く、設定 `appConfig/settings.shipFinalConfirm !== false` |
-| prepare | 上の残り（`ok` で確認済み・省いた）＋ **持ち出し・直送の requested** |
+| prepare | 上の残り（`ok` で確認済み・省いた）＋ **持ち出し・直送の requested** ＋ **印の無い既存の依頼済（発送不可の印なし）** |
 | done | shipped / invoiced / paid（`status` 無しの古い出荷も） |
 | canceled | canceled |
 
-**新しい項目（shipments）**: `desiredDeliveryDate`（納品希望日・依頼の必須）／`acceptStatus`・`acceptNote`・`acceptedAt`・`acceptedByEmail`・`acceptedByName`／`finalConfirmedAt`・`finalConfirmedBy`・`finalConfirmedByEmail`／`finalConfirmSkipped`（受付の時点で省いたか。あとで設定を戻しても段が戻らない）／`packType`（plus・light・yupack）／`shipDoneNotifiedAt`（発送完了の知らせは1回）／`requestRejectedAt`・`requestRejectedMissing`（サーバーが依頼を下書きへ戻した記録）。`shipDate` は依頼の間は**出荷予定日**（以前の「希望出荷日」。倉庫が受付の「発送可」で入れられる）。依頼の取り消し・依頼し直しで受付と確認の項目を消す（supply.js `stepResetPatch`）。
+**移行（PR #76 独立レビュー 高1）**: 新しい流れは印 `shipFlow: 2`（`SHIP_FLOW`）のある出荷だけ。印は依頼済にする書き込み（supply.js `requestedStampPatch`。依頼済にする3つの道はすべてここを通る）で付ける。印の無い依頼済は `prepare`（倉庫が今までどおり発送済にできる）、`warehouseIssue` があれば `ng`。「納品希望日が無い＝古い」とは見ない（受注から作った既存の出荷に納品希望日が入っている）。`notifyShipment` の必須項目の確認も印のある依頼だけ。倉庫の画面は段（`step`）の無い W を `prepare` とみなす（画面が先・Functions が古いときの備え）。発送完了の知らせ（`notifyShipDone`）は `shippedAt`（持ち出しは `handedOverAt`）から24時間以内だけ。印のある依頼済で受付後（ok・wait）に「変更する」で台数・送付元・届け先・納品希望日が変わったら `stepResetPatch` も書いて受付に戻す（`stepResetNeeded`）。種別がゆうパックの出荷は宛名にレターパックと出さない（`letterpack-label.js` の `labelTypeOf`）。最終確認は依頼者以外の職員も押せる（記録に残る）。
+
+**新しい項目（shipments）**: `shipFlow`（新しい流れの印・2）／`desiredDeliveryDate`（納品希望日・依頼の必須）／`acceptStatus`・`acceptNote`・`acceptedAt`・`acceptedByEmail`・`acceptedByName`／`finalConfirmedAt`・`finalConfirmedBy`・`finalConfirmedByEmail`／`finalConfirmSkipped`（受付の時点で省いたか。あとで設定を戻しても段が戻らない）／`packType`（plus・light・yupack）／`shipDoneNotifiedAt`（発送完了の知らせは1回）／`requestRejectedAt`・`requestRejectedMissing`（サーバーが依頼を下書きへ戻した記録）。`shipDate` は依頼の間は**出荷予定日**（以前の「希望出荷日」。倉庫が受付の「発送可」で入れられる）。依頼の取り消し・依頼し直しで受付と確認の項目を消す（supply.js `stepResetPatch`）。
 
 **書き込みの経路**（firestore.rules は変えていない）:
 - 倉庫の人: すべて Callable。`warehouseAccept`（新・`functions/ship-steps.js`）＝受付。`warehouseShip`・`warehouseHandover` は**発送準備の段だけ**（`canComplete`。受付前・確認待ち・入荷待ち・発送不可は `failed-precondition`）。`warehouseShip` は `packType` を受け、レターパックなら `letterPackType` も同じ値に

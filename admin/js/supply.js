@@ -38,7 +38,7 @@ import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, paymentRemova
 import { initBankImport } from "/js/bank-import.js";
 // 発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12 藤田さんの要望）。判定は ship-steps-rules.js が正本
 import { stepOf, stepCounts, STEP_LABEL, STEP_LISTS, STEP_BADGE, finalConfirmOn, requestMissing, requestMissingText,
-  canFinalConfirm, letterpackCount, LP_PER_PACK, sortByDesired, packTypeOf, PACK_TYPES } from "/js/ship-steps-rules.js";
+  canFinalConfirm, letterpackCount, LP_PER_PACK, sortByDesired, packTypeOf, PACK_TYPES, SHIP_FLOW, stepResetNeeded } from "/js/ship-steps-rules.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -908,9 +908,11 @@ function shippedStampPatch(){
 }
 // requestSeq … 依頼の番号（依頼のたびに1増やす）。notifyShipment は投稿の結果を書くとき、ロックを取ったときと同じ番号か確かめる
 // （送信中に依頼を取り消して依頼し直した場合に、古い送信が「投稿済み」を書き戻して再依頼の投稿が止まるのを防ぐ・Codex 指摘4）
+// shipFlow … 発送の5段（受付→確認→発送準備）で依頼した印（2026-11-12）。依頼済にする道（下書きから依頼・新規登録して依頼・受注から依頼）は
+// すべてここを通るので、ここで付ける。印の無い既存の依頼済は今までどおり倉庫がそのまま発送できる（ship-steps-rules の stepOf）
 function requestedStampPatch(){
   return { requestedBy: currentUser.displayName||currentUser.email, requestedByEmail: currentUser.email||"",
-    requestedAt: serverTimestamp(), requestSeq: increment(1) };
+    requestedAt: serverTimestamp(), requestSeq: increment(1), shipFlow: SHIP_FLOW };
 }
 function letterPackPatch(v){ return (v==="light"||v==="plus") ? { letterPackType:v } : {}; }
 // 出荷指示を投稿して、結果を一言で返す（画面のトーストに足す）。投稿の可否で処理を止めない
@@ -2181,6 +2183,7 @@ async function saveShipEdit(){
     // （別タブで先に直されていたら二重に在庫を動かしてしまうため）。
     const shipRef=doc(db,"shipments",s0._id);
     let moved=0;
+    var stepWentBack=false; // 受付に戻したか（トーストで知らせる）
     await runTransaction(db, async (tx)=>{
       const snap=await tx.get(shipRef);
       if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
@@ -2202,8 +2205,11 @@ async function saveShipEdit(){
         }
       }
       // 依頼済のまま宛先・台数などを直したら、倉庫の「確認済み」は外す（確認した内容と変わるため。needsResendPrompt と同じ判定）
-      tx.update(shipRef, needsResendPrompt(cur, { ...cur, ...patch })
-        ? { ...patch, warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField() } : patch);
+      // 発送の5段の印がある出荷で、受付が済んだあとに台数・送付元・届け先・納品希望日を直したら、受付に戻す（倉庫が在庫と照らし直す・2026-11-12 レビュー中1）
+      const back = stepResetNeeded(cur, patch);
+      stepWentBack = back;
+      tx.update(shipRef, needsResendPrompt(cur, { ...cur, ...patch }) || back
+        ? { ...patch, ...(back ? stepResetPatch() : {}), warehouseConfirmedAt: deleteField(), warehouseConfirmedBy: deleteField() } : patch);
       // 在庫の差分を反映（増やしたら引く／減らしたら戻す）。何が動いたか履歴にも残す
       if(items){
         for(const sku of Object.keys(delta)){
@@ -2219,7 +2225,7 @@ async function saveShipEdit(){
     if(items) await logManualSupportFee(s0.caseId, s0.items, items);
     toast(locked
       ? `出荷 ${s0.soNumber} の送付先を直しました`
-      : `出荷 ${s0.soNumber} を修正しました${moved?"（在庫も差分を調整）":""}`);
+      : `出荷 ${s0.soNumber} を修正しました${moved?"（在庫も差分を調整）":""}${stepWentBack?"。内容が変わったので倉庫の受付に戻しました":""}`);
   }catch(e){ alert(`修正の保存に失敗しました: ${e.message}`); btn.disabled=false; shipSaving=false; return; }
   btn.disabled=false; shipSaving=false;
   // 依頼済の出荷の数量・送付先を直したら、センターが古い内容で動かないよう出荷指示の再送を聞く

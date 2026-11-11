@@ -1,9 +1,15 @@
 // レターパックの宛名ラベル（縦14.5cm×横12.5cm の宛名枠＋梱包の確認）を描く部品（2026-11-01 倉庫の統合で共通化）。
 // 出荷の宛名印刷（letterpack-print.js）と倉庫の宛名印刷（warehouse-print.js）が同じものを使う。
 // 見た目は /css/letterpack-label.css。宛名枠の中の並びは郵便局の依頼で お届け先 → ご依頼主 → 品名（台数）。
-import { shipQtySummary } from "/js/ship-flow.js";
+import { shipQtySummary, letterPackOrDefault } from "/js/ship-flow.js";
 
-export const TYPE_LABEL = { light: "レターパックライト", plus: "レターパックプラス" };
+// yupack … 倉庫が発送のときに「ゆうパック（元払い）」を選んだ出荷（shipments.packType・2026-11-12 発送の5段）。
+// レターパックの種類（letterPackType）が残っていても、宛名にレターパックと出さない（PR #76 レビュー 低6）
+export const TYPE_LABEL = { light: "レターパックライト", plus: "レターパックプラス", yupack: "ゆうパック（元払い）" };
+// 宛名の種類: 種別がゆうパックなら yupack、ほかはレターパックの種類（未設定はプラス）
+export function labelTypeOf(s) {
+  return s && s.packType === "yupack" ? "yupack" : letterPackOrDefault(s && s.letterPackType);
+}
 
 function esc(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
@@ -43,7 +49,9 @@ export function renderLabel(s, sender, type){
         <div class="item-so">出荷番号 ${esc(s.soNumber || "")}</div>
       </div>
     </div>
-    <div class="cut"><span>✂ 上の枠（縦14.5cm×横12.5cm）を外枠に沿って切り取り、レターパックの宛名面の枠に貼ってください</span></div>
+    <div class="cut"><span>${type === "yupack"
+      ? "✂ ゆうパック（元払い）です。上の枠はお届け先の控えです。郵便局の伝票に書き写すか、伝票の横に貼ってください"
+      : "✂ 上の枠（縦14.5cm×横12.5cm）を外枠に沿って切り取り、レターパックの宛名面の枠に貼ってください"}</span></div>
     <div class="pack">
       <div class="pack-title">梱包の確認（貼らない）<span>出荷番号 ${esc(s.soNumber || "")}${s.shipDate ? ` ／ 出荷日 ${esc(s.shipDate)}` : ""}${s.originLocationName ? ` ／ 出荷元 ${esc(s.originLocationName)}` : ""}</span></div>
       <div class="pack-qty">
@@ -54,7 +62,7 @@ export function renderLabel(s, sender, type){
         <li><span class="box" aria-hidden="true"></span>箱に入れた台数を数えた（<b>${q.total}台</b>）</li>
         <li><span class="box" aria-hidden="true"></span>品番が合っている（${esc(q.lines.map((l)=>l.label).join("・") || "—")}）</li>
         <li><span class="box" aria-hidden="true"></span>宛名の事業所名と出荷番号が、この紙と合っている</li>
-        <li><span class="box" aria-hidden="true"></span>レターパックの種類が合っている（${esc(TYPE_LABEL[type] || "未選択")}）</li>
+        <li><span class="box" aria-hidden="true"></span>${type === "yupack" ? "種別が合っている" : "レターパックの種類が合っている"}（${esc(TYPE_LABEL[type] || "未選択")}）</li>
       </ul>
       <div class="sign"><div>確認した人：</div><div>日付：　　月　　日</div></div>
     </div>`;

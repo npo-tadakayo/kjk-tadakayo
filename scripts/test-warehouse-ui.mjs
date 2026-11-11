@@ -145,7 +145,8 @@ const clear = /warehouseConfirmedAt: deleteField\(\), warehouseConfirmedBy: dele
   const revert = sup.slice(sup.indexOf('status:"draft", requestRevertedAt'), sup.indexOf("依頼の取り消しに失敗しました"));
   ok(clear.test(revert), "依頼の取り消しで確認済みを消していない");
   const edit = sup.slice(sup.indexOf("async function saveShipEdit()"), sup.indexOf("// 案件（事業所の申し込み）→ 直接出荷フォームに取り込み"));
-  ok(/tx\.update\(shipRef, needsResendPrompt\(cur, \{ \.\.\.cur, \.\.\.patch \}\)\s*\? \{ \.\.\.patch, warehouseConfirmedAt: deleteField\(\), warehouseConfirmedBy: deleteField\(\) \} : patch\)/.test(edit), "宛先・台数の修正で確認済みを消していない");
+  // 2026-11-12: 受付に戻すとき（stepResetNeeded）も確認済みを消す
+ok(/tx\.update\(shipRef, needsResendPrompt\(cur, \{ \.\.\.cur, \.\.\.patch \}\) \|\| back\s*\? \{ \.\.\.patch, \.\.\.\(back \? stepResetPatch\(\) : \{\}\), warehouseConfirmedAt: deleteField\(\), warehouseConfirmedBy: deleteField\(\) \} : patch\)/.test(edit), "宛先・台数の修正で確認済みを消していない");
 }
 // --- 要修正: 備考の入力は描き直し・更新・失敗で消えない ---
 {

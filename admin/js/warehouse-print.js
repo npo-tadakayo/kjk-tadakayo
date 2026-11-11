@@ -5,8 +5,8 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore } from "/js/fs.js";
 import { gateRole, showAccessDenied } from "/js/role.js";
-import { letterPackOrDefault } from "/js/ship-flow.js";
-import { renderLabel, fitLabel } from "/js/letterpack-label.js";
+
+import { renderLabel, fitLabel, labelTypeOf } from "/js/letterpack-label.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -45,7 +45,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!sender) msgs.push("差出人が設定されていません（管理者に連絡してください）。お届け先だけ印刷します。");
   const bad = job.labels.filter((s) => !s.postalCode || !s.address || !s.phone).map((s) => s.soNumber || "");
   if (bad.length) msgs.push(`届け先の郵便番号・住所・電話のいずれかが空です: ${bad.join("、")}。内容を確かめてから印刷してください。`);
-  $("pages").innerHTML = job.labels.map((s) => renderPage(s, sender, letterPackOrDefault(s.letterPackType), job.locationName)).join("");
+  $("pages").innerHTML = job.labels.map((s) => renderPage(s, sender, labelTypeOf(s), job.locationName)).join("");
   // 宛名が長くて枠に収まらない出荷（品名・台数が切れる）。出荷の宛名印刷と同じく警告し、印刷前に確認する
   const overflow = [];
   document.querySelectorAll("#pages .label").forEach((el, i) => { if (!fitLabel(el)) overflow.push(job.labels[i].soNumber || `${i + 1}件目`); });

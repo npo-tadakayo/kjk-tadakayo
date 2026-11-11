@@ -21,6 +21,7 @@ module.exports = function makeShipSteps(deps) {
     chatMentionFor, regionOfShipment, loadWarehouseRules, warehouseLocations, CRM_BASE_URL, SA_BATCH,
   } = deps;
 
+  const SHIP_DONE_WINDOW_MS = 24 * 3600 * 1000;
   const supplyUrl = (so) => `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(so || "")}`;
   const STATUS_LABEL = { draft: "下書き", requested: "依頼済", shipped: "発送済", invoiced: "請求済", paid: "入金済", canceled: "キャンセル" };
   const staleMsg = (cur) => `この出荷はすでに「${STATUS_LABEL[cur.status] || cur.status || "発送済"}」です（別の人が先に操作した可能性があります）。画面を更新してください`;
@@ -140,6 +141,10 @@ module.exports = function makeShipSteps(deps) {
       const cur = snap.data();
       if (ss.stepOf(cur) !== "done") return "not-done";
       if (cur.shipDoneNotifiedAt) return "already";
+      // 発送済にしてから24時間以内の出荷だけ（昔の発送済の出荷に知らせを流せないように・PR #76 レビュー 低1）
+      const at = cur.shippedAt || cur.handedOverAt;
+      const ms = at && typeof at.toMillis === "function" ? at.toMillis() : 0;
+      if (!ms || Date.now() - ms > SHIP_DONE_WINDOW_MS) return "old";
       tx.update(ref, { shipDoneNotifiedAt: admin.firestore.FieldValue.serverTimestamp() });
       s = cur;
       return "ok";

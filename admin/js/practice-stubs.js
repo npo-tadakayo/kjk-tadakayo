@@ -13,7 +13,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, u
 import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote, ISSUE_REASONS, stockShortage } from "/js/warehouse-rules.js";
 // 発送の5段（2026-11-12）。本物は functions/ship-steps.js（判定は同じ ship-steps-rules）
 import { stepOf, finalConfirmOn, requestMissing, requestMissingText, validateAccept, acceptPatchOf, canAccept, canComplete,
-  completeBlockedText, sortByDesired, PACK_TYPES, packTypeOf, readerQty, ACCEPT_DECISIONS } from "/js/ship-steps-rules.js";
+  completeBlockedText, sortByDesired, PACK_TYPES, packTypeOf, readerQty, ACCEPT_DECISIONS, isNewFlow } from "/js/ship-steps-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 import { TRAINER_PRACTICE_STUBS } from "/js/practice-stubs-trainer.js"; // トレーナー認定の代役（2026-11-12・別ファイル）
 // 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
@@ -361,6 +361,8 @@ async function whLoadShipment(tx, shipmentId) {
 async function whSettings() {
   try { const ss = await getDoc(doc(db(), "appConfig", "settings")); return ss.exists() ? ss.data() : {}; } catch (_) { return {}; }
 }
+const shippedMsOf = (s) => whMs(s && (s.shippedAt || s.handedOverAt));
+const shippedRecently = (s) => { const ms = shippedMsOf(s); return !!ms && Date.now() - ms <= 24 * 3600e3; };
 // 発送完了の知らせの代役（本物の notifyShipDone と同じ: 1回だけ・案件の対応記録に1行・Chat は送らない）
 async function whNotifyDone(shipmentId) {
   const ref = doc(db(), "shipments", String(shipmentId || ""));
@@ -369,6 +371,7 @@ async function whNotifyDone(shipmentId) {
   const s = snap.data();
   if (stepOf(s) !== "done") return { notified: false, skipped: "not-done" };
   if (s.shipDoneNotifiedAt) return { notified: false, skipped: "already" };
+  if (!shippedRecently(s)) return { notified: false, skipped: "old" }; // 本物と同じ: 発送済にしてから24時間以内だけ
   await updateDoc(ref, { shipDoneNotifiedAt: serverTimestamp() });
   const pickup = deliveryModeOf(s) === "pickup" && s.fulfillment !== "direct";
   const packLabel = PACK_TYPES[packTypeOf(s)] || "";
@@ -602,7 +605,7 @@ export const PRACTICE_STUBS = {
     if (!["requested", "shipped", "invoiced", "paid"].includes(s.status)) throw fail("出荷を依頼していない出荷（下書き・キャンセル）は投稿できません");
     if (s.shipNotifiedAt && !resend) return { posted: false, reason: "already" };
     // 依頼の必須項目（本物と同じ: 依頼したばかりの出荷で欠けていれば下書きへ戻して止める・2026-11-12）
-    if (!resend && s.status === "requested" && !s.shipNotifiedAt) {
+    if (!resend && s.status === "requested" && !s.shipNotifiedAt && isNewFlow(s)) {
       const missing = requestMissing(s);
       if (missing.length) {
         await updateDoc(ref, { status: "draft", requestRejectedAt: serverTimestamp(), requestRejectedMissing: missing,

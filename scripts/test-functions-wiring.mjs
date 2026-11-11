@@ -471,7 +471,7 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   const nb = blockOf("notifyShipment");
   if (!/ShipSteps\.requestChatText\(/.test(nb)) throw new Error("notifyShipment: 短い文面（requestChatText）を使っていない");
   if (!/ssRules\.requestMissing\(d\)/.test(nb)) throw new Error("notifyShipment: 依頼の必須項目を確かめていない");
-  if (!/if \(!resend && d\.status === "requested" && !d\.shipNotifiedAt\)/.test(nb)) throw new Error("notifyShipment: 必須項目の確認が依頼したばかりの出荷に限られていない");
+  if (!/if \(!resend && d\.status === "requested" && !d\.shipNotifiedAt && ssRules\.isNewFlow\(d\)\)/.test(nb)) throw new Error("notifyShipment: 必須項目の確認が依頼したばかりの出荷に限られていない");
   if (!/ud\.role === "warehouse"/.test(nb)) throw new Error("notifyShipment: 倉庫の人を止めていない");
   if (!/chatMentionFor\(s\.pickupByEmail, s\.pickupByName\)/.test(nb)) throw new Error("notifyShipment: 持ち出す人へメンションしていない");
   console.log("OK test-functions-wiring 追加: 倉庫（roleAllows の表・5つの Callable・出荷指示の文面）");

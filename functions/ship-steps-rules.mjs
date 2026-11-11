@@ -11,13 +11,18 @@
 //   finalConfirmedAt … 依頼者の最終確認（OK）
 //   finalConfirmSkipped … 受付のときに最終確認を省いた（設定 shipFinalConfirm が「行わない」だった）
 //
+//   shipFlow     … 新しい流れ（受付→確認→発送準備）で依頼した出荷の印（SHIP_FLOW＝2）。依頼済にする書き込みのすべてで付ける。
+//                  印の無い依頼済（本番に出す前に依頼した出荷）は今までどおり倉庫がそのまま発送済にできる（＝発送準備）。
+//                  「納品希望日が無い＝古い」とは見ない（受注から作った既存の出荷にも納品希望日が入っているため・PR #76 レビュー 高1）
+//
 //   段（stepOf）:
 //     draft    下書き（依頼の前）
-//     accept   受付（倉庫が在庫と照らして「発送可／入荷待ち／発送不可」を選ぶ）… 新しい項目の無い既存の依頼済もここ
+//     accept   受付（倉庫が在庫と照らして「発送可／入荷待ち／発送不可」を選ぶ）… shipFlow の印のある依頼済だけ
 //     wait     入荷待ち（依頼は出したまま）
 //     ng       発送不可（依頼者が倉庫を選び直す・入力を直す）
 //     confirm  確認待ち（依頼者の最終確認）
-//     prepare  発送準備（宛名印刷・梱包・発送）。持ち出し・直送は受付と確認を省いてここ
+//     prepare  発送準備（宛名印刷・梱包・発送）。持ち出し・直送は受付と確認を省いてここ。
+//              印の無い既存の依頼済（発送不可の印も無いもの）もここ（今までどおり発送済にできる）
 //     done     完了（発送済・受け渡し済・請求済・入金済）
 //     canceled キャンセル
 
@@ -32,6 +37,9 @@ export const STEP_LISTS = ["accept", "confirm", "wait", "ng", "prepare", "done",
 export const STEP_BADGE = { draft: 2, accept: 5, wait: 1, ng: 1, confirm: 6, prepare: 3, done: 7, canceled: 4 };
 
 const str = (v) => (v == null ? "" : String(v));
+// 新しい流れの印の値（shipments.shipFlow）。依頼済にする書き込みで { shipFlow: SHIP_FLOW } を一緒に書く
+export const SHIP_FLOW = 2;
+export function isNewFlow(s) { return !!s && s.shipFlow === SHIP_FLOW; }
 const NON_SHIP_SKUS = ["support-fee", "discount"];
 
 // 最終確認を行う設定か（appConfig/settings.shipFinalConfirm。未設定は「行う」＝送3）
@@ -53,7 +61,8 @@ export function stepOf(s, opts = {}) {
   if (st !== "requested") return "draft";
   // 持ち出し（納品希望日に持ち出しをチェック → そのまま完了へ）と直送（AB Circle から直接）は、倉庫の受付・依頼者の確認を省く
   if (isPickupOf(s) || isDirect(s)) return "prepare";
-  if (s.warehouseIssue) return "ng";
+  if (s.warehouseIssue) return "ng"; // 既存の「出荷できない」もここ（依頼者が直して依頼し直す＝今までどおり）
+  if (!isNewFlow(s)) return "prepare"; // 印の無い既存の依頼済は、受付・確認を通さず今までどおり発送できる（データは書き換えない）
   if (s.acceptStatus === "wait") return "wait";
   if (s.acceptStatus === "ok") {
     const need = opts.finalConfirm !== false && !s.finalConfirmSkipped && !s.finalConfirmedAt;
@@ -141,6 +150,24 @@ export function acceptPatchOf(v, { finalConfirm = true } = {}) {
   }
   if (v.decision === "wait") return { acceptStatus: "wait", acceptNote: v.note || "" };
   return { warehouseIssue: { reason: v.reason, note: v.note || "" } };
+}
+
+// 「変更する」で直したら受付に戻すか（PR #76 レビュー 中1）。印のある依頼済で、受付が済んでいる（発送可・入荷待ち）出荷の
+// 台数（品番ごと）・送付元の倉庫・届け先・納品希望日が変わったとき。印の無い既存の出荷は戻さない（今までどおり）
+const RESET_FIELDS = ["postal", "company", "officeName", "address", "contactName", "phone", "desiredDeliveryDate", "originLocationId", "deliveryMode", "pickupByEmail"];
+function qtyKey(items) {
+  const m = {};
+  for (const i of Array.isArray(items) ? items : []) {
+    if (!i || i.nonStock || NON_SHIP_SKUS.includes(str(i.sku)) || !(Number(i.qty) > 0)) continue;
+    m[str(i.sku)] = (m[str(i.sku)] || 0) + Number(i.qty);
+  }
+  return JSON.stringify(Object.keys(m).sort().map((k) => [k, m[k]]));
+}
+export function stepResetNeeded(before, after) {
+  if (!before || !after || statusOf(before) !== "requested" || !isNewFlow(before)) return false;
+  if (!(before.acceptStatus === "ok" || before.acceptStatus === "wait")) return false;
+  if (RESET_FIELDS.some((f) => f in after && str(before[f]).trim() !== str(after[f]).trim())) return true;
+  return "items" in after && qtyKey(before.items) !== qtyKey(after.items);
 }
 
 // ---- 確認（STEP3）----

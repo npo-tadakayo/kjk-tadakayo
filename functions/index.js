@@ -3219,7 +3219,8 @@ exports.notifyShipment = onCall(
       // 依頼（STEP1）の必須項目をサーバーでも確かめる（2026-11-12 発送の5段・ship-steps-rules の requestMissing）。
       // 依頼したばかりの出荷（依頼済・まだ投稿していない・再送ではない）で欠けていれば、投稿せずに下書きへ戻す（＝依頼できない）。
       // 再送（resend）と、すでに投稿済みの出荷は確かめない（項目の無い既存の依頼をそのまま読めるように）
-      if (!resend && d.status === "requested" && !d.shipNotifiedAt) {
+      // 印（shipFlow）のある依頼だけ確かめる。印の無い既存の依頼済（本番に出す前の依頼）はそのまま投稿する（PR #76 レビュー 高1）
+      if (!resend && d.status === "requested" && !d.shipNotifiedAt && ssRules.isNewFlow(d)) {
         const missing = ssRules.requestMissing(d);
         if (missing.length) {
           tx.update(ref, {

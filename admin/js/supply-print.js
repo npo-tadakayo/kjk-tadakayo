@@ -925,7 +925,10 @@ onAuthStateChanged(auth, async (user)=>{
       const draw=()=>{
         const v=document.getElementById("lpVariant").value;
         const idx=parseInt(selS.value,10);
-        document.getElementById("body").innerHTML = renderLetterpack(toObj, senders[idx]||{}, v);
+        // 倉庫が「ゆうパック（元払い）」で発送した出荷は、レターパックの宛名を出さない（2026-11-12 レビュー低6）
+        document.getElementById("body").innerHTML = (type==="letterpack" && d.packType==="yupack")
+          ? `<div class="doc-head"></div><p style="font-size:14px;line-height:1.8">この出荷（${esc(d.soNumber||"")}）は<strong>ゆうパック（元払い）</strong>で発送する出荷です。レターパックの宛名は使いません。<br>郵便局の伝票に書き写すときは「宛名印刷（A4）」のお届け先の控えを使ってください。</p>`
+          : renderLetterpack(toObj, senders[idx]||{}, v);
       };
       document.getElementById("lpVariant").addEventListener("change",draw);
       selS.addEventListener("change",draw);
