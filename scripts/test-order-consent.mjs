@@ -54,7 +54,7 @@ t("条文 v1.1 は今まで（main）の現行の文面と同じ（凍結）", (
   const norm = (x) => x.replace(/\s+/g, "");
   assert.ok(norm(curBody).includes(norm(oldBody).slice(1, -1)), "凍結した v1.1 が main の現行の文面と違う");
 });
-t("条文 v1.2: 変えたのは題名・§6・同意文の3か所だけ", () => {
+t("条文 v1.2: 変えたのは題名・§6・同意文と、§7 の書面の扱いの1文だけ", () => {
   const a = CD.CONSENT_V1_1, b = CD.CONSENT_V1_2;
   assert.notEqual(a.title, b.title);
   assert.match(b.title, /発注書を兼ねます/);
@@ -63,7 +63,14 @@ t("条文 v1.2: 変えたのは題名・§6・同意文の3か所だけ", () => 
   assert.equal(a.sections.length, b.sections.length);
   a.sections.forEach((s, i) => {
     if (s.key === "purchase") { assert.notDeepEqual(s, b.sections[i]); assert.match(b.sections[i].title, /発注/); }
-    else assert.deepStrictEqual(s, b.sections[i]);
+    else if (s.key === "record") {
+      // §7: 紙の発注では署名済みの紙を当法人が受け取るため、書面の扱いの1文だけを替えた（ほかは v1.1 と同じ）
+      const OLD = "書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。";
+      const NEW = "書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。";
+      assert.ok(s.body.includes(OLD) && !b.sections[i].body.includes(OLD));
+      assert.equal(b.sections[i].body, s.body.replace(OLD, NEW));
+      assert.equal(b.sections[i].title, s.title);
+    } else assert.deepStrictEqual(s, b.sections[i]);
   });
   for (const k of ["preamble", "terms_url", "privacy_url", "issuer", "issuer_detail"]) assert.equal(a[k], b[k]);
   assert.ok(!new RegExp("特定非営利活動法人" + "タダカヨ").test(JSON.stringify(b)), "法人名は NPO法人タダカヨ");
@@ -271,6 +278,8 @@ t("承諾書の印刷: 見積番号・版・品目・台数・金額。まとめ
     assert.ok(html.includes(s), `印刷に無い: ${s}`);
   }
   assert.ok(!html.includes("<事業所>"));
+  assert.ok(html.includes("署名済みの書面またはその写しを当法人が受け取り"), "印刷に §7 の新しい文が出る");
+  assert.ok(!html.includes("原本は事業所へお渡しし"), "印刷に §7 の古い文が出ない");
   assert.ok(!/<script/i.test(html), "印刷の HTML にスクリプトを入れない");
   assert.ok(!html.includes("練習モード"));
   assert.ok(S.buildOrderConsentPrintHtml({ document: DOC, quotes: [], practice: true }).includes("練習モードで作った承諾書"));
