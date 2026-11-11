@@ -3,6 +3,16 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-12 育成の動画3本を新しい版に差し替える準備（ブランチ `chore/learn-videos-1112`・未マージ・**Storage 未アップロード**・本番未反映）
+
+- 相談先の文言（「まず担当のトレーナー、つながらなければ TM_介護情報基盤普及推進室」）を直した版: 約束 v1.2（4分11秒）／進め方 v1.1（2分31秒）／見守り方 v1.1（1分59秒）。
+- `scripts/sync-training-videos.py`: `learn-pledge` を v1.2 の mp4・srt に。`learn-course`・`learn-trainer` は `out.mp4` をやめ、版の付いた完成品（`伴走支援_育成コースの進め方_新人向け_v1.1.mp4`・`伴走支援_新人の見守り方_トレーナー向け_v1.1.mp4`）を指す（out.mp4 は作り直しで中身が変わるため。11/12 時点で shasum は一致）。2本は字幕が焼き込み（フレームで確認）なので vtt は None のまま。
+- ⚠ 約束フォルダの `out.mp4` は v1.2 と中身が違う（平均音量 -21.9dB。v1.2 は -19.7dB に調整済みの完成品）。約束は今まで通り版付きファイルを使う。
+- `admin/js/video-catalog.js`: L-B・L-0・L-T の version・duration・updated（2026-11-12）。説明文に相談先の言い方は無いので触っていない。
+- 検品: 3本とも 1920x1080・h264・aac 48kHz 2ch。音量は旧版と同じ（約束 -19.7dB／進め方・見守り方 -21.5dB）。約束のシーン06・進め方の最後・見守り方のシーン10 の静止画で文字切れなし・相談先の文言どおり。
+- dry-run（`--only pledge course trainer --dry-run`）で3本とも正本を読めることを確認。`bash scripts/test-all.sh --no-emu` 47/47 合格。
+- 残り（司令塔）: 今の Storage の3本を `training/_backup_20261112/` へ退避 → `sync-training-videos.py --only pledge course trainer` → admin の Hosting に video-catalog.js を出す。
+
 ## 2026-11-12 承諾書のサイン＝発注 第2段・Web の道（ブランチ `feat/order-by-consent-2`・PR #72・向き先は main・未マージ・本番未反映・**スイッチはオフ**。第1段 #69 は main に入り本番反映済み）
 
 - 仕様の正本は `ENGINEERING_NOTES.md` §C12.2。スイッチ `appConfig/settings.orderByConsent` がオンのときだけ変わる（オフのときは Functions の書き込み・応答と画面が今と同じ。エミュレータで main の functions と突き合わせ済み）
