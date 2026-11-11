@@ -24,6 +24,7 @@ import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/ass
 import { completionWarnings } from "/js/case-complete-check.js";
 import { isCompleting, completionConfirmText, completionActivityNote,
   isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
+import { statusChangePatch } from "/js/case-progress.js"; // 状態を変えた日時（進み具合の帯・2026-11-12）
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -235,7 +236,8 @@ async function changeStatus(id, newStatus) {
     manualNote = manualStatusNote(reason);
   }
   // 失注にするときは理由を聞く（キャンセルなら何も変えない）。失注から戻すときは理由を消す
-  const patch = { status: newStatus, updatedAt: serverTimestamp() };
+  // 進み具合の帯の「この段階に何日」（2026-11-12・case-progress.js）のため、変えた日時と変更先も書く
+  const patch = { status: newStatus, updatedAt: serverTimestamp(), ...statusChangePatch(newStatus, serverTimestamp()) };
   // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
   const fillOrderedAt = orderedAtFillNeeded(prev, newStatus, c);
   if (fillOrderedAt) patch.orderedAt = serverTimestamp();

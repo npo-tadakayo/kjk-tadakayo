@@ -87,6 +87,12 @@
         <select id="statusFilter" aria-label="ステータスで絞り込み">
           <option value="">すべてのステータス</option>
         </select>
+        <!-- 止まっている案件だけ（同じ状態に既定14日で黄色・30日で赤。設定 stageStale で変更。2026-11-12・js/case-progress.js） -->
+        <select id="staleFilter" aria-label="止まっている案件で絞り込み">
+          <option value="">止まり具合（すべて）</option>
+          <option value="warn">止まっている案件（黄色以上）</option>
+          <option value="alert">止まっている案件（赤のみ）</option>
+        </select>
         <select id="sourceFilter">
           <option value="">すべての流入</option>
           <option value="lp_inquiry">LP問い合わせ</option>
@@ -248,5 +254,6 @@
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/cases.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script><!-- 進み具合の帯の説明の吹き出し（data-tip）2026-11-12 -->
 </body>
 </html>
