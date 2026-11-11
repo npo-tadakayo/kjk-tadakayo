@@ -126,6 +126,7 @@ check("出荷の下書きが1件・番号が1つ進む", (await shipsOf("cA")).l
 check("戻り値に承諾書の項目が無い", r.ok && !("consentToken" in r.r) && !("displayNo" in r.r));
 const actA = await actsOf("cA");
 check("対応記録は従来の件名", actA.length === 1 && actA[0].subject.startsWith("電話で受けたお申し込みを受注確定にしました"), JSON.stringify(actA.map((a) => a.subject)));
+check("オフの Chat には受注確認の知らせを足さない（メールを送らない指定でも）", posted.length >= 1 && !posted.some((p) => /受注確認/.test(p.text || "")), JSON.stringify(posted).slice(0, 300));
 if (DUMP) {
   const ships = await shipsOf("cA");
   writeFileSync(DUMP, JSON.stringify(norm({
@@ -195,6 +196,10 @@ const actB = await actsOf("cB");
 check("記録した職員は見積もり・案件・対応記録の側に残る", qB.acceptedByStaff === STAFF && kB.orderConfirmedBy === STAFF);
 check("対応記録: 承諾書で受注確定の件名", actB.some((a) => /^署名済みの承諾書（FAX）を受け取り、受注確定にしました（EST-T-qB・出荷 SH-/.test(a.subject)), JSON.stringify(actB.map((a) => a.subject)));
 check("Chat: 承諾書の見出し（署名者名は載せない）", posted.some((p) => /署名済みの承諾書を受け取り、受注確定にしました/.test(p.text) && !p.text.includes("鈴木")), JSON.stringify(posted).slice(0, 300));
+// 紙の道で「確認メールを送る」を外した → 承諾書 第6条の受注確認のご連絡を手でするよう Chat に（2026-11-12 スイッチ前の点検）
+check("Chat: メールを送らない指定なら、手で受注確認の連絡をするよう知らせる（案件番号・見積番号だけ）",
+  posted.some((p) => /「確認メールを送る」を外して受注確定にしたため、受注確認のメールを送っていません（案件 #\d+（EST-T-qB））。署名済みの承諾書による発注は受注確定にしています。手で事業所へ受注確認の連絡をしてください（承諾書 第6条）。/.test(p.text) && !p.text.includes("鈴木")),
+  JSON.stringify(posted).slice(0, 600));
 r = await call("staffAcceptQuote", STAFF, { quoteId: "qB", payMethod: "after", sendMail: false, consent: { signedName: "鈴木", receivedDate: TODAY } });
 check("同じ見積もりの二重の受注確定は拒否", !r.ok && r.code === "failed-precondition", JSON.stringify(r));
 check("二重の受注確定を拒否しても承諾書は1件のまま", (await consentsOf("cB")).length === 1);

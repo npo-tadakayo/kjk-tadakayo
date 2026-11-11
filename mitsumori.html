@@ -1020,7 +1020,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
 <script src="js/split-city.js"></script>
-<script src="js/order-consent-page.js?v=20261112"></script>
+<script src="js/order-consent-page.js?v=20261113"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -2080,7 +2080,7 @@
           label: offices.length <= 1 ? `お見積書 ${estNo}` : `事業所 ${okList.length}件`,
           listHtml: offices.length <= 1 ? '' : okList.map((r) =>
             `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`).join('<br>'),
-          consentUrl: data.consentUrl, email: val('contactEmail'),
+          consentUrl: data.consentUrl, email: val('contactEmail'), mailed: data.mailed,
         });
       } else if (offices.length <= 1) {
         done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`

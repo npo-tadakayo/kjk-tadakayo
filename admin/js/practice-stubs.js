@@ -979,7 +979,9 @@ export const PRACTICE_STUBS = {
     const to = String(done[0].caseContactEmail || done[0].q.contactEmail || "").trim();
     if (sendMail && !to) mailError = "宛先のメールアドレスが案件にも見積もりにも登録されていないため、確認メールは送っていません";
     if (sendMail && to) {
-      for (const r of done) await activity(r.q.caseId, "gmail_sent", `メール送信: 【NPO法人タダカヨ】お申し込みを受け付けました（${r.q.estNo}）`, `${PRACTICE_NOTE}\n宛先: ${to}（受注確定の確認メール）`);
+      // 件名は本番（acceptMailText・Flow.acceptMailWording）と同じ: 承諾書で受けたら「ご発注を承りました」（2026-11-12 スイッチ前の点検）
+      const head = orderConsent ? "ご発注を承りました" : "お申し込みを受け付けました";
+      for (const r of done) await activity(r.q.caseId, "gmail_sent", `メール送信: 【NPO法人タダカヨ】${head}（${r.q.estNo}）`, `${PRACTICE_NOTE}\n宛先: ${to}（受注確定の確認メール）`);
       await logSent("staffAccept", { to, quoteIds: done.map((r) => r.quoteId), channel });
       mailed = true;
     }
