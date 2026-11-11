@@ -46,7 +46,13 @@
 - 気づいたこと（直していない）: 事業所向け（税込）の領収証で、送料の X 行は税抜の保存値をそのまま「税込」として出している（請求書の `invoiceTotals` は ×1.1）。申請額（A・B）には影響しないが、領収証の明細合計と請求額がずれる原因になりうる
 - 確認用の版: `https://kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app`（11/18 まで。承認済みドメインに `auth-domains.mjs add --yes` で追加済み・4件の残りを読み戻しで確認）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app --yes`
 
-## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（ブランチ `fix/auth-domains-guard`・未マージ）
+## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（PR #64・main にマージ済み `be57301`）
+
+- **前からログインしていた人（次田さん含む）は入れて、新しく入る人だけ入れなかった理由**: 承認済みドメインは**ログインする瞬間（Google のログイン画面を開くとき）にしか確かめられない**。ログイン済みの人は保存されたログイン状態のまま鍵（トークン）を自動更新するだけで、その更新では承認済みドメインを見ない。だから使い慣れた人ほど気づかず、困るのは初めての人・別のPC・ログアウトした人・シークレットウィンドウの人だけだった＝**人の目では見つからない壊れ方**
+- **追加の改善（ブランチ `feat/login-error-and-domain-watch`・未マージ・本番未反映）**:
+  - ① ログイン失敗の表示を日本語に（`admin/js/login-errors.js`・管理画面 `index.html` と認定事業者ポータル `partner.js`）。今回の `auth/unauthorized-domain` は「システム側の設定に問題があり…あなたの操作の問題ではありません…管理者（次田）にご連絡ください（エラーコード）」。テスト `scripts/test-login-errors.mjs`
+  - ② 毎朝 8:00 JST の自動点検 `dailyAuthDomainCheck`（`functions/auth-domain-watch.js`）。4件が欠けていれば Chat（PMスペース・空なら CRM）に知らせる。正常なら知らせない。読めなかったときも知らせる。テスト `scripts/test-auth-domain-watch.mjs`
+  - **本番反映の手順（次田さんの指示のあと）**: ⓐ `fn-batch-sa` に `roles/firebaseauth.viewer` を付与（中身は `firebaseauth.configs.get` 等の読み取りのみ）→ ⓑ Functions は `--only "functions:dailyAuthDomainCheck"` で名指し（Drive 上からは不可。ハマりポイントの rsync 手順）→ ⓒ 管理画面は `deploy-hosting.mjs --target admin --channel` で確認 → `--live`
 
 - **起きたこと**: 2026-11-09 17:13 JST、別の Claude セッションが curl で Identity Toolkit の config を `updateMask=authorizedDomains` で PATCH し、承認済みドメインの一覧を**空にした**（PATCH は追記でなく丸ごと置き換え）。その後プレビュー版を出すたびに Firebase CLI がその版のアドレスだけを足したため、本番 `kjk-tadakayo-admin.web.app` が抜けたままになり、**11/9〜11/11 は新しくログインする人全員が `auth/unauthorized-domain` で入れなかった**。11/11 宮地さんの報告で発覚し、正常時の4件を足し戻した。証拠は Cloud Audit Logs（identitytoolkit `UpdateConfig`）
 - **正常時の4件**: `kjk-tadakayo.firebaseapp.com`／`kjk-tadakayo.web.app`／`kjk-tadakayo-admin.web.app`／`kjk-tadakayo-admin.firebaseapp.com`

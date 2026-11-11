@@ -3521,6 +3521,39 @@ const practice = require("./practice");
 exports.resetPractice = practice.resetPractice;
 exports.nightlyPracticeReset = practice.nightlyPracticeReset;
 
+// ===== 毎朝の承認済みドメイン点検（2026-11-11・11/9〜11/11 のログイン不可の再発防止）=====
+// 承認済みドメインは「ログインする瞬間」にしか確かめられないので、前からログインしている人の目では壊れても気づけない。
+// 毎朝 8:00 JST に Identity Toolkit の config を読み、本番に必要な4件が欠けていれば Chat（PMスペース・空なら CRM）に知らせる。
+// 正常なら知らせない（ログだけ）。読めなかったときも知らせる（点検が黙って止まらないように）。直すのは人（auth-domains.mjs）。
+// ⚠️ デプロイ手順: fn-batch-sa に承認済みドメインの読み取り権限が要る（無いと毎朝「点検できませんでした」が届く）
+//    gcloud projects add-iam-policy-binding kjk-tadakayo --member=serviceAccount:fn-batch-sa@kjk-tadakayo.iam.gserviceaccount.com --role=roles/firebaseauth.viewer
+const AuthDomainWatch = require("./auth-domain-watch");
+exports.dailyAuthDomainCheck = onSchedule(
+  { schedule: "0 8 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH },
+  async () => {
+    const project = process.env.GCLOUD_PROJECT || "kjk-tadakayo";
+    let result;
+    try {
+      const client = await new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/cloud-platform"] }).getClient();
+      const res = await client.request({ url: `https://identitytoolkit.googleapis.com/admin/v2/projects/${project}/config` });
+      result = { list: AuthDomainWatch.domainsFromConfig(res.data) };
+    } catch (e) {
+      result = { error: e?.response?.status ? `HTTP ${e.response.status} ${e.message}` : (e?.message || String(e)) };
+    }
+    const text = AuthDomainWatch.alertText(result);
+    if (!text) {
+      console.log("dailyAuthDomainCheck: OK", result.list.length, "件");
+      return;
+    }
+    console.error("dailyAuthDomainCheck: NG", JSON.stringify(result).slice(0, 500));
+    const url = (await getWebhook("pm")) || (await getWebhook("crm"));
+    if (!url) { console.error("dailyAuthDomainCheck: 通知先の Webhook がありません"); return; }
+    // notifyChat は結果を見ないので、この点検だけは届いたかを確かめる（届かないまま黙って止まらないように）
+    const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    if (!res.ok) throw new Error(`dailyAuthDomainCheck: Chat に届きませんでした HTTP ${res.status}`);
+  }
+);
+
 // ===== 倉庫の画面（/warehouse）の Callable（2026-10-24 設計 docs/倉庫メニュー_設計_20261024.md §9）=====
 // 倉庫の人（role "warehouse"）は Firestore を直接読み書きできない（firestore.rules の isRegistered() から除外）。
 // 倉庫の画面のデータはすべてここを通す。サーバーで保管場所の権限（users.locationIds）を確かめ、
