@@ -265,6 +265,60 @@ function orderReconsentSubject(estNo, version) {
   return `承諾書を取り直しました（${estNo || "見積"} 第${Number(version) || "—"}版）`;
 }
 
+/**
+ * 受注確認のメールを出せなかったときの Chat の文（事業所名・個人名は書かない。案件番号と見積番号だけ）
+ * @param {"failed"|"no_address"} kind
+ * @param {{caseNumber:any, estNo:string}[]} list
+ */
+function orderConsentMailProblemText(kind, list) {
+  const ids = (list || []).map((x) => `案件 #${x.caseNumber ?? "—"}（${x.estNo || "見積"}）`).join("・");
+  const why = kind === "no_address" ? "宛先のメールアドレスが無いため、受注確認のメールを送っていません" : "受注確認のメールを送れませんでした";
+  return `⚠️ ${why}（${ids}）。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください。`;
+}
+
+// ===== 進み具合の帯（§C13・2026-11-12）=====
+/** 状態を変えるときに一緒に書く2項目。admin/js/case-progress.js の statusChangePatch と同じ（test-order-consent-web.mjs で照合） */
+function statusChangePatch(newStatus, ts) {
+  return { statusChangedAt: ts, statusChangedTo: Number(newStatus) };
+}
+
+// ===== 承諾書のサイン＝発注 第2段（Web の道・2026-11-12）=====
+/** Web（見積もりページで承諾書に同意）で受注確定にしたときの活動の件名 */
+function orderConsentWebSubject(estNo, soNumber, reused = false, reopenedFrom = null) {
+  const ship = reused ? `既存の出荷 ${soNumber} を更新` : `出荷 ${soNumber} の下書きを作成`;
+  const re = reopenLabel(reopenedFrom);
+  return `承諾書にオンラインで同意いただき、受注確定にしました（${estNo || "見積"}・${ship}${re ? `・${re}` : ""}）`;
+}
+
+/** 承諾書を開くページのアドレス（管理画面のサイトの /consent。今の署名ページと同じ形）。トークンが無ければ "" */
+function orderConsentPageUrl(base, token) {
+  const t = String(token || "");
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(t)) return "";
+  return `${String(base || "").replace(/\/+$/, "")}/consent?t=${t}`;
+}
+
+/**
+ * 事業所あての確認メールの文言（スイッチがオンで承諾書の記録があるとき＝consentUrl があるとき）。
+ * 承諾書 v1.2 §6「当法人が受注確認のご連絡をお送りした時点で契約が成立」に合わせて「ご発注を承りました」にする。
+ * consentUrl が無ければ従来の文言（お申し込み）をそのまま返す。
+ */
+function acceptMailWording(consentUrl) {
+  if (!consentUrl) {
+    return {
+      subjectHead: "お申し込みを受け付けました",
+      lead: "お申し込みをいただき、ありがとうございます。以下の内容で承りました。",
+      consentLine: "",
+      changeNote: "台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。",
+    };
+  }
+  return {
+    subjectHead: "ご発注を承りました",
+    lead: "承諾書（発注書を兼ねます）へのご同意によるご発注をいただき、ありがとうございます。以下の内容で受注いたしました。",
+    consentLine: `ご同意いただいた承諾書はこちらのアドレスでいつでもご覧いただけます: ${consentUrl}`,
+    changeNote: "台数や機種（Bluetooth／USB、USBの口の形）を変える場合は、変更後のお見積書について、あらためて承諾書をご確認いただきます。",
+  };
+}
+
 // ===== N2・N3 日次まとめ =====
 /**
  * 日次まとめの投稿計画（全体1通＋担当ごと1通）。投稿はしない。
@@ -365,5 +419,6 @@ module.exports = {
   shouldNotifyAssign, assignedAtChanged,
   shouldNotifyConsent,
   orderConsentAcceptSubject, orderConsentChatHead, orderReconsentSubject,
+  orderConsentWebSubject, orderConsentPageUrl, acceptMailWording, statusChangePatch, orderConsentMailProblemText,
   planDailyPosts, dailyPostTexts, dailyFailureAction,
 };

@@ -5,7 +5,7 @@
 //
 // スイッチ appConfig/settings.orderByConsent（既定オフ）が切れているあいだ、ここの関数はどれも「今までどおり」を返す。
 // 練習モードでは練習DBの appConfig/settings を読む（fs.js が練習DBへ切り替える。本番の設定は読まない・変えない）。
-import { orderByConsentOn, ORDER_RECEIVED_VIA, isValidYmd } from "./order-consent-rules.js";
+import { orderByConsentOn, ORDER_RECEIVED_VIA, isValidYmd, cleanSignedName } from "./order-consent-rules.js";
 
 export { orderByConsentOn, ORDER_RECEIVED_VIA };
 
@@ -61,7 +61,7 @@ export const RECEIVED_VIA_OPTIONS = Object.entries(ORDER_RECEIVED_VIA).map(([val
  */
 export function buildPaperConsentPayload(form, todayYmd) {
   const f = form || {};
-  const signedName = String(f.signedName || "").trim();
+  const signedName = cleanSignedName(f.signedName);
   if (!signedName) return { error: "承諾書に署名した方のお名前を入れてください" };
   if (signedName.length > 100) return { error: "署名者のお名前は100文字までにしてください" };
   if (!isValidYmd(f.receivedDate)) return { error: "承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）" };

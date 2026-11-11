@@ -714,7 +714,7 @@ stateDiagram-v2
 設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`／決定: `CRM改善2_計画_20261112.md` §2.1（発1〜発6・移行）。
 **スイッチ `appConfig/settings.orderByConsent`（真偽・既定オフ）**。オフのあいだは関数・画面とも従来どおり（`scripts/test-order-consent.mjs`・`test-order-consent-emu.mjs` の A で確認）。オンにするのは法人として条文 v1.2・利用規約の追記を決めたあと（発4）。入れた日は `orderByConsentFrom`（"YYYY-MM-DD"）に書く想定（コードは読まない・記録用）。
 
-**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**: 第1段ではスイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `method:"web_order"`・`acceptedVia:"consent_web"` として作る）。
+**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**（§C12.2・`method:"web_order"`・`acceptedVia:"consent_web"`）。
 
 ```mermaid
 sequenceDiagram
@@ -753,6 +753,38 @@ sequenceDiagram
 - **練習モード**: 代役（`practice-stubs.js` の `staffAcceptQuote`・`reviseQuote`）が同じ道を練習DBで通す。スイッチは**練習DBの** `appConfig/settings.orderByConsent`。見積もりカードの「練習で新しい流れを試す」で入れる（`isPracticeRef` で練習DBであることを確かめてから書く）。毎晩の練習DBの初期化で切れた状態に戻る
 - 本番に出すときに要るもの: **Functions**（`staffAcceptQuote`・`reviseQuote`・`acceptQuote`〔`acceptQuoteTransaction` を分割したため〕・`onConsentSigned`）と **hosting（admin）**。rules の変更なし。スイッチはオフのまま出す
 
+### §C12.2 第2段: Web の道（2026-11-12・ブランチ `feat/order-by-consent-2`・スイッチはオフのまま）
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 事業所（mitsumori.html）
+  participant W as webhookMitsumori
+  participant A as acceptQuote → acceptQuoteByConsent
+  participant T as Firestore（1つのトランザクション）
+  U->>W: この内容で発注へ進む（見積もりを登録し直す）
+  W-->>U: スイッチがオンのときだけ {orderByConsent:true, consentDocument:v1.2 全文, consentEntry（各見積もり・焼き込む形）}
+  U->>U: 発注の内容（consentEntry）と承諾書の全文・氏名・同意のチェック
+  U->>A: 従来の申込の入力＋consent:{agreed:true, version:"1.2"}
+  A->>A: 設定を読み直す（オフなら従来の道）。checkWebOrderConsentInput（同意・版・名前）
+  A->>T: acceptOrderByConsentTransaction（actor web・quoteToken で本人確認・同じ案件の版も読む・期限は時刻で比較）
+  T-->>A: 承諾書（kind order・signed {name, method:"web_order", signedAt サーバー時刻, userAgent}）＋受注確定（consent_web）
+  A-->>U: {status, consentUrl}（二重送信は already・同じ consentUrl）→ 確認メール「ご発注を承りました」＋承諾書のアドレス・Chat
+```
+
+- **スイッチの受け渡し**: 公開ページは未ログインで `appConfig` を読めないので、`webhookMitsumori` の応答で渡す（オンのときだけ `orderByConsent`・`consentDocument`・各見積もりの `consentEntry`＝`orderConsentQuoteEntry` の結果。オフのときは応答を1字も変えない）。設定は `readOrderByConsentFresh`（60秒キャッシュを使わない）
+- **条文の写しは公開ページに置かない**: 画面はサーバーの正本（`functions/consent-document.js`）を応答からそのまま出す（`js/order-consent-page.js` は表示の部品だけ）。版が違えば `acceptQuote` が `consent_version_mismatch` で拒否（見せた文面と記録する文面が違う事故を防ぐ）
+- **`acceptQuote`**: 冒頭の1行 `if (await readOrderByConsentFresh()) { await acceptQuoteByConsent(req, res, body); return; }` だけが従来の道との分かれ目。オンのとき: 1件（quoteId/quoteToken）もまとめ（quotes[]）も承諾書1件・1トランザクション（1件でも通らなければ何も入らない。オフのときの partial は無い）。拒否の応答は `{status:"error", code, message}`（400＝入力・403＝鍵違い・404＝見積もりなし・409＝期限切れ・古い版・申込済みなど）
+- **`acceptOrderByConsentTransaction` の Web 対応**: `actor {kind:"web"}`・`items[].quoteToken`・`acceptTxRead(..., withSiblings:true)`（Web でも同じ案件の版を読み、`checkOrderConsent` の old_version を効かせる）。全件がすでに承諾済みなら何も書かずに `already`（`consentToken` は見積もりの値）。`agreedPolicy:true`（v1.2 の同意文が利用規約・プライバシーポリシーへの同意を含むため）
+- **承諾書の文書にメールアドレスを入れない**（第1段のレビュー対応と同じ）: Web は `signed {name, method, signedAt, userAgent}` だけ。事業所の担当者のメールアドレスも入れない（`contactName` だけ）
+- **確認メール**: `acceptMailText`・`acceptMailTextGroup` に `consentUrl`。あるときだけ件名「ご発注を承りました」・書き出し・承諾書のアドレスの1行・「台数や機種を変える場合は、変更後のお見積書であらためて承諾書」（`Flow.acceptMailWording`）。無ければ main と一字一句同じ（`test-order-consent-web.mjs` が main の関数と比べる）。紙の道（`staffAcceptQuote` の sendMail）も承諾書があれば同じ1行。アドレスは `Flow.orderConsentPageUrl(CRM_BASE_URL, token)`＝`https://kjk-tadakayo-admin.web.app/consent?t=…`
+- **承諾書を開くページ**: `consent-sign.js` は `kind:"order"` を `admin/js/order-consent-view.js` で描く（読むだけ・署名のボタンなし・印刷ボタンは addEventListener）。Web は「オンラインで同意・同意した日時（JST）」、紙は「書面でご署名（受け取り方）・受け取った日・記録した日時」、焼き込んだ見積もりの表（スマホは縦並び）。v1.1 の署名ページの道は変えていない
+- **練習モード**: 公開ページは本番の Functions にだけつながるので、**Web の道は練習モードでは試せない**。練習の紙の承諾書を `consent?p=1` で開くと新しい表示になる
+- テスト: `scripts/test-order-consent-web.mjs`（普通）・`scripts/test-order-consent-web-emu.mjs`（エミュレータ・`test-all.sh` の2段目。`ORDER_EMU_FUNCTIONS_DIR`＋`ORDER_EMU_DUMP` で main の functions と書き込み・応答を突き合わせる）
+- **レビュー後の直し（2026-11-12）**: オフの道で `body.consent` があれば 409 `order_by_consent_off`（画面を開いたあとで設定が切れた申込を、承諾書なしの申込にしない。main 時代のページは consent を送らないので動きは変わらない）／公開ページの受付後の表示は応答の `consentUrl` の有無で決める／`applyOrderMode` は処理中のボタンを `ORDER_PENDING` に控え、finally で替える／署名者名は `cleanSignedName`（`[\u0000-\u001f\u007f]` を空白・前後の空白を取る。Web・紙・写し・画面）／オンのとき受注確認のメールを出せない（送信失敗・宛先なし）と `Flow.orderConsentMailProblemText` を CRM の Chat へ（案件番号と見積番号だけ）
+- **進み具合の帯の2項目（§C13）を Functions でも書く**: `Flow.statusChangePatch`（`case-progress.js` と同じ）。`createOrUpdateMitsumoriQuote`（`webhookMitsumori`）と `staffCreateQuote` の 1→2、`acceptTxWrite` の →3（Web・紙・承諾書の道の共通の書き込み。`Number(kase.status) !== stPlan.status` のときだけ）。練習の代役 `practice-stubs.js` も同じ
+- 本番に出すときに要るもの（第2段の分）: **Functions** `acceptQuote`・`webhookMitsumori`・`staffAcceptQuote`・`staffCreateQuote`（2項目のため）／**hosting lp**（`mitsumori.html`・`js/order-consent-page.js`。`js/` は1年キャッシュなので `?v=` を上げて差し替える）／**hosting admin**（`consent.html`・`js/consent-sign.js`・`js/order-consent-view.js`・`js/order-consent.js`・`js/order-consent-rules.js`・`js/practice-stubs.js`・`manual.html`）。rules 不変
+
 
 ## §C13 進み具合の帯（2026-11-12・CRM改善2 計画 §3.5 進1・進2）
 
@@ -761,7 +793,7 @@ sequenceDiagram
 - **出荷の区切り**: 一覧＝案件の状態だけ（伴走支援待ち 7 以降なら済・それより前はまだ。出荷は読まない）。案件詳細＝購読中の `shipmentsCache` から `shipStageOf`（キャンセル除外。すべて shipped/invoiced/paid → 済／requested あり → 依頼済み／それ以外 → 下書き）。準備（5・6）で依頼済みなら「いま」を出荷にする（受注確定 3 のままなら発注をいまのまま残し、出荷に「依頼済み」と添える）。準備中に発送済みなら出荷だけ済。伴走支援以降で発送済みでなければ出荷を「まだ」＋破線の注意
 - **日数（`stageSince`）**: ① `cases.statusChangedAt`（`cases.statusChangedTo` が今の状態と同じときだけ）② 案件詳細のみ: 対応記録の最後の「ステータス変更」（件名の「→」の後ろが今の状態の名前のときだけ）③ 案件詳細のみ: 状態1で「ステータス変更」が1行も無ければ `receivedAt`。それ以外は null（「—」・色なし）。`updatedAt` は使わない。日数は日本時間の暦日の差
 - **書く場所（画面だけ）**: `case-detail.js` の `changeStatus`・コピーで作る案件、`kanban.js` の `changeStatus`、`cases.js` の手動作成。`{statusChangedAt: serverTimestamp(), statusChangedTo: 新しい状態}`（`statusChangePatch`）。rules は不変（その他すべての match で editor が書ける）
-- **Functions は未対応**（今回は画面だけ）: 状態を変える Functions（`index.js` の見積もり作成 1→2 ×2か所、`acceptQuoteTransaction` の受注 1・2・4・13→3、作成時の 1・2）は `statusChangedAt` を書かない。そのため `statusChangedTo` が食い違い、一覧では「—」になる。直すときは同じ2項目を `caseUpdate` に足すだけ（練習モードの代役 `practice-stubs.js` も同じく）
+- **Functions は 2026-11-12 PR #72 で対応**（§C12.2。デプロイ後に有効）。それまでの説明: 状態を変える Functions（`index.js` の見積もり作成 1→2 ×2か所、`acceptQuoteTransaction` の受注 1・2・4・13→3、作成時の 1・2）は `statusChangedAt` を書かない。そのため `statusChangedTo` が食い違い、一覧では「—」になる。直すときは同じ2項目を `caseUpdate` に足すだけ（練習モードの代役 `practice-stubs.js` も同じく）
 - **止まり具合**: `appConfig/settings.stageStale = {warnDays, alertDays}`（正の整数・warn < alert。無ければ 14／30）。対象外は状態 10・11・12・4・13。一覧の絞り込み `#staleFilter`（黄色以上／赤）。対象外（アーカイブ）の案件は絞り込みで出さない
 - **画面**: 案件詳細 `#caseProgress`（次の一手の上。`renderNextStep` と対応記録の購読で描き直す）。一覧はステータスの欄に点8つ（`aria-hidden`。読み上げは行の `aria-label` に同じ文）。吹き出しは `tooltip.js`（一覧の画面でも読み込む）。CSS は `crm.css` の `.cp-*`（文字のコントラストは 5.3:1 以上、点・枠は 3.3:1 以上を計算で確認）
 

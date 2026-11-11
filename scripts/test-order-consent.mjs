@@ -321,9 +321,14 @@ t("staffAcceptQuote: スイッチを毎回読み直し、オンのときだけ�
   assert.match(b, /\} else \{\n\s+for \(const pq of pre\) \{[\s\S]*acceptQuoteTransaction\(\{/);
   assert.match(idx, /async function readOrderByConsentFresh\(\) \{\n[\s\S]{0,200}collection\("appConfig"\)\.doc\("settings"\)\.get\(\)/); // 60秒キャッシュを使わない
 });
-t("acceptQuote（Web）は第1段では変えない（承諾書の記録を作らない）", () => {
+t("acceptQuote（Web）: 承諾書の処理はスイッチがオンのときの入口1行だけ（第2段で追加。中身は acceptQuoteByConsent・test-order-consent-web.mjs）", () => {
   const b = fnBody("acceptQuote").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"); // 注記の行は見ない
-  assert.ok(!/acceptOrderByConsentTransaction|orderByConsent|consent/i.test(b.replace(/agreedPolicy/g, "")), "Web の道に承諾書の処理が入っている");
+  const gate = "if (await readOrderByConsentFresh()) { await acceptQuoteByConsent(req, res, body); return; }";
+  assert.equal(b.split(gate).length, 2, "入口の1行が無い");
+  // 入口の次の「オフなのに consent が付いていたら 409」（第2段・レビュー 中-1）も除いて見る
+  const offBlock = /if \(body\.consent != null\) \{\n\s+res\.status\(409\)\.json\(\{ status: "error", code: "order_by_consent_off"[^\n]*\n\s+return;\n\s+\}\n/;
+  assert.match(b, offBlock);
+  assert.ok(!/acceptOrderByConsentTransaction|orderByConsent|consent/i.test(b.replace(gate, "").replace(offBlock, "").replace(/agreedPolicy/g, "")), "従来の Web の道に承諾書の処理が入っている");
 });
 t("承諾書の記録と受注確定は同じトランザクション（tx.create）", () => {
   const i = idx.indexOf("async function acceptOrderByConsentTransaction"), j = idx.indexOf("\n}\n", i);
