@@ -217,6 +217,9 @@
     .modal-btn-ok:hover { background: var(--primary-dark); }
     .modal-btn-cancel { background: #f5f5f5; color: var(--text); }
     .modal-btn-cancel:hover { background: var(--border); }
+    /* 申込の画面: エラーの文はボタンの帯の中に置き、ボタンの上に1行まるごと使って出す（帯ごと下に貼り付くので隠れない） */
+    #orderModal .order-actions { flex-wrap: wrap; }
+    #orderModal .order-actions #orderError { flex: 0 0 100%; }
     .modal-close-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
     .modal-close-btn {
       background: none; border: none; cursor: pointer;
@@ -298,6 +301,7 @@
     /* 承諾書のサイン＝発注 第2段（2026-11-12）: スイッチがオンのときだけ #orderModal に .consent-mode が付く。
        オフのときはここの指定はどれも効かない（申込の画面は今のまま） */
     #orderModal.consent-mode .modal-box { width: 680px !important; }
+    #orderModal.consent-mode .modal-btn { min-height: 44px; }
     #orderModal.consent-mode .modal-desc { font-size: 13px; color: var(--text); }
     .oc-head { font-size: 13px; font-weight: 700; margin: 2px 0 8px; color: var(--text); }
     .oc-quote { background: #faf7f2; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
@@ -323,6 +327,8 @@
       #orderModal.consent-mode { padding: 8px; }
       #orderModal.consent-mode .modal-box { max-width: 100%; padding: 20px 14px 18px; }
       #orderModal.consent-mode .modal-actions { bottom: -18px; margin-bottom: -18px; padding-bottom: 18px; }
+      /* 390 幅で「承諾書に同意して発注す／る」と1文字だけ折り返していた → 「やめる」を文字の幅に詰めて、発注のボタンに幅を回す（2026-11-12 画面確認 低-3） */
+      #orderModal.consent-mode .modal-btn-cancel { flex: 0 0 auto; padding-left: 16px; padding-right: 16px; }
       #orderModal.consent-mode input, #orderModal.consent-mode select, #orderModal.consent-mode textarea { font-size: 16px; }
       .oc-row { flex-direction: column; gap: 0; }
       .oc-k { width: auto; }
@@ -1007,8 +1013,10 @@
       </label>
     </div>
 
-    <p id="orderError" style="display:none;color:var(--primary);font-size:12px;margin:4px 0 0;line-height:1.6"></p>
-    <div class="modal-actions">
+    <!-- エラーの文は、下に貼り付くボタンの帯の中（ボタンのすぐ上）に出す。帯の外に置くと、いちばん下まで送ってから
+         押したときに帯の裏に隠れて「押しても何も起きない」ように見えていた（2026-11-12 画面確認 中-1） -->
+    <div class="modal-actions order-actions">
+      <p id="orderError" role="alert" aria-live="assertive" style="display:none;color:var(--primary);font-size:12px;margin:0;line-height:1.6"></p>
       <button type="button" class="modal-btn modal-btn-cancel" id="orderCancel">やめる</button>
       <button type="button" class="modal-btn modal-btn-ok" id="orderSubmit">この内容で申し込む</button>
     </div>
@@ -1020,7 +1028,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
 <script src="js/split-city.js"></script>
-<script src="js/order-consent-page.js?v=20261113"></script>
+<script src="js/order-consent-page.js?v=20261114"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -1964,7 +1972,7 @@
         + `<div><b>合計（税込）</b>　${yen(c.totalIncl)}　助成金充当 ${yen(c.grantAmt)}　<b>自己負担 ${yen(c.selfPay)}</b></div>`
         + `<div><b>ご連絡先メール</b>　${esc(val('contactEmail'))}</div>`
         + `</div>`
-        + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
+        + `内容を変えたい場合は「やめる」を押し、お見積もりの入力欄で台数を選び直してください。`;
     } else {
       let total = 0, grant = 0, self = 0;
       const rows = offices.map((o) => {
@@ -1979,7 +1987,7 @@
         + rows
         + `<div style="margin-top:6px;font-weight:700;">法人合計（${offices.length}事業所）　${yen(total)}（助成金充当 ${yen(grant)}／自己負担 ${yen(self)}）</div>`
         + `</div>`
-        + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
+        + `内容を変えたい場合は「やめる」を押し、お見積もりの入力欄で台数を選び直してください。`;
     }
     document.getElementById('orderSummary').innerHTML = summaryHtml;
     }
@@ -2080,7 +2088,7 @@
           label: offices.length <= 1 ? `お見積書 ${estNo}` : `事業所 ${okList.length}件`,
           listHtml: offices.length <= 1 ? '' : okList.map((r) =>
             `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`).join('<br>'),
-          consentUrl: data.consentUrl, email: val('contactEmail'), mailed: data.mailed,
+          consentUrl: data.consentUrl, email: val('contactEmail'), mailed: data.mailed, already: data.status === 'already',
         });
       } else if (offices.length <= 1) {
         done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`

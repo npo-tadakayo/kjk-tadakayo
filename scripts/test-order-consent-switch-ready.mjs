@@ -156,6 +156,30 @@ t("見積もりページ: 受注確認のメールを送れなかった（mailed
   assert.ok(!ng.includes("お送りしました") && ng.includes("担当スタッフから、あらためて受注確認のご連絡"));
   assert.ok(ng.includes(`href="${url}"`));
 });
+t("見積もりページ（2026-11-12 画面確認）: 二重送信（already）は「すでに受け付けています」・メールを送ったと書かない", () => {
+  const url = "https://kjk-tadakayo-admin.web.app/consent?t=0123456789abcdef0123456789abcdef";
+  const a = P.doneHtml({ consentUrl: url, email: "a@b.test", already: true });
+  assert.ok(a.includes("すでに受け付けています") && !a.includes("受け付けました"));
+  assert.ok(!a.includes("お送り") && !a.includes("a@b.test"), "メールを送ったとは書かない");
+  assert.ok(a.includes(`href="${url}"`), "承諾書のアドレスは出す");
+  const h = read("mitsumori.html");
+  assert.match(h, /mailed: data\.mailed, already: data\.status === 'already',/);
+});
+t("見積もりページ（2026-11-12 画面確認）: 文言（上の承諾書・左のフォームを使わない）", () => {
+  assert.ok(P.TEXT.nameNote.includes("上の承諾書") && !P.TEXT.nameNote.includes("下の承諾書"));
+  const q = P.quotesHtml([{ estNo: "E-1", version: 1, amounts: { totalIncl: 1 }, items: [] }]);
+  assert.ok(q && !q.includes("左の") && q.includes("お見積もりの入力欄で選び直して"));
+  const h = read("mitsumori.html");
+  assert.ok(!h.includes("左のフォームで"), "申込の画面に「左のフォームで」が残っていない");
+});
+t("見積もりページ（2026-11-12 画面確認）: エラーの文はボタンの帯の中・読み上げに伝わる", () => {
+  const h = read("mitsumori.html");
+  const m = h.match(/<div class="modal-actions order-actions">\s*<p id="orderError" role="alert"[^>]*><\/p>\s*<button[^>]*id="orderCancel"/);
+  assert.ok(m, "#orderError が .modal-actions（下に貼り付く帯）の中で、ボタンの前にある");
+  assert.equal((h.match(/id="orderError"/g) || []).length, 1);
+  assert.match(h, /#orderModal \.order-actions \{ flex-wrap: wrap; \}/);
+  assert.match(h, /#orderModal\.consent-mode \.modal-btn \{ min-height: 44px; \}/);
+});
 t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、ページがそれを渡す。オフの道の応答は変えない", () => {
   const src = read("functions/index.js");
   const b = src.slice(src.indexOf("async function acceptQuoteByConsent("), src.indexOf("exports.acceptQuote = onRequest("));
@@ -165,7 +189,7 @@ t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、�
   assert.ok(off.length > 1000 && !/mailed/.test(off), "オフの道（従来の申込）の応答に mailed を足していない");
   const h = read("mitsumori.html");
   assert.match(h, /consentUrl: data\.consentUrl, email: val\('contactEmail'\), mailed: data\.mailed,/);
-  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261113"><\/script>/);
+  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261114"><\/script>/);
 });
 
 console.log(`OK test-order-consent-switch-ready: ${n} 件合格`);
