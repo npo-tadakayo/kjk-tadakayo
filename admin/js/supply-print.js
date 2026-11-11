@@ -13,7 +13,7 @@ import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, pri
 import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 // 助成金の A・B・X の振り分け（正本・2026-11-12）。領収証の初期明細・区分ごとの丸め・手順PDFの A・B はここを通す
-import { receiptRowsFromShipment, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
+import { receiptRowsFromShipment, receiptShippingWarning, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
 // 送ったメールを案件の対応記録に残す（設計書 §3 点検3・2026-11-10）
 import { billingMailActivityOf, mailRecordFailedText, receiptSaveInfoOf } from "/js/record-gaps.js";
@@ -132,7 +132,8 @@ const RCPT_KINDS=[["A","カードリーダー"],["B","接続サポート等経�
 const RCPT_SHIP_WORDS=["送料","配送","レターパック","ゆうパック"];
 // 助成金の取りこぼし・過大申請の注意を作る（画面のみ・保存も印刷も止めない）。
 // rows = [{kind,name,qty,price}] の素の配列。DOMに触らないので単体で検証できる
-function receiptWarnings(rows){
+// ship: 領収証の出荷（送料の税基準の確認に使う・2026-11-12）。省くと送料の確認はしない
+function receiptWarnings(rows, ship){
   const list=[];
   const rs=Array.isArray(rows)?rows:[];
   // ① B区分（接続サポート等経費）の入れ忘れ＝事業所の申請額がそのぶん丸ごと減る
@@ -150,6 +151,9 @@ function receiptWarnings(rows){
       body:`用途区分が「対象外」になっているか確認してください（該当: ${bad.map(r=>String(r.name||"")).join("・")}）。`,
     });
   }
+  // ③ 送料が税抜の額のまま税込の列に入っている（是正前に記録した領収証を開いたとき）
+  const shipWarn = ship ? receiptShippingWarning(rs, ship) : null;
+  if(shipWarn) list.push({ head: shipWarn.head, body: shipWarn.body });
   return list;
 }
 function rcptRow(r){
@@ -167,6 +171,8 @@ function rcptRow(r){
 // 領収証の明細の単価が税込か（事業所向け＝税込／認定事業者向けの卸＝税抜）。
 // renderReceipt が入れ、wireReceiptEditor が集計に使う（2026-09-13）
 let rcptTaxIncluded = false;
+// 領収証の出荷（注意書きで送料の税基準を確かめるため。renderReceipt が入れる・2026-11-12）
+let rcptShipment = null;
 // 書面の「担当」に出す担当営業。案件から引いて入れる（無ければ空のまま）
 let docContactName = "";
 let docNeedsContact = false;
@@ -193,12 +199,13 @@ function renderReceipt(s, st, saved, contactName){
   st = st || {};
   const taxIncl = priceIsTaxIncluded(s);
   rcptTaxIncluded = taxIncl;
+  rcptShipment = s;
   // 明細: 発行を記録済みならその内容を復元（同じ領収証を再発行できる）。無ければ出荷から組み立てる
   let rowsInit;
   if(saved && Array.isArray(saved.items) && saved.items.length){
     rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", note:r.note||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
   }else{
-    // 初期明細＝出荷の商品＋送料（X:対象外）。あとから編集・行追加できる。
+    // 初期明細＝出荷の商品＋送料（X:対象外。事業所向けは税込に直した額・2026-11-12）。あとから編集・行追加できる。
     // 🔴 区分は品番から自動で振る（2026-09-13）。振り分けの正本は subsidy-amounts.js（2026-11-12 共通化）
     rowsInit = receiptRowsFromShipment(s);
   }
@@ -415,7 +422,7 @@ function wireReceiptEditor(){
   // 注意書きの描画。気づける形にするだけで、保存も印刷も止めない
   function renderGuard(rows){
     const box=document.getElementById("rcptGuard"); if(!box) return;
-    const list=receiptWarnings(rows);
+    const list=receiptWarnings(rows, rcptShipment);
     box.innerHTML = list.map(w=>
       `<div style="color:#c87a1f"><i class="ti ti-alert-triangle"></i> <strong>${esc(w.head)}</strong>${esc(w.body)}</div>`
     ).join("");

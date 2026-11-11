@@ -28,7 +28,7 @@ const num = (v) => Number(v) || 0;
 
 // ===== 明細1行の用途区分 =====
 // 伴走支援費（support-fee）と値引き（discount＝伴走支援費から引いている性格）は B、それ以外は A。
-// 送料は明細の行ではなく shippingFee に入っているので、ここには来ない（X は receiptRowsFromShipment が足す）
+// 送料は明細の行ではなく shippingFee に入っているので、ここには来ない（X は receiptRowsFromShipment が税基準を合わせて足す）
 export function usageOfItem(i) {
   return B_SKUS.includes(String((i && i.sku) || "")) ? "B" : "A";
 }
@@ -57,8 +57,43 @@ export function receiptRowsFromShipment(s) {
       name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name || "カードリーダー"),
       note, qty, price };
   });
-  if (Number(s && s.shippingFee) > 0) rows.push({ kind: "X", name: s.shippingLabel || "送料", qty: 1, price: Number(s.shippingFee) }); // 税抜で保存（2026-07-28 統一）
+  const ship = receiptShippingPrice(s);
+  if (ship > 0) rows.push({ kind: "X", name: s.shippingLabel || "送料", qty: 1, price: ship });
   return rows;
+}
+
+// ===== 領収証の送料の行の単価（2026-11-12 是正） =====
+// 送料は請求先によらず税抜で保存している（2026-07-28 統一・shipments.shippingFee）。
+// 領収証の明細の単価は請求先で税基準が違う（事業所向け＝税込／認定事業者向け＝税抜。priceIsTaxIncluded）。
+// 以前は税抜の送料をそのまま入れていたため、事業所向けの領収証で「税込」の列に税抜の額が出ていた
+// （例: 送料 税抜745円 → 税込の列に ¥745。正しくは請求書と同じ ¥820）。
+// 税込に直す丸めは請求書（invoiceTotals の shipIncl）と同じにする＝領収証の明細合計が請求額と一致する。
+export function receiptShippingPrice(s) {
+  const fee = Number(s && s.shippingFee) || 0;
+  if (!(fee > 0)) return 0;
+  return priceIsTaxIncluded(s) ? invoiceTotals(s).shipIncl : fee;
+}
+
+// 発行を記録済みの領収証（受け取った明細 rows=[{kind,name,qty,price}]）の送料の行が、
+// 是正前の「税抜の額を税込の列に入れたまま」かを調べる。画面の注意書きだけに使う（記録は書き換えない）。
+// 当てはまれば { head, body, actual, expected }、当てはまらなければ null。
+//   ・事業所向け（単価が税込）の出荷で、送料（税抜）が0より大きく、
+//   ・区分 X の行の金額の合計が「税抜の送料」と同じで、税込に直した額と違うとき
+export function receiptShippingWarning(rows, s) {
+  if (!priceIsTaxIncluded(s)) return null;
+  const fee = Number(s && s.shippingFee) || 0;
+  if (!(fee > 0)) return null;
+  const expected = receiptShippingPrice(s);
+  const xRows = (rows || []).filter((r) => r && r.kind === "X");
+  if (!xRows.length) return null;
+  const actual = xRows.reduce((a, r) => a + num(r.qty) * num(r.price), 0);
+  if (actual !== fee || actual === expected) return null;
+  return {
+    head: "送料が税抜の額のままです。",
+    body: `この領収証の明細は税込の列ですが、送料が税抜の ¥${fee.toLocaleString("ja-JP")} で入っています。`
+      + `請求書と同じ税込の ¥${expected.toLocaleString("ja-JP")} に直してから発行・記録してください（記録済みの領収証は、直して「記録を更新」を押すまで変わりません）。`,
+    actual, expected,
+  };
 }
 
 // 明細（{kind, qty, price}）→ 区分ごとの税込小計 { A, B, X }。領収証の画面の aIncl・bIncl・xIncl と同じ値

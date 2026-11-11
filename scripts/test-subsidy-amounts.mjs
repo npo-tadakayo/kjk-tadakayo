@@ -28,7 +28,10 @@ function OLD_rowsInit(s) {
       name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name || "カードリーダー"),
       note, qty, price };
   });
-  if (Number(s.shippingFee) > 0) rowsInit.push({ kind: "X", name: s.shippingLabel || "送料", qty: 1, price: Number(s.shippingFee) });
+  // 送料の行だけは 2026-11-12 に是正した（事業所向け＝単価が税込の領収証では、税抜で保存した送料を税込に直す。
+  //   直し方は請求書の invoiceTotals と同じ Math.round(×1.1)）。それ以外は共通化の前と1円も変わらないことを見る
+  if (Number(s.shippingFee) > 0) rowsInit.push({ kind: "X", name: s.shippingLabel || "送料", qty: 1,
+    price: priceIsTaxIncluded(s) ? Math.round(Number(s.shippingFee) * 1.1) : Number(s.shippingFee) });
   return rowsInit;
 }
 // wireReceiptEditor の recompute（DOM を外して、表示する aIncl・bIncl・xIncl・abIncl・rcptGrand と税抜・税額だけ取り出したもの）
@@ -134,7 +137,7 @@ n++;
 // supply-print.js が共通の関数を使っている（自前の振り分けが残っていない）
 t(() => {
   const src = readFileSync(new URL("../admin/js/supply-print.js", import.meta.url), "utf8");
-  assert.match(src, /import \{ receiptRowsFromShipment, taxFnsOf, guideAmountsFromShipment \} from "\/js\/subsidy-amounts\.js"/);
+  assert.match(src, /import \{ receiptRowsFromShipment, receiptShippingWarning, taxFnsOf, guideAmountsFromShipment \} from "\/js\/subsidy-amounts\.js"/);
   assert.match(src, /rowsInit = receiptRowsFromShipment\(s\);/);
   assert.match(src, /taxFnsOf\(rcptTaxIncluded\)/);
   assert.match(src, /guideAmountsFromShipment\(d\)/);
@@ -182,7 +185,7 @@ t(() => {
 t(() => {
   const s = shipFromQuote("houmon", 1, 2, 0, 0, { shippingFee: 520 });
   const r = shipmentSubsidyAmounts(s, null, subsidyCountsFromShipment(s));
-  assert.equal(r.x, 520); // 領収証の初期明細と同じ（送料は税抜の保存値をそのまま X に入れる）
+  assert.equal(r.x, 572); // 領収証の初期明細と同じ（事業所向けは税抜520円を税込572円に直して X に入れる・2026-11-12 是正）
   assert.equal(r.ab, Math.min(64000, s.calc.subsidyPartTotal));
   assert.equal(r.aSubsidy, 14500 + 6500 * 2);
 });
@@ -327,9 +330,11 @@ t(() => {
   const s = shipFromQuote("houmon", 1, 2, 0, 0, { _id: "p1", soNumber: "SH-P1", shippingFee: 800 }); // 税込出荷・送料¥800
   const r = shipmentSubsidyAmounts(s, null, subsidyCountsFromShipment(s));
   assert.equal(r.plannedIncl, invoiceTotals(s).payable);
-  assert.equal(r.plannedIncl, 64000 + 880);          // 送料は税込に直して足す（明細の合計 64,800 ではない）
-  assert.notEqual(r.plannedIncl, r.aTotal + r.b + r.x);
-  assert.equal(r.ab, 64000); assert.equal(r.x, 800);  // A・B・A＋B は送料で変わらない
+  assert.equal(r.plannedIncl, 64000 + 880);          // 送料は税込に直して足す
+  // 2026-11-12 是正: 領収証の明細の送料も税込（¥880）に直すので、明細の合計（A＋B＋X）が請求額と一致する
+  //   （是正前は X が税抜の ¥800 のまま「税込」として入り、明細の合計 64,800 が請求額 64,880 より ¥80 少なかった）
+  assert.equal(r.plannedIncl, r.aTotal + r.b + r.x);
+  assert.equal(r.ab, 64000); assert.equal(r.x, 880);  // A・B・A＋B は送料で変わらない
   // 領収証を発行済みなら予定は出さない（領収証の保存値を使う）
   const rows = receiptRowsFromShipment(s);
   const rc = { receiptNo: "RCPT-P1", amountIncl: 64880, items: rows.map((x) => ({ usage: x.kind, name: x.name, qty: x.qty, unitPrice: x.price })), usageTotalsIncl: usageTotalsOf(rows, true) };
