@@ -21,6 +21,7 @@ const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderCo
   ORDER_RECEIVED_VIA, channelOfReceivedVia } = require("./accept-rules");
 const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
+const CaseMail = require("./case-mail"); // sendCaseEmail の送信→記録（送信後の失敗は recordError で返す・テスト scripts/test-case-mail.mjs）
 // 通知の分類と文面（純粋 ESM）。CommonJS からは import() で遅延ロードする
 let _nt;
 const loadNotify = () => (_nt ||= import("./notify-text.mjs"));
@@ -2609,34 +2610,30 @@ exports.sendCaseEmail = onCall(
       throw new HttpsError("invalid-argument", "宛先メールアドレスの形式が不正です");
     }
 
+    // 準備 → Gmail で送信 → 対応記録（functions/case-mail.js・2026-11-12 点検4 の根本対応）。
+    // 送信が成功したあとの失敗は投げず、{ ok:true, sent:true, sentAt, recordError } で返す（画面が「送れたか不明」と受け取って再送しないように）
     try {
-      const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
-      const token = await gmailAccessToken(sender);
-      const raw = buildRawMessage({ to, subject, body, sender });
-      const res = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
-        { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ raw }) }
-      );
-      if (!res.ok) {
-        const t = await res.text();
-        console.error("Gmail send failed:", res.status, t);
-        throw new HttpsError("internal", `Gmail送信に失敗しました（${res.status}）。DWD登録と送信元アカウントをご確認ください`);
-      }
-      const sent = await res.json();
-
-      // タイムラインに送信記録
-      if (caseId) {
-        const now = admin.firestore.FieldValue.serverTimestamp();
-        await db.collection("activities").add({
-          caseId, type: "gmail_sent", occurredAt: now,
+      return await CaseMail.runCaseMail({
+        prepare: async () => {
+          const sender = (await getSettings()).gmailSender || GMAIL_SENDER;
+          const token = await gmailAccessToken(sender);
+          return { sender, token, raw: buildRawMessage({ to, subject, body, sender }) };
+        },
+        post: ({ sender, token, raw }) => fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/${encodeURIComponent(sender)}/messages/send`,
+          { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ raw }) }
+        ),
+        // タイムラインに送信記録
+        record: caseId ? () => db.collection("activities").add({
+          caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
           userId: request.auth.uid, userName: email,
           subject: `メール送信: ${subject}`, body: `宛先: ${to}\n\n${body}`, attachmentUrls: [],
-        });
-        await db.collection("cases").doc(caseId).update({ updatedAt: now });
-      }
-      return { ok: true, id: sent.id };
+        }) : null,
+        touch: caseId ? () => db.collection("cases").doc(caseId).update({ updatedAt: admin.firestore.FieldValue.serverTimestamp() }) : null,
+      });
     } catch (e) {
+      if (e instanceof CaseMail.CaseMailError) throw new HttpsError(e.code, e.message);
       if (e instanceof HttpsError) throw e;
       console.error("sendCaseEmail error:", e);
       throw new HttpsError("internal", `送信処理に失敗しました: ${e.message}`);
@@ -4112,6 +4109,14 @@ exports.warehouseSetNote = onCall(
   }
 );
 
+// ===== トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース・2026-11-12）=====
+// 実装は ./trainer.js（判定は trainer-rules.mjs・正本 admin/js/trainer-rules.js）。このファイルには結線だけを置く。
+const trainer = require("./trainer");
+exports.trainerSaveCriteria = trainer.trainerSaveCriteria;
+exports.trainerRecordTalk = trainer.trainerRecordTalk;
+exports.trainerCourseSubmit = trainer.trainerCourseSubmit;
+exports.trainerCertify = trainer.trainerCertify;
+exports.trainerRevoke = trainer.trainerRevoke;
 // ===== カードリーダーの発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12）=====
 // 本体は functions/ship-steps.js（判定は ship-steps-rules.mjs＝正本 admin/js/ship-steps-rules.js のコピー）。
 // notifyShipment（依頼の必須項目の確認・短い文面）と warehouseShip / warehouseHandover（発送準備の段だけ・発送完了の知らせ）からも使う。

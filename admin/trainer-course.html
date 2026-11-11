@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>トレーナーコース — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .doc{max-width:960px;}
+    .doc [hidden]{display:none !important;}
+    .tc-status{display:flex;gap:12px;align-items:center;border-radius:10px;padding:12px 14px;margin:0 0 16px;font-size:14px;line-height:1.7;background:#faf7f2;border-left:4px solid #c99a00;}
+    .tc-status.done{background:#e8f5ec;border-left-color:#3d7a2a;}
+    .tc-status i{font-size:26px;}
+    .tc-card{background:#fff;border:1px solid var(--color-line);border-radius:12px;padding:14px 16px;margin:0 0 14px;}
+    .tc-card h2{font-size:15px;margin:0 0 8px;display:flex;gap:8px;align-items:center;}
+    .tc-card p{font-size:13.5px;line-height:1.8;margin:8px 0;}
+    .tc-ok{color:#2f6420;font-weight:700;}
+    .tc-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0 0;}
+    .tc-row .btn{min-height:44px;}
+    .tc-link{display:inline-flex;gap:6px;align-items:center;color:#B02626;font-weight:700;text-decoration:none;}
+    .tc-link:hover{text-decoration:underline;}
+    .tc-q{margin:0 0 14px;padding:0;border:0;}
+    .tc-q legend{font-size:14px;font-weight:700;line-height:1.7;margin:0 0 6px;padding:0;}
+    .tc-c{display:flex;align-items:flex-start;gap:8px;min-height:44px;padding:10px 12px;border:1px solid var(--color-line);border-radius:8px;margin:0 0 6px;cursor:pointer;font-size:13.5px;line-height:1.6;}
+    .tc-c input{margin-top:4px;flex:0 0 auto;width:18px;height:18px;}
+    .tc-c.right{border-color:#3d7a2a;background:#eef7ef;}
+    .tc-c.wrong{border-color:#c02828;background:#fdf2f2;}
+    .tc-why{font-size:12.5px;line-height:1.7;margin:4px 0 0;padding:6px 10px;border-radius:6px;background:#faf7f2;}
+    .tc-stats{list-style:none;margin:6px 0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13.5px;}
+    .tc-stats li{display:flex;gap:8px;align-items:flex-start;line-height:1.6;}
+    .tc-stats li i{margin-top:3px;}
+    .tc-warn{font-size:13px;background:#fff7e0;border-left:4px solid #c99a00;border-radius:6px;padding:10px 12px;line-height:1.7;margin:0 0 14px;}
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header"><h1 class="page-title">トレーナーコース</h1></div>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+
+      <div class="doc" id="doc" style="display:none">
+        <p class="page-intro">新しく伴走支援に入る方（練習生）を見守るトレーナー向けのコースです。動画「新人の見守り方」を見て、確認テストに合格すると修了です。<strong>修了は、トレーナー合格の前提です</strong>（あわせて、伴走支援の件数と登壇の回数の条件があります）。トレーナーの方、トレーナーを目指す方、管理者が受けられます。</p>
+        <div id="practiceNote" class="tc-warn" hidden>いまは<strong>練習モード</strong>です。ここで記録した視聴・テストの結果は練習用のデータに残り、本番の修了にはなりません。</div>
+        <div id="status" class="tc-status" role="status" aria-live="polite"></div>
+
+        <section class="tc-card" aria-labelledby="h-video">
+          <h2 id="h-video"><i class="ti ti-video" aria-hidden="true"></i>1. 動画を見る（新人の見守り方）</h2>
+          <p>動画は Google ドライブの共有フォルダ「トレーナーコース」にあります。フォルダの「01 新人の見守り方」を最後まで見てください（ログインしている @tadakayo.jp のアカウントで開けます）。</p>
+          <p><a class="tc-link" id="folderLink" href="#" target="_blank" rel="noopener" data-tip="Google ドライブの共有フォルダ「トレーナーコース」を新しいタブで開きます。動画はそこで見てください。"><i class="ti ti-brand-google-drive" aria-hidden="true"></i>トレーナーコースの動画（共有ドライブ）を開く</a></p>
+          <div id="watchArea"></div>
+        </section>
+
+        <section class="tc-card" aria-labelledby="h-quiz">
+          <h2 id="h-quiz"><i class="ti ti-checklist" aria-hidden="true"></i>2. 確認テスト</h2>
+          <div id="quizArea"></div>
+        </section>
+
+        <section class="tc-card" aria-labelledby="h-mine">
+          <h2 id="h-mine"><i class="ti ti-certificate" aria-hidden="true"></i>あなたのトレーナー条件</h2>
+          <div id="mineArea"><p style="color:var(--color-ink-muted)">数えています…</p></div>
+          <p style="font-size:12.5px;color:var(--color-ink-muted)">メンバー全員の表と、トレーナー合格（認定）は <a href="/badges.html">伴走支援者バッジ</a> の画面にあります。受講中の練習生の進み具合は <a href="/learning.html">育成コース</a> の画面の下（トレーナー・管理者だけに出ます）で見られます。迷ったら TM_介護情報基盤普及推進室で相談してください。</p>
+        </section>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100;max-width:calc(100vw - 32px)"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/trainer-course.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script>
+</body>
+</html>

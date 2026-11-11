@@ -15,6 +15,7 @@ import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActio
 import { stepOf, finalConfirmOn, requestMissing, requestMissingText, validateAccept, acceptPatchOf, canAccept, canComplete,
   completeBlockedText, sortByDesired, PACK_TYPES, packTypeOf, readerQty, ACCEPT_DECISIONS } from "/js/ship-steps-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
+import { TRAINER_PRACTICE_STUBS } from "/js/practice-stubs-trainer.js"; // トレーナー認定の代役（2026-11-12・別ファイル）
 // 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
 import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise,
   ORDER_RECEIVED_VIA, channelOfReceivedVia } from "/js/order-consent-rules.js";
@@ -527,6 +528,7 @@ async function practiceReconsent(quoteId, consent) {
 }
 
 export const PRACTICE_STUBS = {
+  ...TRAINER_PRACTICE_STUBS, // trainerSaveCriteria・trainerRecordTalk・trainerCourseSubmit・trainerCertify・trainerRevoke
   // AI アシスタント（Vertex AI）は動かさない
   async aiAssist({ task }) {
     showPracticeNotice("AIアシスタントは練習中は動きません");

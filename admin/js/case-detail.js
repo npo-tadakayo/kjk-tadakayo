@@ -26,6 +26,7 @@ import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js"
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
 import { shouldAskSupportDone, supportDoneAskText, SUPPORT_DONE_STATUS } from "/js/record-gaps-case.js";
+import { sendResultOf, caseMailActivityOf, freeMailRecordRetryText } from "/js/record-gaps-case.js"; // メール送信の返事（2026-11-12）
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
@@ -42,6 +43,8 @@ import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js"
 import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
 // 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ画面が変わる）
 import { orderByConsentOn, statusChangeGuard, blockedStatusOptions, manualStatusNote } from "/js/order-consent.js";
+// 進み具合の帯（2026-11-12・CRM改善2 §3.5）。状態を変えるときに statusChangedAt・statusChangedTo も書く
+import { caseProgress, stageSince, stageDays, staleLevel, resolveStaleConfig, progressBandHtml, statusChangePatch } from "/js/case-progress.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -389,7 +392,7 @@ async function copyCaseWithServiceType() {
       srcTypeSet = built.setSource ? built.sourceServiceType : "";
       const texts = copyActivityTexts(fresh, next, serviceType, srcTypeSet);
       tx.set(counterRef, { value: next });
-      tx.set(newRef, built.data);
+      tx.set(newRef, { ...built.data, ...statusChangePatch(built.data.status, now) }); // 進み具合の日数はコピーで作った日から
       if (srcTypeSet) {
         tx.update(srcRef, { serviceType: srcTypeSet, updatedAt: now });
         tx.set(srcTypeActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
@@ -1005,9 +1008,29 @@ function renderShipDupBanner(ships) {
       <i class="ti ti-list-check" aria-hidden="true"></i> 供給管理で選ぶ</a></div>`;
 }
 
+// ===== 進み具合の帯（2026-11-12・js/case-progress.js が正本）=====
+// 13段階の状態を 8つの区切りにまとめ、済／いま／まだ と「この段階に何日」を出す。出荷の区切りは出荷の状態（shipmentsCache）で決める。
+// 日数は statusChangedAt（今の状態と statusChangedTo が同じとき）→ 対応記録の最後の「ステータス変更」→（新規受信のまま）受信日 の順。
+// どれも無ければ「—」。対応記録を読み込む前は対応記録を使わない（読み込み後に描き直す）。
+let activitiesLoaded = false;
+function renderCaseProgress() {
+  const wrap = document.getElementById("caseProgress");
+  if (!wrap || !currentCase) return;
+  try {
+    const cfg = resolveStaleConfig(appSettings);
+    const p = caseProgress(currentCase, { shipments: shipmentsCache, orderByConsent: orderOn() });
+    const since = stageSince(currentCase, { activities: activitiesLoaded ? latestActivities : null });
+    const days = since.at ? stageDays(since.at) : null;
+    wrap.innerHTML = progressBandHtml(p, days, staleLevel(currentCase.status, days, cfg), { sinceSource: since.source, cfg });
+  } catch (e) {
+    console.warn("進み具合の帯を描けませんでした", e); wrap.innerHTML = "";
+  }
+}
+
 // ===== 次の一手（案件ヘッダー最下部・タブの上。2026-09-14） =====
 // ステータス→次にやることは NEXT_ACTION（constants.js）が正本。マニュアル §0 表1 と同じ内容を指す。
 function renderNextStep() {
+  renderCaseProgress(); // 進み具合の帯（次の一手と同じきっかけで描き直す）
   const wrap = document.getElementById("nextStep");
   if (!wrap || !currentCase) return;
   // スイッチがオンのときは状態2・5 の文言を差し替える（nextActionFor・constants.js）。オフなら NEXT_ACTION のまま
@@ -1106,7 +1129,7 @@ async function saveSubsidyInfo() {
 // lost: 失注にするときの { reason, note }（それ以外は null）。失注から戻すときは理由を消す。
 // warnNote: 完了(13)の警告を確認して続行したときの1行（completionActivityNote の戻り。無ければ ""）
 async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "", manualNote = "") {
-  const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
+  const patch = { status: Number(newStatus), updatedAt: serverTimestamp(), ...statusChangePatch(newStatus, serverTimestamp()) };
   // 13 以外 → 13 にしたときだけ完了日時を残す（13 のまま保存し直しても上書きしない）
   if (isCompleting(currentCase?.status, newStatus)) patch.completedAt = serverTimestamp();
   // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
@@ -1118,6 +1141,7 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
     patch.lostReason = null; patch.lostReasonNote = null;
   }
   await updateDoc(doc(db, "cases", caseId), patch);
+  if (currentCase) Object.assign(currentCase, statusChangePatch(newStatus, new Date())); // 進み具合の日数をすぐ0日にする
   // 画面内の案件にも受注日を入れておく（同じ画面で 3→他→3 と変えたときに、補った受注日を上書きしないため）
   if (fillOrderedAt && currentCase) currentCase.orderedAt = new Date();
   if (lost) { currentCase.lostReason = lost.reason; currentCase.lostReasonNote = lost.note || null; }
@@ -1976,6 +2000,18 @@ function aiResultToComposer() {
 
 // メール送信
 const sendCaseEmailFn = httpsCallable(functions, "sendCaseEmail");
+
+// 送信後にサーバーで対応記録が書けなかったとき（sendCaseEmail の返事の recordError・2026-11-12）、画面から対応記録を1件足す。
+// act は caseMailActivityOf の形。occurredAt は送信時刻（サーバーの sentAt。古い Functions なら端末の時刻）。
+// 案件の更新日時も進める（sendCaseEmail と同じ。失敗しても記録の成否にしない）
+async function logCaseMailActivity(act, sentAtIso) {
+  await addDoc(collection(db, "activities"), {
+    ...act, occurredAt: new Date(sentAtIso),
+    userId: currentUser?.uid || null, userName: currentUser?.email || "",
+  });
+  try { await updateDoc(doc(db, "cases", act.caseId), { updatedAt: serverTimestamp() }); }
+  catch (e) { console.warn("案件の更新日時の更新に失敗", e); }
+}
 async function sendMail() {
   const to = normalizeEmail(document.getElementById("mailTo").value);
   const subject = document.getElementById("mailSubject").value.trim();
@@ -1993,11 +2029,30 @@ async function sendMail() {
   status.style.color = "var(--color-ink-muted)";
   status.innerHTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 送信中...';
   try {
-    await sendCaseEmailFn({ to, subject, body, caseId });
-    status.style.color = "var(--color-success)";
-    status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（タイムラインに記録）';
+    const srv = sendResultOf(await sendCaseEmailFn({ to, subject, body, caseId }));
     document.getElementById("mailSubject").value = "";
     document.getElementById("mailBody").value = "";
+    if (srv.recordError) {
+      // 送信済み・サーバーで対応記録だけ失敗（再送させない）。画面から対応記録を足す。失敗したら確認のうえ記録だけやり直す
+      const sentAt = srv.sentAt || new Date().toISOString();
+      const act = caseMailActivityOf({ kind: "free", caseId, to, subject, body });
+      let recorded = false, lastErr = srv.recordError;
+      for (;;) {
+        try { await logCaseMailActivity(act, sentAt); recorded = true; break; }
+        catch (e2) { lastErr = e2; if (!confirm(freeMailRecordRetryText(e2))) break; }
+      }
+      if (recorded) {
+        status.style.color = "var(--color-success)";
+        status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（対応記録は画面から記録）';
+        showToast("メールを送信しました");
+      } else {
+        status.style.color = "var(--color-danger)";
+        status.textContent = `メールは送信済みです。対応記録への記録だけ失敗しました（再送しないでください）: ${lastErr?.message || lastErr}`;
+      }
+      return;
+    }
+    status.style.color = "var(--color-success)";
+    status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（タイムラインに記録）';
     showToast("メールを送信しました");
   } catch (e) {
     status.style.color = "var(--color-danger)";
@@ -2100,6 +2155,7 @@ onAuthStateChanged(auth, async (user) => {
     db, caseId,
     getCase: () => ({ ...currentCase, email: currentCase.contactEmail || currentCase.email || "" }),
     sendMail: (payload) => sendCaseEmailFn(payload),
+    logActivity: logCaseMailActivity, // 送信後にサーバーで対応記録が書けなかったとき（2026-11-12）
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
     orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
@@ -2109,6 +2165,7 @@ onAuthStateChanged(auth, async (user) => {
     db, caseId,
     getCase: () => currentCase,
     sendMail: (payload) => sendCaseEmailFn(payload),
+    logActivity: logCaseMailActivity, // 送信後にサーバーで対応記録が書けなかったとき（2026-11-12）
     toast: showToast,
   });
   // 見積もりカード（対応記録タブの先頭）。事業所側の見積もりツールで作成された quotes を表示・再送
@@ -2366,6 +2423,7 @@ onAuthStateChanged(auth, async (user) => {
   );
   onSnapshot(actQ, (snap) => {
     latestActivities = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    activitiesLoaded = true; renderCaseProgress(); // 進み具合の日数（対応記録の「ステータス変更」から数える案件がある）
     renderTimeline(latestActivities);
     supportChecklist?.setActivities?.(latestActivities); // 当日タブの「記録済み」の表示
   });

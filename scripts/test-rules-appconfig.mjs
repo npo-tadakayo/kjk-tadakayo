@@ -6,6 +6,9 @@
 //   ・users の chatUserId: staff は書けない／admin は書ける
 //   ・承諾書の未認証署名（pending→signed）は従来どおり通る
 //   ・bankTxns / bankConfig は editor が書けて viewer は書けない（catch-all のまま）
+//   ・トレーナー認定の置き場（2026-11-12・ルールは変えていない）: appConfig/trainerCriteria と appConfig/trainerProgram の下の
+//     talks・certs・course は、登録スタッフは読める／練習生・未登録は読めない／画面からは誰も（管理者も）下の段に書けない
+//     （書き込みは Callable＝functions/trainer.js だけ）。trainerCriteria の1段目は既存のとおり管理者だけ書ける
 //
 // 実行手順は test-rules-catchall.mjs 冒頭と同じ（作業用ディレクトリで npm i @firebase/rules-unit-testing firebase）
 //   RULES_FILE=<repo>/firestore.rules firebase emulators:exec --only firestore --project demo-kjk "node test-rules-appconfig.mjs"
@@ -20,6 +23,7 @@ const env = await initializeTestEnvironment({
 });
 
 const ADMIN = "admin@tadakayo.jp", STAFF = "staff@tadakayo.jp", VIEWER = "viewer@tadakayo.jp", NOREG = "noreg@tadakayo.jp";
+const TRAINEE = "trainee@tadakayo.jp";
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, "users", ADMIN), { role: "admin", active: true, name: "管理" });
@@ -32,6 +36,9 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "consentRequests", "tok1"), { status: "pending", name: "x" });
   await setDoc(doc(db, "bankTxns", "t1"), { a: 1 });
   await setDoc(doc(db, "bankConfig", "preset"), { a: 1 });
+  await setDoc(doc(db, "users", TRAINEE), { role: "trainee", active: true, name: "練習" });
+  await setDoc(doc(db, "appConfig", "trainerCriteria"), { supportCount: 10 });
+  for (const c of ["talks", "certs", "course"]) await setDoc(doc(db, "appConfig", "trainerProgram", c, "x1"), { a: 1 });
 });
 const as = (email) => env.authenticatedContext(email.replace(/[@.]/g, "_"), { email, email_verified: true }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
@@ -86,6 +93,21 @@ await t("viewer は bankTxns を書けない", () => no(addDoc(collection(as(VIE
 await t("staff は bankConfig を書ける", () => yes(setDoc(doc(as(STAFF), "bankConfig", "preset"), { a: 2 })));
 await t("viewer は bankConfig を書けない", () => no(setDoc(doc(as(VIEWER), "bankConfig", "preset"), { a: 2 })));
 await t("viewer は bankTxns を読める", () => yes(getDoc(doc(as(VIEWER), "bankTxns", "t1"))));
+
+console.log("トレーナー認定の置き場（ルール変更なし・2026-11-12）");
+for (const c of ["talks", "certs", "course"]) {
+  await t(`staff は appConfig/trainerProgram/${c} を読める`, () => yes(getDoc(doc(as(STAFF), "appConfig", "trainerProgram", c, "x1"))));
+  await t(`viewer は appConfig/trainerProgram/${c} を読める`, () => yes(getDoc(doc(as(VIEWER), "appConfig", "trainerProgram", c, "x1"))));
+  await t(`練習生は appConfig/trainerProgram/${c} を読めない`, () => no(getDoc(doc(as(TRAINEE), "appConfig", "trainerProgram", c, "x1"))));
+  await t(`未登録は appConfig/trainerProgram/${c} を読めない`, () => no(getDoc(doc(as(NOREG), "appConfig", "trainerProgram", c, "x1"))));
+  await t(`staff は appConfig/trainerProgram/${c} に書けない`, () => no(setDoc(doc(as(STAFF), "appConfig", "trainerProgram", c, "x2"), { a: 1 })));
+  await t(`admin でも appConfig/trainerProgram/${c} に画面から書けない（Callable だけ）`, () => no(setDoc(doc(as(ADMIN), "appConfig", "trainerProgram", c, "x2"), { a: 1 })));
+  await t(`admin でも appConfig/trainerProgram/${c} を更新できない`, () => no(updateDoc(doc(as(ADMIN), "appConfig", "trainerProgram", c, "x1"), { a: 2 })));
+}
+await t("staff は自分のトレーナーコースの記録を作れない（Callable だけ）", () => no(setDoc(doc(as(STAFF), "appConfig", "trainerProgram", "course", STAFF), { watchedAt: 1 })));
+await t("staff は trainerCriteria を読める", () => yes(getDoc(doc(as(STAFF), "appConfig", "trainerCriteria"))));
+await t("staff は trainerCriteria を書けない", () => no(setDoc(doc(as(STAFF), "appConfig", "trainerCriteria"), { supportCount: 1 })));
+await t("練習生は trainerCriteria を読めない", () => no(getDoc(doc(as(TRAINEE), "appConfig", "trainerCriteria"))));
 
 await env.cleanup();
 console.log(`合計: ${pass}/${pass + fail} 合格`);
