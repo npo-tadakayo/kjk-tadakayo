@@ -17,7 +17,7 @@ import { jstDateOf } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-let ctx = null; // { db, caseId, getCase, sendMail, toast }
+let ctx = null; // { db, caseId, getCase, sendMail, logActivity, toast }
 
 // 事業所へ案内する準備物。support-checklist.js の PRE_ITEMS と対で保つ
 // （あちらは支援者の確認用の文言、こちらは事業所向けの文言）
@@ -121,6 +121,8 @@ function openModal() {
       preGuideMailedTo: to,
       updatedAt: serverTimestamp(),
     }).then(() => { const c2 = ctx.getCase(); if (c2) c2.preGuideMailedAt = jstDateOf(sentAtIso); }),
+    // サーバーが対応記録を書けなかったとき（sendCaseEmail の recordError）に画面から足す（2026-11-12）
+    logActivity: ctx.logActivity,
     onDone: (close) => {
       ctx.toast("事前準備のご案内を送信しました");
       close();
