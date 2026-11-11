@@ -659,6 +659,7 @@ stateDiagram-v2
 | `test-functions-wiring.mjs` | `accept-flow.js`（認可・受注確定・通知の発火条件・日次の投稿計画）と `index.js` の結線 |
 | `test-screen-wiring.mjs` | 画面側の判定（完了の警告・重複の帯・統合の確認・受注確定の入力） |
 | `test-supply-wiring.mjs` | 供給管理の画面ルール（重複・在庫の目安・入金取り込み） |
+| `test-tooltip.mjs` | ボタンの説明の吹き出し（`admin/js/tooltip.js`・2026-11-12）: 位置の計算・長押しの判定・aria-describedby の付け替え ／ 案件詳細の画面のボタン（HTML と、後から描く JS）に `data-tip` が付いているか・title を使っていないか |
 | `test-rules-appconfig.mjs` | **エミュレーター**: staff・viewer は `appConfig` を書けない／admin は書ける／`_notifyLog` は誰も書けない |
 | `scripts/check-shared-sync.sh` | `first-contact.js` と `first-contact.mjs` の一致 |
 | 既存の回帰 | `test-first-contact.mjs`・`test-assignee-filter.mjs`・`test-rules-catchall.mjs` ほか |

@@ -83,8 +83,8 @@ export function askLostReason(reasons) {
           <span id="lostReasonErr" role="alert" style="display:none;font-size:13px;color:var(--color-danger)">理由を選んでください</span>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" id="lostReasonCancel" type="button">キャンセル</button>
-          <button class="btn btn-primary" id="lostReasonOk" type="button">失注にする</button>
+          <button class="btn btn-secondary" id="lostReasonCancel" data-tip="失注にせず、元の状態に戻します。" type="button">キャンセル</button>
+          <button class="btn btn-primary" id="lostReasonOk" data-tip="選んだ理由で失注にします。状態はすぐ保存され、対応記録に理由が残ります。" type="button">失注にする</button>
         </div></div>`;
       document.body.appendChild(ov);
     }

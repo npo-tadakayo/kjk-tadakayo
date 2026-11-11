@@ -47,7 +47,7 @@
       <nav class="sidebar-nav" id="nav"></nav>
       <div class="sidebar-footer">
         <div class="user-info" id="userEmail"></div>
-        <button class="btn-logout" id="logoutBtn" type="button">
+        <button class="btn-logout" id="logoutBtn" data-tip="CRM からログアウトします。保存していない入力は、確認なしで消えます。" type="button">
           <i class="ti ti-logout" aria-hidden="true"></i>ログアウト
         </button>
       </div>
@@ -73,13 +73,13 @@
           <p class="page-intro" style="margin:0 0 var(--space-3)">この案件の状況と、次にやることをここで進めます。</p>
           <div class="case-meta" id="caseMeta"></div>
           <!-- 担当者名・メール・電話の訂正。閲覧のみには出さない（JS で隠す）。見出しの1行は描き直されるので、その外に置く -->
-          <button class="btn btn-ghost" id="editContactBtn" type="button" style="display:none;margin-top:var(--space-2);padding:2px 8px;font-size:12px">
+          <button class="btn btn-ghost" id="editContactBtn" data-tip="担当者名・メール・電話を直す画面を開きます。保存すると対応記録に残り、メールを直したときは、まだ送っていない見積もりの宛先も直ります。" type="button" style="display:none;margin-top:var(--space-2);padding:2px 8px;font-size:12px">
             <i class="ti ti-pencil" aria-hidden="true"></i> 連絡先を直す
           </button>
           <div style="margin-top:var(--space-4);display:flex;gap:var(--space-3);flex-wrap:wrap;align-items:center">
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="statusSelect">ステータス</label>
-              <select class="form-control" id="statusSelect" style="width:auto;min-width:220px">
+              <select class="form-control" id="statusSelect" data-tip="選ぶとすぐ保存され、対応記録に「ステータス変更」が1行残ります（メール・Chat は出ません）。失注・案件完了・伴走支援実施済以降にするときは、先に確認が出ます。" style="width:auto;min-width:220px">
                 <optgroup label="① 受付・受注">
                   <option value="1">新規受信</option>
                   <option value="2">確認中</option>
@@ -110,7 +110,7 @@
             </div>
             <div style="display:flex;align-items:center;gap:var(--space-2)">
               <label style="font-size:13px;font-weight:500;color:var(--color-ink-muted)" for="assigneeSelect">担当営業</label>
-              <select class="form-control" id="assigneeSelect" style="width:auto;min-width:180px">
+              <select class="form-control" id="assigneeSelect" data-tip="選ぶとすぐ保存され、対応記録に残ります。担当を決めると、Chat（CRM 通知）に担当のお知らせが出ます。" style="width:auto;min-width:180px">
                 <option value="">未割当</option>
               </select>
             </div>
@@ -144,23 +144,23 @@
               </select>
               <span id="servicePlanHint" style="font-size:12px;color:var(--color-ink-muted)"></span>
             </div>
-            <a class="btn btn-ghost" id="reportBtn" href="#" target="_blank" rel="noopener">
+            <a class="btn btn-ghost" id="reportBtn" data-tip="この案件の報告書を新しいタブで開きます。そこで印刷・PDF 保存ができます。データは変わりません。" href="#" target="_blank" rel="noopener">
               <i class="ti ti-file-text" aria-hidden="true"></i> 報告書PDF
             </a>
-            <a class="btn btn-ghost" id="shipFromCaseBtn" href="#">
+            <a class="btn btn-ghost" id="shipFromCaseBtn" data-tip="出荷・請求・入金の画面へ移り、この案件の事業所・連絡先・台数を入れた出荷の入力欄を開きます。まだ発送していない出荷があれば、新しく作らずにそれを開きます。" href="#">
               <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷を作成
             </a>
             <!-- 閲覧のみには出さない（文言に「コピー」を含むため、role.js の自動無効化が効かない。JS で隠す） -->
-            <button class="btn btn-ghost" id="copyCaseBtn" type="button" style="display:none">
+            <button class="btn btn-ghost" id="copyCaseBtn" data-tip="同じ事業所・連絡先で、別の事業種別の案件を作る画面を開きます。見積・出荷・請求・対応記録・書類はコピーしません。" type="button" style="display:none">
               <i class="ti ti-copy-plus" aria-hidden="true"></i> この案件をコピーして別の事業種別で作る
             </button>
-            <button class="btn btn-ghost" id="archiveBtn" type="button" style="display:none">
+            <button class="btn btn-ghost" id="archiveBtn" data-tip="理由を選んで、この案件を一覧から外す画面を開きます。データは残り、あとで「対象外を解除」で戻せます。" type="button" style="display:none">
               <i class="ti ti-archive" aria-hidden="true"></i> 重複として対象外にする
             </button>
-            <button class="btn btn-ghost" id="unarchiveBtn" type="button" style="display:none">
+            <button class="btn btn-ghost" id="unarchiveBtn" data-tip="対象外を取り消して、案件一覧に戻します。すぐ保存され、対応記録に1行残ります。" type="button" style="display:none">
               <i class="ti ti-archive-off" aria-hidden="true"></i> 対象外を解除
             </button>
-            <button class="btn btn-ghost" id="deleteBtn" type="button" style="display:none;color:var(--color-danger)">
+            <button class="btn btn-ghost" id="deleteBtn" data-tip="この案件と、対応記録・伴走支援の記録・書類チェック・申請情報・チェックリストをまとめて削除します（見積もり・出荷は残ります）。元に戻せません。管理者だけが使えます。" type="button" style="display:none;color:var(--color-danger)">
               <i class="ti ti-trash" aria-hidden="true"></i> この案件を完全に削除
             </button>
           </div>
@@ -186,28 +186,28 @@
 
         <!-- タブ -->
         <div class="tabs" role="tablist">
-          <button class="tab active" role="tab" data-tab="timeline" aria-selected="true">
+          <button class="tab active" role="tab" data-tab="timeline" aria-selected="true" data-tip="対応記録の一覧と追加、見積もりを見ます。">
             <i class="ti ti-timeline" aria-hidden="true"></i> 対応記録
           </button>
-          <button class="tab" role="tab" data-tab="pre" aria-selected="false">
+          <button class="tab" role="tab" data-tab="pre" aria-selected="false" data-tip="承諾書の署名依頼、事前準備のご案内、事前確認のチェックを行います。">
             <i class="ti ti-clipboard-check" aria-hidden="true"></i> 事前確認
           </button>
-          <button class="tab" role="tab" data-tab="onsite" aria-selected="false">
+          <button class="tab" role="tab" data-tab="onsite" aria-selected="false" data-tip="当日の工程のチェックと、伴走支援の記録（写真・メモ）を残します。">
             <i class="ti ti-checklist" aria-hidden="true"></i> 当日
           </button>
-          <button class="tab" role="tab" data-tab="documents" aria-selected="false">
+          <button class="tab" role="tab" data-tab="documents" aria-selected="false" data-tip="申請に要る書類のチェックと、事業所の振込口座を入れます。">
             <i class="ti ti-files" aria-hidden="true"></i> 書類チェック
           </button>
-          <button class="tab" role="tab" data-tab="shipping" aria-selected="false">
+          <button class="tab" role="tab" data-tab="shipping" aria-selected="false" data-tip="この案件の出荷・請求・入金の進み具合を見ます。ここでは金額は動かせません。">
             <i class="ti ti-truck-delivery" aria-hidden="true"></i> 出荷・請求・入金
           </button>
-          <button class="tab" role="tab" data-tab="subsidy" aria-selected="false">
+          <button class="tab" role="tab" data-tab="subsidy" aria-selected="false" data-tip="助成金の申請で入れる値と、申請の状況を記録します。">
             <i class="ti ti-coin-yen" aria-hidden="true"></i> 申請情報
           </button>
-          <button class="tab" role="tab" data-tab="after" aria-selected="false">
+          <button class="tab" role="tab" data-tab="after" aria-selected="false" data-tip="支援のあとのフォロー（介護情報基盤・ケアプラン連携）を記録します。">
             <i class="ti ti-progress-check" aria-hidden="true"></i> アフター
           </button>
-          <button class="tab" role="tab" data-tab="ai" aria-selected="false">
+          <button class="tab" role="tab" data-tab="ai" aria-selected="false" data-tip="AI（Gemini）で返信の下書きや要約を作り、事務局からメールを送ります。">
             <i class="ti ti-sparkles" aria-hidden="true"></i> AIアシスタント
           </button>
         </div>
@@ -241,7 +241,7 @@
                 <textarea class="form-control" id="activityBody" rows="3" placeholder="対応内容を入力..."></textarea>
               </div>
               <div style="text-align:right">
-                <button class="btn btn-primary" id="addActivityBtn" type="button">
+                <button class="btn btn-primary" id="addActivityBtn" data-tip="上の種別・件名・内容を、対応記録に1行追加します。メールや Chat は出ません。" type="button">
                   <i class="ti ti-plus" aria-hidden="true"></i>対応記録を追加
                 </button>
               </div>
@@ -280,8 +280,8 @@
                   <div class="form-group" style="margin-bottom:0">
                     <label class="form-label">写真（その場で撮影／選択）</label>
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                      <button class="btn btn-secondary" id="cameraBtn" type="button"><i class="ti ti-camera" aria-hidden="true"></i> カメラで撮影</button>
-                      <button class="btn btn-secondary" id="galleryBtn" type="button"><i class="ti ti-photo" aria-hidden="true"></i> 写真を選択</button>
+                      <button class="btn btn-secondary" id="cameraBtn" data-tip="カメラで写真を撮ります。「伴走支援を記録」を押すまで保存されません。" type="button"><i class="ti ti-camera" aria-hidden="true"></i> カメラで撮影</button>
+                      <button class="btn btn-secondary" id="galleryBtn" data-tip="端末の写真を選びます（複数可）。「伴走支援を記録」を押すまで保存されません。" type="button"><i class="ti ti-photo" aria-hidden="true"></i> 写真を選択</button>
                       <span id="photoCount" style="font-size:12px;color:var(--color-ink-muted)"></span>
                     </div>
                     <input type="file" id="sessionPhotos" accept="image/*" multiple style="display:none">
@@ -292,7 +292,7 @@
                   <textarea class="form-control" id="sessionSummary" rows="3" placeholder="当日の支援内容、設定状況、次回までの宿題など"></textarea>
                 </div>
                 <div style="text-align:right">
-                  <button class="btn btn-primary" id="addSessionBtn" type="button">
+                  <button class="btn btn-primary" id="addSessionBtn" data-tip="実施日・メモ・写真を伴走支援の記録として保存し、対応記録にも1行残します。状態によっては「伴走支援実施済にしますか」と聞きます。" type="button">
                     <i class="ti ti-plus" aria-hidden="true"></i>伴走支援を記録
                   </button>
                 </div>
@@ -373,7 +373,7 @@
           <div class="card">
             <div class="card-header">
               <div><span style="font-weight:600;font-size:14px">振込口座情報（事業所側）</span><span class="save-mode-note" style="display:block;font-size:12px;font-weight:400;color:var(--color-ink-muted)">「保存」を押すと保存されます</span><span id="bankUnsaved" class="unsaved-note" role="status" style="display:none;font-size:12px;font-weight:600;color:var(--color-danger)"></span></div>
-              <button class="btn btn-primary" id="saveBankBtn" type="button" style="font-size:12px;padding:6px 12px">
+              <button class="btn btn-primary" id="saveBankBtn" data-tip="入れた振込口座を保存します。押すまで保存されません。" type="button" style="font-size:12px;padding:6px 12px">
                 <i class="ti ti-device-floppy" aria-hidden="true"></i>保存
               </button>
             </div>
@@ -440,7 +440,7 @@
           <div id="shippingEmpty" class="empty-state" style="display:none">
             <i class="ti ti-truck-delivery" aria-hidden="true"></i>
             <p>この案件に紐づいた出荷はまだありません。</p>
-            <a class="btn btn-primary" id="shipFromCaseBtn2" href="#" style="margin-top:var(--space-3);display:inline-flex">
+            <a class="btn btn-primary" id="shipFromCaseBtn2" data-tip="出荷・請求・入金の画面へ移り、この案件の事業所・連絡先・台数を入れた出荷の入力欄を開きます。その画面で保存するまで、出荷は作られません。" href="#" style="margin-top:var(--space-3);display:inline-flex">
               <i class="ti ti-plus" aria-hidden="true"></i> この案件から出荷を作成
             </a>
           </div>
@@ -460,7 +460,7 @@
           <div class="card">
             <div class="card-header">
               <div><span style="font-weight:600;font-size:14px">補助金申請ステータス</span><span class="save-mode-note" style="display:block;font-size:12px;font-weight:400;color:var(--color-ink-muted)">「保存」を押すと保存されます</span><span id="subsidyUnsaved" class="unsaved-note" role="status" style="display:none;font-size:12px;font-weight:600;color:var(--color-danger)"></span></div>
-              <button class="btn btn-primary" id="saveSubsidyBtn" type="button" style="font-size:12px;padding:6px 12px">
+              <button class="btn btn-primary" id="saveSubsidyBtn" data-tip="申請の状況・日付・金額を保存します。振込予定日は申請日から計算して一緒に保存します。" type="button" style="font-size:12px;padding:6px 12px">
                 <i class="ti ti-device-floppy" aria-hidden="true"></i>保存
               </button>
             </div>
@@ -536,13 +536,13 @@
                 この案件の情報（問い合わせ内容・対応履歴・伴走メモ）をもとに、Geminiが文面作成や要約を行います。内容は必ず確認のうえご利用ください。
               </p>
               <div class="ai-actions">
-                <button class="btn btn-ghost ai-btn" data-task="reply_draft" type="button">
+                <button class="btn btn-ghost ai-btn" data-task="reply_draft" data-tip="この案件の内容から、事業所への返信メールの下書きを AI が作ります。送信はされません。" type="button">
                   <i class="ti ti-mail" aria-hidden="true"></i> 返信メール下書き
                 </button>
-                <button class="btn btn-ghost ai-btn" data-task="summary_classify" type="button">
+                <button class="btn btn-ghost ai-btn" data-task="summary_classify" data-tip="これまでのやり取りを AI が要約・分類します。データは変わりません。" type="button">
                   <i class="ti ti-list-details" aria-hidden="true"></i> 要約・分類
                 </button>
-                <button class="btn btn-ghost ai-btn" data-task="session_report" type="button">
+                <button class="btn btn-ghost ai-btn" data-task="session_report" data-tip="伴走支援のメモから、報告文の下書きを AI が作ります。データは変わりません。" type="button">
                   <i class="ti ti-clipboard-text" aria-hidden="true"></i> 伴走報告文
                 </button>
               </div>
@@ -550,7 +550,7 @@
                 <label class="form-label" for="aiQuestion">自由に質問する</label>
                 <div style="display:flex;gap:8px">
                   <input class="form-control" type="text" id="aiQuestion" placeholder="例: この事業所への次の一手は？">
-                  <button class="btn btn-secondary ai-btn" data-task="assistant" type="button" style="flex:0 0 auto">
+                  <button class="btn btn-secondary ai-btn" data-task="assistant" data-tip="左に入れた質問に、この案件の情報をもとに AI が答えます。データは変わりません。" type="button" style="flex:0 0 auto">
                     <i class="ti ti-send" aria-hidden="true"></i> AIに質問する
                   </button>
                 </div>
@@ -562,10 +562,10 @@
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:8px">
                   <strong style="font-size:13px" id="aiResultTitle">生成結果</strong>
                   <div style="display:flex;gap:6px">
-                    <button class="btn btn-secondary" id="aiToComposerBtn" type="button" style="font-size:12px;padding:4px 10px;display:none">
+                    <button class="btn btn-secondary" id="aiToComposerBtn" data-tip="AI の返信下書きを、下のメール送信の件名・本文に写します。送信はされません。" type="button" style="font-size:12px;padding:4px 10px;display:none">
                       <i class="ti ti-arrow-down" aria-hidden="true"></i> 送信欄へ転記
                     </button>
-                    <button class="btn btn-secondary" id="aiCopyBtn" type="button" style="font-size:12px;padding:4px 10px">
+                    <button class="btn btn-secondary" id="aiCopyBtn" data-tip="AI の結果をクリップボードにコピーします。" type="button" style="font-size:12px;padding:4px 10px">
                       <i class="ti ti-copy" aria-hidden="true"></i> コピー
                     </button>
                   </div>
@@ -595,7 +595,7 @@
               </div>
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                 <span style="font-size:12px;color:var(--color-ink-muted)">送信元: kjk-staff@tadakayo.jp（事務局）</span>
-                <button class="btn btn-primary" id="sendMailBtn" type="button">
+                <button class="btn btn-primary" id="sendMailBtn" data-tip="確認のあと、事務局（kjk-staff@tadakayo.jp）から宛先へメールを送ります。送ったメールは対応記録に残り、取り消せません。" type="button">
                   <i class="ti ti-send" aria-hidden="true"></i> 送信する
                 </button>
               </div>
@@ -612,7 +612,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2>重複として対象外にする</h2>
-        <button class="btn btn-secondary" id="archiveCancelBtn" type="button" aria-label="閉じる">
+        <button class="btn btn-secondary" id="archiveCancelBtn" data-tip="閉じます。何も変わりません。" type="button" aria-label="閉じる">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
       </div>
@@ -636,8 +636,8 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="archiveCancelBtn2" type="button" onclick="document.getElementById('archiveModal').classList.remove('open')">キャンセル</button>
-        <button class="btn btn-primary" id="archiveConfirmBtn" type="button">
+        <button class="btn btn-secondary" id="archiveCancelBtn2" data-tip="やめて閉じます。何も変わりません。" type="button" onclick="document.getElementById('archiveModal').classList.remove('open')">キャンセル</button>
+        <button class="btn btn-primary" id="archiveConfirmBtn" data-tip="この案件を対象外にして一覧から外し、対応記録に残します。データは残り、「対象外を解除」で戻せます。" type="button">
           <i class="ti ti-archive" aria-hidden="true"></i>重複として対象外にする
         </button>
       </div>
@@ -649,7 +649,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2 id="copyCaseTitle">別の事業種別の案件を作る</h2>
-        <button class="btn btn-secondary" id="copyCaseCloseBtn" type="button" aria-label="閉じる">
+        <button class="btn btn-secondary" id="copyCaseCloseBtn" data-tip="閉じます。案件は作りません。" type="button" aria-label="閉じる">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
       </div>
@@ -673,8 +673,8 @@
         <div id="copyCaseError" role="alert" style="display:none;color:var(--color-danger);font-size:13px"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="copyCaseCancelBtn" type="button">キャンセル</button>
-        <button class="btn btn-primary" id="copyCaseConfirmBtn" type="button">
+        <button class="btn btn-secondary" id="copyCaseCancelBtn" data-tip="やめて閉じます。案件は作りません。" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="copyCaseConfirmBtn" data-tip="選んだ事業種別で新しい案件（確認中から）を作り、その案件を開きます。両方の案件の対応記録に1行残ります。" type="button">
           <i class="ti ti-copy-plus" aria-hidden="true"></i>新しい案件を作成する
         </button>
       </div>
@@ -686,7 +686,7 @@
     <div class="modal">
       <div class="modal-header">
         <h2 id="editContactTitle">連絡先を直す</h2>
-        <button class="btn btn-secondary" id="editContactCloseBtn" type="button" aria-label="閉じる">
+        <button class="btn btn-secondary" id="editContactCloseBtn" data-tip="閉じます。何も変わりません。" type="button" aria-label="閉じる">
           <i class="ti ti-x" aria-hidden="true"></i>
         </button>
       </div>
@@ -711,8 +711,8 @@
         <div id="editContactError" role="alert" style="display:none;color:var(--color-danger);font-size:13px"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" id="editContactCancelBtn" type="button">キャンセル</button>
-        <button class="btn btn-primary" id="editContactConfirmBtn" type="button">
+        <button class="btn btn-secondary" id="editContactCancelBtn" data-tip="やめて閉じます。何も変わりません。" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="editContactConfirmBtn" data-tip="担当者名・メール・電話を保存し、対応記録に残します。メールを直すと、まだ送っていない見積もりの宛先も直ります。" type="button">
           <i class="ti ti-check" aria-hidden="true"></i>この内容で保存する
         </button>
       </div>
@@ -726,5 +726,6 @@
   <script src="/js/firebase-config.js"></script>
   <script src="/js/estimate-pricing.js"></script><!-- 助成区分の上限（交付見込み）2026-11-12 -->
   <script src="/js/case-detail.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script><!-- ボタンの説明の吹き出し（data-tip）2026-11-12 -->
 </body>
 </html>
