@@ -13,6 +13,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { parseEmbeddedDocument } from "/js/consent-document.js";
+// 発注の承諾書（kind:"order"・2026-11-12 第2段）は読むだけの画面にする（署名のボタンは出さない）
+import { isOrderConsentRecord, orderConsentPageHtml } from "/js/order-consent-view.js";
 
 const app = initializeApp(firebaseConfig);
 // 練習モードで作った署名依頼（URL に p=1）は練習DB（practice）を読む（2026-10-20 テストモード）。
@@ -164,6 +166,13 @@ function renderSigned(data, docu, justNow) {
   `;
 }
 
+// 発注の承諾書（kind:"order"）: サーバーが受注確定と同時に署名済みで作ったもの。焼き込んだ見積もりの内容と署名の情報を出す（読むだけ）
+function renderOrder(data, docu) {
+  $("main").innerHTML = orderConsentPageHtml(data, docu, documentHtml(docu, data));
+  const pb = $("printBtn");
+  if (pb) pb.addEventListener("click", () => window.print());
+}
+
 (async () => {
   if (!token || !/^[A-Za-z0-9_-]{16,128}$/.test(token)) { showNotFound(); return; }
   if (isPracticeLink) {
@@ -190,6 +199,7 @@ function renderSigned(data, docu, justNow) {
   $("main").style.display = "block";
   document.title = `${docu.title} — NPO法人タダカヨ`;
 
+  if (isOrderConsentRecord(data)) { document.title = `${docu.title} — NPO法人タダカヨ`; renderOrder(data, docu); return; }
   if (data.status === "signed") renderSigned(data, docu, false);
   else renderPending(data, docu);
 })();
