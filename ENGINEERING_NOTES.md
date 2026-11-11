@@ -538,6 +538,9 @@ sequenceDiagram
 - **プレビュー版でログインする手順**: `deploy-hosting.mjs --channel <名前>` → 終了時に表示される `node scripts/auth-domains.mjs add <アドレス>` を次田さんの指示のうえで `--yes` 付きで実行 → 使い終わったら `remove`
 - firebase CLI の `hosting:channel:deploy` はチャンネルのアドレスを自動で足す（足すだけで、一覧が壊れていても直さない）
 - テスト: `node scripts/test-auth-domains.mjs`（計算部分のみ・ネットワーク無し）
+- **なぜ人の目で見つからないか**: 承認済みドメインはログインする瞬間（`signInWithPopup` が Google の画面を開くとき）にしか確かめられない。ログイン済みの人はトークンの自動更新だけで使い続けられ、そこでは承認済みドメインを見ない。壊れても困るのは新しくログインする人だけ
+- **毎朝の自動点検** `dailyAuthDomainCheck`（8:00 JST・`fn-batch-sa`・判定と文面は `functions/auth-domain-watch.js`）: config を読み、4件が欠けていれば Chat（`pmChatWebhookUrl`、空なら CRM の投稿先）に知らせる。正常なら知らせない。読めなかったときも知らせる。書き込みはしない。要権限: `fn-batch-sa` に `roles/firebaseauth.viewer`
+- **ログイン失敗の表示** `admin/js/login-errors.js`: Firebase のエラーコードごとに日本語の説明を出す（管理画面は連絡先「管理者（次田）」、認定事業者ポータルは「タダカヨの担当者」）。システム側の問題（`auth/unauthorized-domain` 等）は「あなたの操作の問題ではありません」と伝え、問い合わせ用にコードを添える。英語の生メッセージは出さない
 
 > [!INFO]
 > Webhook URL・メール送信元・振込先・印影などは「設定」画面（`appConfig/settings`）から変更でき、コード変更・再デプロイは不要（最大60秒で反映）。

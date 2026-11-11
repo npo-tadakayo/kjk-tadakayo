@@ -17,6 +17,38 @@
 - **§7 は v1.2 で変更**（紙の発注では署名済みの紙を当法人が受け取るため・2026-11-12 司令塔判断。次田さんへ朝に報告）: 「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。」→「書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。」。v1.1 は一字も変えていない
 - 未了: 練習モードでの次田さんの画面確認・マージ・本番反映（Functions のデプロイ）・第2段（Web の道・署名ページで焼き込んだ見積もりの表示・確認メールに承諾書のアドレス）
 
+## 2026-11-12 助成金申請の手順の文字拡大（ブランチ `feat/subsidy-guide-larger-font-pr`・PR #71・未マージ）
+
+- **何を**: 次田さん「もう少し大きな文字に」（11/10）で、`admin/js/subsidy-guide.js` の文字を全体に約15%大きくし、行間を 1.6→1.7 にした（6ページのまま）
+- **もくじの箱を外した理由**: 文字を大きくしたら**1ページ目（表紙）があふれた**。ページは 296mm 固定・`overflow:hidden` なので、あふれた分は黙って切れる。品名が2種類のとき、もくじがフッターに重なって下が切れた。頁番号は「申請の流れ」の図と「そろえる書類」の一覧に載っているので、内容は減らない
+- それでも品名が2種類のときは余白が 15px しかなかった。そこで、**1ページ目の金額の表だけ文字の大きさを拡大前の値に戻した**（表 9pt・金額 10pt・品名の欄 8.4pt）
+  - 品名を1行に収める案は採らなかった。2種類の品名は欄の幅の約2倍あり、文字を半分にしないと入らないため
+- 2〜6ページ目は拡大したまま変えていない
+- 1ページ目の余白（フッターまで・px）は次の表のとおり。測り方は playwright で描いて、中身の下端と `.sg-pfoot` の上端を比べた。基準は 24px 以上
+
+| 差し込む値 | 拡大前 | 拡大しただけ | 直した後 |
+|---|---|---|---|
+| 普通 | 238 | 41 | 134 |
+| 請求書から・品名は既定 | 256 | 17 | 130 |
+| 金額7桁・12台 | 256 | −3 | 130 |
+| 品名2種類 | 221 | −49（切れ） | 93 |
+| 品名2種類＋金額7桁＋長い事業所名 | 202 | −27（切れ） | 93 |
+
+- ⚠️ **1ページ目に何か足すときは、品名2種類＋金額7桁＋長い事業所名で余白を測り直す**（いまの余裕は約 93px）
+- 未検証: html2pdf で作った PDF そのものの見た目（描画は画面と同じ CSS だが、PDF にした結果は目視していない）
+
+## 2026-11-12 管理画面のセキュリティヘッダー（ブランチ `feat/admin-security-headers`・未マージ・本番未反映）
+
+- **何を**: `firebase.json` の hosting target `admin`（`**`）に、リリース前チェックが「付いていない」と出していた6つを足した。既存の `Cache-Control`・`Cross-Origin-Opener-Policy: same-origin-allow-popups` は変えていない。公開ページ（lp）も変えていない
+  - `X-Content-Type-Options: nosniff`／`Referrer-Policy: strict-origin-when-cross-origin`／`X-Robots-Tag: noindex, nofollow`
+  - `X-Frame-Options: SAMEORIGIN`（DENY にしない理由: `supply-print.js` の `buildReportPdf` が `report.html` を画面外の iframe で開いて PDF にしている）。CSP の `frame-ancestors 'self'` も同じ理由
+  - `Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()`（lp は `camera=()`。管理画面は `supply.html` の写真の欄が `<input type=file capture="environment">` なので、実機のスマホで確かめるまではカメラを止めない）
+  - **CSP は `Content-Security-Policy-Report-Only`**（違反しても止めず、コンソールに出すだけ）。許可している先: スクリプト＝`www.gstatic.com`（firebasejs）・`apis.google.com`（ログインのポップアップ）・`cdn.jsdelivr.net`（mermaid）・`cdnjs.cloudflare.com`（html2pdf）／スタイル＝`fonts.googleapis.com`・`cdn.jsdelivr.net`（tabler-icons）／フォント＝`fonts.gstatic.com`・`cdn.jsdelivr.net`／通信＝`identitytoolkit`・`securetoken`・`www.googleapis.com`・`firestore`・`firebasestorage`・`asia-northeast1-kjk-tadakayo.cloudfunctions.net`／画像・動画＝`firebasestorage.googleapis.com`・`data:`・`blob:`／iframe＝自分・`kjk-tadakayo.firebaseapp.com`（authDomain）・`apis.google.com`・`accounts.google.com`。インラインの `<script>` と `onclick` があるので `script-src 'unsafe-inline'` を残している（`unsafe-eval` は入れていない）
+- テスト `scripts/test-admin-security-headers.mjs`: 必須ヘッダーの有無・値と、**管理画面の HTML/JS/CSS が読み込む外部の先がすべて CSP に入っていること**を照合する（新しい CDN を足して CSP を直し忘れると落ちる）
+- 確認用の版 `https://kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app`（11/19 02:58 JST まで・承認済みドメイン追加済み）。curl で全ヘッダーを確認。ログイン画面・認定事業者ポータル・ログインのポップアップを開くところまで（資格情報は入れていない）で CSP の違反は0件。⚠️ プレビューの版は Firebase が `x-robots-tag: noindex` に差し替える（本番では `noindex, nofollow` のはず＝本番反映後に curl で確かめる）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app --yes`
+- 🔜 **強制に切り替える手順（本番で1〜2週間ようすを見てから）**: ① ログイン後の各画面（案件詳細の写真・研修動画・支援報告書のPDF・マニュアルの図・出荷の写真）でコンソールに `[Report Only]` が出ないかを見る → ② 出たら許可先を足し、テストにも足す → ③ `firebase.json` のキーを `Content-Security-Policy-Report-Only` → `Content-Security-Policy` に変える（テストはどちらのキーでも通る）→ ④ 確認用の版で同じ画面を見てから `--live`。あわせて `camera=(self)` を `camera=()` にできるか、スマホの写真の欄で確かめる
+- 未検証: ログイン後の画面（Firestore・Storage・Functions の通信、mermaid、html2pdf、研修動画）での CSP の違反の有無。ローカルのエミュレーター（`?emu=1`）では `localhost:8080` 等への通信が Report-Only の違反として出る（止まらない）
+
 ## 2026-11-12 ボタンの説明の吹き出し（案件詳細の画面・ブランチ `feat/button-tooltips`・未マージ・本番未反映）
 
 - 次田さん決定（2026-11-12）: 各ボタンにマウスを乗せると機能の説明を吹き出しで出す。**まず案件詳細の画面から**。評判を見て他の画面へ広げる
@@ -48,7 +80,13 @@
 - 気づいたこと（直していない）: 事業所向け（税込）の領収証で、送料の X 行は税抜の保存値をそのまま「税込」として出している（請求書の `invoiceTotals` は ×1.1）。申請額（A・B）には影響しないが、領収証の明細合計と請求額がずれる原因になりうる
 - 確認用の版: `https://kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app`（11/18 まで。承認済みドメインに `auth-domains.mjs add --yes` で追加済み・4件の残りを読み戻しで確認）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app --yes`
 
-## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（ブランチ `fix/auth-domains-guard`・未マージ）
+## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（PR #64・main にマージ済み `be57301`）
+
+- **前からログインしていた人（次田さん含む）は入れて、新しく入る人だけ入れなかった理由**: 承認済みドメインは**ログインする瞬間（Google のログイン画面を開くとき）にしか確かめられない**。ログイン済みの人は保存されたログイン状態のまま鍵（トークン）を自動更新するだけで、その更新では承認済みドメインを見ない。だから使い慣れた人ほど気づかず、困るのは初めての人・別のPC・ログアウトした人・シークレットウィンドウの人だけだった＝**人の目では見つからない壊れ方**
+- **追加の改善（ブランチ `feat/login-error-and-domain-watch`・未マージ・本番未反映）**:
+  - ① ログイン失敗の表示を日本語に（`admin/js/login-errors.js`・管理画面 `index.html` と認定事業者ポータル `partner.js`）。今回の `auth/unauthorized-domain` は「システム側の設定に問題があり…あなたの操作の問題ではありません…管理者（次田）にご連絡ください（エラーコード）」。テスト `scripts/test-login-errors.mjs`
+  - ② 毎朝 8:00 JST の自動点検 `dailyAuthDomainCheck`（`functions/auth-domain-watch.js`）。4件が欠けていれば Chat（PMスペース・空なら CRM）に知らせる。正常なら知らせない。読めなかったときも知らせる。テスト `scripts/test-auth-domain-watch.mjs`
+  - **本番反映の手順（次田さんの指示のあと）**: ⓐ `fn-batch-sa` に `roles/firebaseauth.viewer` を付与（中身は `firebaseauth.configs.get` 等の読み取りのみ）→ ⓑ Functions は `--only "functions:dailyAuthDomainCheck"` で名指し（Drive 上からは不可。ハマりポイントの rsync 手順）→ ⓒ 管理画面は `deploy-hosting.mjs --target admin --channel` で確認 → `--live`
 
 - **起きたこと**: 2026-11-09 17:13 JST、別の Claude セッションが curl で Identity Toolkit の config を `updateMask=authorizedDomains` で PATCH し、承認済みドメインの一覧を**空にした**（PATCH は追記でなく丸ごと置き換え）。その後プレビュー版を出すたびに Firebase CLI がその版のアドレスだけを足したため、本番 `kjk-tadakayo-admin.web.app` が抜けたままになり、**11/9〜11/11 は新しくログインする人全員が `auth/unauthorized-domain` で入れなかった**。11/11 宮地さんの報告で発覚し、正常時の4件を足し戻した。証拠は Cloud Audit Logs（identitytoolkit `UpdateConfig`）
 - **正常時の4件**: `kjk-tadakayo.firebaseapp.com`／`kjk-tadakayo.web.app`／`kjk-tadakayo-admin.web.app`／`kjk-tadakayo-admin.firebaseapp.com`
