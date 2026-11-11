@@ -393,5 +393,6 @@ export const VIEWER_LOCK_SELECTOR = [
     "type-ship", "cancel-ship", "del-ship", "keep-dup", "track-ship", "track-del", "report-acct", "dun-ship", "apply-credit",
     "pay-del", "refund-del", "po-ship", "confirm-order", "undo-order", "edit-order", "del-order", "recv-btn",
     "tr-arrive", "tr-cancel", "loc-edit", "stock-btn", "edit-partner", "del-partner", "toggle-partner", "guide-partner", "c-del",
+    "final-ok", "reselect-ship", // 発送の5段の最終確認・選び直し（2026-11-12）
   ].map((c) => `button.${c}`),
 ].join(",");

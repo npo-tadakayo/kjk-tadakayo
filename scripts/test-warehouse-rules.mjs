@@ -30,7 +30,8 @@ t("DELIVERY_MODES・deliveryModeOf", () => {
 });
 
 t("ISSUE_REASONS", () => {
-  assert.deepEqual(W.ISSUE_REASONS, { shortage: "在庫が足りない", address: "届け先の情報が足りない・違う", other: "その他" });
+  // 2026-11-12 発送の5段で言い方を直した（キーは同じ）
+  assert.deepEqual(W.ISSUE_REASONS, { shortage: "在庫がなく、納品希望日に間に合わない（別の倉庫を選び直す）", address: "入力に不備がある（届け先・台数など）", other: "その他" });
 });
 
 t("isWarehouseRole", () => {
@@ -98,6 +99,8 @@ t("projectForWarehouse（W の項目だけ・金額/案件ID/請求を出さな�
     "address", "company", "contactName", "deliveryMode", "desiredDate", "handedOverAt", "handedOverByName", "id", "items",
     "letterPackType", "note", "officeName", "phone", "pickupByName", "pickupDate", "postalCode", "requestedAt", "requestedByName",
     "shipDate", "soNumber", "status", "trackingNumber", "warehouseConfirmed", "warehouseConfirmedAt", "warehouseConfirmedByName", "warehouseIssue", "warehouseNote",
+    // 発送の5段（2026-11-12）
+    "plannedShipDate", "desiredDeliveryDate", "acceptStatus", "acceptNote", "acceptedByName", "finalConfirmed", "finalConfirmSkipped", "packType", "canceledAt", "cancelReason",
   ].sort());
   assert.equal(w.id, "sh1");
   assert.equal(w.postalCode, "100-0001");
@@ -246,7 +249,8 @@ t("持ち出し → 発送で依頼し直すと送料をレターパックに戻
   assert.match(rq, /const restore = backToShip && isPickup\(cur\) && !isLocked\(cur\) \? lpPatch : \{\}/);
   assert.match(rq, /deliveryMode:"ship", \.\.\.letterPackPatch\(ans\.letterPackType\), \.\.\.restore/);
   // 受注から出荷を作るときと同じ計算（3台で1通・税抜）
-  assert.match(sup, /const packs=Math\.max\(1,Math\.ceil\(items\.reduce\(\(a,i\)=>a\+i\.qty,0\)\/3\)\);/);
+  // 送料の通数は 2026-11-12 から 6台で1通（ship-steps-rules の letterpackCount）
+  assert.match(sup, /const packs=letterpackCount\(items\.reduce\(\(a,i\)=>a\+i\.qty,0\)\);/);
   assert.match(sup, /shippingMethod:"letterpack", shippingFee:taxExcl\(packs\*letterpackFee\(\)\), shippingLabel:`送料（レターパック \$\{packs\}通）`/);
 });
 

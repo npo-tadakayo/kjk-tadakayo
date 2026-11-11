@@ -308,6 +308,8 @@ onAuthStateChanged(auth, async (user)=>{
   $("gmailSender").value = s.gmailSender || "kjk-staff@tadakayo.jp";
   // 見積もり作成時の Chat 通知は既定オフ（2026-09-11）。未設定＝オフとして扱う
   $("notifyQuoteChat").checked = s.notifyQuoteChat === true;
+  // 出荷の依頼者の最終確認（2026-11-12 発送の5段 送3）。未設定＝行う
+  $("shipFinalConfirm").checked = s.shipFinalConfirm !== false;
   // 差出人リスト（旧単一値があれば移行）
   let senders = Array.isArray(s.senders) ? s.senders.slice() : [];
   if (!senders.length && s.senderName) senders = [{ name:s.senderName, postal:s.senderPostal||"", address:s.senderAddress||"", phone:s.senderPhone||"" }];
@@ -372,6 +374,7 @@ onAuthStateChanged(auth, async (user)=>{
         ...collectWebhooks(),
         gmailSender: $("gmailSender").value.trim(),
         notifyQuoteChat: $("notifyQuoteChat").checked,
+        shipFinalConfirm: $("shipFinalConfirm").checked,
         senders: collectSenders(),
         poIssuerName: $("poIssuerName").value.trim(),
         poIssuerAddr: $("poIssuerAddr").value.trim(),

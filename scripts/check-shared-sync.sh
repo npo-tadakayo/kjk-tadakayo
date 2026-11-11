@@ -4,6 +4,7 @@
 #   ・functions/office-merge.mjs … 事業所の編集・統合の判定。正本は admin/js/office-merge.js（画面の重複候補・練習モードと Functions の統合で同じ判定を使う）
 #   ・functions/warehouse-rules.mjs … 倉庫の画面と倉庫の Callable の判定。正本は admin/js/warehouse-rules.js（2026-10-24）
 #   ・functions/trainer-rules.mjs … トレーナー認定の判定。正本は admin/js/trainer-rules.js（2026-11-12）
+#   ・functions/ship-steps-rules.mjs … 発送の5段（依頼→受付→確認→発送準備→発送完了）の判定。正本は admin/js/ship-steps-rules.js（2026-11-12）
 #     functions は CommonJS で ESM の admin 側を require できないため、拡張子だけ .mjs にしたバイト単位で同じコピーを置く。
 # 違っていたら正本（admin 側）からコピーし直して揃える。
 cd "$(dirname "$0")/.."
@@ -30,6 +31,12 @@ if cmp -s admin/js/trainer-rules.js functions/trainer-rules.mjs; then
   echo "OK: admin/js/trainer-rules.js と functions/trainer-rules.mjs は一致"
 else
   echo "NG: admin/js/trainer-rules.js と functions/trainer-rules.mjs が違う。cp admin/js/trainer-rules.js functions/trainer-rules.mjs"
+  ok=0
+fi
+if cmp -s admin/js/ship-steps-rules.js functions/ship-steps-rules.mjs; then
+  echo "OK: admin/js/ship-steps-rules.js と functions/ship-steps-rules.mjs は一致"
+else
+  echo "NG: admin/js/ship-steps-rules.js と functions/ship-steps-rules.mjs が違う。cp admin/js/ship-steps-rules.js functions/ship-steps-rules.mjs"
   ok=0
 fi
 [ "$ok" = "1" ] && exit 0 || exit 1

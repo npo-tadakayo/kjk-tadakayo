@@ -57,6 +57,13 @@
     .wh-note-st { display:block; font-size:12px; color:var(--color-ink-muted); min-height:1.4em; }
     .wh-note-st.err { color:var(--color-danger); }
     .wh-same { display:inline-block; margin-top:4px; }
+    /* 発送の5段（2026-11-12）: 段の切り替え・入荷待ちで在庫がそろったものを目立たせる */
+    .wh-steps { display:flex; flex-wrap:wrap; gap:var(--space-2); margin-bottom:var(--space-3); }
+    .wh-steps .btn { min-height:44px; font-size:14px; }
+    .wh-step-note { font-size:13px; color:var(--color-ink-muted); margin:0 0 var(--space-3); }
+    .wh-ready { background:#E7F6EC; border:2px solid #1E7B3C; color:#123D20; border-radius:8px; padding:8px 12px; font-size:14px; font-weight:700; }
+    .wh-card.is-ready { box-shadow:0 0 0 3px #1E7B3C; }
+    .wh-desired { font-size:15px; font-weight:700; }
     @media (max-width: 480px) { .wh-top select { width:100%; } }
   </style>
 </head>
@@ -72,7 +79,7 @@
       <div class="page-header">
         <h1 class="page-title">倉庫</h1>
       </div>
-      <p class="page-intro">出荷の依頼を見て、発送または受け渡しをしたら「済」にします。出せないときは「出荷できない」で依頼した人に知らせます。</p>
+      <p class="page-intro">発送は5段で進めます：①依頼 → ②<strong>受付</strong>（在庫と照らして「発送可・入荷待ち・発送不可」を選ぶ）→ ③依頼者の最終確認 → ④<strong>発送準備</strong>（宛名印刷・梱包・発送）→ ⑤<strong>完了</strong>。持ち出しは受付と確認を省き、受け渡したら「受け渡し済にする」を押します。</p>
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
       <div id="main" style="display:none">
         <div class="wh-top">
@@ -82,13 +89,15 @@
           <button class="btn btn-secondary" id="reloadBtn" type="button" style="min-height:44px"><i class="ti ti-refresh" aria-hidden="true"></i>更新</button>
         </div>
         <div class="tabs wh-tabs" role="tablist">
-          <button class="tab active" type="button" role="tab" data-tab="requested" aria-selected="true">出荷の依頼</button>
-          <button class="tab" type="button" role="tab" data-tab="done" aria-selected="false">発送済・受け渡し済（30日）</button>
+          <button class="tab active" type="button" role="tab" data-tab="requested" aria-selected="true">出荷の依頼（受付〜発送準備）</button>
+          <button class="tab" type="button" role="tab" data-tab="done" aria-selected="false">完了（発送済・受け渡し済・30日）</button>
+          <button class="tab" type="button" role="tab" data-tab="canceled" aria-selected="false">キャンセル（30日）</button>
           <button class="tab" type="button" role="tab" data-tab="stock" aria-selected="false">在庫</button>
           <button class="tab" type="button" role="tab" data-tab="sheet" aria-selected="false">一覧 <span class="badge badge-1" id="sheetBadge" style="display:none"></span></button>
         </div>
         <div class="tab-content active" id="tab-requested"></div>
         <div class="tab-content" id="tab-done"></div>
+        <div class="tab-content" id="tab-canceled"></div>
         <div class="tab-content" id="tab-stock"></div>
         <div class="tab-content" id="tab-sheet"></div>
       </div>
@@ -102,13 +111,33 @@
       <div class="modal-body">
         <p id="shipInfo" class="wh-meta" style="margin:0 0 12px"></p>
         <div class="form-group"><label class="form-label" for="shipDate">発送日</label><input class="form-control" id="shipDate" type="date"></div>
-        <div class="form-group"><label class="form-label" for="shipTracking">追跡番号（わかれば）</label><input class="form-control" id="shipTracking" type="text" maxlength="100" inputmode="numeric" autocomplete="off"></div>
-        <div class="form-group"><label class="form-label" for="shipLp">レターパックの種類</label>
-          <select class="form-control" id="shipLp"><option value="">指定なし</option><option value="light">レターパックライト（青）</option><option value="plus">レターパックプラス（赤）</option></select></div>
+        <div class="form-group"><label class="form-label" for="shipPack">種別</label>
+          <select class="form-control" id="shipPack"><option value="plus">レターパックプラス（赤）</option><option value="light">レターパックライト（青）</option><option value="yupack">ゆうパック（元払い）</option></select>
+          <p class="wh-meta" id="shipPackHint" style="margin:4px 0 0">1〜6台はレターパックプラス（1通に6台まで・投函）、7台以上はゆうパック（元払い）が初期値です。</p></div>
+        <div class="form-group"><label class="form-label" for="shipTracking">問い合わせ番号（追跡番号・わかれば）</label><input class="form-control" id="shipTracking" type="text" maxlength="100" inputmode="numeric" autocomplete="off"></div>
+        <p class="wh-meta" style="margin:0">押すと、依頼した人に Chat で発送完了を知らせ、案件の対応記録に1行残します。</p>
         <p class="wh-err" id="shipErr" role="alert"></p>
       </div>
       <div class="modal-footer"><button class="btn btn-secondary" data-close="shipModal" type="button">キャンセル</button>
         <button class="btn btn-primary" id="shipOk" type="button"><i class="ti ti-truck-delivery" aria-hidden="true"></i>発送済にする</button></div>
+    </div>
+  </div>
+
+  <!-- 受付（STEP2・2026-11-12）: 発送可／発送可だが入荷待ち／発送不可 -->
+  <div class="modal-overlay" id="accModal" role="dialog" aria-modal="true" aria-labelledby="accTitle">
+    <div class="modal"><div class="modal-header"><h2 id="accTitle">受付</h2>
+      <button class="btn btn-secondary" data-close="accModal" type="button" aria-label="閉じる" style="min-height:44px;min-width:44px"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p id="accInfo" class="wh-meta" style="margin:0 0 12px"></p>
+        <fieldset style="border:0;padding:0;margin:0 0 12px"><legend class="form-label">在庫と照らして選ぶ</legend><div id="accDecisions"></div></fieldset>
+        <div class="form-group" id="accOkWrap"><label class="form-label" for="accShipDate">出荷予定日（任意）</label><input class="form-control" id="accShipDate" type="date"></div>
+        <fieldset id="accNgWrap" style="border:0;padding:0;margin:0 0 12px;display:none"><legend class="form-label">発送できない理由</legend><div id="accReasons"></div></fieldset>
+        <div class="form-group"><label class="form-label" for="accNote">メモ（入荷の予定など。「その他」のときは必ず書く）</label><textarea class="form-control" id="accNote" maxlength="200" rows="2"></textarea></div>
+        <p class="wh-meta" id="accHint" style="margin:0"></p>
+        <p class="wh-err" id="accErr" role="alert"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" data-close="accModal" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="accOk" type="button"><i class="ti ti-send" aria-hidden="true"></i>選んだ内容で知らせる</button></div>
     </div>
   </div>
 
@@ -162,5 +191,6 @@
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/warehouse.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script><!-- ボタンの説明の吹き出し（data-tip）2026-11-12 -->
 </body>
 </html>

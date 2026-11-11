@@ -74,10 +74,13 @@ export function canPickup(s) {
   return !!s && s.fulfillment !== "direct";
 }
 
-// 倉庫からの差し戻し「出荷できない」の理由（warehouseIssue.reason）
+// 倉庫からの差し戻し「出荷できない」＝受付の「発送不可」の理由（warehouseIssue.reason）。
+// 2026-11-12 発送の5段（藤田さんの図）に合わせて言い方を直した（キーは同じ。既存の記録もこの言い方で読む）:
+//   shortage … 在庫がなく、納品希望日に間に合わない → 依頼者が別の倉庫を選び直す
+//   address  … 入力の不備（届け先・台数など）→ 依頼者が直して依頼し直す
 export const ISSUE_REASONS = {
-  shortage: "在庫が足りない",
-  address: "届け先の情報が足りない・違う",
+  shortage: "在庫がなく、納品希望日に間に合わない（別の倉庫を選び直す）",
+  address: "入力に不備がある（届け先・台数など）",
   other: "その他",
 };
 const ISSUE_NOTE_MAX = 200; // 「出荷できない」のメモの上限（字）
@@ -160,8 +163,20 @@ export function projectForWarehouse(s) {
     address: str(d.address),
     phone: str(d.phone),
     items,
-    // 依頼の時点の shipDate は希望出荷日（発送済にしたとき実際の発送日に置き換わる）
+    // 依頼の時点の shipDate は出荷予定日（以前の「希望出荷日」。倉庫が受付で決める・発送済にしたとき実際の発送日に置き換わる）。
+    // desiredDate は古い画面との互換のための同じ値（2026-11-12 から plannedShipDate が正）
     desiredDate: requested ? str(d.shipDate) : "",
+    plannedShipDate: requested ? str(d.shipDate) : "",
+    // 発送の5段（2026-11-12・admin/js/ship-steps-rules.js）。どれも任意（無い古い出荷は受付待ち）
+    desiredDeliveryDate: str(d.desiredDeliveryDate),
+    acceptStatus: str(d.acceptStatus),
+    acceptNote: str(d.acceptNote),
+    acceptedByName: str(d.acceptedByName),
+    finalConfirmed: !!d.finalConfirmedAt,
+    finalConfirmSkipped: !!d.finalConfirmSkipped,
+    packType: str(d.packType),
+    canceledAt: isoOf(d.canceledAt),
+    cancelReason: status === "canceled" ? str(d.cancelReason) : "",
     letterPackType: str(d.letterPackType),
     note: str(d.shipNote || d.note || ""),
     requestedByName: str(d.requestedBy),

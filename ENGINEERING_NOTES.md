@@ -849,3 +849,58 @@ serverTimestamp は `require("firebase-admin/firestore").FieldValue` から取�
 - `scripts/test-rules-appconfig.mjs` に appConfig の下の読み書きの確認を追加（ルールは不変）
 
 本番に出すときに要るもの: **Functions 5本**（`trainerSaveCriteria`・`trainerRecordTalk`・`trainerCourseSubmit`・`trainerCertify`・`trainerRevoke`。`--only "functions:trainerSaveCriteria,functions:trainerRecordTalk,functions:trainerCourseSubmit,functions:trainerCertify,functions:trainerRevoke"`）と **hosting（admin）**。rules の変更なし。**Functions を先に出す**（画面だけ先に出すと、ボタンを押したときに関数が無くてエラーになる）。
+## §C14 発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12）
+
+藤田千晶さんの要望「発送の管理を CRM に、Chat は通知だけ」。決定は `06_介護情報基盤事業/docs/CRM改善2_計画_20261112.md` §3.1（送1〜送7）。ブランチ `feat/ship-steps`。
+
+**出荷の `status`（§C7）は変えない。** 5段は `requested` の中の段で、次の項目から**読むときに**決める（移行の書き換えなし）。判定の正本は `admin/js/ship-steps-rules.js`（純粋 ESM）、Functions はバイト単位で同じ `functions/ship-steps-rules.mjs`（`check-shared-sync.sh`）。
+
+```mermaid
+stateDiagram-v2
+  [*] --> draft
+  draft --> accept: 出荷を依頼する（必須項目そろい・notifyShipment が再確認）
+  draft --> prepare: 持ち出し・直送を依頼（受付と確認を省く）
+  accept --> confirm: 倉庫「発送可」（最終確認を行う設定）
+  accept --> prepare: 倉庫「発送可」（最終確認を省く設定 → finalConfirmSkipped）
+  accept --> wait: 倉庫「入荷待ち」
+  wait --> confirm: 倉庫「発送可」
+  wait --> prepare: 倉庫「発送可」（省く設定）
+  accept --> ng: 倉庫「発送不可」（warehouseIssue）
+  wait --> ng: 倉庫「発送不可」
+  ng --> draft: 依頼者「倉庫を選び直して依頼し直す」／依頼を取り消す
+  confirm --> prepare: 依頼者「OK」（finalConfirmedAt）
+  confirm --> canceled: 依頼者「キャンセル」
+  prepare --> done: 倉庫「発送済にする」「受け渡し済にする」（在庫を引く・発送完了の知らせ）
+  done --> [*]: 請求済・入金済も done（請求・入金は §C7 のまま）
+```
+
+| 段 | 読む条件（`stepOf`） |
+|---|---|
+| draft | `status` draft |
+| accept | `requested`・印 `shipFlow:2` あり・下のどれでもない |
+| wait | `acceptStatus:"wait"` |
+| ng | `warehouseIssue` あり（既存の「出荷できない」と同じ項目。理由のキーも同じ・言い方だけ直した） |
+| confirm | `acceptStatus:"ok"` で `finalConfirmedAt`・`finalConfirmSkipped` が無く、設定 `appConfig/settings.shipFinalConfirm !== false` |
+| prepare | 上の残り（`ok` で確認済み・省いた）＋ **持ち出し・直送の requested** ＋ **印の無い既存の依頼済（発送不可の印なし）** |
+| done | shipped / invoiced / paid（`status` 無しの古い出荷も） |
+| canceled | canceled |
+
+**移行（PR #76 独立レビュー 高1）**: 新しい流れは印 `shipFlow: 2`（`SHIP_FLOW`）のある出荷だけ。印は依頼済にする書き込み（supply.js `requestedStampPatch`。依頼済にする3つの道はすべてここを通る）で付ける。印の無い依頼済は `prepare`（倉庫が今までどおり発送済にできる）、`warehouseIssue` があれば `ng`。「納品希望日が無い＝古い」とは見ない（受注から作った既存の出荷に納品希望日が入っている）。`notifyShipment` の必須項目の確認も印のある依頼だけ。倉庫の画面は段（`step`）の無い W を `prepare` とみなす（画面が先・Functions が古いときの備え）。発送完了の知らせ（`notifyShipDone`）は `shippedAt`（持ち出しは `handedOverAt`）から24時間以内だけ。印のある依頼済で受付後（ok・wait）に「変更する」で台数・送付元・届け先・納品希望日が変わったら `stepResetPatch` も書いて受付に戻す（`stepResetNeeded`）。種別がゆうパックの出荷は宛名にレターパックと出さない（`letterpack-label.js` の `labelTypeOf`）。最終確認は依頼者以外の職員も押せる（記録に残る）。
+
+**新しい項目（shipments）**: `shipFlow`（新しい流れの印・2）／`desiredDeliveryDate`（納品希望日・依頼の必須）／`acceptStatus`・`acceptNote`・`acceptedAt`・`acceptedByEmail`・`acceptedByName`／`finalConfirmedAt`・`finalConfirmedBy`・`finalConfirmedByEmail`／`finalConfirmSkipped`（受付の時点で省いたか。あとで設定を戻しても段が戻らない）／`packType`（plus・light・yupack）／`shipDoneNotifiedAt`（発送完了の知らせは1回）／`requestRejectedAt`・`requestRejectedMissing`（サーバーが依頼を下書きへ戻した記録）。`shipDate` は依頼の間は**出荷予定日**（以前の「希望出荷日」。倉庫が受付の「発送可」で入れられる）。依頼の取り消し・依頼し直しで受付と確認の項目を消す（supply.js `stepResetPatch`）。
+
+**書き込みの経路**（firestore.rules は変えていない）:
+- 倉庫の人: すべて Callable。`warehouseAccept`（新・`functions/ship-steps.js`）＝受付。`warehouseShip`・`warehouseHandover` は**発送準備の段だけ**（`canComplete`。受付前・確認待ち・入荷待ち・発送不可は `failed-precondition`）。`warehouseShip` は `packType` を受け、レターパックなら `letterPackType` も同じ値に
+- 依頼した人（職員）: 依頼・最終確認・依頼し直しは画面から直接（今までどおり職員は shipments を書ける）。最終確認はトランザクションで段を確かめる
+- 発送完了の知らせ: 倉庫の画面は `warehouseShip`/`warehouseHandover` の中で `ShipSteps.notifyShipDone`、供給管理の「発送済にする」はあとで Callable `shipStepDone`（職員だけ）。`shipDoneNotifiedAt` をトランザクションで付けた呼び出しだけが Chat（依頼者へメンション）と対応記録（`activities` に1件）を書く
+- 依頼の必須項目のサーバー確認: `notifyShipment` のロックのトランザクションの中。**依頼したばかり（requested・未投稿・再送でない）だけ**確かめ、欠けていれば投稿せず `draft` に戻して `failed-precondition`。再送と投稿済みは確かめない（既存の依頼をそのまま扱える）
+
+**Chat（送6）**: 文面は `shipStepChatText`（request・ok・wait・ng・done）。誰の依頼（職員のメンション）・どこ宛て（`regionOfShipment`＝【都道府県 市区町村】まで）・何台・納品希望日・CRM へのリンクだけ。**事業所の担当者名・電話番号・番地・品目の明細は書かない**。投稿先は今のまま `shipping`。以前の長い文面（`shipmentChatMessage`・`pickupChatMessage`）は外した。
+
+**送料（送4）**: `letterpackCount(qty)=max(1,ceil(qty/6))`。supply.js の3か所（新規の送料の自動計算・持ち出し→発送の戻し・受注から依頼）と料金設定の試算（pricing.js）だけ。**保存済みの `shippingFee` は書き換えない**。請求額の計算（`invoiceTotals`）・入金（`netPaidOf`・`billableIncl`・`payments`）は触っていない。
+
+**画面**: 供給管理の出荷タブに段のチップ（件数・`?step=` で開ける）、確認待ちの行に「OK（発送準備へ）」「変更する」「キャンセルにする」、発送不可の行に「倉庫を選び直して依頼し直す」、完了の段で「請求書を出す」「入金の画面を開く」「領収証を出す」（今ある画面へのリンク・倉庫の人は供給管理を開けない）。倉庫の画面は「出荷の依頼」タブの中に段の切り替え（受付・確認待ち・入荷待ち・発送不可・発送準備）、「完了（30日）」「キャンセル（30日）」タブ、受付のモーダル、種別の選択。どちらも `tooltip.js` を読み、新しいボタンに `data-tip`。`warehouseList` は各 W に `step`・入荷待ちの `stockReady` を足し、`canceled`（直近30日・この場所）と `finalConfirm` を返す。
+
+**テスト**: `scripts/test-ship-steps.mjs`（純粋関数14件＋結線）・`scripts/test-warehouse-emu.mjs` §12（エミュレータ42件: 権限・段の移り変わり・最終確認を省く設定・発送完了の知らせが1回・必須項目のサーバー確認・キャンセルリスト）。既存の節は fixtures を「発送準備」から始めるように直した。
+
+**決めたこと（計画にない細部）**: ①持ち出し・直送は受付と確認を省いて発送準備へ ②発送不可の出荷は発送済にできない（以前の「出荷できない」は発送済にすると消えた）③受付の「発送可」「入荷待ち」で一覧タブの「確認済み」も付ける ④Chat の依頼の知らせに事業所名も書かない（「どこ宛て（市区町村まで）」を字のとおりに）⑤案件詳細（case-detail.js）は触っていない（別のエージェントが作業中。最終確認は供給管理と Chat のリンクから）

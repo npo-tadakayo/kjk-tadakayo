@@ -10,8 +10,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole, isViewer } from "/js/role.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, getDocs, collection, updateDoc, serverTimestamp } from "/js/fs.js";
-import { letterPackOrDefault } from "/js/ship-flow.js";
-import { renderLabel, fitLabel as fitLabelEl } from "/js/letterpack-label.js";
+import { renderLabel, fitLabel as fitLabelEl, labelTypeOf } from "/js/letterpack-label.js";
 import { locationSender, defaultLocationIdOf } from "/js/warehouse-rules.js";
 
 const app = initializeApp(firebaseConfig);
@@ -99,7 +98,7 @@ onAuthStateChanged(auth, async (user) => {
     document.title = `宛名 ${s.soNumber || ""} — タダカヨ CRM`;
 
     let labelFits = true;
-    let type = letterPackOrDefault(s.letterPackType); // 未設定はプラス（赤）・2026-10-21
+    let type = labelTypeOf(s); // 未設定はプラス（赤）・2026-10-21。種別がゆうパックならゆうパック（2026-11-12）
     const draw = () => {
       setTheme(type);
       document.getElementById("body").innerHTML = renderLabel(s, senders[Number(sel.value) || 0], type);

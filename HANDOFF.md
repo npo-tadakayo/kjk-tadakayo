@@ -58,6 +58,19 @@
 - 本番に出すときに要るもの: hosting（admin）だけ。rules・Functions は不変
 - 確認用の版（管理画面のみ）: `https://kjk-tadakayo-admin--progress-1112-2omm1str.web.app`（11/19 03:30 JST まで）。サイドバー「練習モードに入る」で練習DBに切り替えてから、案件一覧（`/cases.html`）と案件詳細を見る。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--progress-1112-2omm1str.web.app --yes`
 - ⚠️ 練習DBの初期データ（`functions/practice-seed.js`）は `statusChangedAt` を持たないので、練習モードでも最初は日数が「—」。状態を変えると0日から数える（黄・赤は日数が経たないと出ない。見た目は `scripts/test-case-progress.mjs` の HTML の確認と、手元の描画で確かめた）
+## 2026-11-12 発送の5段（依頼 → 受付 → 確認 → 発送準備 → 完了）（ブランチ `feat/ship-steps`・未マージ・本番未反映）
+
+- 藤田千晶さんの要望「発送の管理を CRM に、Chat は通知だけ」。決定は `06_介護情報基盤事業/docs/CRM改善2_計画_20261112.md` §3.1（送1〜送7）。仕様の正本は `ENGINEERING_NOTES.md` §C14（状態の図あり）
+- 出荷の `status` は変えず、`requested` の中の段として読む（移行の書き換えなし）。**新しい流れは、本番に出したあとに依頼した出荷（印 `shipFlow: 2`）だけ**。印は依頼済にする書き込み（`requestedStampPatch`＝下書きから依頼・新規登録して依頼・受注から依頼）で付ける。**印の無い既存の依頼済は「発送準備」に入り、今までどおり倉庫が「発送済にする」で発送できる**（既存の「出荷できない」は「発送不可」のまま＝依頼者が直して依頼し直す）。発送済以降は「完了」（PR #76 独立レビュー 高1 で直した）
+- 依頼: 納品希望日（`desiredDeliveryDate`）必須・必須項目が欠けたら依頼できない（画面と `notifyShipment` の両方）／受付: 倉庫の画面の「受付する」（`warehouseAccept`・新）／確認: 依頼した人が供給管理で OK・変更・キャンセル（設定 `appConfig/settings.shipFinalConfirm`・既定＝行う・設定画面にスイッチ）／発送準備: 納品希望日の早い順・1〜6台レターパックプラス・7台以上ゆうパック／完了: 依頼した人へ Chat＋対応記録（`shipStepDone`・新）
+- Chat の文面を短く（誰の依頼・市区町村まで・何台・納品希望日・リンク）。投稿先は今のまま
+- レターパックの送料は6台で1通（新しく作る・依頼する出荷の初期値だけ。保存済みの送料・請求・入金の計算は不変）
+- **本番に出すときに要るもの**: Functions を名指しで `--only "functions:warehouseAccept,functions:shipStepDone,functions:notifyShipment,functions:warehouseList,functions:warehouseShip,functions:warehouseHandover"` → hosting（admin）。rules は不変。**順番は Functions が先**（画面が先だと倉庫の画面の受付・発送完了の知らせが無い関数を呼ぶ）
+- 本番に出した直後: 既存の依頼済は倉庫の画面「出荷の依頼」→「発送準備」に並び、カードの「発送済にする」（持ち出しは「受け渡し済にする」）でそのまま発送済にできる。新しく依頼した出荷から受付 → 最終確認 → 発送準備 を通る
+- 万一、画面だけ先に出て Functions が古いまま（段の情報が返らない）でも、倉庫の画面は全件を「発送準備」として扱う（今までどおり発送できる）
+- **最終確認は依頼者以外の職員も押せる（今の作りのまま・2026-11-12 司令塔判断）**。依頼者が休みのときに止まらないため。誰が押したかは `finalConfirmedBy`・`finalConfirmedByEmail` に残る
+- 独立レビュー（PR #76）の直し: 高1 印の無い既存の依頼済は発送準備／中1 印のある依頼済で受付が済んだあと「変更する」で台数・送付元・届け先・納品希望日を直したら受付に戻す（`stepResetNeeded`）／中2 段の無い返事は発送準備／低1 発送完了の知らせは発送済にしてから24時間以内だけ／低6 種別がゆうパックの出荷は宛名にレターパックと出さない（`labelTypeOf`・供給管理の「宛名」もレターパックの宛名を出さない）
+- 未了: 練習モードでの画面確認（藤田さん・次田さん）・独立レビュー・マージ・本番反映。案件詳細の出荷タブへの段の表示は入れていない（case-detail.js は別の作業中）
 
 ## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）
 

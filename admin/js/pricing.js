@@ -2,6 +2,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { gateRole } from "/js/role.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "/js/fs.js";
+import { letterpackCount } from "/js/ship-steps-rules.js"; // レターパックプラス1通に6台（2026-11-12 送4）
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -63,7 +64,7 @@ function calcYu(){ const sz=$("yuSize").value, ri=$("yuRegion").value; const el=
 
 function calcLp(){
   const fee=Number($("lpFee").value)||0, qty=Math.max(1,Number($("lpQty").value)||1);
-  const tsu=Math.ceil(qty/3);
+  const tsu=letterpackCount(qty);
   $("lpOut").textContent=yen(tsu*fee);
   $("lpDetail").textContent=`（${tsu}通 × ${yen(fee)}）`;
 }

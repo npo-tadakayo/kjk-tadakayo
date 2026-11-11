@@ -3139,10 +3139,9 @@ exports.reportInvoiceToAccounting = onCall(
 // 二重投稿の防止: shipments.shipNotifiedAt があれば投稿しない（resend:true の再送ボタンだけは再投稿する）。
 // 載せるのは出荷に必要な事業所側の情報（宛名・住所・電話・ご担当者名）だけ。出荷データに利用者・被保険者の情報は無い。
 // ⚠️ Webhook の URL はログにも戻り値にも出さない。
-const LETTERPACK_LABELS = { light: "レターパックライト（青）", plus: "レターパックプラス（赤）" };
-const NON_SHIP_SKUS = new Set(["support-fee", "discount"]);
 const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"]; // admin/js/ship-flow.js と同じ値
 // 出荷する品の台数のまとめ（2026-10-30・台数を目立たせる改修）。admin/js/ship-flow.js の shipQtySummary と同じ中身
+// （2026-11-12 から出荷の依頼の文面は ship-steps-rules の readerQty で台数を数える。この写しは同期の検査のために残している）
 // （BEGIN〜END の間をそろえる。scripts/test-ship-flow.mjs が一致を確かめる）。
 // BEGIN shipQtySummary
 function shipQtySummary(items) {
@@ -3159,118 +3158,8 @@ function shipQtySummary(items) {
 // END shipQtySummary
 // 倉庫の画面（2026-10-24）。出荷指示の投稿の末尾に、発送・持ち出しのどちらにも付ける
 const WAREHOUSE_URL = `${CRM_BASE_URL}/warehouse`;
-// o.deliveryMode が "pickup"（持ち出し）なら pickupChatMessage へ。o.pickupMention は持ち出す人のメンション（<users/ID> か「名前さん」）
-function shipmentChatMessage(s, shipmentId, o) {
-  if (o && o.deliveryMode === "pickup") return pickupChatMessage(s, shipmentId, o);
-  // 台数は見出し・副題・本文の先頭に大きく出す（2026-10-30。1台の指示で3台届いた件を受けて）
-  const q = shipQtySummary(s.items);
-  const items = (Array.isArray(s.items) ? s.items : [])
-    .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
-    .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
-  const toAddr = [s.postal ? `〒${s.postal}` : "", s.address || ""].filter(Boolean).join(" ");
-  // 依頼の時点の shipDate は「希望出荷日」（発送済にしたとき実際の発送日に置き換わる）
-  const requested = s.status === "requested";
-  const rows = [
-    ["出荷番号", s.soNumber || shipmentId],
-    ["地域", o.region],
-    [requested ? "希望出荷日" : "出荷日", s.shipDate || ""],
-    ["出荷元", s.originLocationName || (s.fulfillment === "direct" ? "AB Circleから直送（自社在庫を通さない）" : "")],
-    ["レターパックの種類", LETTERPACK_LABELS[s.letterPackType] || "未選択"],
-    ["届け先の住所", toAddr],
-    ["会社名", s.company || ""],
-    ["事業所名", s.officeName || ""],
-    ["宛名", s.contactName ? `${s.contactName} 様` : `${s.officeName || ""} ご担当者様`],
-    ["電話", s.phone || ""],
-    ["品目", items.join("\n")],
-    ["希望到着日", s.desiredDeliveryDate || ""],
-    ["追跡番号", s.trackingNumber || ""],
-    ["追跡番号の写真", Array.isArray(s.trackingPhotos) && s.trackingPhotos.length ? `あり（${s.trackingPhotos.length}枚・CRMで確認）` : ""],
-    ["依頼した人", s.requestedBy || (requested ? o.byName : "")],
-    // 依頼の段階を通らなかった古い出荷は、今までどおり押した人を「発送済にした人」として出す
-    ["発送済にした人", requested ? "" : (s.shippedBy || (s.requestedBy ? "" : o.byName))],
-  ].filter((r) => String(r[1] || "").trim());
-  const printUrl = `${CRM_BASE_URL}/letterpack-print.html?id=${encodeURIComponent(shipmentId)}`;
-  const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
-  const head = o.resend ? "📦 出荷指示（再送）" : "📦 出荷指示";
-  // テキストにも全項目を載せる（カードが表示されない端末・通知のプレビュー・検索のため）。台数は2行目
-  const text = [
-    `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
-    `🔢 台数: ${q.total}台（${q.detail}）← 箱に入れる前に数えてください`,
-    ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
-    `🖨 レターパックの宛名印刷: ${printUrl}`,
-    `👉 CRMの出荷: ${crmUrl}`,
-    `🏬 倉庫の画面: ${WAREHOUSE_URL}`,
-  ].join("\n");
-  return {
-    text,
-    cardsV2: [{
-      cardId: `shipment-${shipmentId}`,
-      card: {
-        header: { title: `${o.resend ? "出荷指示（再送）" : "出荷指示"} — カードリーダー ${q.total}台`, subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}　【合計 ${q.total}台】` },
-        sections: [
-          { widgets: [{ decoratedText: { topLabel: "🔢 台数（箱に入れる前に数えてください）", text: `<font color="#C02828"><b>${q.total}台</b></font>　${q.detail}`, wrapText: true } }] },
-          { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
-          { widgets: [{ buttonList: { buttons: [
-            { text: "宛名を印刷（A4）", onClick: { openLink: { url: printUrl } } },
-            { text: "CRMで開く", onClick: { openLink: { url: crmUrl } } },
-            { text: "倉庫の画面で開く", onClick: { openLink: { url: WAREHOUSE_URL } } },
-          ] } }] },
-        ],
-      },
-    }],
-  };
-}
-
-// 持ち出し（deliveryMode "pickup"・2026-10-24 設計 §5.5・§9.2）の出荷指示。
-// 「〇〇さんが △日に取りに行きます」・保管場所・品と数。持ち出す本人にメンションする（メンションは text の中だけで効く）。
-// レターパック・追跡番号・宛名印刷は出さない（郵送しないため）。
-function pickupChatMessage(s, shipmentId, o) {
-  const q = shipQtySummary(s.items); // 台数は発送の指示と同じく先頭に出す（2026-11-01 倉庫の統合で揃えた）
-  const items = (Array.isArray(s.items) ? s.items : [])
-    .filter((i) => i && !i.nonStock && !NON_SHIP_SKUS.has(String(i.sku || "")) && Number(i.qty) > 0)
-    .map((i) => `${i.sku}${i.name && i.name !== i.sku ? `（${i.name}）` : ""} × ${Number(i.qty)}台`);
-  const requested = s.status === "requested";
-  const who = o.pickupMention || (s.pickupByName ? `${s.pickupByName}さん` : "持ち出す人（未設定）");
-  const rows = [
-    ["出荷番号", s.soNumber || shipmentId],
-    ["送付方法", "持ち出し（倉庫から直接持っていく）"],
-    ["持ち出す人", s.pickupByName || ""],
-    ["予定日", s.pickupDate || ""],
-    ["保管場所", s.originLocationName || ""],
-    ["品目", items.join("\n")],
-    ["届け先の事業所", [s.company, s.officeName].filter(Boolean).join(" ")],
-    ["依頼した人", s.requestedBy || (requested ? o.byName : "")],
-    ["受け渡した人", requested ? "" : (s.handedOverByName || "")],
-  ].filter((r) => String(r[1] || "").trim());
-  const crmUrl = `${CRM_BASE_URL}/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
-  const head = o.resend ? "📦 【持ち出し】出荷指示（再送）" : "📦 【持ち出し】出荷指示";
-  const text = [
-    `${head} — ${s.soNumber || shipmentId} ${o.region || ""}${s.officeName || ""}`,
-    `🔢 台数: ${q.total}台（${q.detail}）← 持ち出す前に数えてください`,
-    `${who} が ${s.pickupDate || "（予定日未設定）"} に ${s.originLocationName || "倉庫"} へ取りに行きます`,
-    ...rows.map(([k, v]) => `■ ${k}: ${String(v).replace(/\n/g, " ／ ")}`),
-    `👉 CRMの出荷: ${crmUrl}`,
-    `🏬 倉庫の画面: ${WAREHOUSE_URL}`,
-  ].join("\n");
-  return {
-    text,
-    cardsV2: [{
-      cardId: `shipment-${shipmentId}`,
-      card: {
-        header: { title: `${o.resend ? "【持ち出し】出荷指示（再送）" : "【持ち出し】出荷指示"} — カードリーダー ${q.total}台`, subtitle: `${s.soNumber || shipmentId}　${s.officeName || ""}　【合計 ${q.total}台】` },
-        sections: [
-          { widgets: [{ decoratedText: { topLabel: "🔢 台数（持ち出す前に数えてください）", text: `<font color="#C02828"><b>${q.total}台</b></font>　${q.detail}`, wrapText: true } }] },
-          { widgets: rows.map(([label, value]) => ({ decoratedText: { topLabel: label, text: String(value).replace(/\n/g, "<br>"), wrapText: true } })) },
-          { widgets: [{ buttonList: { buttons: [
-            { text: "CRMで開く", onClick: { openLink: { url: crmUrl } } },
-            { text: "倉庫の画面で開く", onClick: { openLink: { url: WAREHOUSE_URL } } },
-          ] } }] },
-        ],
-      },
-    }],
-  };
-}
-
+// 出荷の依頼の Chat の文面は、2026-11-12 から短い形（functions/ship-steps.js の requestChatText・ship-steps-rules の shipStepChatText）。
+// 以前の長い文面（shipmentChatMessage・pickupChatMessage：宛名・電話・番地・品目を全部載せていた）は使わなくなったので外した（送6）。
 // 職員へのメンション（users/{email}.chatUserId が数字なら <users/ID>、無ければ「名前さん」）。読めなくても投げない
 async function chatMentionFor(email, fallbackName) {
   const nt = await loadNotify();
@@ -3286,6 +3175,14 @@ async function chatMentionFor(email, fallbackName) {
   if (!u) u = { email: e, name: fallbackName || "" };
   else if (!(u.displayName || u.name) && fallbackName) u.name = fallbackName;
   return nt.mentionOf(u);
+}
+
+// 出荷の届け先の地域（【都道府県 市区町村】まで。番地は出さない）。事業所の登録 → 出荷の住所の順（notifyShipment と発送の5段の知らせで共有）
+async function regionOfShipment(s) {
+  const officeRegion = s && s.officeId ? await officeRegionLabel({ officeId: s.officeId }) : "";
+  if (officeRegion && officeRegion !== "（地域不明）") return officeRegion;
+  const r = regionFromAddress(s && s.address);
+  return r.prefecture ? formatRegion(r.prefecture, r.city) : "";
 }
 
 exports.notifyShipment = onCall(
@@ -3309,6 +3206,7 @@ exports.notifyShipment = onCall(
     const byName = request.auth?.token?.name || email;
     const now = admin.firestore.FieldValue.serverTimestamp();
 
+    const ssRules = await ShipSteps.loadShipSteps();
     // 二重投稿の防止（同時に2回押されたときも1回にするため、トランザクションで「投稿中」の印を付ける）
     let s;
     const lockTs = admin.firestore.Timestamp.now(); // この送信が付けたロック（古い送信の後始末で、自分のロックだけ外すため）
@@ -3318,6 +3216,21 @@ exports.notifyShipment = onCall(
       const d = snap.data();
       if (!NOTIFY_STATUSES.includes(d.status)) return { stop: "not-shipped" };
       if (d.shipNotifiedAt && !resend) return { stop: "already" };
+      // 依頼（STEP1）の必須項目をサーバーでも確かめる（2026-11-12 発送の5段・ship-steps-rules の requestMissing）。
+      // 依頼したばかりの出荷（依頼済・まだ投稿していない・再送ではない）で欠けていれば、投稿せずに下書きへ戻す（＝依頼できない）。
+      // 再送（resend）と、すでに投稿済みの出荷は確かめない（項目の無い既存の依頼をそのまま読めるように）
+      // 印（shipFlow）のある依頼だけ確かめる。印の無い既存の依頼済（本番に出す前の依頼）はそのまま投稿する（PR #76 レビュー 高1）
+      if (!resend && d.status === "requested" && !d.shipNotifiedAt && ssRules.isNewFlow(d)) {
+        const missing = ssRules.requestMissing(d);
+        if (missing.length) {
+          tx.update(ref, {
+            status: "draft", requestRejectedAt: lockTs, requestRejectedMissing: missing,
+            requestRevertedAt: lockTs, requestRevertedBy: "（必須項目の確認）",
+            shipNotifyLockAt: admin.firestore.FieldValue.delete(),
+          });
+          return { stop: "invalid", missing };
+        }
+      }
       const lockAt = d.shipNotifyLockAt && d.shipNotifyLockAt.toMillis ? d.shipNotifyLockAt.toMillis() : 0;
       if (lockAt && Date.now() - lockAt < 60000) return { stop: "busy" };
       tx.update(ref, { shipNotifyLockAt: lockTs });
@@ -3328,6 +3241,9 @@ exports.notifyShipment = onCall(
     if (gate.stop === "not-shipped") throw new HttpsError("failed-precondition", "出荷を依頼していない出荷（下書き・キャンセル）は投稿できません");
     if (gate.stop === "already") return { posted: false, reason: "already" };
     if (gate.stop === "busy") return { posted: false, reason: "busy" };
+    if (gate.stop === "invalid") {
+      throw new HttpsError("failed-precondition", `${ssRules.requestMissingText(gate.missing)}。下書きに戻しました。直してから依頼し直してください`);
+    }
 
     // 投稿の結果を出荷に書く。まだ依頼済以上で requestSeq が同じときだけ（Codex 指摘4）。書かなかったら false
     const writeResult = async (patch) => db.runTransaction(async (tx) => {
@@ -3370,17 +3286,18 @@ exports.notifyShipment = onCall(
     }
 
     try {
-      const officeRegion = s.officeId ? await officeRegionLabel({ officeId: s.officeId }) : "";
-      const region = officeRegion && officeRegion !== "（地域不明）"
-        ? officeRegion
-        : (() => { const r = regionFromAddress(s.address); return r.prefecture ? formatRegion(r.prefecture, r.city) : ""; })();
       // 持ち出し（2026-10-24）: 持ち出す本人にメンションする（users/{pickupByEmail}.chatUserId。無ければ名前）
       const wr = await loadWarehouseRules();
       // 直送は持ち出しにできない（canPickup）。データに pickup が残っていても発送の文面にする
       const deliveryMode = wr.canPickup(s) ? wr.deliveryModeOf(s) : "ship";
       let pickupMention = "";
       if (deliveryMode === "pickup") pickupMention = await chatMentionFor(s.pickupByEmail, s.pickupByName);
-      await postChatCard(url, shipmentChatMessage(s, shipmentId, { region, byName, resend: !!resend, deliveryMode, pickupMention }));
+      // 文面は短く（2026-11-12 送6）: 誰の依頼・どこ宛て（市区町村まで）・何台・納品希望日 と CRM の画面へのリンクだけ。
+      // 事業所の担当者名・電話番号・番地は書かない。長い文面（shipmentChatMessage）は使わない（倉庫の画面で詳しく見られる）
+      const text = await ShipSteps.requestChatText({ ...s, deliveryMode }, {
+        resend: !!resend, pickupMention, locationName: s.originLocationName || "",
+      });
+      await postChatCard(url, { text });
     } catch (e) {
       // Chat の応答本文に URL は含まれないが、念のためメッセージは先頭だけ・URL らしき文字列は伏せて残す
       const msg = String(e.message || e).replace(/https?:\/\/\S+/g, "(URL)").slice(0, 200);
@@ -4001,13 +3918,31 @@ exports.warehouseList = onCall(
     if (!loc) throw new HttpsError("not-found", "保管場所が見つかりません（停止中の可能性があります）");
     const atLoc = (s) => s.fulfillment !== "direct" && (s.originLocationId || locs.defaultId) === locationId;
 
+    // 発送の5段（2026-11-12）: 各出荷に段（step）と、入荷待ちなら在庫がそろったか（stockReady）を足す。並びは納品希望日の早い順
+    const ss = await ShipSteps.loadShipSteps();
+    _settingsCache = null;
+    const finalConfirm = ss.finalConfirmOn(await getSettings());
+    const prodSnap = await db.collection("products").get();
+    const productsBySku = Object.fromEntries(prodSnap.docs.map((d) => [d.id, d.data() || {}]));
     const reqSnap = await db.collection("shipments").where("status", "==", "requested").get();
-    const dueOf = (w) => (w.deliveryMode === "pickup" ? w.pickupDate : w.desiredDate) || "9999-99-99";
-    const requested = reqSnap.docs
+    const requested = ss.sortByDesired(reqSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((s) => wr.warehouseActionable(s, locationId, locs.defaultId))
-      .map((s) => wr.projectForWarehouse(s))
-      .sort((a, b) => dueOf(a).localeCompare(dueOf(b)) || String(a.requestedAt || "").localeCompare(String(b.requestedAt || "")));
+      .filter((s) => wr.warehouseActionable(s, locationId, locs.defaultId)))
+      .map((s) => {
+        const step = ss.stepOf(s, { finalConfirm });
+        return {
+          ...wr.projectForWarehouse(s), step,
+          stockReady: step === "wait" ? wr.stockShortage(s.items, productsBySku, locationId).length === 0 : false,
+        };
+      });
+    // キャンセルリスト（直近30日にキャンセルした、この場所の出荷）。キャンセルの日時で絞る
+    const sinceMs = Date.now() - WAREHOUSE_DONE_DAYS * 86400000;
+    const canSnap = await db.collection("shipments").where("status", "==", "canceled").get();
+    const canceled = canSnap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((s) => atLoc(s) && s.canceledAt && typeof s.canceledAt.toMillis === "function" && s.canceledAt.toMillis() >= sinceMs)
+      .map((s) => ({ ...wr.projectForWarehouse(s), step: "canceled" }))
+      .sort((a, b) => String(b.canceledAt || "").localeCompare(String(a.canceledAt || "")));
 
     // 発送日（YYYY-MM-DD の文字列）の範囲だけで引き、状態・場所は手元で絞る（複合インデックスを増やさない）
     const since = ymdDaysAgo(WAREHOUSE_DONE_DAYS);
@@ -4015,10 +3950,9 @@ exports.warehouseList = onCall(
     const done = doneSnap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((s) => WAREHOUSE_DONE_STATUSES.includes(wr.shipStatusOf(s)) && atLoc(s)) // 状態が未設定の古い出荷は発送済
-      .map((s) => wr.projectForWarehouse(s))
+      .map((s) => ({ ...wr.projectForWarehouse(s), step: "done" }))
       .sort((a, b) => b.shipDate.localeCompare(a.shipDate) || b.soNumber.localeCompare(a.soNumber));
 
-    const prodSnap = await db.collection("products").get();
     const stock = prodSnap.docs
       .map((d) => {
         const p = d.data() || {};
@@ -4035,7 +3969,7 @@ exports.warehouseList = onCall(
       sender,
       location: { id: loc.id, name: String(loc.name || "") },
       locations: locs.active.filter((l) => wr.canUseLocation(me.user, l.id)).map((l) => ({ id: l.id, name: String(l.name || "") })),
-      requested, done, stock,
+      requested, done, canceled, stock, finalConfirm,
     };
   }
 );
@@ -4045,6 +3979,9 @@ exports.warehouseList = onCall(
 // mode: "ship" | "pickup"。extra は出荷に足す項目（発送日・追跡番号・受け渡しの記録など）
 async function warehouseComplete(me, shipmentId, mode, extra) {
   const wr = await loadWarehouseRules();
+  const ss = await ShipSteps.loadShipSteps();
+  _settingsCache = null;
+  const fc = ss.finalConfirmOn(await getSettings()); // 依頼者の最終確認を行う設定か（2026-11-12 送3）
   const locs = await warehouseLocations();
   const nameOf = (id) => ((locs.all.find((l) => l.id === id) || {}).name) || "";
   const ref = db.collection("shipments").doc(shipmentId);
@@ -4065,6 +4002,8 @@ async function warehouseComplete(me, shipmentId, mode, extra) {
     }
     const locId = cur.originLocationId || locs.defaultId;
     if (!wr.canUseLocation(me.user, locId)) throw new HttpsError("permission-denied", "この保管場所の出荷を扱う権限がありません");
+    // 発送の5段（2026-11-12）: 発送済・受け渡し済にできるのは「発送準備」の段だけ（受付で発送可・依頼者の最終確認が済んだもの。持ち出しは受付を省く）
+    if (!ss.canComplete(cur, { finalConfirm: fc })) throw new HttpsError("failed-precondition", ss.completeBlockedText(cur, { finalConfirm: fc }));
     // 在庫は最新の明細（cur.items）で引く。読み取りは書き込みより前にまとめて済ませる（Firestore トランザクションの決まり）
     const skus = [...new Set((Array.isArray(cur.items) ? cur.items : [])
       .filter((i) => i && !i.nonStock && i.sku && Number(i.qty) > 0).map((i) => String(i.sku)))];
@@ -4119,19 +4058,29 @@ exports.warehouseShip = onCall(
     const data = request.data || {};
     const shipmentId = warehouseShipmentId(data);
     const shipDate = warehouseYmd(data.shipDate, "発送日");
-    const { trackingNumber, letterPackType } = data;
+    const { trackingNumber, letterPackType, packType } = data;
     if (trackingNumber != null && typeof trackingNumber !== "string") throw new HttpsError("invalid-argument", "追跡番号の形が正しくありません");
     const tn = String(trackingNumber || "").trim();
     if (tn.length > WAREHOUSE_TRACKING_MAX) throw new HttpsError("invalid-argument", `追跡番号は${WAREHOUSE_TRACKING_MAX}字以内で入れてください`);
     if (letterPackType != null && letterPackType !== "" && letterPackType !== "light" && letterPackType !== "plus") {
       throw new HttpsError("invalid-argument", "レターパックの種類が正しくありません");
     }
+    // 梱包の種別（2026-11-12 送4）: plus＝レターパックプラス／light＝ライト／yupack＝ゆうパック（元払い）。
+    // レターパックのときは letterPackType も同じ値にそろえる（宛名印刷・送付状が letterPackType を読むため）
+    if (packType != null && packType !== "" && !["plus", "light", "yupack"].includes(packType)) {
+      throw new HttpsError("invalid-argument", "梱包の種別が正しくありません");
+    }
+    const lp = packType === "plus" || packType === "light" ? packType : (letterPackType === "light" || letterPackType === "plus" ? letterPackType : "");
     await warehouseComplete(me, shipmentId, "ship", {
       shipDate,
-      ...(letterPackType === "light" || letterPackType === "plus" ? { letterPackType } : {}), // supply.js letterPackPatch と同じ
+      ...(lp ? { letterPackType: lp } : {}), // supply.js letterPackPatch と同じ
+      ...(packType ? { packType } : lp ? { packType: lp } : {}),
       ...(tn ? { trackingNumber: tn } : {}),
     });
-    return { ok: true };
+    // 発送完了の知らせ（依頼者へメンション＋案件の対応記録・2026-11-12 送5）。失敗しても発送済の記録は残す
+    let done = { notified: false };
+    try { done = await ShipSteps.notifyShipDone(shipmentId, me); } catch (e) { console.warn("warehouseShip notifyShipDone:", e.message); }
+    return { ok: true, notified: !!done.notified };
   }
 );
 
@@ -4148,7 +4097,9 @@ exports.warehouseHandover = onCall(
     await warehouseComplete(me, shipmentId, "pickup", {
       shipDate: date, handedOverAt: now, handedOverByEmail: me.email, handedOverByName: me.name,
     });
-    return { ok: true };
+    let done = { notified: false };
+    try { done = await ShipSteps.notifyShipDone(shipmentId, me); } catch (e) { console.warn("warehouseHandover notifyShipDone:", e.message); }
+    return { ok: true, notified: !!done.notified };
   }
 );
 
@@ -4329,3 +4280,13 @@ exports.trainerRecordTalk = trainer.trainerRecordTalk;
 exports.trainerCourseSubmit = trainer.trainerCourseSubmit;
 exports.trainerCertify = trainer.trainerCertify;
 exports.trainerRevoke = trainer.trainerRevoke;
+// ===== カードリーダーの発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12）=====
+// 本体は functions/ship-steps.js（判定は ship-steps-rules.mjs＝正本 admin/js/ship-steps-rules.js のコピー）。
+// notifyShipment（依頼の必須項目の確認・短い文面）と warehouseShip / warehouseHandover（発送準備の段だけ・発送完了の知らせ）からも使う。
+const ShipSteps = require("./ship-steps")({
+  db, admin, requireWarehouse, requireStaff, getWebhook, getSettings,
+  clearSettingsCache: () => { _settingsCache = null; },
+  postChatCard, chatMentionFor, regionOfShipment, loadWarehouseRules, warehouseLocations, CRM_BASE_URL, SA_BATCH,
+});
+exports.warehouseAccept = ShipSteps.warehouseAccept;
+exports.shipStepDone = ShipSteps.shipStepDone;
