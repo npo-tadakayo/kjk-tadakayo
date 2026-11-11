@@ -49,7 +49,7 @@ t("練習用の写しも同じ結果", () => {
 });
 t("buildOrderConsentRecord: Web は userAgent を300文字まで入れる。紙・空なら入れない。職員・事業所のメールアドレスは入れない", () => {
   const q = { id: "q", caseId: "c", caseNumber: 1, estNo: "EST-1", version: 2, items: [], amounts: { totalIncl: 1 }, contactEmail: "office@example.test" };
-  const w = R.buildOrderConsentRecord({ document: CD.CONSENT_V1_2, quotes: [q], signed: { name: "x", method: "web_order", userAgent: "U".repeat(400) }, createdBy: "web（見積もりページで同意）" });
+  const w = R.buildOrderConsentRecord({ document: CD.CONSENT_V1_2, quotes: [q], signed: { name: "x", method: "web_order", userAgent: "U".repeat(400) } });
   assert.equal(w.signed.userAgent.length, 300);
   const { document: _d, ...rest } = w; // 条文の発行者欄（info@tadakayo.jp）は条文そのものなので除く
   assert.ok(!JSON.stringify(rest).includes("@"), "承諾書の文書にメールアドレスが入っている");
@@ -211,7 +211,8 @@ t("webhookMitsumori: スイッチがオフなら応答に承諾書の項目を�
 t("承諾書の文書に職員・内部のメールアドレスを入れない（Web の道）", () => {
   const src = read("functions/index.js");
   const tx = src.slice(src.indexOf("async function acceptOrderByConsentTransaction("), src.indexOf("async function reconsentTransaction("));
-  assert.match(tx, /createdBy: web \? "web（見積もりページで同意）"/);
+  const call = tx.slice(tx.indexOf("buildOrderConsentRecord({"), tx.indexOf("});", tx.indexOf("buildOrderConsentRecord({")));
+  assert.ok(!/email|createdBy|recordedBy/.test(call), call);
 });
 t("mitsumori.html: 同意の印は承諾書の画面を出したときだけ送る・部品を読み込む", () => {
   const h = read("mitsumori.html");

@@ -147,11 +147,13 @@ function orderConsentTotal(entries) {
  * @param {object} p.document   条文の全文（functions/consent-document.js の ORDER_CONSENT_DOCUMENT）
  * @param {object[]} p.quotes   見積もり（Firestore のデータ + id）
  * @param {string|null} p.groupId
- * @param {{name:string, method:string, receivedDate?:string, receivedVia?:string, recordedBy?:string}} p.signed
- * @param {string} p.createdBy
+ * @param {{name:string, method:string, receivedDate?:string, receivedVia?:string}} p.signed
  * @param {string|null} [p.retakeOf]  受注後に改版して取り直したときの、前の承諾書のトークン
+ * ⚠️ 職員のメールアドレス（記録した人など）は入れない（2026-11-12 レビュー 気づき-5）。承諾書の文書はトークンを知っていれば
+ *    誰でも読める（第2段では事業所にトークンを渡す）ため。記録した職員は、案件の対応記録（activities.userName）と
+ *    見積もり（acceptedByStaff）・案件（orderConfirmedBy）の側に残る。
  */
-function buildOrderConsentRecord({ document, quotes, groupId, signed, createdBy, retakeOf = null } = {}) {
+function buildOrderConsentRecord({ document, quotes, groupId, signed, retakeOf = null } = {}) {
   const entries = (quotes || []).map(orderConsentQuoteEntry);
   const first = entries[0] || {};
   const firstQ = (quotes || [])[0] || {};
@@ -160,7 +162,6 @@ function buildOrderConsentRecord({ document, quotes, groupId, signed, createdBy,
   if (s.method === "paper_order") {
     sig.receivedDate = s.receivedDate;
     sig.receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, s.receivedVia) ? s.receivedVia : "other";
-    sig.recordedBy = String(s.recordedBy || "");
   }
   // Web（見積もりページで同意・第2段）: 同意した端末のブラウザの情報（あれば）。時刻はサーバーの時刻を呼び出し側が足す
   if (s.method === "web_order" && s.userAgent) sig.userAgent = String(s.userAgent).slice(0, 300);
@@ -178,7 +179,6 @@ function buildOrderConsentRecord({ document, quotes, groupId, signed, createdBy,
     quoteGroupId: groupId || null,
     totalIncl: orderConsentTotal(entries),
     signed: sig,
-    createdBy: String(createdBy || ""),
   };
   if (retakeOf) rec.retakeOf = String(retakeOf);
   return rec;
@@ -235,6 +235,8 @@ function checkOrderReconsent({ quote, siblings, kase, signedName, receivedDate, 
   }
   if (!kase) return ng("case_not_found", "案件が見つかりません");
   if (!kase.orderConsentToken) return ng("no_order_consent", "この案件には発注の承諾書がありません（取り直しは、承諾書で受注確定にした案件だけです）");
+  // 取り直しが済んでいる（印が立っていない）ときは止める。二度押しで承諾書が2件できないように（2026-11-12 レビュー 低-3）
+  if (kase.orderConsentStale !== true) return ng("already_retaken", "この案件の承諾書はすでに取り直し済みです（取り直しが要るのは、受注後に見積もりの内容が変わったときだけです）");
   const name = String(signedName || "").trim();
   if (!name) return ng("no_signed_name", "承諾書に署名した方のお名前を入れてください");
   if (name.length > 100) return ng("signed_name_too_long", "署名者のお名前は100文字までにしてください");

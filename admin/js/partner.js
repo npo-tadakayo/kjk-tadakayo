@@ -113,7 +113,7 @@ function startApp(){
 $("loginBtn").addEventListener("click", async ()=>{
   $("loginError").style.display="none";
   try{ await signInWithPopup(auth, new GoogleAuthProvider()); }
-  catch(e){ $("loginError").textContent=`ログインに失敗しました: ${e.message}`; $("loginError").style.display="block"; }
+  catch(e){ console.error("login failed:", e); const msg=await import("./login-errors.js").then((m)=>m.loginErrorMessage(e, "partner")).catch(()=>({text:`ログインに失敗しました: ${e.message}`})); $("loginError").textContent=msg.text; $("loginError").style.display="block"; }
 });
 $("logoutBtn").addEventListener("click", ()=>signOut(auth));
 $("denyLogout").addEventListener("click", ()=>signOut(auth));

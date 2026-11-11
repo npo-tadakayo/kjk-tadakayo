@@ -538,6 +538,9 @@ sequenceDiagram
 - **プレビュー版でログインする手順**: `deploy-hosting.mjs --channel <名前>` → 終了時に表示される `node scripts/auth-domains.mjs add <アドレス>` を次田さんの指示のうえで `--yes` 付きで実行 → 使い終わったら `remove`
 - firebase CLI の `hosting:channel:deploy` はチャンネルのアドレスを自動で足す（足すだけで、一覧が壊れていても直さない）
 - テスト: `node scripts/test-auth-domains.mjs`（計算部分のみ・ネットワーク無し）
+- **なぜ人の目で見つからないか**: 承認済みドメインはログインする瞬間（`signInWithPopup` が Google の画面を開くとき）にしか確かめられない。ログイン済みの人はトークンの自動更新だけで使い続けられ、そこでは承認済みドメインを見ない。壊れても困るのは新しくログインする人だけ
+- **毎朝の自動点検** `dailyAuthDomainCheck`（8:00 JST・`fn-batch-sa`・判定と文面は `functions/auth-domain-watch.js`）: config を読み、4件が欠けていれば Chat（`pmChatWebhookUrl`、空なら CRM の投稿先）に知らせる。正常なら知らせない。読めなかったときも知らせる。書き込みはしない。要権限: `fn-batch-sa` に `roles/firebaseauth.viewer`
+- **ログイン失敗の表示** `admin/js/login-errors.js`: Firebase のエラーコードごとに日本語の説明を出す（管理画面は連絡先「管理者（次田）」、認定事業者ポータルは「タダカヨの担当者」）。システム側の問題（`auth/unauthorized-domain` 等）は「あなたの操作の問題ではありません」と伝え、問い合わせ用にコードを添える。英語の生メッセージは出さない
 
 > [!INFO]
 > Webhook URL・メール送信元・振込先・印影などは「設定」画面（`appConfig/settings`）から変更でき、コード変更・再デプロイは不要（最大60秒で反映）。
@@ -730,7 +733,7 @@ sequenceDiagram
 
 | 場所 | 足した項目 |
 |---|---|
-| `consentRequests/{token}`（kind:"order"） | `kind`・`caseId`（まとめは先頭の案件）・`caseIds[]`・`displayNo`（`CST-{案件番号}`、まとめは `-G{件数}`）・`officeName`・`company`・`contactName`・`status:"signed"`・`document`（v1.2 全文）・`quotes[{quoteId, estNo, version, caseId, caseNumber, officeName, corpName, plan, items[{sku,subsidyQty,extraQty,connector?}], amounts{readers,accompanyFee,discount,totalIncl,grantAmt,selfPay}}]`・`quoteGroupId`・`totalIncl`・`signed{name, signedAt(サーバー時刻), method:"paper_order"|"web_order", receivedDate, receivedVia(post/fax/hand/email/other), recordedBy}`・`createdAt/By/Via`・取り直しは `retakeOf`（前のトークン） |
+| `consentRequests/{token}`（kind:"order"） | `kind`・`caseId`（まとめは先頭の案件）・`caseIds[]`・`displayNo`（`CST-{案件番号}`、まとめは `-G{件数}`）・`officeName`・`company`・`contactName`・`status:"signed"`・`document`（v1.2 全文）・`quotes[{quoteId, estNo, version, caseId, caseNumber, officeName, corpName, plan, items[{sku,subsidyQty,extraQty,connector?}], amounts{readers,accompanyFee,discount,totalIncl,grantAmt,selfPay}}]`・`quoteGroupId`・`totalIncl`・`signed{name, signedAt(サーバー時刻), method:"paper_order"|"web_order", receivedDate, receivedVia(post/fax/hand/email/other)}`・`createdAt/Via`・取り直しは `retakeOf`（前のトークン）。**職員のメールアドレス（記録者など）は入れない**（トークンを知れば誰でも読めるため・レビュー 気づき-5）。記録した職員は対応記録の `userName`・`quotes.acceptedByStaff`・`cases.orderConfirmedBy` に残る |
 | `quotes/{id}` | `acceptedVia:"consent_paper"`（第2段で `"consent_web"`）・`consentToken`・取り直しで `consentRetakenAt`。紙の道の `acceptedBy`・`acceptedReceivedDate`・`acceptedChannel` は承諾書の署名者名・受け取った日・受け取り方（fax→fax、email→email、ほか→other）から |
 | `cases/{id}` | `orderConsentToken`・`orderConsentAt`・`orderConsentStale` |
 | `appConfig/settings` | `orderByConsent`・（記録用）`orderByConsentFrom`。**練習DBへ写す許可リストには入れない**（本番のスイッチを練習へ持ち込まない） |
@@ -741,9 +744,9 @@ sequenceDiagram
 - **判定**: `functions/accept-rules.js` の `checkOrderConsent`・`checkOrderReconsent`・`buildOrderConsentRecord`・`orderConsentStaleAfterRevise`・`orderByConsentOn`・`channelOfReceivedVia`。練習モード用の写し `admin/js/order-consent-rules.js`（本文が同じ・同じ結果になることをテストで確認）
 - **`acceptQuoteTransaction` の分割**: 読み取り `acceptTxRead`（読む順は従来と同じ）／書き込み `acceptTxWrite`（`consent` を渡したときだけ承諾書の項目を足す・`setCounter:false` で採番の書き込みを呼び出し側に回す）。1件の申込（Web・スイッチオフのスタッフ）は従来と同じ1件1トランザクション
 - **まとめ見積もり（発6）**: スイッチがオンのときは全事業所を1つのトランザクションで受注確定（1件でも通らなければ全部止める。オフのときの「一部だけ確定（partial）」とは違う）。出荷番号は連番でまとめて採り、`_counters/shipments` は最後に1回だけ書く
-- **受注後の改版（発3）**: `reviseQuote` は案件に `orderConsentToken` があるとき、承諾書に焼き込んだその案件の見積もりと新しい版の「品目（品番・補助対象・追加）・合計（税込）」を比べ、違えば `orderConsentStale:true`（同じなら false）。出荷は止めない。取り直しは `staffAcceptQuote` に `reconsent:true` と `consent` を渡す（受注済み・最新版・発注の承諾がある案件だけ。新しい承諾書を作り `retakeOf` に前の承諾書。出荷・受注は変えない）
+- **受注後の改版（発3）**: `reviseQuote` は案件に `orderConsentToken` があるとき、承諾書に焼き込んだその案件の見積もりと新しい版の「品目（品番・補助対象・追加）・合計（税込）」を比べ、違えば `orderConsentStale:true`（同じなら false）。出荷は止めない。取り直しは `staffAcceptQuote` に `reconsent:true` と `consent` を渡す（受注済み・最新版・発注の承諾があり `orderConsentStale` が立っている案件だけ。取り直し済みの二度押しは `already_retaken` で止める〔レビュー 低-3〕。新しい承諾書を作り `retakeOf` に前の承諾書。出荷・受注は変えない）
 - **`onConsentSigned`**: `kind:"order"` は対象外（`Flow.shouldNotifyConsent`。受注の処理が通知するため）
-- **画面**（スイッチがオンのときだけ変わる）: 見積もりカード（`quote-admin.js`）の「承諾書を印刷」「署名済みの承諾書を受け取った（受注確定にする）」（従来の「受注確定にする（電話・メールで申込を受けた）」の代わり）・取り直しの2ボタン・「発注の承諾書」の1行／状態の選択の制限（`order-consent.js` の `statusChangeGuard`・`blockedStatusOptions`。受注前 1・2 → 3〜12 を選べない。管理者は理由を書けば可・対応記録に「手動で状態を変更（理由: …）」）／次の一手（`constants.js` の `nextActionFor`）／点検（`record-gaps.js` の `orderConsentNoticeOf`。次の一手の下・見積もりカード・カンバン）／承諾書の欄（`consent-admin.js`。発注の承諾書があればそれを署名済みとして出す）。サーバー側のルールでの手動変更の禁止はあとで（発5）
+- **画面**（スイッチがオンのときだけ変わる）: 見積もりカード（`quote-admin.js`）の「承諾書を印刷」「署名済みの承諾書を受け取った（受注確定にする）」（従来の「受注確定にする（電話・メールで申込を受けた）」の代わり）・取り直しの2ボタン・「発注の承諾書」の1行／状態の選択の制限（`order-consent.js` の `statusChangeGuard`・`blockedStatusOptions`。受注前 1・2 → 3〜12 を選べない。失注 4・完了 13 も、`orderConsentToken` も `orderedAt` も無ければ受注前として同じく止める〔レビュー 中-1〕。管理者は理由を書けば可・対応記録に「手動で状態を変更（理由: …）」）／次の一手（`constants.js` の `nextActionFor`）／点検（`record-gaps.js` の `orderConsentNoticeOf`。次の一手の下・見積もりカード・カンバン）／承諾書の欄（`consent-admin.js`。発注の承諾書があればそれを署名済みとして出す）。サーバー側のルールでの手動変更の禁止はあとで（発5）
 - **練習モード**: 代役（`practice-stubs.js` の `staffAcceptQuote`・`reviseQuote`）が同じ道を練習DBで通す。スイッチは**練習DBの** `appConfig/settings.orderByConsent`。見積もりカードの「練習で新しい流れを試す」で入れる（`isPracticeRef` で練習DBであることを確かめてから書く）。毎晩の練習DBの初期化で切れた状態に戻る
 - 本番に出すときに要るもの: **Functions**（`staffAcceptQuote`・`reviseQuote`・`acceptQuote`〔`acceptQuoteTransaction` を分割したため〕・`onConsentSigned`）と **hosting（admin）**。rules の変更なし。スイッチはオフのまま出す
 

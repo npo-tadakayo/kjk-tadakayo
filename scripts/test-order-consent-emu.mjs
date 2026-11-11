@@ -178,9 +178,11 @@ check("承諾書: 条文 v1.2 の全文（題名・§6・同意文）", recC && 
 check("承諾書: 見積もりの焼き込み（見積番号・版・案件・事業所・品目・金額）", recC && recC.quotes.length === 1 && recC.quotes[0].quoteId === "qB"
   && recC.quotes[0].estNo === "EST-T-qB" && recC.quotes[0].version === 1 && recC.quotes[0].caseId === "cB"
   && recC.quotes[0].items[0].subsidyQty === 2 && recC.quotes[0].amounts.totalIncl === 79200 && recC.totalIncl === 79200, JSON.stringify(recC && recC.quotes));
-check("承諾書: signed（署名者・紙・受け取った日・受け取り方・記録者・サーバー時刻）", recC && recC.signed.name === "鈴木 一郎（管理者）"
+check("承諾書: signed（署名者・紙・受け取った日・受け取り方・サーバー時刻）", recC && recC.signed.name === "鈴木 一郎（管理者）"
   && recC.signed.method === "paper_order" && recC.signed.receivedDate === ymd(1) && recC.signed.receivedVia === "fax"
-  && recC.signed.recordedBy === STAFF && recC.signed.signedAt instanceof TS, JSON.stringify(recC && recC.signed));
+  && recC.signed.signedAt instanceof TS && !("recordedBy" in recC.signed), JSON.stringify(recC && recC.signed));
+// 条文（document）には法人の窓口 info@ が載るので除いて見る。職員のアドレスは条文の外にも中にも入らない
+check("承諾書: 職員のメールアドレスが入っていない（トークンを知れば読めるため）", recC && !/@/.test(JSON.stringify({ ...recC, document: null })) && !JSON.stringify(recC).includes(STAFF) && !("createdBy" in recC));
 check("承諾書: caseId・caseIds", recC && recC.caseId === "cB" && JSON.stringify(recC.caseIds) === JSON.stringify(["cB"]));
 const qB = await get(qd("qB")), kB = await get(cd("cB"));
 check("見積もり: accepted・acceptedVia consent_paper・consentToken", qB.status === "accepted" && qB.acceptedVia === "consent_paper" && qB.consentToken === tokC);
@@ -190,6 +192,7 @@ check("案件: 受注日＝受け取った日（JST 0時）", kB.orderedAt && ne
 const shB = await shipsOf("cB");
 check("出荷の下書きが1件", shB.length === 1 && shB[0].status === "draft" && shB[0].quoteId === "qB");
 const actB = await actsOf("cB");
+check("記録した職員は見積もり・案件・対応記録の側に残る", qB.acceptedByStaff === STAFF && kB.orderConfirmedBy === STAFF);
 check("対応記録: 承諾書で受注確定の件名", actB.some((a) => /^署名済みの承諾書（FAX）を受け取り、受注確定にしました（EST-T-qB・出荷 SH-/.test(a.subject)), JSON.stringify(actB.map((a) => a.subject)));
 check("Chat: 承諾書の見出し（署名者名は載せない）", posted.some((p) => /署名済みの承諾書を受け取り、受注確定にしました/.test(p.text) && !p.text.includes("鈴木")), JSON.stringify(posted).slice(0, 300));
 r = await call("staffAcceptQuote", STAFF, { quoteId: "qB", payMethod: "after", sendMail: false, consent: { signedName: "鈴木", receivedDate: TODAY } });
@@ -274,6 +277,11 @@ check("新しい承諾書: 第2版を焼き込み・前の承諾書を retakeOf 
 check("前の承諾書は残っている", !!(await get(db.collection("consentRequests").doc(tokC))));
 check("取り直しでは出荷・番号は変わらない", (await shipsOf("cB")).length === 1 && (await counter()) === cG0);
 check("見積もりに consentToken（新しい承諾書）", (await get(qd(qBv2.id))).consentToken === r.r.consentToken);
+check("取り直しの承諾書にも職員のメールアドレスが入っていない", recG && !/@/.test(JSON.stringify({ ...recG, document: null })) && !JSON.stringify(recG).includes(STAFF));
+const nConsG = (await consentsOf("cB")).length;
+r = await call("staffAcceptQuote", STAFF, { quoteId: qBv2.id, reconsent: true, consent: { signedName: "鈴木 一郎", receivedDate: TODAY } });
+check("取り直しの二度押しは「すでに取り直し済み」で止める", !r.ok && r.code === "failed-precondition" && r.details && r.details.code === "already_retaken", JSON.stringify(r));
+check("二度押しで承諾書は増えない", (await consentsOf("cB")).length === nConsG);
 // 内容が同じ改版（理由だけ）では印は立たない
 r = await call("reviseQuote", STAFF, { quoteId: qBv2.id, plan: "houmon", btQty: 3, usbQty: 0, btExtra: 0, usbExtra: 0, reason: "メモだけ", sendMail: false });
 check("品目・台数・金額が同じ改版では印を立てない", r.ok && r.r.orderConsentStale === false && (await get(cd("cB"))).orderConsentStale === false, JSON.stringify(r).slice(0, 200));

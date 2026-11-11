@@ -11,29 +11,40 @@ export { orderByConsentOn, ORDER_RECEIVED_VIA };
 
 // ===== 状態の選択の制限（発5）=====
 // 受注前（1 新規受信・2 確認中）の案件を、3〜12 に手で進める選択肢を選べなくする（3 だけ止めても 5 に飛ばせば抜けられるため）。
-// 4（失注）・13（完了）と、すでに 3 以上の案件の操作は今までどおり。管理者だけ、理由を書けば変えられる（対応記録に残す）。
+// すでに 3 以上の案件の操作は今までどおり。管理者だけ、理由を書けば変えられる（対応記録に残す）。
+// 4（失注）・13（完了）からも、受注前のまま（発注の承諾書 orderConsentToken も受注日 orderedAt も無い）なら 3〜12 へは進めない
+// （失注・完了をはさむと承諾書なしで受注確定に進めてしまうため・2026-11-12 レビュー 中-1）。
+// 新しい流れを入れる前から受注していた進行中の案件（orderConsentToken は無いが orderedAt がある）は止めない。
 export const ORDER_GATED_FROM = [1, 2];
+export const ORDER_REOPEN_FROM = [4, 13];
 export const ORDER_GATED_TO = [3, 5, 6, 7, 8, 9, 10, 11, 12];
 export const STATUS_BLOCKED_TEXT =
-  "受注前（新規受信・確認中）の案件は、手で受注確定より先に進められません。"
+  "受注前（新規受信・確認中、または承諾書も受注日も無い失注・完了）の案件は、手で受注確定より先に進められません。"
   + "見積もりカードの「署名済みの承諾書を受け取った（受注確定にする）」で受注確定にしてください（管理者は理由を書けば変えられます）";
 export const STATUS_REASON_PROMPT =
   "受注前の案件を、承諾書なしで手で進めます（管理者の例外）。\n理由を入れてください（対応記録に「手動で状態を変更（理由: …）」と残ります）";
 
-/** 手で状態を変えてよいか。{kind:"ok"} ／ {kind:"reason"}（管理者・理由が要る）／ {kind:"blocked", message} */
-export function statusChangeGuard({ from, to, orderByConsent, isAdmin } = {}) {
+/** 受注前として扱うか（1・2 は常に。4・13 は発注の承諾書も受注日も無いとき） */
+export function isBeforeOrder(from, caseData) {
+  const f = Number(from) || 1;
+  if (ORDER_GATED_FROM.includes(f)) return true;
+  if (ORDER_REOPEN_FROM.includes(f)) return !(caseData && (caseData.orderConsentToken || caseData.orderedAt));
+  return false;
+}
+
+/** 手で状態を変えてよいか。{kind:"ok"} ／ {kind:"reason"}（管理者・理由が要る）／ {kind:"blocked", message}。caseData は案件（4・13 の判定に使う） */
+export function statusChangeGuard({ from, to, orderByConsent, isAdmin, caseData } = {}) {
   if (!orderByConsent) return { kind: "ok" };
-  const f = Number(from) || 1, t = Number(to);
-  if (!ORDER_GATED_FROM.includes(f) || !ORDER_GATED_TO.includes(t)) return { kind: "ok" };
+  const t = Number(to);
+  if (!isBeforeOrder(from, caseData) || !ORDER_GATED_TO.includes(t)) return { kind: "ok" };
   if (isAdmin) return { kind: "reason", message: STATUS_REASON_PROMPT };
   return { kind: "blocked", message: STATUS_BLOCKED_TEXT };
 }
 
 /** 選べなくする状態の番号（管理者は選べる＝空。スイッチが切れていれば空） */
-export function blockedStatusOptions({ from, orderByConsent, isAdmin } = {}) {
+export function blockedStatusOptions({ from, orderByConsent, isAdmin, caseData } = {}) {
   if (!orderByConsent || isAdmin) return [];
-  const f = Number(from) || 1;
-  return ORDER_GATED_FROM.includes(f) ? [...ORDER_GATED_TO] : [];
+  return isBeforeOrder(from, caseData) ? [...ORDER_GATED_TO] : [];
 }
 
 /** 管理者の例外のとき、対応記録に足す1行 */

@@ -224,7 +224,8 @@ check("承諾書: 条文 v1.2 の全文", JSON.stringify(plain(recC.document)) =
 check("承諾書: 見積もりの焼き込み（見積番号・版・事業所・品目・金額）", recC.quotes.length === 1 && recC.quotes[0].estNo === "EST-W-wqB"
   && recC.quotes[0].version === 1 && recC.quotes[0].officeName === "事業所wqB" && recC.quotes[0].items[0].subsidyQty === 2
   && recC.quotes[0].amounts.totalIncl === 79200 && recC.totalIncl === 79200);
-check("承諾書: createdVia acceptQuote・createdBy web", recC.createdVia === "acceptQuote" && /^web/.test(recC.createdBy));
+check("承諾書: createdVia acceptQuote・メールアドレスを入れない（createdBy・recordedBy なし）", recC.createdVia === "acceptQuote" && !("createdBy" in recC)
+  && !JSON.stringify({ ...recC, document: null }).includes("@"), JSON.stringify({ ...recC, document: null }).slice(0, 300));
 const qB = await get(qd("wqB")), kB = await get(cd("wB"));
 check("見積もり: accepted・acceptedVia consent_web・consentToken・agreedPolicy true",
   qB.status === "accepted" && qB.acceptedVia === "consent_web" && qB.consentToken === tokC && qB.agreedPolicy === true && qB.acceptedBy === "同意 一郎");
