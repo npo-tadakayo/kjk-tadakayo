@@ -53,6 +53,89 @@
             <p id="gRoleNote" role="status" style="display:none;font-size:13px;margin:12px 0 0;padding:10px 12px;border-radius:6px;background:var(--color-warning-soft,#fff7e0);line-height:1.7"></p>
           </div>
         </div>
+
+        <!-- ===== トレーナー認定（2026-11-12・admin/js/trainer-badges.js） ===== -->
+        <h2 id="trainerCertTitle" style="font-family:'Noto Serif JP',serif;font-size:18px;margin:28px 0 6px">トレーナー条件とトレーナー合格</h2>
+        <p class="page-intro" style="margin-top:0">トレーナーになる条件を満たしているかを、メンバーごとに確かめる表です。条件を満たした人は「候補」と出ます。合格（認定）は人が行います（自動ではトレーナーになりません）。<a href="/trainer-course.html">トレーナーコース</a>の動画の視聴と確認テストの合格も、合格の前提です。</p>
+        <div id="tcLoading" class="loading" style="display:none"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 数えています...</div>
+        <div id="tcArea" style="display:none">
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-weight:600;font-size:14px">条件</span>
+              <span id="tcCriteria" style="font-size:13px"></span>
+              <button class="btn btn-secondary" id="tcCritEditBtn" type="button" style="margin-left:auto;display:none" data-tip="トレーナーになる条件（伴走支援の件数・登壇の回数・組み合わせ・トレーナーコースを前提にするか）を変えます。管理者だけが変えられます。"><i class="ti ti-adjustments" aria-hidden="true"></i>条件を変える</button>
+            </div>
+            <div class="card-body" id="tcCritForm" hidden>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="tcSupport">伴走支援の必要件数（事業所の数）</label><input class="form-control" type="number" id="tcSupport" min="0" max="100" step="1"></div>
+                <div class="form-group"><label class="form-label" for="tcTalk">登壇の必要回数</label><input class="form-control" type="number" id="tcTalk" min="0" max="100" step="1"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="tcCombine">組み合わせ</label><select class="form-control" id="tcCombine"></select></div>
+                <div class="form-group"><label class="form-label" style="display:flex;gap:8px;align-items:center;min-height:44px"><input type="checkbox" id="tcCourse" style="width:18px;height:18px"> トレーナーコースの修了を前提にする</label></div>
+              </div>
+              <button class="btn btn-primary" id="tcCritSaveBtn" type="button" style="min-height:44px" data-tip="入れた条件を保存します。保存すると、下の表の判定がすぐ新しい条件で出し直されます。"><i class="ti ti-device-floppy" aria-hidden="true"></i>条件を保存する</button>
+              <button class="btn btn-secondary" id="tcCritCancelBtn" type="button" style="min-height:44px" data-tip="変えた値を保存せずに閉じます。">閉じる</button>
+              <span id="tcCritErr" role="alert" style="font-size:13px;color:var(--color-danger);margin-left:10px"></span>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <span style="font-weight:600;font-size:14px">トレーナー条件</span>
+              <span style="font-size:12px;color:var(--color-ink-muted)">伴走支援は案件（事業所）単位。本人が実施者で「伴走支援実施済」以降まで進んだもの（見守り付きも含む・同じ事業所は1件）</span>
+              <button class="btn btn-secondary" id="tcRecountBtn" type="button" style="margin-left:auto" data-tip="案件と伴走支援の記録を読み直して、件数を数え直します（ほかの人が記録を足したときに使います）。"><i class="ti ti-refresh" aria-hidden="true"></i>数え直す</button>
+            </div>
+            <div class="table-wrap">
+              <table><thead><tr><th>メンバー</th><th>伴走支援</th><th>登壇</th><th>トレーナーコース</th><th>判定</th><th>トレーナー</th><th><span class="ls-sr" style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+              <tbody id="tcBody"></tbody></table>
+            </div>
+            <p id="tcNote" style="font-size:12px;color:var(--color-ink-muted);margin:8px 12px 12px;line-height:1.7"></p>
+          </div>
+
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header"><span style="font-weight:600;font-size:14px">登壇の記録</span></div>
+            <div class="table-wrap">
+              <table><thead><tr><th>登壇した日</th><th>メンバー</th><th>区分</th><th>何の場で</th><th>記録した人</th><th><span style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+              <tbody id="tkBody"></tbody></table>
+              <div id="tkEmpty" class="empty-state" style="display:none"><i class="ti ti-microphone" aria-hidden="true"></i><p>登壇の記録はまだありません</p></div>
+            </div>
+            <div class="card-body" id="tkForm" style="border-top:1px solid var(--color-line)">
+              <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px;line-height:1.7">登録できるのは管理者とトレーナーです（本人の申告を確かめて登録します）。<strong>事業所名・利用者の情報は書かないでください</strong>（「何の場で」は会の名前だけ。例：○○市 介護情報基盤 説明会）。</p>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="tkUser">登壇した人</label><select class="form-control" id="tkUser"></select></div>
+                <div class="form-group"><label class="form-label" for="tkDate">登壇した日</label><input class="form-control" type="date" id="tkDate"></div>
+              </div>
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="tkKind">区分</label><select class="form-control" id="tkKind"></select></div>
+                <div class="form-group"><label class="form-label" for="tkVenue">何の場で（会の名前）</label><input class="form-control" type="text" id="tkVenue" maxlength="100"></div>
+              </div>
+              <div class="form-group"><label class="form-label" for="tkReason">理由・メモ（区分が「その他」のときは、類似と認めた理由が必須）</label><input class="form-control" type="text" id="tkReason" maxlength="300"></div>
+              <button class="btn btn-primary" id="tkAddBtn" type="button" style="min-height:44px" data-tip="この登壇を記録します。記録した人（あなた）と日時も残ります。間違えたときは管理者が理由を書いて取り消します（記録は消えません）。"><i class="ti ti-microphone" aria-hidden="true"></i>登壇を記録する</button>
+              <span id="tkErr" role="alert" style="font-size:13px;color:var(--color-danger);margin-left:10px"></span>
+            </div>
+          </div>
+
+          <div class="card" style="margin-bottom:var(--space-4)">
+            <div class="card-header"><span style="font-weight:600;font-size:14px">トレーナー合格の記録</span></div>
+            <div class="table-wrap">
+              <table><thead><tr><th>日付</th><th>メンバー</th><th>種類</th><th>認定・操作した人</th><th>そのときの件数</th><th>理由</th></tr></thead>
+              <tbody id="ceBody"></tbody></table>
+            </div>
+          </div>
+        </div>
+
+        <dialog id="tcDialog" aria-labelledby="tcDlgTitle" style="max-width:min(560px,calc(100vw - 32px));border:1px solid var(--color-line);border-radius:12px;padding:20px">
+          <h3 id="tcDlgTitle" style="margin:0 0 10px;font-size:16px"></h3>
+          <div id="tcDlgBody" style="font-size:13.5px;line-height:1.8"></div>
+          <div class="form-group" id="tcDlgReasonWrap" style="margin-top:10px"><label class="form-label" for="tcDlgReason" id="tcDlgReasonLabel">理由</label>
+            <textarea class="form-control" id="tcDlgReason" rows="3" maxlength="300"></textarea></div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+            <button class="btn btn-primary" id="tcDlgOk" type="button" style="min-height:44px" data-tip="上に書いた内容で実行します。サーバーで権限（管理者・トレーナー・自分自身でないこと）を確かめてから記録します。"></button>
+            <button class="btn btn-secondary" id="tcDlgCancel" type="button" style="min-height:44px" data-tip="何もせずに閉じます。">やめる</button>
+          </div>
+          <p id="tcDlgErr" role="alert" style="font-size:13px;color:var(--color-danger);margin:10px 0 0"></p>
+        </dialog>
       </div>
     </main>
   </div>
@@ -62,5 +145,7 @@
   <script src="/js/mobilenav.js"></script>
   <script src="/js/firebase-config.js"></script>
   <script src="/js/badges.js" type="module"></script>
+  <script src="/js/trainer-badges.js" type="module"></script><!-- トレーナー条件・合格（2026-11-12） -->
+  <script src="/js/tooltip.js" type="module"></script><!-- ボタンの説明の吹き出し（data-tip） -->
 </body>
 </html>

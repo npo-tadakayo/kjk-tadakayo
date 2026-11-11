@@ -16,6 +16,18 @@
 - main との突き合わせ（スイッチがオフ・エミュレータ）: 差は進み具合の2項目だけ（ほかの書き込み・応答は一致）
 - 未了: 確認用の版での次田さんの画面確認・マージ・本番反映（Functions `acceptQuote`・`webhookMitsumori`・`staffAcceptQuote`・`staffCreateQuote`、hosting lp・admin）
 
+## 2026-11-12 トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース）（ブランチ `feat/trainer-certification`・未マージ・本番未反映）
+
+- 計画と決定: `06_介護情報基盤事業/docs/トレーナーコース_計画_20261110.md` §7（ト1〜ト8・蒸し返さない）。仕様の正本は ENGINEERING_NOTES §C12
+- 作ったもの: `/badges` に「トレーナー条件とトレーナー合格」（条件・メンバーごとの 伴走支援 n/10・登壇 n回・コース・判定／登壇の記録／合格・特別裁量・取り消し／合格の記録）、新しい画面 `/trainer-course`（動画の視聴の記録・確認テスト6問・自分の条件）、サイドバーに「トレーナーコース」（練習生には出さない）
+- **ルールは変えていない**。置き場は `appConfig/trainerCriteria` と `appConfig/trainerProgram/{talks|certs|course}`（2段目より下は catch-all で「登録スタッフは読める・誰も書けない」）。書き込みはすべて Callable（`functions/trainer.js`）
+- **デプロイが要る関数（5本）**: `trainerSaveCriteria`・`trainerRecordTalk`・`trainerCourseSubmit`・`trainerCertify`・`trainerRevoke`。Functions を先に、そのあと hosting（admin）
+- 本番の名簿（`appConfig/supportTrainers`）はまだ作られていない（初期4名を氏名で照合のまま）。最初の合格のときに「初期4名＋合格者」で作られる。条件の文書も無い＝既定値（10件・1回・かつ・コース必須）で動く
+- 練習モード: 代役 `admin/js/practice-stubs-trainer.js`（練習DBの同じ置き場に書く。本番の名簿は変わらない）
+- テスト: `test-trainer-rules.mjs`・`test-trainer-emu.mjs`（test-all の2段目に追加）・`test-rules-appconfig.mjs` に確認を追加
+- 気づいたこと: Google ドライブ上の `functions/node_modules` をエミュレーターのテストで使うと、ファイルの読み込みが ETIMEDOUT で落ちる／止まることがある（Drive の遅延読み込み）。scratchpad で `npm ci` したものを `FUNCTIONS_NODE_MODULES` に渡すと安定する
+- 未了: 次田さんの画面確認 → マージ → Functions 5本のデプロイ → hosting。確認用の版の承認済みドメインは使い終わったら外す
+
 ## 2026-11-12 メール送信後の記録の失敗をサーバーから知らせる（点検4 の根本対応・ブランチ `fix/send-mail-record-error`・未マージ・本番未反映）
 
 - **`sendCaseEmail`**（要デプロイ）: 送信の進め方を `functions/case-mail.js`（`runCaseMail`・firebase に依存しない）に出した。**Gmail で送れたあとの失敗は投げず** `{ ok:true, sent:true, id, sentAt, recordError }` を返す（`recordError`＝対応記録 `activities` の `gmail_sent` が書けなかった短い理由。`cases.updatedAt` だけの失敗は recordError にしない）。返事には毎回 `sentAt`（送信成功時点のサーバー時刻 ISO）を足した。送る前の失敗（設定・トークン）と Gmail の 4xx は `failed-precondition`（はっきりした失敗＝画面は「送信に失敗しました」）、Gmail の 5xx・通信の失敗は従来どおり `internal`（「送れたか不明」）。送信前の検証・文面・宛先・送信元・対応記録の書式は変えていない

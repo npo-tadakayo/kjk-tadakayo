@@ -4320,3 +4320,12 @@ exports.warehouseSetNote = onCall(
     return { ok: true };
   }
 );
+
+// ===== トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース・2026-11-12）=====
+// 実装は ./trainer.js（判定は trainer-rules.mjs・正本 admin/js/trainer-rules.js）。このファイルには結線だけを置く。
+const trainer = require("./trainer");
+exports.trainerSaveCriteria = trainer.trainerSaveCriteria;
+exports.trainerRecordTalk = trainer.trainerRecordTalk;
+exports.trainerCourseSubmit = trainer.trainerCourseSubmit;
+exports.trainerCertify = trainer.trainerCertify;
+exports.trainerRevoke = trainer.trainerRevoke;

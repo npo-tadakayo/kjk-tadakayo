@@ -796,3 +796,56 @@ sequenceDiagram
 - **Functions は 2026-11-12 PR #72 で対応**（§C12.2。デプロイ後に有効）。それまでの説明: 状態を変える Functions（`index.js` の見積もり作成 1→2 ×2か所、`acceptQuoteTransaction` の受注 1・2・4・13→3、作成時の 1・2）は `statusChangedAt` を書かない。そのため `statusChangedTo` が食い違い、一覧では「—」になる。直すときは同じ2項目を `caseUpdate` に足すだけ（練習モードの代役 `practice-stubs.js` も同じく）
 - **止まり具合**: `appConfig/settings.stageStale = {warnDays, alertDays}`（正の整数・warn < alert。無ければ 14／30）。対象外は状態 10・11・12・4・13。一覧の絞り込み `#staleFilter`（黄色以上／赤）。対象外（アーカイブ）の案件は絞り込みで出さない
 - **画面**: 案件詳細 `#caseProgress`（次の一手の上。`renderNextStep` と対応記録の購読で描き直す）。一覧はステータスの欄に点8つ（`aria-hidden`。読み上げは行の `aria-label` に同じ文）。吹き出しは `tooltip.js`（一覧の画面でも読み込む）。CSS は `crm.css` の `.cp-*`（文字のコントラストは 5.3:1 以上、点・枠は 3.3:1 以上を計算で確認）
+
+## §C13 トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース・2026-11-12）
+
+**計画と決定**: `06_介護情報基盤事業/docs/トレーナーコース_計画_20261110.md` §3・§7（ト1〜ト8・次田さん 2026-11-12・蒸し返さない）。
+条件は「登壇（または類似）**かつ** 伴走支援10件」＋トレーナーコースの修了。特別裁量は管理者だけ（理由必須）。取り消しは管理者だけ（理由必須・記録は消さない）。今の4名は「制度開始時の認定」。
+
+### データモデル（すべて `appConfig` の下。**firestore.rules は変えていない**）
+
+| 置き場 | 中身 | 読む | 書く |
+|---|---|---|---|
+| `appConfig/trainerCriteria` | `{ supportCount:10, talkCount:1, combine:"and"\|"or", requireCourse:true, updatedAt, updatedBy, updatedByName }`。**無ければ既定値**（`DEFAULT_CRITERIA`） | 登録スタッフ | Callable `trainerSaveCriteria`（管理者）。※ルール上は管理者も1段目なので直接書けるが、画面は Callable だけを使う |
+| `appConfig/supportTrainers` | `{ ids:[メール], updatedAt, updatedBy }`（既存の名簿）。**文書が無い・ids が空のあいだは初期4名を users の氏名で照合**（`trainerIds`・変更なし） | 登録スタッフ | Callable `trainerCertify`・`trainerRevoke`。最初の合格で「初期4名の照合結果＋合格者」の名簿を作る（初期の人を落とさない） |
+| `appConfig/trainerProgram/talks/{自動ID}` | 登壇 `{ userId, userName, date:"YYYY-MM-DD", kind:seminar\|municipal\|study\|video\|other, venue(100字), reason(300字・otherは必須), recordedById, recordedByName, recordedAt(ms), voided:false, createdAt }`。取り消しは `{ voided:true, voidedById, voidedByName, voidedAt, voidReason }` を足す | 登録スタッフ | Callable `trainerRecordTalk`（登録＝管理者・トレーナー／取り消し `action:"void"`＝管理者） |
+| `appConfig/trainerProgram/certs/{自動ID}` | 合格 `{ type:"certify", kind:"normal"\|"discretion", userId, userName, date, at(ms), byId, byName, supportCount, talkCount, courseDone, meets, criteria, reason, createdAt }`／取り消し `{ type:"revoke", kind:null, userId, userName, date, at, byId, byName, reason, createdAt }`。**追記のみ** | 登録スタッフ | Callable `trainerCertify`・`trainerRevoke` |
+| `appConfig/trainerProgram/course/{メール}` | トレーナーコース `{ userId, userName, watchedAt(ms・自己申告), quiz:{ best, attempts, lastScore, lastAt, passedAt }, updatedAt }`。最初に見た時刻・最初に合格した時刻・最高点は減らさない | 登録スタッフ | Callable `trainerCourseSubmit`（本人だけ。採点はサーバー） |
+
+- ルールを変えずに済む理由: `match /appConfig/{docId}` は1段目だけ（読む＝isRegistered／書く＝isAdmin）。2段目より下（`appConfig/trainerProgram/...`）は最後の `match /{coll}/{document=**}` に当たり、読む＝isRegistered、書く＝`coll in [... "appConfig" ...]` で**誰も書けない**。新しいトップレベルのコレクションにすると catch-all で登録スタッフが書けてしまう（権限をサーバーで確かめる意味が無くなる）ので、appConfig の下に置いた。`scripts/test-rules-appconfig.mjs` に確認を足した（練習生・未登録は読めない／管理者でも画面から書けない）
+- 練習DB（practice）では `firestore.practice.rules` で職員なら読み書きできる。代役 `admin/js/practice-stubs-trainer.js` が同じ置き場に書く（夜間の初期化で消える）
+
+```mermaid
+erDiagram
+  users ||--o{ trainerTalks : "登壇（appConfig/trainerProgram/talks）"
+  users ||--o{ trainerCerts : "合格・取り消し（certs・追記のみ）"
+  users ||--o| trainerCourse : "トレーナーコース（course/{メール}）"
+  trainerCerts }o--|| supportTrainers : "合格で ids に入る／取り消しで外れる"
+  supportChecklists }o--|| cases : "performance.performerId × 案件のステータス → 件数"
+  trainerCriteria ||--o{ trainerCerts : "合格のときの条件を写して残す"
+```
+
+### 判定（純粋関数・正本 `admin/js/trainer-rules.js`／コピー `functions/trainer-rules.mjs`）
+- 伴走支援の件数 `countSupport`: `supportChecklists/{caseId}.performance.performerId` が本人・`mode` が `solo` か `training`（見学 `observe` は数えない）・`cases.status` が `STATUS_ORDER` で 8（伴走支援実施済）以降（4＝失注は除く）。**同じ `officeId` は1件**（officeId の無い古い案件は案件ごと）。立ち会ったトレーナー（`trainerId`）の件数にはしない
+- 判定 `judge`: `combine` が and なら両方、or ならどちらか。`requireCourse` なら加えてコース修了。足りない分を「あと◯件」の文で返す
+- 合格 `buildCertify`: 通常＝トレーナーか管理者・条件を満たす人だけ／特別裁量＝管理者だけ・理由必須／**自分は不可**／すでにトレーナー・閲覧のみ・練習生・倉庫・無効は不可。件数はサーバーが本番の記録から数え直す（画面の数字は使わない）
+- 取り消し `buildRevoke`: 管理者だけ・理由必須・自分は不可・**最後の1人は不可**（`ids` が空になると `trainerIds` が初期4名の照合に戻ってしまうため）
+- 出どころ `certOrigin`: 最後の記録が合格→通常／特別裁量、名簿にいて合格の記録が無い→「制度開始時の認定」、最後が取り消し→取り消し
+
+### Callable（`functions/trainer.js`・index.js は末尾で require と exports だけ）
+`trainerSaveCriteria`（admin）／`trainerRecordTalk`（editor＋サーバーで管理者かトレーナー）／`trainerCourseSubmit`（viewer 以上＝練習生・倉庫以外の本人）／`trainerCertify`（editor＋上の判定）／`trainerRevoke`（admin）。
+認可は `requireMember`（index.js の `requireStaff` と同じ考え方・`Flow.roleAllows`・練習生は分かる文言で拒否）。合格・取り消しは**トランザクションの中で名簿を読み直して**から記録と名簿を書く。SA は `fn-batch-sa`（datastore.user）。
+serverTimestamp は `require("firebase-admin/firestore").FieldValue` から取る（`admin.firestore.FieldValue` は Functions エミュレーターで undefined になった）。
+
+### 画面
+- `/badges`（`admin/js/trainer-badges.js`）: 条件（管理者は「条件を変える」）／トレーナー条件の表（メンバー＝有効でロールが管理者・スタッフ・未設定の人）／登壇の記録／トレーナー合格の記録（「制度開始時の認定」の行を含む）。確認は `<dialog>`。名簿は `badges.js` も読み続ける（合格した直後に上の「トレーナー」欄が変わる）
+- `/trainer-course`（`admin/js/trainer-course.js`）: 動画は共有ドライブのリンクだけ（`COURSE_FOLDER_URL`）・「見たことを記録する」・確認テスト（`COURSE_QUIZ` 6問・8割。台本 `動画_育成_新人の見守り方_20261025/台本.md` v1.1）・あなたのトレーナー条件。練習生には案内だけ出す。サイドバーの「トレーナーコース」は練習生には出さない
+- `/learning` の「受講中の方の進み具合」の節のトレーナーコースのリンクは、共有ドライブ → `/trainer-course` に付け替えた（見守りの案内を分けた）
+- 新しいボタンにはすべて `data-tip`（`tooltip.js` を badges・trainer-course で読み込む）
+
+### テスト
+- `node scripts/test-trainer-rules.mjs`（件数・判定・登壇・合格・取り消し・名簿・テスト・コピーの一致・結線・画面の静的検査）
+- `scripts/test-trainer-emu.mjs`（エミュレーターで Callable を実際に動かす。権限・自分自身・最後の1人以外の全分岐と、書き込み先が appConfig の下だけか）。`test-all.sh` の2段目に追加
+- `scripts/test-rules-appconfig.mjs` に appConfig の下の読み書きの確認を追加（ルールは不変）
+
+本番に出すときに要るもの: **Functions 5本**（`trainerSaveCriteria`・`trainerRecordTalk`・`trainerCourseSubmit`・`trainerCertify`・`trainerRevoke`。`--only "functions:trainerSaveCriteria,functions:trainerRecordTalk,functions:trainerCourseSubmit,functions:trainerCertify,functions:trainerRevoke"`）と **hosting（admin）**。rules の変更なし。**Functions を先に出す**（画面だけ先に出すと、ボタンを押したときに関数が無くてエラーになる）。
