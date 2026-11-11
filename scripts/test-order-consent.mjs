@@ -325,7 +325,10 @@ t("acceptQuote（Web）: 承諾書の処理はスイッチがオンのときの�
   const b = fnBody("acceptQuote").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"); // 注記の行は見ない
   const gate = "if (await readOrderByConsentFresh()) { await acceptQuoteByConsent(req, res, body); return; }";
   assert.equal(b.split(gate).length, 2, "入口の1行が無い");
-  assert.ok(!/acceptOrderByConsentTransaction|orderByConsent|consent/i.test(b.replace(gate, "").replace(/agreedPolicy/g, "")), "従来の Web の道に承諾書の処理が入っている");
+  // 入口の次の「オフなのに consent が付いていたら 409」（第2段・レビュー 中-1）も除いて見る
+  const offBlock = /if \(body\.consent != null\) \{\n\s+res\.status\(409\)\.json\(\{ status: "error", code: "order_by_consent_off"[^\n]*\n\s+return;\n\s+\}\n/;
+  assert.match(b, offBlock);
+  assert.ok(!/acceptOrderByConsentTransaction|orderByConsent|consent/i.test(b.replace(gate, "").replace(offBlock, "").replace(/agreedPolicy/g, "")), "従来の Web の道に承諾書の処理が入っている");
 });
 t("承諾書の記録と受注確定は同じトランザクション（tx.create）", () => {
   const i = idx.indexOf("async function acceptOrderByConsentTransaction"), j = idx.indexOf("\n}\n", i);

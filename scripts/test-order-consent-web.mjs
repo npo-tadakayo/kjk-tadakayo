@@ -191,13 +191,52 @@ t("承諾書を開くページ: 焼き込んだ見積もりの表（見積番号
   assert.ok(V.orderConsentPageHtml({ ...REC_WEB, retakeOf: "x" }, CD.CONSENT_V1_2, "").includes("あらためていただいたもの"));
 });
 
+// ===== ⑥ レビュー後の直し（2026-11-12）=====
+t("署名者名: 制御文字・改行を空白に（Web・紙・写しとも同じ）", () => {
+  assert.equal(R.cleanSignedName(" 山田\n太郎\t\u0000x\u007f "), "山田 太郎  x");
+  assert.equal(E.cleanSignedName("a\r\nb"), R.cleanSignedName("a\r\nb"));
+  assert.equal(R.checkWebOrderConsentInput({ consent: { agreed: true, version: "1.2" }, documentVersion: "1.2", signedName: "\n\t" }).code, "no_signed_name");
+  const rec = R.buildOrderConsentRecord({ document: CD.CONSENT_V1_2, quotes: [{ id: "q", caseId: "c" }], signed: { name: "鈴木\n一郎", method: "paper_order", receivedDate: "2026-11-12" } });
+  assert.equal(rec.signed.name, "鈴木 一郎");
+  assert.equal(R.checkOrderConsent({ entries: [{ quote: { id: "q", status: "issued", version: 1 } }], method: "web_order", signedName: "\u0007" }).code, "no_signed_name");
+  assert.equal(S.buildPaperConsentPayload({ quoteId: "q", signedName: "a\nb", receivedDate: "2026-11-01" }, "2026-11-12").payload.consent.signedName, "a b");
+});
+t("受注確認のメールを出せなかったときの Chat の文（案件番号と見積番号だけ）", () => {
+  const a = F.orderConsentMailProblemText("failed", [{ caseNumber: 12, estNo: "EST-1" }, { caseNumber: 13, estNo: "EST-2" }]);
+  assert.equal(a, "⚠️ 受注確認のメールを送れませんでした（案件 #12（EST-1）・案件 #13（EST-2））。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください。");
+  assert.match(F.orderConsentMailProblemText("no_address", [{ caseNumber: 1, estNo: "E" }]), /宛先のメールアドレスが無い/);
+  const src = read("functions/index.js");
+  const b = src.slice(src.indexOf("async function acceptQuoteByConsent("), src.indexOf("exports.acceptQuote = onRequest("));
+  assert.match(b, /if \(mailProblem\) \{\n\s+await notifyChat\(chatWebhook, Flow\.orderConsentMailProblemText\(/);
+});
+const CP = await import("../admin/js/case-progress.js");
+t("進み具合の2項目: Functions の statusChangePatch は画面（case-progress.js）と同じ。状態が変わるときだけ書く", () => {
+  assert.deepStrictEqual(F.statusChangePatch("3", "TS"), CP.statusChangePatch("3", "TS"));
+  const src = read("functions/index.js");
+  assert.equal(src.split("Flow.statusChangePatch(").length - 1, 3); // 見積もり作成 1→2 ×2・受注 →3（Web・紙・承諾書の道の共通の書き込み）
+  assert.match(src, /if \(Number\(kase && kase\.status\) !== Number\(stPlan\.status\)\) Object\.assign\(caseUpdate, Flow\.statusChangePatch\(stPlan\.status, now\)\);/);
+  assert.match(src, /if \(cd\.exists && cd\.data\(\)\.status === STATUS\.NEW\) \{\n\s+caseUpdate\.status = STATUS\.CONFIRMING;\n\s+Object\.assign\(caseUpdate, Flow\.statusChangePatch\(STATUS\.CONFIRMING, now\)\);/);
+  const ps = read("admin/js/practice-stubs.js");
+  assert.match(ps, /import \{ statusChangePatch \} from "\/js\/case-progress\.js";/);
+  assert.equal(ps.split("statusChangePatch(").length - 1, 2);
+});
+t("公開ページ: 受け付けたあとの「承諾書への同意」の文言は、サーバーが承諾書のアドレスを返したときだけ", () => {
+  const h = read("mitsumori.html");
+  assert.match(h, /if \(consentDoc && OrderConsentPage\.safeConsentUrl\(data\.consentUrl\)\) \{/);
+  assert.match(h, /if \(!on && !orderModeOn && !ORDER_PENDING\.size\) return;/);
+  assert.equal(h.split("applyOrderMode(); // 処理中に切り替わっていたら").length - 1, 2);
+});
+
 // ===== ⑤ 結線 =====
 t("acceptQuote: スイッチの確認は最初に1回・オンのときだけ acceptQuoteByConsent。従来の道は consent を読まない", () => {
   const src = read("functions/index.js");
   const a = src.slice(src.indexOf("exports.acceptQuote = onRequest("), src.indexOf("// ===== 電話・メール等で受けたお申し込みを、スタッフが「受注確定」にする"));
   assert.match(a, /if \(await readOrderByConsentFresh\(\)\) \{ await acceptQuoteByConsent\(req, res, body\); return; \}/);
-  const mk = "acceptQuoteByConsent(req, res, body); return; }"; const after = a.slice(a.indexOf(mk) + mk.length);
-  assert.ok(!/consent/i.test(after.replace(/acceptQuoteByConsent/g, "")), "従来の道に consent が混ざっている");
+  const mk = "acceptQuoteByConsent(req, res, body); return; }"; const after = a.slice(a.indexOf(mk) + mk.length).split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n"); // 注記の行は見ない
+  // オフなのに consent が付いていたら 409（設定が変わった。レビュー 中-1）。この塊のほかに consent は出てこない
+  const offBlock = /if \(body\.consent != null\) \{\n\s+res\.status\(409\)\.json\(\{ status: "error", code: "order_by_consent_off"[^\n]*\n\s+return;\n\s+\}\n/;
+  assert.match(after, offBlock);
+  assert.ok(!/consent/i.test(after.replace(offBlock, "").replace(/acceptQuoteByConsent/g, "")), "従来の道に consent が混ざっている");
   const b = src.slice(src.indexOf("async function acceptQuoteByConsent("), src.indexOf("exports.acceptQuote = onRequest("));
   assert.match(b, /checkWebOrderConsentInput\(/);
   assert.match(b, /method: "web_order"/);
@@ -218,7 +257,7 @@ t("mitsumori.html: 同意の印は承諾書の画面を出したときだけ送�
   const h = read("mitsumori.html");
   assert.match(h, /if \(consentDoc\) body\.consent = OrderConsentPage\.consentPayload\(consentDoc\);/);
   assert.match(h, /<script src="js\/order-consent-page\.js\?v=\d+"><\/script>/);
-  assert.match(h, /if \(!on && !orderModeOn\) return;/); // オフのままなら文言に触らない
+  assert.match(h, /if \(!on && !orderModeOn && !ORDER_PENDING\.size\) return;/); // オフのままなら文言に触らない
   // オフのときの元の文言はそのまま残っている
   for (const s of ["この内容でお申し込みになりますか？", "お申し込みの確認", "この内容で申し込む", "お申し込み者のお名前", "個人情報保護方針と利用規約への同意にチェックをお願いします"]) assert.ok(h.includes(s), s);
 });

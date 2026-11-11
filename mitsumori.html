@@ -1847,12 +1847,14 @@
 
   // スイッチがオンなら文言を「発注（承諾書への同意）」に替える。オンからオフに戻ったときだけ元の文言に戻す
   // （オフのままなら何も触らない＝今の画面と同じ）。元の文言は最初に替える直前に覚えておく。
-  // 処理中（ボタンが押せない間）のボタンの文言は触らない（「確認しています...」などを消さないため）。
+  // 処理中（ボタンが押せない間）のボタンは、いまの「確認しています...」などを消さずに「あとで替える」印を付け、
+  // 処理が終わってボタンを戻したあと（openOrderModal・submitOrder の finally）にもう一度呼んで替える（2026-11-12 レビュー 低-1）。
   const ORDER_ORIG = {};
+  const ORDER_PENDING = new Set();
   let orderModeOn = false;
   function applyOrderMode() {
     const on = !!orderConsent;
-    if (!on && !orderModeOn) return;
+    if (!on && !orderModeOn && !ORDER_PENDING.size) return;
     const T = OrderConsentPage.TEXT;
     const html = {
       orderCtaTitle: esc(T.ctaTitle), orderCtaNote: T.ctaNote,
@@ -1864,7 +1866,8 @@
       const el = document.getElementById(id);
       if (!el) return;
       if (!(id in ORDER_ORIG)) ORDER_ORIG[id] = el.innerHTML;
-      if (el.disabled) return;
+      if (el.disabled) { ORDER_PENDING.add(id); return; }
+      ORDER_PENDING.delete(id);
       el.innerHTML = on ? html[id] : ORDER_ORIG[id];
     });
     orderModeOn = on;
@@ -1909,6 +1912,7 @@
       }
     } finally {
       btn.disabled = false; btn.innerHTML = orig;
+      applyOrderMode(); // 処理中に切り替わっていたら、ここで文言を合わせる（オフのままなら何もしない）
     }
 
     const offices = getAllOfficeData();
@@ -2069,7 +2073,8 @@
       document.getElementById('orderBtn').disabled = true;
       document.querySelector('.order-cta-inner').style.display = 'none';
       const done = document.getElementById('orderDone');
-      if (consentDoc) {
+      // 承諾書の文言にするかは、サーバーが承諾書のアドレスを返したかで決める（送った側の画面の状態では決めない。2026-11-12 レビュー 中-1）
+      if (consentDoc && OrderConsentPage.safeConsentUrl(data.consentUrl)) {
         const okList = (data.results || []).filter((r) => !r.error);
         done.innerHTML = OrderConsentPage.doneHtml({
           label: offices.length <= 1 ? `お見積書 ${estNo}` : `事業所 ${okList.length}件`,
@@ -2100,6 +2105,7 @@
       show('お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
     } finally {
       btn.disabled = false; btn.textContent = orig;
+      applyOrderMode(); // 処理中に切り替わっていたら、ここで文言を合わせる（オフのままなら何もしない）
     }
   }
 

@@ -132,8 +132,7 @@ await seed([
 ]);
 const cA0 = await counter();
 posted.length = 0;
-// オフのときは consent を送っても使わない
-let r = await http("acceptQuote", webBody("wqA", { consent: { agreed: true, version: "1.2" } }));
+let r = await http("acceptQuote", webBody("wqA"));
 check("1件: 200 ok", r.status === 200 && r.body.status === "ok", JSON.stringify(r));
 check("1件: 応答に承諾書のアドレスが無い", !("consentUrl" in r.body));
 const rA1 = r.body;
@@ -184,6 +183,28 @@ if (DUMP) {
   console.log(`\n合計: ${pass}/${pass + fail} 合格`);
   process.exit(fail ? 1 : 0);
 }
+
+// オフのときに consent が付いた申込（ページを開いたあとで設定が切れた）は 409 で止め、何も書かない（レビュー 中-1）
+await seed([[cd("wA2"), { status: 2, caseNumber: 704 }], [qd("wqA2"), quote("wqA2", "wA2", { caseNumber: 704 })]]);
+const cA20 = await counter();
+r = await http("acceptQuote", webBody("wqA2", { consent: { agreed: true, version: "1.2" } }));
+check("オフなのに consent が付いている → 409 order_by_consent_off", r.status === 409 && r.body.code === "order_by_consent_off" && /読み込み直して/.test(r.body.message), JSON.stringify(r));
+check("409 のあと何も書かない", (await get(qd("wqA2"))).status === "issued" && (await get(cd("wA2"))).status === 2 && (await shipsOf("wA2")).length === 0 && (await counter()) === cA20);
+// 進み具合の2項目（statusChangedAt・statusChangedTo）: 状態が変わったときだけ書く
+const kA1 = await get(cd("wA")), kG2 = await get(cd("wG2"));
+check("状態が変わった案件（2→3・1→3）に statusChangedTo 3・statusChangedAt", kA1.statusChangedTo === 3 && kA1.statusChangedAt instanceof TS && kG2.statusChangedTo === 3 && kG2.statusChangedAt instanceof TS);
+await seed([[cd("wA5"), { status: 5, caseNumber: 705 }], [qd("wqA5"), quote("wqA5", "wA5", { caseNumber: 705 })]]);
+r = await http("acceptQuote", webBody("wqA5"));
+const kA5 = await get(cd("wA5"));
+check("状態が変わらない（5 のまま）ときは2項目を書かない", r.status === 200 && kA5.status === 5 && !("statusChangedAt" in kA5) && !("statusChangedTo" in kA5), JSON.stringify(kA5).slice(0, 200));
+// 見積もりの登録で 1→2（既存の案件・同じメールと事業所名で寄せる）
+await seed([[cd("wN"), { status: 1, caseNumber: 706, officeName: "新規の事業所N", contactEmail: "wn@example.test", officeId: null, receivedAt: TS.now() }]]);
+r = await http("webhookMitsumori", { ...wmBody, email: "wn@example.test", officeName: "新規の事業所N" });
+const kN = await get(cd("wN"));
+check("見積もりの登録で 1→2 になった案件に2項目", r.status === 200 && r.body.caseId === "wN" && kN.status === 2 && kN.statusChangedTo === 2 && kN.statusChangedAt instanceof TS, JSON.stringify({ r: r.body.caseId, kN }).slice(0, 300));
+r = await http("webhookMitsumori", { ...wmBody, email: "wn@example.test", officeName: "新規の事業所N", btSubsidyQty: 1 });
+const kN2 = await get(cd("wN"));
+check("2 のままの見積もりの登録では2項目を書き直さない", kN2.status === 2 && kN2.statusChangedAt.isEqual(kN.statusChangedAt));
 
 const CD = require(path.join(FN_DIR, "consent-document.js"));
 const R = require(path.join(FN_DIR, "accept-rules.js"));
@@ -236,8 +257,10 @@ check("出荷の下書きが1件・番号が1つ進む", (await shipsOf("wB")).l
 const actB = await actsOf("wB");
 check("対応記録: 承諾書にオンラインで同意・承諾書の番号", actB.length === 1 && actB[0].subject.startsWith("承諾書にオンラインで同意いただき、受注確定にしました")
   && actB[0].body.includes(recC.displayNo) && actB[0].body.includes("条文の版 1.2"), JSON.stringify(actB).slice(0, 300));
-check("Chat: ご発注（承諾書への同意）・承諾書の番号・署名者名は載せない", posted.length === 1 && posted[0].text.startsWith("🎉 ご発注（承諾書への同意）を受け付けました")
-  && posted[0].text.includes(recC.displayNo) && !posted[0].text.includes("同意 一郎"), JSON.stringify(posted).slice(0, 300));
+check("Chat: ご発注（承諾書への同意）・承諾書の番号・署名者名は載せない", posted.length === 2 && posted[1].text.startsWith("🎉 ご発注（承諾書への同意）を受け付けました")
+  && posted[1].text.includes(recC.displayNo) && !posted[1].text.includes("同意 一郎"), JSON.stringify(posted).slice(0, 300));
+check("宛先が無いので、受注確認のメールを送っていないことを Chat に（案件番号と見積番号だけ・事業所名なし）", /宛先のメールアドレスが無い/.test(posted[0].text)
+  && posted[0].text.includes("案件 #711（EST-W-wqB）") && !posted[0].text.includes("事業所wqB"), JSON.stringify(posted[0]));
 // 二重送信
 r = await http("acceptQuote", webBody("wqB", { consent: { agreed: true, version: "1.2" } }));
 check("再送は already・同じ承諾書のアドレス・2件目を作らない", r.status === 200 && r.body.status === "already" && r.body.consentUrl === urlC
@@ -263,7 +286,9 @@ check("2件とも accepted・同じ consentToken", (await get(qd("wqD1"))).conse
   && (await get(qd("wqD2"))).acceptedVia === "consent_web");
 check("2件とも案件は 3・同じ orderConsentToken", (await get(cd("wD1"))).status === 3 && (await get(cd("wD2"))).orderConsentToken === tokD);
 check("出荷は2件・番号は2つ進む・お届け先は1か所", (await shipsOf("wD1")).length === 1 && (await shipsOf("wD2")).length === 1 && (await counter()) === cD0 + 2);
-check("Chat は1通（まとめ）", posted.length === 1 && posted[0].text.startsWith("🛒 ご発注（承諾書への同意・2事業所"), JSON.stringify(posted).slice(0, 200));
+check("Chat はまとめの1通＋受注確認のメールを送っていない知らせ1通", posted.length === 2 && posted[1].text.startsWith("🛒 ご発注（承諾書への同意・2事業所")
+  && posted[0].text.includes("案件 #721") && posted[0].text.includes("案件 #722"), JSON.stringify(posted).slice(0, 300));
+check("オフの道（A）では受注確認のメールの知らせを出さない", chatA.every((t) => !/受注確認のメール/.test(t)));
 
 // ---------- E. まとめの1件が期限切れ ----------
 section("E. まとめの1件が通らない → どれも入らない");

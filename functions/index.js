@@ -18,7 +18,7 @@ const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
 // 承諾書のサイン＝発注（2026-11-12）の判定（純粋関数）と、承諾書の条文の正本
 const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise, orderByConsentOn,
-  ORDER_RECEIVED_VIA, channelOfReceivedVia, checkWebOrderConsentInput, orderConsentQuoteEntry } = require("./accept-rules");
+  ORDER_RECEIVED_VIA, channelOfReceivedVia, checkWebOrderConsentInput, orderConsentQuoteEntry, cleanSignedName } = require("./accept-rules");
 const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
 const CaseMail = require("./case-mail"); // sendCaseEmail の送信→記録（送信後の失敗は recordError で返す・テスト scripts/test-case-mail.mjs）
@@ -749,7 +749,10 @@ async function createOrUpdateMitsumoriQuote(input, groupMeta) {
   if (groupMeta) caseUpdate.quoteGroupId = groupMeta.groupId;
   if (!created) {
     const cd = await db.collection("cases").doc(caseId).get();
-    if (cd.exists && cd.data().status === STATUS.NEW) caseUpdate.status = STATUS.CONFIRMING;
+    if (cd.exists && cd.data().status === STATUS.NEW) {
+      caseUpdate.status = STATUS.CONFIRMING;
+      Object.assign(caseUpdate, Flow.statusChangePatch(STATUS.CONFIRMING, now)); // 進み具合の帯（§C13）: 状態が変わるときだけ
+    }
     // 事業所の住所が空なら見積もりフォームの入力で埋める
     if (officeId && prefecture) {
       const od = await db.collection("offices").doc(officeId).get();
@@ -1357,7 +1360,11 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
   tx.update(qRef, quoteUpdate);
 
   const caseUpdate = { updatedAt: now, shipmentId: shipId, payMethod: payKey };
-  if (stPlan.status != null) { caseUpdate.status = stPlan.status; out.caseStatusTo = stPlan.status; }
+  if (stPlan.status != null) {
+    caseUpdate.status = stPlan.status; out.caseStatusTo = stPlan.status;
+    // 進み具合の帯（§C13・admin/js/case-progress.js の statusChangePatch と同じ2項目）。状態が実際に変わるときだけ
+    if (Number(kase && kase.status) !== Number(stPlan.status)) Object.assign(caseUpdate, Flow.statusChangePatch(stPlan.status, now));
+  }
   if (stPlan.reopenedFrom) Object.assign(caseUpdate, { reopenedFrom: stPlan.reopenedFrom, reopenedAt: now });
   if (staff) {
     Object.assign(caseUpdate, { orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: who.email });
@@ -1453,7 +1460,7 @@ async function readOrderByConsentFresh() {
 async function acceptOrderByConsentTransaction({ items, payKey, preferredDate, note, actor, consent }) {
   const who = actor;
   const web = consent.method === "web_order";
-  const name = String(consent.signedName || "").trim().slice(0, 100);
+  const name = cleanSignedName(consent.signedName).slice(0, 100);
   let outs = null, token = null, displayNo = "", already = false, alreadyToken = null;
   await db.runTransaction(async (tx) => {
     const setSnap = await tx.get(db.collection("appConfig").doc("settings"));
@@ -1527,7 +1534,7 @@ async function reconsentTransaction({ quoteId, consent, actor }) {
     if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
     token = newToken();
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const name = String(consent.signedName).trim().slice(0, 100);
+    const name = cleanSignedName(consent.signedName).slice(0, 100);
     const rec = buildOrderConsentRecord({
       document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
       signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
@@ -1582,10 +1589,10 @@ async function acceptQuoteByConsent(req, res, body) {
   const list = group ? body.quotes : [{ quoteId: body.quoteId, quoteToken: body.quoteToken }];
   if (!list.length || list.length > MAX_ACCEPT_QUOTES) { fail(400, "invalid_quotes", `quotes は1〜${MAX_ACCEPT_QUOTES}件で指定してください`); return; }
   if (list.some((it) => !it || !it.quoteId || !it.quoteToken)) { fail(400, "invalid_quotes", "quoteId・quoteToken は必須です"); return; }
-  if (!body.agreedName || !String(body.agreedName).trim()) { fail(400, "no_signed_name", "お申し込み者のお名前をご入力ください"); return; }
+  if (!cleanSignedName(body.agreedName)) { fail(400, "no_signed_name", "お申し込み者のお名前をご入力ください"); return; }
   const chk = checkWebOrderConsentInput({ consent: body.consent, documentVersion: ORDER_CONSENT_DOCUMENT.version, signedName: body.agreedName });
   if (!chk.ok) { fail(400, chk.code, chk.message); return; }
-  const signedName = String(body.agreedName).trim().slice(0, 100);
+  const signedName = cleanSignedName(body.agreedName).slice(0, 100);
   const ids = list.map((it) => String(it.quoteId));
   if (new Set(ids).size !== ids.length) { fail(400, "duplicate_quote", "同じ見積もりが二重に入っています"); return; }
   const payKey = body.payMethod === "before" ? "before" : "after";
@@ -1631,17 +1638,25 @@ async function acceptQuoteByConsent(req, res, body) {
   const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
   const first = outs[0].q;
   const to = normalizeEmail(first.contactEmail);
+  let mailProblem = "";
   if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
     try {
       const m = outs.length === 1
         ? acceptMailText({ q: first, agreedName: signedName, payKey, delivery: items[0].delivery, preferredDate: body.preferredDate, consentUrl })
         : acceptMailTextGroup({ items: outs, agreedName: signedName, payKey, preferredDate: body.preferredDate, consentUrl });
       await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body });
-    } catch (e) { console.error("acceptQuote(consent) mail error:", e); }
+    } catch (e) { console.error("acceptQuote(consent) mail error:", e); mailProblem = "failed"; }
+  } else {
+    mailProblem = "no_address";
   }
 
   // Chat（署名者名は載せない＝第1段と同じ）
   const chatWebhook = await getWebhook("crm");
+  // 受注確認のメール（承諾書 v1.2 §6 の「受注確認のご連絡」）が出せなかったら知らせる（2026-11-12 レビュー 気づき-1）。
+  // 事業所名・個人名は書かず、案件番号と見積番号だけ。スイッチがオフの道では知らせない（今のまま）
+  if (mailProblem) {
+    await notifyChat(chatWebhook, Flow.orderConsentMailProblemText(mailProblem, outs.map((o) => ({ caseNumber: o.q.caseNumber, estNo: o.q.estNo }))));
+  }
   const regions = await Promise.all(outs.map((o) => officeRegionLabel({ officeId: o.q.officeId })));
   const consentLine = `承諾書: ${r.displayNo}（条文の版 ${ORDER_CONSENT_DOCUMENT.version}・見積もりページでオンラインで同意）`;
   if (outs.length === 1) {
@@ -1678,6 +1693,12 @@ exports.acceptQuote = onRequest(
 
       // ===== 承諾書のサイン＝発注 第2段（設定 orderByConsent がオンのときだけ。設定は毎回読み直す）=====
       if (await readOrderByConsentFresh()) { await acceptQuoteByConsent(req, res, body); return; }
+      // スイッチがオフなのに承諾書への同意（consent）が付いている＝ページを開いたあとで設定が切れた。承諾書の記録を作らずに
+      // 従来の申込にすると「承諾書に同意したつもり」の申込になるので止める（2026-11-12 レビュー 中-1。main 時代のページは consent を送らない）
+      if (body.consent != null) {
+        res.status(409).json({ status: "error", code: "order_by_consent_off", message: "設定が変わりました。お手数ですが、ページを読み込み直してからもう一度お試しください" });
+        return;
+      }
 
       // ===== 複数事業所を一括で申し込む（body.quotes 経路）=====
       if (Array.isArray(body.quotes)) {
@@ -1834,7 +1855,7 @@ exports.staffAcceptQuote = onCall(
       if (!c || typeof c !== "object") {
         throw new HttpsError("failed-precondition", "署名済みの承諾書を受け取ってから受注確定にしてください（署名者のお名前と、受け取った日が要ります）", { code: "consent_required" });
       }
-      const signedName = String(c.signedName || "").trim().slice(0, 100);
+      const signedName = cleanSignedName(c.signedName).slice(0, 100);
       if (!signedName) throw new HttpsError("invalid-argument", "承諾書に署名した方のお名前を入れてください", { code: "no_signed_name" });
       if (Flow.jstMidnightMs(c.receivedDate) == null) throw new HttpsError("invalid-argument", "承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）", { code: "invalid_consent_date" });
       const receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, c.receivedVia) ? c.receivedVia : "other";
@@ -2225,7 +2246,10 @@ exports.staffCreateQuote = onCall(
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
     };
-    if (kase.status === STATUS.NEW) caseUpdate.status = STATUS.CONFIRMING;
+    if (kase.status === STATUS.NEW) {
+      caseUpdate.status = STATUS.CONFIRMING;
+      Object.assign(caseUpdate, Flow.statusChangePatch(STATUS.CONFIRMING, now)); // 進み具合の帯（§C13）
+    }
     batch.update(db.collection("cases").doc(kase.id), caseUpdate);
     batch.set(db.collection("activities").doc(), {
       caseId: kase.id, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,

@@ -90,6 +90,11 @@ function channelOfReceivedVia(via) {
 }
 const ORDER_METHODS = ["paper_order", "web_order"];
 
+/** 署名者名を整える: 制御文字・改行（\u0000-\u001f・\u007f）を空白にしてから前後の空白を取る（Web・紙の両方・2026-11-12 レビュー 低-2） */
+function cleanSignedName(s) {
+  return String(s == null ? "" : s).replace(/[\u0000-\u001f\u007f]/g, " ").trim();
+}
+
 /** 承諾書の設定（appConfig/settings.orderByConsent）が入っているか。true のときだけ（未設定・文字列は切） */
 function orderByConsentOn(settings) {
   return !!settings && settings.orderByConsent === true;
@@ -121,7 +126,7 @@ function checkOrderConsent({ entries, method, signedName, receivedDate, todayYmd
   const list = Array.isArray(entries) ? entries : [];
   if (!list.length) return ng("no_quotes", "承諾書の対象の見積もりがありません");
   if (!ORDER_METHODS.includes(method)) return ng("invalid_method", "承諾書の受け取り方が分かりません");
-  const name = String(signedName || "").trim();
+  const name = cleanSignedName(signedName);
   if (!name) return ng("no_signed_name", "承諾書に署名した方のお名前を入れてください");
   if (name.length > 100) return ng("signed_name_too_long", "署名者のお名前は100文字までにしてください");
   const paper = method === "paper_order";
@@ -212,7 +217,7 @@ function buildOrderConsentRecord({ document, quotes, groupId, signed, retakeOf =
   const first = entries[0] || {};
   const firstQ = (quotes || [])[0] || {};
   const s = signed || {};
-  const sig = { name: String(s.name || "").trim().slice(0, 100), method: s.method };
+  const sig = { name: cleanSignedName(s.name).slice(0, 100), method: s.method };
   if (s.method === "paper_order") {
     sig.receivedDate = s.receivedDate;
     sig.receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, s.receivedVia) ? s.receivedVia : "other";
@@ -270,7 +275,7 @@ function checkWebOrderConsentInput({ consent, documentVersion, signedName } = {}
   if (String(c.version || "") !== String(documentVersion || "")) {
     return ng("consent_version_mismatch", `承諾書の版が新しくなっています（現在の版 ${documentVersion}）。お手数ですが、ページを読み込み直し、最新の承諾書をご確認ください`);
   }
-  const name = String(signedName || "").trim();
+  const name = cleanSignedName(signedName);
   if (!name) return ng("no_signed_name", "承諾書に同意される方のお名前をご入力ください");
   if (name.length > 100) return ng("signed_name_too_long", "お名前は100文字までにしてください");
   return { ok: true };
@@ -291,7 +296,7 @@ function checkOrderReconsent({ quote, siblings, kase, signedName, receivedDate, 
   if (!kase.orderConsentToken) return ng("no_order_consent", "この案件には発注の承諾書がありません（取り直しは、承諾書で受注確定にした案件だけです）");
   // 取り直しが済んでいる（印が立っていない）ときは止める。二度押しで承諾書が2件できないように（2026-11-12 レビュー 低-3）
   if (kase.orderConsentStale !== true) return ng("already_retaken", "この案件の承諾書はすでに取り直し済みです（取り直しが要るのは、受注後に見積もりの内容が変わったときだけです）");
-  const name = String(signedName || "").trim();
+  const name = cleanSignedName(signedName);
   if (!name) return ng("no_signed_name", "承諾書に署名した方のお名前を入れてください");
   if (name.length > 100) return ng("signed_name_too_long", "署名者のお名前は100文字までにしてください");
   if (!isValidYmd(receivedDate)) return ng("invalid_consent_date", "承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）");
@@ -303,5 +308,5 @@ function checkOrderReconsent({ quote, siblings, kase, signedName, receivedDate, 
 module.exports = {
   checkStaffAccept, STAFF_ACCEPT_CHANNELS, isValidYmd, jstYmdOf,
   ORDER_RECEIVED_VIA, channelOfReceivedVia, orderByConsentOn, checkOrderConsent, orderConsentQuoteEntry,
-  orderConsentTotal, buildOrderConsentRecord, orderConsentStaleAfterRevise, checkOrderReconsent, checkWebOrderConsentInput,
+  orderConsentTotal, buildOrderConsentRecord, orderConsentStaleAfterRevise, checkOrderReconsent, checkWebOrderConsentInput, cleanSignedName,
 };

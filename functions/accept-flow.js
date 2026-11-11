@@ -265,6 +265,23 @@ function orderReconsentSubject(estNo, version) {
   return `承諾書を取り直しました（${estNo || "見積"} 第${Number(version) || "—"}版）`;
 }
 
+/**
+ * 受注確認のメールを出せなかったときの Chat の文（事業所名・個人名は書かない。案件番号と見積番号だけ）
+ * @param {"failed"|"no_address"} kind
+ * @param {{caseNumber:any, estNo:string}[]} list
+ */
+function orderConsentMailProblemText(kind, list) {
+  const ids = (list || []).map((x) => `案件 #${x.caseNumber ?? "—"}（${x.estNo || "見積"}）`).join("・");
+  const why = kind === "no_address" ? "宛先のメールアドレスが無いため、受注確認のメールを送っていません" : "受注確認のメールを送れませんでした";
+  return `⚠️ ${why}（${ids}）。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください。`;
+}
+
+// ===== 進み具合の帯（§C13・2026-11-12）=====
+/** 状態を変えるときに一緒に書く2項目。admin/js/case-progress.js の statusChangePatch と同じ（test-order-consent-web.mjs で照合） */
+function statusChangePatch(newStatus, ts) {
+  return { statusChangedAt: ts, statusChangedTo: Number(newStatus) };
+}
+
 // ===== 承諾書のサイン＝発注 第2段（Web の道・2026-11-12）=====
 /** Web（見積もりページで承諾書に同意）で受注確定にしたときの活動の件名 */
 function orderConsentWebSubject(estNo, soNumber, reused = false, reopenedFrom = null) {
@@ -402,6 +419,6 @@ module.exports = {
   shouldNotifyAssign, assignedAtChanged,
   shouldNotifyConsent,
   orderConsentAcceptSubject, orderConsentChatHead, orderReconsentSubject,
-  orderConsentWebSubject, orderConsentPageUrl, acceptMailWording,
+  orderConsentWebSubject, orderConsentPageUrl, acceptMailWording, statusChangePatch, orderConsentMailProblemText,
   planDailyPosts, dailyPostTexts, dailyFailureAction,
 };
