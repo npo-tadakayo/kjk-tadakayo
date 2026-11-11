@@ -27,7 +27,7 @@ import { PENDING_RELEASED_CARD_TEXT } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-let ctx = null;          // { db, caseId, getCase, sendMail, toast, userName, orderByConsent?: () => boolean }
+let ctx = null;          // { db, caseId, getCase, sendMail, logActivity, toast, userName, orderByConsent?: () => boolean }
 let pendingNotice = "";   // 記録待ちを解除したときにカードへ出す1行（PENDING_RELEASED_CARD_TEXT）
 let requests = [];       // この案件の consentRequests（作成日降順）
 let openedQrToken = null;
@@ -351,6 +351,8 @@ function openMailModal(r, url) {
     send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
     // reqId は照合で決まった書き込み先（記録待ちを開き直したとき、いま開いている依頼と違うことがある）
     record: (to, sentAtIso, reqId) => updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
+    // サーバーが対応記録を書けなかったとき（sendCaseEmail の recordError）に画面から足す。sentAtIso はサーバーの送信時刻（2026-11-12）
+    logActivity: ctx.logActivity,
     onDone: async (close) => {
       pendingNotice = ""; // 新しく送って記録まで済んだら、前回の解除のお知らせは消す
       ctx.toast("署名依頼メールを送信しました");

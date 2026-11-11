@@ -15,9 +15,11 @@ export const RECORD_RETRY_LABEL = "記録だけやり直す";
 
 const errText = (e) => String((e && e.message) || e || "不明なエラー");
 
-// 送れたかどうか分からないエラー（2026-11-10 レビュー 中-A）。sendCaseEmail は Gmail で送ったあとに
-// 対応記録・cases の更新が失敗しても HttpsError("internal") を投げる（functions/index.js sendCaseEmail）。
-// 通信のタイムアウト・接続断も同じく「送れたかもしれない」。Gmail の送信自体の失敗も internal なので区別できない
+// 送れたかどうか分からないエラー（2026-11-10 レビュー 中-A）。通信のタイムアウト・接続断は「送れたかもしれない」。
+// 古い sendCaseEmail（2026-11-12 より前）は、Gmail で送ったあとに対応記録・cases の更新が失敗しても HttpsError("internal") を投げ、
+// Gmail の送信自体の失敗も internal だったので区別できなかった。
+// 新しい sendCaseEmail（functions/case-mail.js）は、送信後の失敗を { ok:true, sent:true, recordError } で返し（sendResultOf で読む）、
+// 送る前の失敗・Gmail の 4xx は failed-precondition（はっきりした失敗）、Gmail の 5xx・通信の失敗だけを internal で返す
 const AMBIGUOUS_CODES = ["internal", "deadline-exceeded", "unavailable", "unknown"];
 
 /** エラーの code（"functions/internal" のような接頭辞は外す。無ければ ""） */
@@ -58,7 +60,7 @@ export function classifySendOutcome({ sendError, recordError } = {}) {
   if (recordError) {
     return {
       kind: "record_failed", canResend: false, confirmBeforeResend: false,
-      message: "送信済みです。記録だけ失敗しました（再送しないでください）。\n"
+      message: "メールは送信済みです。記録だけ失敗しました（再送しないでください）。\n"
         + `理由: ${errText(recordError)}\n\n`
         + `「${RECORD_RETRY_LABEL}」を押すと、メールは送らずに記録だけを保存し直します。`,
     };
@@ -118,10 +120,12 @@ export async function reqKeyOf(reqId, subtle) {
   } catch { return ""; }
 }
 
-// sessionStorage に書く値（宛先・送信日時・reqKey だけ。reqId は決して入れない）
+// sessionStorage に書く値（宛先・送信日時・reqKey・tl だけ。reqId・件名・本文は決して入れない）
+// tl … 対応記録（activities の gmail_sent）がまだ書けていない印（サーバーが recordError を返したとき。2026-11-12）
 function storedValueOf(v) {
   const out = { to: String(v.to), sentAt: String(v.sentAt) };
   if (v.reqKey) out.reqKey = String(v.reqKey);
+  if (v.tl) out.tl = true;
   return out;
 }
 
@@ -130,8 +134,8 @@ function storedValueOf(v) {
  * 承諾書（reqId あり）で印 reqKey が無いときは、照合できないので sessionStorage には書かずモジュール変数だけ。
  * @param {"consent"|"preGuide"} kind
  * @param {string} caseId
- * @param {{to:string, sentAt:string, reqId?:string, reqKey?:string}} v
- * @returns {{to:string, sentAt:string, reqId?:string, reqKey?:string}|null}  モジュール変数に持った値（reqId を含みうる）
+ * @param {{to:string, sentAt:string, reqId?:string, reqKey?:string, tl?:boolean}} v  tl＝対応記録がまだ（サーバーの recordError）
+ * @returns {{to:string, sentAt:string, reqId?:string, reqKey?:string, tl?:boolean}|null}  モジュール変数に持った値（reqId を含みうる）
  */
 export function savePending(kind, caseId, v, storage) {
   const key = pendingKey(kind, caseId);
@@ -139,6 +143,7 @@ export function savePending(kind, caseId, v, storage) {
   const mem = { to: String(v.to), sentAt: String(v.sentAt) };
   if (v.reqId) mem.reqId = String(v.reqId);
   if (v.reqKey) mem.reqKey = String(v.reqKey);
+  if (v.tl) mem.tl = true;
   memPending.set(key, mem);
   if (mem.reqId && !mem.reqKey) return mem; // 印が無い承諾書は sessionStorage に書かない
   try { storageOf(storage)?.setItem(key, JSON.stringify(storedValueOf(mem))); } catch { /* 使えなければモジュール変数だけ */ }
@@ -238,6 +243,57 @@ export function clearSendUnknown(kind, caseId, storage) {
   const key = unknownKey(kind, caseId);
   memUnknown.delete(key);
   try { storageOf(storage)?.removeItem(key); } catch { /* 同上 */ }
+}
+
+// ===== sendCaseEmail の返事を読む（2026-11-12・点検4 の根本対応） =====
+// 新しい Functions: { ok:true, sent:true, id, sentAt, recordError? }（functions/case-mail.js）。
+// 古い Functions: { ok:true, id }（sentAt・recordError が無い）→ sentAt は ""（呼び出し側が端末の時刻を使う）・recordError は ""。
+// どちらの組み合わせでも動くよう、無いもの・壊れた値は「無い」として扱う。
+
+/**
+ * @param {unknown} res  httpsCallable の結果（{ data }）か、data そのもの
+ * @returns {{sentAt:string, recordError:string}}  sentAt＝サーバーが送信に成功した時刻（ISO・無ければ ""）
+ *   recordError＝送信は済んだが、サーバーで対応記録が書けなかった理由（無ければ ""）
+ */
+export function sendResultOf(res) {
+  const d = res && typeof res === "object" && "data" in res ? res.data : res;
+  const out = { sentAt: "", recordError: "" };
+  if (!d || typeof d !== "object") return out;
+  if (typeof d.sentAt === "string") {
+    const ms = Date.parse(d.sentAt);
+    if (Number.isFinite(ms)) out.sentAt = new Date(ms).toISOString();
+  }
+  if (d.recordError != null && d.recordError !== false && String(d.recordError).trim()) {
+    out.recordError = String(d.recordError).trim().slice(0, 300);
+  }
+  return out;
+}
+
+/** 件名が手元に無いとき（再読み込みのあと）に対応記録へ書く名前 */
+export const CASE_MAIL_KIND_LABEL = { consent: "承諾書の署名依頼メール", preGuide: "事前準備のご案内メール", free: "メール" };
+
+/**
+ * サーバーで書けなかった対応記録を、画面から1件足すときの中身（occurredAt・userId・userName は呼び出し側）。
+ * 書式は sendCaseEmail の送信記録と同じ（type "gmail_sent"・件名「メール送信: …」・本文「宛先: …」）に、画面から記録した旨を1行足す。
+ * 件名・本文は同じページの中にしか持たない（sessionStorage に入れない）ので、再読み込みのあとは種類の名前と注記だけになる。
+ * @param {{kind?:string, caseId:string, to:string, subject?:string, body?:string}} a
+ */
+export function caseMailActivityOf({ kind = "free", caseId, to, subject, body } = {}) {
+  const note = "（送信後にサーバーで対応記録を書けなかったため、画面から記録しました）";
+  const head = `宛先: ${to || ""}\n${note}`;
+  return {
+    caseId, type: "gmail_sent",
+    subject: `メール送信: ${subject || CASE_MAIL_KIND_LABEL[kind] || CASE_MAIL_KIND_LABEL.free}`,
+    body: body ? `${head}\n\n${body}` : `${head}\n（本文は画面に残っていないため記録していません）`,
+    attachmentUrls: [],
+  };
+}
+
+/** 案件詳細の自由文面のメールで、対応記録だけ書けなかったときの確認（OK で記録だけやり直す・メールは送らない） */
+export function freeMailRecordRetryText(err) {
+  return "メールは送信済みです。対応記録への記録だけ失敗しました（再送しないでください）。\n"
+    + `理由: ${errText(err)}\n\n`
+    + "OK で、メールは送らずに対応記録だけをもう一度保存します。";
 }
 
 /** 送信日時（ISO）から、事前案内の送付日（JST の YYYY-MM-DD）を出す */

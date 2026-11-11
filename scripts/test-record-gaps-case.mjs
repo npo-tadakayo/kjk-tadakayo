@@ -10,6 +10,7 @@ import {
   errorCodeOf, isAmbiguousSendError, RESEND_AFTER_UNKNOWN_CONFIRM_TEXT,
   pendingKey, savePending, loadPending, clearPending, _resetPendingMemory, jstDateOf,
   reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT, PENDING_RELEASED_CARD_TEXT,
+  sendResultOf, caseMailActivityOf, CASE_MAIL_KIND_LABEL, freeMailRecordRetryText,
 } from "../admin/js/record-gaps-case.js";
 import { STATUS_LABELS, LOST, STATUS_ORDER } from "../admin/js/constants.js";
 import { SUPPORT_DONE } from "../admin/js/screen-rules.js";
@@ -40,7 +41,7 @@ t("送信済み・記録だけ失敗 → 再送させない文言", () => {
   const o = classifySendOutcome({ recordError: new Error("permission-denied") });
   assert.equal(o.kind, "record_failed");
   assert.equal(o.canResend, false);
-  assert.match(o.message, /^送信済みです。記録だけ失敗しました（再送しないでください）/);
+  assert.match(o.message, /^メールは送信済みです。記録だけ失敗しました（再送しないでください）/);
   assert.match(o.message, /permission-denied/);
   assert.ok(o.message.includes(RECORD_RETRY_LABEL));
   assert.ok(!o.message.includes("送信に失敗しました"));
@@ -278,18 +279,19 @@ const env = (() => {
       _resetPendingMemory(); winLs.clear(); log.length = 0;
       return import(`../admin/js/mail-send-guard.js?v=${++ver}`);
     },
-    open(guard, { kind = "consent", caseId = "C1", reqId = "REQ_A", cands = ["REQ_A"], send, record } = {}) {
+    open(guard, { kind = "consent", caseId = "C1", reqId = "REQ_A", cands = ["REQ_A"], send, record, logActivity } = {}) {
       els.clear();
       ["close", "cancel", "send", "to", "subject", "body"].forEach(mkEl);
       els.get("to").value = "x@example.com";
       const host = { innerHTML: "MODAL" };
-      const calls = { send: 0, record: [] };
+      const calls = { send: 0, record: [], log: [] };
       guard.bindMailSend({
         kind, caseId, reqId: kind === "consent" ? reqId : undefined, candidateReqIds: cands, host,
         ids: { close: "close", cancel: "cancel", send: "send", fields: ["to", "subject", "body"] },
         readInputs: () => ({ to: els.get("to").value, subject: "s", body: "b" }),
         send: async (p) => { calls.send++; return send ? send(p) : undefined; },
         record: async (to, sentAt, rid) => { calls.record.push([to, sentAt, rid]); return record ? record() : undefined; },
+        logActivity: async (act, sentAt) => { calls.log.push([act, sentAt]); return logActivity ? logActivity() : undefined; },
         onDone: (close) => close(),
       });
       return { host, calls };
@@ -444,6 +446,152 @@ t("結線: 承諾書の mailedAt は送信時刻（serverTimestamp ではない�
   assert.ok(rl.includes("pendingNotice = PENDING_RELEASED_CARD_TEXT"));
   assert.ok(ca.includes("${esc(pendingNotice)}"));
   assert.ok(src("pre-guide.js").includes("preGuideMailedAt: jstDateOf(sentAtIso)"));
+});
+
+
+// ===== 2026-11-12 点検4 の根本対応: sendCaseEmail の返事（recordError・sentAt）を読む =====
+t("返事の解釈: 新しい Functions（sentAt・recordError あり）", () => {
+  assert.deepEqual(sendResultOf({ data: { ok: true, sent: true, id: "m", sentAt: "2026-11-12T01:02:03.000Z" } }),
+    { sentAt: "2026-11-12T01:02:03.000Z", recordError: "" });
+  assert.deepEqual(sendResultOf({ data: { ok: true, sent: true, sentAt: "2026-11-12T01:02:03Z", recordError: " 対応記録の書き込みに失敗しました（x） " } }),
+    { sentAt: "2026-11-12T01:02:03.000Z", recordError: "対応記録の書き込みに失敗しました（x）" });
+  // data でなく中身を直接渡しても読める
+  assert.equal(sendResultOf({ sentAt: "2026-11-12T01:02:03Z" }).sentAt, "2026-11-12T01:02:03.000Z");
+  assert.equal(sendResultOf({ data: { recordError: "y".repeat(400) } }).recordError.length, 300);
+});
+t("返事の解釈: 古い Functions（{ok,id}）・練習モード・空・壊れた値は「無い」", () => {
+  const none = { sentAt: "", recordError: "" };
+  for (const r of [{ data: { ok: true, id: "m" } }, { data: { ok: true, id: "practice" } }, undefined, null, {}, { data: null }, "x", 3,
+    { data: { sentAt: "きのう", recordError: "" } }, { data: { sentAt: 12345, recordError: false } }, { data: { recordError: null } }, { data: { recordError: "  " } }]) {
+    assert.deepEqual(sendResultOf(r), none, JSON.stringify(r));
+  }
+});
+t("画面から足す対応記録: 書式は sendCaseEmail と同じ（gmail_sent・メール送信: 件名・宛先:）＋注記。件名が無ければ種類の名前", () => {
+  const a = caseMailActivityOf({ kind: "consent", caseId: "C1", to: "x@example.com", subject: "件名A", body: "本文A" });
+  assert.equal(a.type, "gmail_sent"); assert.equal(a.caseId, "C1");
+  assert.equal(a.subject, "メール送信: 件名A");
+  assert.match(a.body, /^宛先: x@example\.com\n（送信後にサーバーで対応記録を書けなかったため、画面から記録しました）\n\n本文A$/);
+  assert.deepEqual(a.attachmentUrls, []);
+  const b = caseMailActivityOf({ kind: "preGuide", caseId: "C2", to: "y@example.com" });
+  assert.equal(b.subject, `メール送信: ${CASE_MAIL_KIND_LABEL.preGuide}`);
+  assert.match(b.body, /本文は画面に残っていないため記録していません/);
+  assert.equal(caseMailActivityOf({ kind: "??", caseId: "C", to: "z" }).subject, "メール送信: メール");
+  assert.match(freeMailRecordRetryText(new Error("offline")), /^メールは送信済みです。対応記録への記録だけ失敗しました（再送しないでください）/);
+  assert.match(freeMailRecordRetryText(new Error("offline")), /offline/);
+});
+t("記録待ちの tl（対応記録もまだ）は sessionStorage に残る。件名・本文は入れない", () => {
+  _resetPendingMemory();
+  const st = new Map();
+  const ss = { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, v), removeItem: (k) => st.delete(k) };
+  savePending("preGuide", "C9", { to: "a@example.com", sentAt: "2026-11-12T00:00:00.000Z", tl: true, subject: "S", body: "B" }, ss);
+  assert.deepEqual(JSON.parse(st.get(pendingKey("preGuide", "C9"))), { to: "a@example.com", sentAt: "2026-11-12T00:00:00.000Z", tl: true });
+  _resetPendingMemory();
+  assert.deepEqual(loadPending("preGuide", "C9", ss), { to: "a@example.com", sentAt: "2026-11-12T00:00:00.000Z", tl: true });
+  savePending("preGuide", "C9", { to: "a@example.com", sentAt: "2026-11-12T00:00:00.000Z" }, ss);
+  assert.ok(!("tl" in JSON.parse(st.get(pendingKey("preGuide", "C9")))));
+  _resetPendingMemory();
+});
+
+const SRV_AT = "2026-11-12T03:04:05.000Z";
+const newFnRes = (extra = {}) => ({ data: { ok: true, sent: true, id: "m1", sentAt: SRV_AT, ...extra } });
+const logFail = () => { throw new Error("log fail"); };
+
+ta("動かす: 新しい Functions・記録も成功 → 記録の送信日時はサーバーの sentAt・対応記録は画面から足さない", async () => {
+  const guard = await env.fresh();
+  const m = env.open(guard, { kind: "preGuide", send: () => newFnRes() });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  assert.deepEqual(m.calls.record, [["x@example.com", SRV_AT, undefined]]);
+  assert.equal(m.calls.log.length, 0);
+  assert.equal(env.store.size, 0); assert.equal(m.host.innerHTML, "");
+});
+
+ta("動かす: 古い Functions（{ok,id}）→ 今までどおり端末の時刻・対応記録は画面から足さない", async () => {
+  const guard = await env.fresh();
+  const before = Date.now();
+  const m = env.open(guard, { send: () => ({ data: { ok: true, id: "m1" } }) });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.record.length, 1);
+  const at = Date.parse(m.calls.record[0][1]);
+  assert.ok(at >= before && at <= Date.now() + 5, "端末の時刻になっていない");
+  assert.equal(m.calls.log.length, 0);
+});
+
+ta("動かす: recordError → 再送せず、対応記録を画面から1件（件名・本文つき・送信時刻はサーバー）→ mailedAt。案内は出さずに閉じる", async () => {
+  const guard = await env.fresh();
+  const m = env.open(guard, { send: () => newFnRes({ recordError: "対応記録の書き込みに失敗しました（x）" }) });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  assert.equal(m.calls.log.length, 1);
+  const [act, at] = m.calls.log[0];
+  assert.equal(at, SRV_AT);
+  assert.equal(act.subject, "メール送信: s"); assert.match(act.body, /^宛先: x@example\.com\n.*\n\nb$/);
+  assert.deepEqual(m.calls.record, [["x@example.com", SRV_AT, "REQ_A"]]);
+  assert.ok(!env.log.some((l) => l.startsWith("ALERT:")));
+  assert.equal(env.store.size, 0); assert.equal(env.winLs.size, 0); assert.equal(m.host.innerHTML, "");
+});
+
+ta("動かす: recordError で画面からの対応記録も失敗 →「メールは送信済み」案内・記録待ち（tl）→ 再読み込み → 送信0回で対応記録1件＋記録1件", async () => {
+  let guard = await env.fresh();
+  let m = env.open(guard, { kind: "preGuide", caseId: "C3", send: () => newFnRes({ recordError: "r" }), logActivity: logFail });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1); assert.equal(m.calls.log.length, 1); assert.equal(m.calls.record.length, 0);
+  assert.ok(env.log.some((l) => l.startsWith("ALERT:メールは送信済みです。記録だけ失敗しました（再送しないでください）")));
+  const saved = JSON.parse(env.store.get("kjk.mailRecordPending.preGuide.C3"));
+  assert.deepEqual(saved, { to: "x@example.com", sentAt: SRV_AT, tl: true }); // 件名・本文は入れない
+  assert.equal(m.host.innerHTML, "MODAL");
+  guard = await env.reload();
+  m = env.open(guard, { kind: "preGuide", caseId: "C3" });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.send, 0, "記録だけやり直しでメールを送っている");
+  assert.equal(m.calls.log.length, 1);
+  assert.equal(m.calls.log[0][1], SRV_AT);
+  assert.equal(m.calls.log[0][0].subject, `メール送信: ${CASE_MAIL_KIND_LABEL.preGuide}`); // 再読み込み後は件名が手元に無い
+  assert.deepEqual(m.calls.record, [["x@example.com", SRV_AT, undefined]]);
+  assert.equal(env.store.size, 0);
+});
+
+ta("動かす: 対応記録は足せたが mailedAt が失敗 → やり直しでは対応記録を二重に足さない", async () => {
+  const guard = await env.fresh();
+  let recN = 0;
+  const m = env.open(guard, { send: () => newFnRes({ recordError: "r" }), record: () => { if (++recN === 1) throw new Error("rec fail"); } });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.log.length, 1); assert.equal(m.calls.record.length, 1);
+  const saved = JSON.parse([...env.store.entries()].find(([k]) => k.startsWith("kjk.mailRecordPending."))[1]);
+  assert.ok(!("tl" in saved), "対応記録を足したのに tl が残っている");
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  assert.equal(m.calls.log.length, 1, "対応記録を二重に足した");
+  assert.equal(m.calls.record.length, 2);
+  assert.equal(m.calls.record[1][1], SRV_AT);
+  assert.equal(env.store.size, 0);
+});
+
+ta("動かす: 新しい Functions の failed-precondition（Gmail 4xx・送る前の失敗）は「送信に失敗しました」・不明の印なし", async () => {
+  const guard = await env.fresh();
+  const m = env.open(guard, { kind: "preGuide", caseId: "C4", send: () => { throw Object.assign(new Error("Gmail送信に失敗しました（403）"), { code: "functions/failed-precondition" }); } });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(m.calls.record.length, 0);
+  assert.ok(env.log.some((l) => l.startsWith("ALERT:送信に失敗しました")));
+  assert.equal(env.store.size, 0);
+});
+
+for (const file of ["consent-admin.js", "pre-guide.js"]) {
+  t(`結線: ${file} は ctx.logActivity を bindMailSend に渡す`, () => {
+    assert.ok(src(file).includes("    logActivity: ctx.logActivity,\n"));
+  });
+}
+t("結線: case-detail.js は承諾書・事前案内に logCaseMailActivity を渡し、自由文面の送信も recordError で再送させない", () => {
+  const s = src("case-detail.js");
+  assert.equal((s.match(/logActivity: logCaseMailActivity,/g) || []).length, 2);
+  const f = s.slice(s.indexOf("async function logCaseMailActivity("), s.indexOf("async function sendMail()"));
+  assert.ok(f.includes('addDoc(collection(db, "activities")'));
+  assert.ok(f.includes("occurredAt: new Date(sentAtIso)"));
+  const sm = s.slice(s.indexOf("async function sendMail()"), s.indexOf("// タブ切替"));
+  assert.ok(sm.includes("const srv = sendResultOf(await sendCaseEmailFn({ to, subject, body, caseId }));"));
+  assert.ok(sm.indexOf("if (srv.recordError)") < sm.indexOf("} catch (e) {"));
+  assert.ok(sm.includes("freeMailRecordRetryText(e2)"));
+  assert.equal((sm.match(/sendCaseEmailFn\(/g) || []).length, 1, "送信を2回呼ぶ経路がある");
 });
 
 // ===== 点検5: 伴走支援の記録を保存したとき「伴走支援実施済にしますか」 =====
