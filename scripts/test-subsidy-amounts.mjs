@@ -9,7 +9,7 @@ import {
   subsidyCountsFromShipment, subsidyCountsFromQuote, shipmentSubsidyAmounts, caseSubsidyAmounts,
   inputMismatches, sourceText, BT_SKU,
 } from "../admin/js/subsidy-amounts.js";
-import { priceIsTaxIncluded, itemPurposeNote } from "../admin/js/invoice-doc.js";
+import { priceIsTaxIncluded, itemPurposeNote, invoiceTotals } from "../admin/js/invoice-doc.js";
 import Pricing from "../admin/js/estimate-pricing.js";
 
 let n = 0;
@@ -320,6 +320,41 @@ t(() => {
   assert.equal(caseSubsidyAmounts([big], { plan }).total.grant, 64000);
   assert.equal(caseSubsidyAmounts([big], { plan }).total.ab, 74500);
   assert.equal(caseSubsidyAmounts([], { plan }).rows.length, 0);
+});
+
+// ===== 【中2】領収金額の予定＝請求額（invoiceTotals の payable）。A・B は送料に関係なく変わらない =====
+t(() => {
+  const s = shipFromQuote("houmon", 1, 2, 0, 0, { _id: "p1", soNumber: "SH-P1", shippingFee: 800 }); // 税込出荷・送料¥800
+  const r = shipmentSubsidyAmounts(s, null, subsidyCountsFromShipment(s));
+  assert.equal(r.plannedIncl, invoiceTotals(s).payable);
+  assert.equal(r.plannedIncl, 64000 + 880);          // 送料は税込に直して足す（明細の合計 64,800 ではない）
+  assert.notEqual(r.plannedIncl, r.aTotal + r.b + r.x);
+  assert.equal(r.ab, 64000); assert.equal(r.x, 800);  // A・B・A＋B は送料で変わらない
+  // 領収証を発行済みなら予定は出さない（領収証の保存値を使う）
+  const rows = receiptRowsFromShipment(s);
+  const rc = { receiptNo: "RCPT-P1", amountIncl: 64880, items: rows.map((x) => ({ usage: x.kind, name: x.name, qty: x.qty, unitPrice: x.price })), usageTotalsIncl: usageTotalsOf(rows, true) };
+  const r2 = shipmentSubsidyAmounts(s, rc, subsidyCountsFromShipment(s));
+  assert.equal(r2.plannedIncl, null); assert.equal(r2.receiptAmountIncl, 64880);
+  // 過入金の充当も請求書と同じに引かれる
+  const sc = { ...s, creditApplied: 1000 };
+  assert.equal(shipmentSubsidyAmounts(sc, null, subsidyCountsFromShipment(sc)).plannedIncl, invoiceTotals(sc).payable);
+});
+// 複数出荷: 未発行の出荷の請求額の合計／発行済みは領収証の額の合計（分けて数える）
+t(() => {
+  const s1 = shipFromQuote("houmon", 1, 0, 0, 0, { _id: "a", soNumber: "SH-A", shippingFee: 800 });
+  const s2 = { _id: "b", soNumber: "SH-B", items: [usbA(1)], shippingFee: 370 };
+  const s3 = shipFromQuote("houmon", 0, 1, 0, 0, { _id: "c", soNumber: "SH-C" });
+  const rows3 = receiptRowsFromShipment(s3);
+  const rc3 = { receiptNo: "RCPT-C", amountIncl: 64000, items: rows3.map((x) => ({ usage: x.kind, name: x.name, qty: x.qty, unitPrice: x.price })), usageTotalsIncl: usageTotalsOf(rows3, true) };
+  const res = caseSubsidyAmounts([s1, s2, s3], { receiptsById: { c: rc3 } });
+  assert.equal(res.rows[0].plannedIncl, invoiceTotals(s1).payable);
+  assert.equal(res.rows[1].plannedIncl, invoiceTotals(s2).payable);
+  assert.equal(res.total.plannedIncl, invoiceTotals(s1).payable + invoiceTotals(s2).payable);
+  assert.equal(res.total.plannedIncl, (64000 + 880) + (6500 + 407));
+  assert.equal(res.total.plannedCount, 2);
+  assert.equal(res.total.receiptAmountIncl, 64000); assert.equal(res.total.receiptCount, 1);
+  const none = caseSubsidyAmounts([s3], { receiptsById: { c: rc3 } });
+  assert.equal(none.total.plannedIncl, null); assert.equal(none.total.plannedCount, 0);
 });
 
 // ===== 手入力の欄との突き合わせ（申4） =====

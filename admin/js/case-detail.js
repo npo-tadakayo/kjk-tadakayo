@@ -753,17 +753,20 @@ function renderSubsidyAuto(res) {
     if (x.aExtra) rows.push(`<tr class="sa-extra"><th>対象外 カードリーダーの追加${x.extraUnits ? ` ${x.extraUnits}台` : ""}（申請に入れない）</th><td class="num">${yen(x.aExtra)}</td></tr>`);
     if (x.x) rows.push(`<tr class="sa-extra"><th>対象外 送料など（申請に入れない）</th><td class="num">${yen(x.x)}</td></tr>`);
     if (!isTotal && x.receiptAmountIncl !== null) rows.push(`<tr class="sa-extra"><th>領収金額（領収証に保存された額）</th><td class="num">${yen(x.receiptAmountIncl)}</td></tr>`);
+    if (!isTotal && x.plannedIncl !== null && x.plannedIncl !== undefined) rows.push(`<tr class="sa-extra"><th>領収金額の予定（請求額・税込）</th><td class="num">${yen(x.plannedIncl)}</td></tr>`);
     return `<table class="sa-table">${rows.join("")}</table>`;
   };
   const srcLine = (r) => `<p class="sa-src"><i class="ti ti-file-check" aria-hidden="true"></i> ${escHtml(sourceText(r))}${r.status ? `（${escHtml(SHIP_STATUS_JA[r.status] || r.status)}）` : ""}${r.countsFrom ? `　／　補助対象の台数: ${escHtml(r.countsFrom)}` : ""}</p>`;
   let html = "";
   if (!multi) {
-    html += srcLine(res.rows[0]) + tableOf({ ...t, receiptAmountIncl: null }, true);
+    html += srcLine(res.rows[0]) + tableOf(t, true);
     const r0 = res.rows[0];
     if (r0.receiptAmountIncl !== null) html += `<p class="sa-muted" style="margin-top:6px">領収金額（領収証に保存された額）: ${yen(r0.receiptAmountIncl)}</p>`;
-    else html += `<p class="sa-muted" style="margin-top:6px">領収金額の予定（明細の合計・税込）: ${yen(r0.aTotal + r0.b + r0.x)}（入金を確かめて領収証を発行すると、領収証の値に切り替わります）</p>`;
+    else html += `<p class="sa-muted" style="margin-top:6px">領収金額の予定（請求額・税込）: ${yen(r0.plannedIncl)}（請求書と同じ額。入金を確かめて領収証を発行すると、領収証の値に切り替わります）</p>`;
   } else {
-    html += `<p class="sa-src">出荷 ${res.rows.length}件の合計です（キャンセルを除く）。出荷ごとの内訳は下にあります。</p>` + tableOf({ ...t, receiptAmountIncl: null }, true);
+    html += `<p class="sa-src">出荷 ${res.rows.length}件の合計です（キャンセルを除く）。出荷ごとの内訳は下にあります。</p>` + tableOf(t, true);
+    if (t.receiptAmountIncl !== null) html += `<p class="sa-muted" style="margin-top:6px">領収金額の合計（領収証に保存された額・${t.receiptCount}件）: ${yen(t.receiptAmountIncl)}</p>`;
+    if (t.plannedIncl !== null) html += `<p class="sa-muted" style="margin-top:6px">領収金額の予定の合計（領収証が未発行の出荷の請求額・税込・${t.plannedCount}件）: ${yen(t.plannedIncl)}</p>`;
     html += `<div class="sa-breakdown">` + res.rows.map((r) => `<h4>${escHtml(r.soNumber || "（番号なし）")}</h4>${srcLine(r)}${tableOf(r, false)}`).join("") + `</div>`;
   }
   const notes = [];

@@ -18,7 +18,8 @@
 //   区別には「補助対象の台数」を別に持っているものを使う: ①出荷の subsidyQty {bt, usb}（自動の伴走支援費のとき保存される）
 //   ②出荷に紐づく見積もり（quotes）の items[].subsidyQty。どちらも無いときは推測で分けず「区別できない」と返す。
 //   入金・消込（netPaidOf・billableInclOf など）には触れない。
-import { priceIsTaxIncluded, itemPurposeNote } from "./invoice-doc.js";
+// invoiceTotals は「領収金額の予定（請求額）」の表示のためだけに使う（請求書と同じ計算。入金・消込の関数は呼ばない）
+import { priceIsTaxIncluded, itemPurposeNote, invoiceTotals } from "./invoice-doc.js";
 
 export const BT_SKU = "cir415a-01"; // estimate-pricing.js の SKU.BT と同じ（BT 以外のカードリーダーは USB に数える）
 const B_SKUS = ["support-fee", "discount"];
@@ -176,6 +177,8 @@ export function shipmentSubsidyAmounts(s, receipt = null, counts = null) {
     source: fromReceipt ? "receipt" : "shipment",
     receiptNo: fromReceipt ? (receipt.receiptNo || (s && s.receiptNo) || "") : "",
     receiptAmountIncl: fromReceipt ? num(receipt.amountIncl || (s && s.receiptAmountIncl)) : null,
+    // 領収証が未発行のときの「領収金額の予定」＝請求書と同じ請求額（送料の消費税・過入金の充当を含む）。A・B には関係しない
+    plannedIncl: fromReceipt ? null : invoiceTotals(s).payable,
     taxIncluded: taxIncl,
     aTotal: totals.A, aSubsidy, aExtra, b: totals.B, x: totals.X,
     ab: aSubsidy === null ? null : aSubsidy + totals.B,
@@ -209,6 +212,12 @@ export function caseSubsidyAmounts(shipments, { receiptsById = {}, countsById = 
     subsidyUnits: known ? sum("subsidyUnits") : null, extraUnits: known ? sum("extraUnits") : null,
   };
   total.ab = known ? total.aSubsidy + total.b : null;
+  // 領収金額: 発行済みの出荷は領収証の額、未発行の出荷は請求額（予定）。それぞれの合計と件数
+  const unissued = rows.filter((r) => r.plannedIncl !== null), issued = rows.filter((r) => r.receiptAmountIncl !== null);
+  total.plannedIncl = unissued.length ? unissued.reduce((a, r) => a + num(r.plannedIncl), 0) : null;
+  total.plannedCount = unissued.length;
+  total.receiptAmountIncl = issued.length ? issued.reduce((a, r) => a + num(r.receiptAmountIncl), 0) : null;
+  total.receiptCount = issued.length;
   // 交付見込み＝A＋B と助成区分の上限の小さい方（estimate-pricing.js の grantAmt と同じ考え方）
   total.grant = (known && plan && num(plan.limit) > 0) ? Math.min(num(plan.limit), total.ab) : null;
   const skuQty = {};
