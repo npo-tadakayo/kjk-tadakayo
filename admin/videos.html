@@ -57,13 +57,16 @@
     .vl-icon{margin-left:auto;align-self:center;color:var(--color-ink-muted);}
     .vl-tag{display:inline-block;font-size:11px;font-weight:600;padding:1px 6px;border-radius:4px;background:#f3efe8;color:var(--color-ink-muted);vertical-align:1px;}
     .howto{font-size:12.5px;color:var(--color-ink-muted);line-height:1.8;margin-top:22px;}
-    /* 全編（YouTube・限定公開）への入口。埋め込まずリンクにする（開いただけで Google に通信しないため） */
+    /* 全編（共有ドライブ「研修動画」フォルダ）への入口。埋め込まずリンクにする（開いただけで Google に通信しないため）。2026-11-12 YouTube から付け替え */
     .zenpen{display:flex;gap:16px;align-items:center;margin:0 0 18px;padding:12px;border:1px solid var(--color-border,#e5e5e5);border-radius:10px;background:#fff;color:inherit;text-decoration:none}
     .zenpen:hover{border-color:#B02626}
     .zenpen img{width:240px;max-width:40%;height:auto;border-radius:6px;flex:none}
     .zenpen .k{font-size:12px;color:#B02626;font-weight:700}
     .zenpen .t{font-size:16px;font-weight:700;margin:2px 0 4px}
     .zenpen .d{font-size:13px;color:var(--color-ink-muted,#555);line-height:1.6}
+    .drivelinks{display:flex;flex-wrap:wrap;gap:8px 16px;margin:-8px 0 18px;font-size:13px}
+    .drivelinks a{color:#B02626;font-weight:700;text-decoration:none}
+    .drivelinks a:hover{text-decoration:underline}
     @media (max-width:600px){.zenpen{flex-direction:column;align-items:stretch}.zenpen img{width:100%;max-width:none}}
   </style>
 </head>
@@ -80,12 +83,13 @@
       <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
 
       <div class="doc" id="doc" style="display:none">
-        <a class="zenpen" href="https://youtu.be/_octyd-yW-0" target="_blank" rel="noopener">
+        <a class="zenpen" href="https://drive.google.com/drive/folders/1a8QlntizRTejXWGICtnVzgmLBwZN-Rbd" target="_blank" rel="noopener">
           <img src="/images/videos/zenpen-2026-11.jpg" alt="介護情報基盤 伴走支援 研修動画 全編（18本）の表紙" width="640" height="360" loading="lazy">
-          <div><div class="k"><i class="ti ti-brand-youtube" aria-hidden="true"></i> 全編を通して見るならこちら（YouTube・限定公開）</div>
+          <div><div class="k"><i class="ti ti-brand-google-drive" aria-hidden="true"></i> 全編を通して見るならこちら（Google ドライブの共有フォルダ「研修動画」）</div>
             <div class="t">研修動画 全編（18本・1時間55分・2026年11月8日版）</div>
-            <div class="d">育成コース・ガイドブック・CRMの使い方を1本にまとめました。目次から必要なところだけ見られます。移動の時間などに、速度を上げて見ても大丈夫です（運転中や歩きながらは見ないでください）。</div></div>
+            <div class="d">フォルダの中の「介護情報基盤_伴走支援_研修動画_全編_2026-11」が全編です。育成コース・ガイドブック・CRMの使い方を1本にまとめました。移動の時間などに、速度を上げて見ても大丈夫です（運転中や歩きながらは見ないでください）。</div></div>
         </a>
+        <p class="drivelinks"><a href="https://drive.google.com/drive/folders/1Z8qlXObkGdJKDm2KaFowzWF6ALLJKd-N" target="_blank" rel="noopener"><i class="ti ti-brand-google-drive" aria-hidden="true"></i> 育成コースの動画（新人の方・見る順に番号つき）</a><a href="https://drive.google.com/drive/folders/1epP9qHdEY2uXhmz3p3QtiP60EkaEy02Q" target="_blank" rel="noopener"><i class="ti ti-brand-google-drive" aria-hidden="true"></i> トレーナーコースの動画（トレーナー・管理者向け：新人の見守り方）</a></p>
         <section class="vpaths" aria-labelledby="vpathsTitle">
           <h2 id="vpathsTitle" class="vpaths-title">目的から選ぶ <span>押すと、見る順番に並べて表示します</span></h2>
           <div class="vpaths-list" id="pathList"></div>
