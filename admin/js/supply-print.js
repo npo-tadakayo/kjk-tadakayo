@@ -6,7 +6,7 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, addD
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf,
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, buildOnePagePdf, payerCodeOf,
   fillInvoiceReportText, billToForReportOf, DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 // 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
 import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
@@ -191,7 +191,6 @@ function confirmContactFilled(what){
 }
 function renderReceipt(s, st, saved, contactName){
   st = st || {};
-  const items=s.items||[];
   const taxIncl = priceIsTaxIncluded(s);
   rcptTaxIncluded = taxIncl;
   // 明細: 発行を記録済みならその内容を復元（同じ領収証を再発行できる）。無ければ出荷から組み立てる

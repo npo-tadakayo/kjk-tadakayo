@@ -146,10 +146,21 @@ export function shipmentSubsidyAmounts(s, receipt = null, counts = null) {
     split = "unknown";
     reason = `領収証のカードリーダーの台数（${aRowsQty}台）が出荷の台数（${units}台）と違うため、区別できません`;
   } else if (extraBt + extraUsb > 0) {
-    const pBt = extraBt > 0 ? onePrice(btRows) : 0, pUsb = extraUsb > 0 ? onePrice(usbRows) : 0;
+    // 単価: 領収証が正本のときは領収証の A 行の単価（発行のときに直していることがあるため。出荷の単価は使わない）。
+    //   領収証の A 行には品番が無く機種ごとに分けられないので、A 行の単価が1種類のときだけ使う。
+    //   出荷の明細が正本のときは、機種ごとに出荷の行の単価（それぞれ1種類のときだけ）
+    let pBt, pUsb, priceReason;
+    if (fromReceipt) {
+      const ps = [...new Set(rows.filter((r) => r.kind === "A" && num(r.qty) > 0).map((r) => num(r.price)))];
+      pBt = pUsb = ps.length === 1 ? ps[0] : null;
+      priceReason = "領収証のカードリーダーの行の単価が1種類でないため、対象外の分の金額を区別できません";
+    } else {
+      pBt = extraBt > 0 ? onePrice(btRows) : 0; pUsb = extraUsb > 0 ? onePrice(usbRows) : 0;
+      priceReason = "同じ種類のカードリーダーに単価の違う行があり、対象外の分の金額を区別できません";
+    }
     if (pBt === null || pUsb === null) {
       split = "unknown";
-      reason = "同じ種類のカードリーダーに単価の違う行があり、対象外の分の金額を区別できません";
+      reason = priceReason;
     } else {
       // 区分Aの小計（税込みに直す前）から対象外の分を引き、領収証と同じ丸めで税込みに直す。aSubsidy＋aExtra＝A になる
       const aRaw = rows.filter((r) => r.kind === "A").reduce((a, r) => a + num(r.qty) * num(r.price), 0);
@@ -225,6 +236,13 @@ export function inputMismatches(inputs, result) {
   };
   check("cardReaderCost", t.aSubsidy, "値（A・補助対象分）");
   check("supportCost", t.b, "値（B）");
-  check("grantAmount", t.grant, "値から出した交付見込み");
+  // 交付額は決定後に見込みと正当に違うことがあるので、文言を変える（黄色は出す）
+  const g = inputs && inputs.grantAmount;
+  if (!(g === null || g === undefined || String(g).trim() === "") && t.grant !== null && t.grant !== undefined) {
+    const v = Number(String(g).replace(/[,，¥￥円\s]/g, ""));
+    if (Number.isFinite(v) && v !== t.grant) {
+      out.grantAmount = { auto: t.grant, text: `交付見込み（¥${t.grant.toLocaleString("ja-JP")}）と違います。決定通知の額なら、このままで大丈夫です` };
+    }
+  }
   return out;
 }

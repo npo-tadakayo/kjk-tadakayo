@@ -261,6 +261,31 @@ t(() => {
   const r2 = shipmentSubsidyAmounts(s, edited, subsidyCountsFromShipment(s));
   assert.equal(r2.split, "unknown"); assert.match(r2.reason, /領収証のカードリーダーの台数/);
 });
+// 【中1】領収証で A の単価を直して発行したとき、対象外の分は領収証の単価で引く（出荷の単価は使わない）
+t(() => {
+  const s = { _id: "r1", soNumber: "SH-R1", receiptNo: "RCPT-R1", items: [bt(3, 14800), fee(55000, 2), disc(26600)], subsidyQty: { bt: 2, usb: 0 } };
+  const receipt = { receiptNo: "RCPT-R1", amountIncl: 0,
+    items: [
+      { usage: "A", name: "カードリーダー（型名: cir415a-01・…）", qty: 3, unitPrice: 14000 },
+      { usage: "B", name: "伴走支援費", qty: 1, unitPrice: 55000 },
+      { usage: "B", name: "金額調整", qty: 1, unitPrice: -27000 },
+    ],
+    usageTotalsIncl: { A: 42000, B: 28000, X: 0 } };
+  const r = shipmentSubsidyAmounts(s, receipt, subsidyCountsFromShipment(s));
+  assert.equal(r.split, "split");
+  assert.equal(r.aSubsidy, 28000); assert.equal(r.aExtra, 14000); assert.equal(r.ab, 56000);
+  // 領収証の A 行の単価が1種類でない → 区別できない（推測で分けない）
+  const mixed = { ...receipt, items: [
+    { usage: "A", name: "カードリーダーa", qty: 2, unitPrice: 14000 },
+    { usage: "A", name: "カードリーダーb", qty: 1, unitPrice: 14800 },
+    receipt.items[1], receipt.items[2]] };
+  const r2 = shipmentSubsidyAmounts(s, mixed, subsidyCountsFromShipment(s));
+  assert.equal(r2.split, "unknown"); assert.equal(r2.aSubsidy, null);
+  assert.match(r2.reason, /領収証のカードリーダーの行の単価が1種類でない/);
+  // 対象外が無ければ単価は関係なく、領収証の A をそのまま使う
+  const r3 = shipmentSubsidyAmounts({ ...s, subsidyQty: { bt: 3, usb: 0 } }, mixed, { bt: 3, usb: 0, from: "x" });
+  assert.equal(r3.split, "none"); assert.equal(r3.aSubsidy, 42000);
+});
 // 認定事業者（税抜）でも領収証と同じ丸め: 対象外を引いたあとで1回だけ税を足す
 t(() => {
   const s = { _id: "d1", shipType: "dropship", partnerEmail: "p@example.jp", items: [bt(3, 11111), fee(50000, 2)], subsidyQty: { bt: 2, usb: 0 } };
@@ -308,6 +333,9 @@ t(() => {
   assert.equal(m.cardReaderCost.text, "出荷の明細の値（A・補助対象分）は ¥14,500 です（この欄は ¥43,500）");
   assert.equal(m.supportCost.auto, 49500);
   assert.equal(m.grantAmount.auto, 64000);
+  // 交付額は決定後に見込みと違うことがあるので文言が違う（黄色は出す）
+  assert.equal(m.grantAmount.text, "交付見込み（¥64,000）と違います。決定通知の額なら、このままで大丈夫です");
+  assert.equal(inputMismatches({ grantAmount: "64,000" }, res).grantAmount, null);
   // 領収証が正本のときは「領収証の」
   const r = { receiptNo: "R1", usageTotalsIncl: { A: 14500, B: 49500, X: 0 }, items: [{ usage: "A", qty: 1, unitPrice: 14500 }, { usage: "B", qty: 1, unitPrice: 49500 }] };
   const res2 = caseSubsidyAmounts([s1], { plan: P.PLANS.houmon, receiptsById: { s1: r } });
