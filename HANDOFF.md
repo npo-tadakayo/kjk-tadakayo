@@ -12,6 +12,8 @@
 - 設定の画面に `stageStale` の入力欄は作っていない（変えるときは管理者が `appConfig/settings.stageStale = {warnDays, alertDays}` を書く）
 - テスト: `scripts/test-case-progress.mjs`（`test-all.sh --no-emu` で全部合格）。独立レビュー（Claude・別エージェント）の高1件（一覧の `statusChangePatch` の取り込み漏れ＝手動の新規案件が作れない）・中1件（受注確定のまま出荷を依頼すると準備に「済」）・低3件を直した。取り込み漏れはテストで検出するようにした
 - 本番に出すときに要るもの: hosting（admin）だけ。rules・Functions は不変
+- 確認用の版（管理画面のみ）: `https://kjk-tadakayo-admin--progress-1112-2omm1str.web.app`（11/19 03:30 JST まで）。サイドバー「練習モードに入る」で練習DBに切り替えてから、案件一覧（`/cases.html`）と案件詳細を見る。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--progress-1112-2omm1str.web.app --yes`
+- ⚠️ 練習DBの初期データ（`functions/practice-seed.js`）は `statusChangedAt` を持たないので、練習モードでも最初は日数が「—」。状態を変えると0日から数える（黄・赤は日数が経たないと出ない。見た目は `scripts/test-case-progress.mjs` の HTML の確認と、手元の描画で確かめた）
 
 ## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）
 
