@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);
-const { runCaseMail, CaseMailError, shortReason } = require("../functions/case-mail.js");
+const { runCaseMail, CaseMailError, shortReason, DEFINITE_FAIL_STATUSES, RECORD_TIMEOUT_MS } = require("../functions/case-mail.js");
 const indexSrc = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
 
 let n = 0;
@@ -80,8 +80,9 @@ await ta("送る前の失敗（設定・トークン）→ failed-precondition�
   assert.deepEqual(calls, []);
 });
 
-await ta("Gmail が 4xx → failed-precondition（はっきりした失敗）・記録しない", async () => {
-  for (const st of [400, 403, 429]) {
+await ta("Gmail が 400・401・403・404・429 → failed-precondition（はっきりした失敗）・記録しない", async () => {
+  assert.deepEqual(DEFINITE_FAIL_STATUSES, [400, 401, 403, 404, 429]);
+  for (const st of [400, 401, 403, 404, 429]) {
     const { d, calls } = deps({ post: async () => ngRes(st) });
     const e = await rejectsWith(runCaseMail(d), "failed-precondition");
     assert.match(e.message, new RegExp(`Gmail送信に失敗しました（${st}）`));
@@ -89,12 +90,31 @@ await ta("Gmail が 4xx → failed-precondition（はっきりした失敗）・
   }
 });
 
-await ta("Gmail が 5xx・通信そのものの失敗 → internal（送れたか不明）・記録しない", async () => {
-  for (const post of [async () => ngRes(503), async () => { throw new Error("ECONNRESET"); }]) {
+await ta("Gmail がそれ以外の 4xx（408・499 など途中の機器）・5xx・0・通信そのものの失敗 → internal（送れたか不明）・記録しない", async () => {
+  for (const post of [async () => ngRes(408), async () => ngRes(499), async () => ngRes(409), async () => ngRes(500), async () => ngRes(503),
+    async () => ({ ok: false, text: async () => "" }), async () => { throw new Error("ECONNRESET"); }]) {
     const { d, calls } = deps({ post });
     await rejectsWith(runCaseMail(d), "internal");
     assert.ok(!calls.some((c) => c.startsWith("record")));
   }
+});
+
+await ta("対応記録が止まり続けたら打ち切って recordError（関数のタイムアウト＝送れたか不明にしない）。既定は15秒", async () => {
+  assert.equal(RECORD_TIMEOUT_MS, 15000);
+  const { d, calls } = deps({ record: () => new Promise(() => {}), recordTimeoutMs: 30 });
+  const t0 = Date.now();
+  const r = await runCaseMail(d);
+  assert.ok(Date.now() - t0 < 1000);
+  assert.equal(r.sent, true); assert.equal(r.sentAt, NOW.toISOString());
+  assert.match(r.recordError, /^対応記録の書き込みに失敗しました（deadline-exceeded: 対応記録の書き込みが0秒で終わりませんでした）$/);
+  assert.ok(!calls.includes("touch"));
+  // 更新日時が止まり続けても打ち切り、recordError にはしない
+  const x = deps({ touch: () => new Promise(() => {}), recordTimeoutMs: 30 });
+  const r2 = await runCaseMail(x.d);
+  assert.equal(r2.recordError, undefined);
+  // 時間内に終われば打ち切らない（タイマーが残って node が止まらない、ということもない）
+  const y = deps({ record: () => new Promise((ok) => setTimeout(ok, 5)), recordTimeoutMs: 200 });
+  assert.equal((await runCaseMail(y.d)).recordError, undefined);
 });
 
 await ta("shortReason: code を前に付け、長い文は切る", async () => {

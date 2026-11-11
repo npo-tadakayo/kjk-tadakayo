@@ -23,12 +23,13 @@ import { isPracticeMode } from "/js/mode.js";
 import { SUPPORT_CONSENT_DOCUMENT as CONSENT_DOCUMENT } from "/js/consent-document.js";
 import { isOrderConsent, orderConsentLine, ORDER_RECEIVED_VIA } from "/js/order-consent.js";
 import { bindMailSend, restoreUnloadGuard, reconcilePending } from "/js/mail-send-guard.js";
-import { PENDING_RELEASED_CARD_TEXT } from "/js/record-gaps-case.js";
+import { PENDING_RELEASED_CARD_TEXT, PENDING_RELEASED_LOGGED_CARD_TEXT, PENDING_TL_KEPT_CARD_TEXT } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 let ctx = null;          // { db, caseId, getCase, sendMail, logActivity, toast, userName, orderByConsent?: () => boolean }
 let pendingNotice = "";   // 記録待ちを解除したときにカードへ出す1行（PENDING_RELEASED_CARD_TEXT）
+let pendingTlRetry = false; // 対応記録もまだの記録待ちが残っている（カードに「記録だけやり直す」＝読み込み直して対応記録を足し直す）
 let requests = [];       // この案件の consentRequests（作成日降順）
 let openedQrToken = null;
 
@@ -65,8 +66,11 @@ async function reload() {
   // 送信済み・記録待ちの依頼が署名済み・取り消し済みになっていたら、記録待ちを解除してカードに1行で知らせる
   // （署名済みのカードには「メールで依頼を送る」が無く、モーダルからは解除できないため。2026-11-10 再レビュー 中-1）
   try {
-    const rc = await reconcilePending("consent", ctx.caseId, pendingReqIds());
-    if (rc.state === "released") pendingNotice = PENDING_RELEASED_CARD_TEXT;
+    // 対応記録もまだ（tl）なら、解除の前に対応記録を足す（足せなければ残してカードにやり直しのボタン。2026-11-12 レビュー 中）
+    const rc = await reconcilePending("consent", ctx.caseId, pendingReqIds(), ctx.logActivity);
+    pendingTlRetry = rc.state === "tl_kept";
+    if (rc.state === "released") pendingNotice = rc.logged ? PENDING_RELEASED_LOGGED_CARD_TEXT : PENDING_RELEASED_CARD_TEXT;
+    if (rc.state === "tl_kept") pendingNotice = PENDING_TL_KEPT_CARD_TEXT;
   } catch { /* 照合できなくてもカードは出す */ }
   render();
 }
@@ -203,7 +207,7 @@ function render() {
         <span style="margin-left:auto;font-size:11.5px;color:var(--color-ink-muted)">署名をいただいてから伴走支援を始めます</span>
       </div>
       <div class="card-body">${pendingNotice
-        ? `<div role="status" style="font-size:12.5px;color:var(--color-warning,#B45309);background:#FBF3E4;border-radius:8px;padding:8px 10px;margin-bottom:10px">${esc(pendingNotice)}</div>`
+        ? `<div role="status" style="font-size:12.5px;color:var(--color-warning,#B45309);background:#FBF3E4;border-radius:8px;padding:8px 10px;margin-bottom:10px">${esc(pendingNotice)}${pendingTlRetry ? ` <button class="btn btn-secondary btn-sm" id="consentTlRetryBtn" data-tip="メールは送らずに、対応記録だけをもう一度保存します。" style="margin-left:6px"><i class="ti ti-refresh" aria-hidden="true"></i> 記録だけやり直す</button>` : ""}</div>`
         : ""}${orderNote}${bodyHtml}</div>
     </div>`;
 
@@ -214,6 +218,12 @@ function wire(r, url) {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
 
   on("consentIssueBtn", issue);
+  on("consentTlRetryBtn", async (e) => { // 読み込み直す＝reconcilePending が対応記録を足し直す（メールは送らない）
+    if (e?.currentTarget) e.currentTarget.disabled = true;
+    await reload();
+    if (pendingTlRetry) alert("対応記録の保存にまた失敗しました（メールは送信済みです。再送しないでください）。時間をおいてもう一度押してください。");
+    else ctx.toast("対応記録に保存しました");
+  });
   on("consentPaperBtn", recordPaper);
   on("consentCopyBtn", async () => {
     try { await navigator.clipboard.writeText(url); ctx.toast("署名ページのURLをコピーしました"); }

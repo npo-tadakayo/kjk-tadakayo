@@ -7,8 +7,10 @@
 //       recordError があるときは、対応記録（activities の gmail_sent）が書けていない。画面が記録だけをやり直す。メールは再送しない
 //       案件の更新日時（cases.updatedAt）だけの失敗は recordError にしない（ログだけ。画面の点検3 と同じ扱い）
 //   ・送信前の失敗（設定・トークン・本文の組み立て）: CaseMailError("failed-precondition")＝メールは送っていない
-//   ・Gmail が 4xx を返した: CaseMailError("failed-precondition")＝送っていない（はっきりした失敗）
-//   ・Gmail が 5xx を返した・通信そのものが失敗した: CaseMailError("internal")＝送れたかどうか分からない
+//   ・Gmail が 400・401・403・404・429 を返した: CaseMailError("failed-precondition")＝送っていない（はっきりした失敗）
+//   ・それ以外（5xx・408・499 など途中の機器が返しうる 4xx）・通信そのものの失敗: CaseMailError("internal")＝送れたかどうか分からない
+//   ・対応記録の書き込みは RECORD_TIMEOUT_MS（15秒）で打ち切って recordError にする（止まり続けると関数が60秒で
+//     タイムアウトし、画面に deadline-exceeded＝送れたか不明 が返るため。2026-11-12 レビュー 低1）
 //     （画面は internal を「送れたか不明」として、次の送信の前に確認をはさむ）
 // 以前は、送信後の記録の失敗も、送信の失敗と同じ HttpsError("internal") だったため、画面は「送れたか不明」としか言えなかった。
 
@@ -18,6 +20,19 @@ class CaseMailError extends Error {
     this.name = "CaseMailError";
     this.code = code;
   }
+}
+
+// Gmail がこれを返したら、メールは届いていない（はっきりした失敗）。ほかの 4xx は途中の機器が返しうるので「送れたか不明」
+const DEFINITE_FAIL_STATUSES = [400, 401, 403, 404, 429];
+const RECORD_TIMEOUT_MS = 15000;
+
+/** p を ms で打ち切る（打ち切ったら code "deadline-exceeded" のエラー）。タイマーは必ず外す */
+function withTimeout(p, ms, what) {
+  let timer;
+  const limit = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error(`${what}が${Math.round(ms / 1000)}秒で終わりませんでした`), { code: "deadline-exceeded" })), ms);
+  });
+  return Promise.race([Promise.resolve().then(p), limit]).finally(() => clearTimeout(timer));
 }
 
 const msgOf = (e) => String((e && e.message) || e || "不明なエラー");
@@ -39,9 +54,11 @@ function shortReason(e, max = 120) {
  * @param {() => Promise<unknown>} [d.touch]    案件の更新日時を進める（失敗しても recordError にしない）
  * @param {() => Date} [d.now]
  * @param {(...a:any[]) => void} [d.logError]
+ * @param {number} [d.recordTimeoutMs]  対応記録・更新日時の打ち切り（既定 15秒。テストで短くする）
  * @returns {Promise<{ok:true, sent:true, id:string, sentAt:string, recordError?:string}>}
  */
-async function runCaseMail({ prepare, post, record, touch, now = () => new Date(), logError = console.error }) {
+async function runCaseMail({ prepare, post, record, touch, now = () => new Date(), logError = console.error,
+  recordTimeoutMs = RECORD_TIMEOUT_MS }) {
   let prepared;
   try {
     prepared = await prepare();
@@ -62,7 +79,7 @@ async function runCaseMail({ prepare, post, record, touch, now = () => new Date(
     let t = "";
     try { t = res ? await res.text() : ""; } catch { /* 本文が読めなくても判定は同じ */ }
     logError("Gmail send failed:", status, t);
-    const code = status >= 400 && status < 500 ? "failed-precondition" : "internal";
+    const code = DEFINITE_FAIL_STATUSES.includes(status) ? "failed-precondition" : "internal";
     throw new CaseMailError(code, `Gmail送信に失敗しました（${status}）。DWD登録と送信元アカウントをご確認ください`);
   }
 
@@ -73,17 +90,17 @@ async function runCaseMail({ prepare, post, record, touch, now = () => new Date(
   const out = { ok: true, sent: true, id, sentAt };
   if (record) {
     try {
-      await record({ sentAt });
+      await withTimeout(() => record({ sentAt }), recordTimeoutMs, "対応記録の書き込み");
     } catch (e) {
       logError("sendCaseEmail: 送信は成功・対応記録の書き込みに失敗:", e);
       out.recordError = `対応記録の書き込みに失敗しました（${shortReason(e)}）`;
       return out;
     }
     if (touch) {
-      try { await touch(); } catch (e) { logError("sendCaseEmail: 案件の更新日時の更新に失敗（記録の成否にしない）:", e); }
+      try { await withTimeout(() => touch(), recordTimeoutMs, "案件の更新日時の更新"); } catch (e) { logError("sendCaseEmail: 案件の更新日時の更新に失敗（記録の成否にしない）:", e); }
     }
   }
   return out;
 }
 
-module.exports = { runCaseMail, CaseMailError, shortReason };
+module.exports = { runCaseMail, CaseMailError, shortReason, DEFINITE_FAIL_STATUSES, RECORD_TIMEOUT_MS };

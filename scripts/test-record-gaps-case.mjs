@@ -11,6 +11,7 @@ import {
   pendingKey, savePending, loadPending, clearPending, _resetPendingMemory, jstDateOf,
   reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT, PENDING_RELEASED_CARD_TEXT,
   sendResultOf, caseMailActivityOf, CASE_MAIL_KIND_LABEL, freeMailRecordRetryText,
+  PENDING_TARGET_MISSING_LOGGED_TEXT, PENDING_TL_KEPT_TEXT, PENDING_TL_KEPT_CARD_TEXT, PENDING_RELEASED_LOGGED_CARD_TEXT,
 } from "../admin/js/record-gaps-case.js";
 import { STATUS_LABELS, LOST, STATUS_ORDER } from "../admin/js/constants.js";
 import { SUPPORT_DONE } from "../admin/js/screen-rules.js";
@@ -233,8 +234,8 @@ t("結線: mail-send-guard.js（sessionStorage を直接触らない・照合は
   assert.match(g, /from "\.\/record-gaps-case\.js"/); // 相対パス（node のテストでもそのまま読める）
   const code = g.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, ""); // コメントを除いたコード
   assert.ok(!/sessionStorage|setItem|getItem|removeItem/.test(code), "mail-send-guard.js が sessionStorage に直接触れている");
-  assert.match(g, /export async function reconcilePending\(kind, caseId, candidateReqIds\)/);
-  assert.ok(g.includes("r = await reconcilePending(o.kind, o.caseId, o.candidateReqIds)"));
+  assert.match(g, /export async function reconcilePending\(kind, caseId, candidateReqIds, logActivity\)/);
+  assert.ok(g.includes("r = await reconcilePending(o.kind, o.caseId, o.candidateReqIds, o.logActivity)"));
   assert.ok(!g.includes("unknownSent"), "「送れたか不明」をモジュール変数だけで持っている");
 });
 
@@ -442,8 +443,8 @@ t("結線: 承諾書の mailedAt は送信時刻（serverTimestamp ではない�
   assert.ok(ca.includes("candidateReqIds: pendingReqIds(),"));
   // 中-1: カードの読み込みでも照合し、解除したら1行で知らせる
   const rl = ca.slice(ca.indexOf("async function reload()"), ca.indexOf("function pendingReqIds()"));
-  assert.ok(rl.indexOf('reconcilePending("consent", ctx.caseId, pendingReqIds())') < rl.indexOf("render();"));
-  assert.ok(rl.includes("pendingNotice = PENDING_RELEASED_CARD_TEXT"));
+  assert.ok(rl.indexOf('reconcilePending("consent", ctx.caseId, pendingReqIds(), ctx.logActivity)') < rl.indexOf("render();"));
+  assert.ok(rl.includes("pendingNotice = rc.logged ? PENDING_RELEASED_LOGGED_CARD_TEXT : PENDING_RELEASED_CARD_TEXT;"));
   assert.ok(ca.includes("${esc(pendingNotice)}"));
   assert.ok(src("pre-guide.js").includes("preGuideMailedAt: jstDateOf(sentAtIso)"));
 });
@@ -574,6 +575,81 @@ ta("動かす: 新しい Functions の failed-precondition（Gmail 4xx・送る�
   assert.equal(m.calls.record.length, 0);
   assert.ok(env.log.some((l) => l.startsWith("ALERT:送信に失敗しました")));
   assert.equal(env.store.size, 0);
+});
+
+// ===== 2026-11-12 PR #73 レビュー 中: 対応記録もまだ（tl）の記録待ちが、照合の外れで消えない =====
+const tlPendingThenSigned = async () => { // recordError → 画面からの対応記録も失敗 → 記録待ち（tl）→ 再読み込み
+  let guard = await env.fresh();
+  env.open(guard, { send: () => newFnRes({ recordError: "r" }), logActivity: logFail });
+  await tick(); await env.click("send"); await tick();
+  assert.equal(JSON.parse(env.store.get("kjk.mailRecordPending.consent.C1")).tl, true);
+  guard = await env.reload();
+  return guard;
+};
+
+ta("tl の記録待ち: 依頼が署名済みになっても、カードの読み込みで対応記録を1件足してから解除（不明の印なし）", async () => {
+  const guard = await tlPendingThenSigned();
+  guard.restoreUnloadGuard("consent", "C1");
+  const logs = [];
+  const r = await guard.reconcilePending("consent", "C1", [], async (act, at) => { logs.push([act, at]); });
+  assert.equal(r.state, "released"); assert.equal(r.logged, true);
+  assert.equal(logs.length, 1);
+  assert.equal(logs[0][1], SRV_AT);
+  assert.equal(logs[0][0].subject, `メール送信: ${CASE_MAIL_KIND_LABEL.consent}`);
+  assert.ok(![...env.store.keys()].some((k) => k.startsWith("kjk.mailRecordPending.")));
+  assert.ok(!env.store.has("kjk.mailUnknown.consent.C1"), "送ったと分かっているのに不明の印が付いた");
+  assert.equal(env.winLs.size, 0);
+  assert.match(PENDING_RELEASED_LOGGED_CARD_TEXT, /メールは送信済み/);
+});
+
+ta("tl の記録待ち: 対応記録も足せなければ記録待ちを残す（tl のまま・不明の印なし・beforeunload あり）。logActivity が無くても残す", async () => {
+  const guard = await tlPendingThenSigned();
+  for (const la of [logFail, undefined]) {
+    const r = await guard.reconcilePending("consent", "C1", [], la);
+    assert.equal(r.state, "tl_kept");
+    assert.equal(JSON.parse(env.store.get("kjk.mailRecordPending.consent.C1")).tl, true);
+    assert.ok(!env.store.has("kjk.mailUnknown.consent.C1"));
+    assert.equal(env.winLs.size, 1);
+  }
+  assert.match(PENDING_TL_KEPT_CARD_TEXT, /^メールは送信済みです。対応記録にはまだ残っていません（『記録だけやり直す』を押してください）/);
+  assert.ok(!PENDING_TL_KEPT_CARD_TEXT.includes("出ていれば送信済み"));
+});
+
+ta("tl の記録待ち: モーダルを開くと「対応記録にはまだ」→ 記録だけやり直すは送信0回・対応記録だけ（mailedAt は書かない）", async () => {
+  const guard = await tlPendingThenSigned();
+  let fails = 1;
+  const m = env.open(guard, { reqId: "REQ_B", cands: ["REQ_B"], logActivity: () => { if (fails-- > 0) throw new Error("log fail"); } });
+  await tick();
+  assert.ok(env.log.some((l) => l === "ALERT:" + PENDING_TL_KEPT_TEXT.split("\n")[0]));
+  assert.ok(!env.log.some((l) => l.startsWith("ALERT:前回メールを送った承諾書の依頼が見つかりません")));
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 0);
+  assert.equal(m.calls.log.length, 2); // 開いたときの照合で1回（失敗）＋やり直しで1回（成功）
+  assert.equal(m.calls.record.length, 0, "書き込み先の無い依頼に mailedAt を書いた");
+  assert.equal(env.store.size, 0);
+  assert.equal(env.winLs.size, 0);
+  assert.equal(m.host.innerHTML, "");
+});
+
+ta("tl の記録待ち: モーダルを開いたときの照合で足せたら、記録待ちを消して「対応記録に残しました」", async () => {
+  const guard = await tlPendingThenSigned();
+  const m = env.open(guard, { reqId: "REQ_B", cands: ["REQ_B"] });
+  await tick();
+  assert.equal(m.calls.log.length, 1);
+  assert.ok(env.log.some((l) => l === "ALERT:" + PENDING_TARGET_MISSING_LOGGED_TEXT.split("\n")[0]));
+  assert.equal(env.store.size, 0);
+  // そのあとは普通に送れる（確認なし）
+  await env.click("send"); await tick();
+  assert.equal(m.calls.send, 1);
+  assert.ok(!env.log.some((l) => l.startsWith("CONFIRM:")));
+});
+
+t("結線: consent-admin.js は tl の記録待ちが残るとカードに「記録だけやり直す」を出す", () => {
+  const ca = src("consent-admin.js");
+  assert.ok(ca.includes('pendingTlRetry = rc.state === "tl_kept";'));
+  assert.ok(ca.includes('if (rc.state === "tl_kept") pendingNotice = PENDING_TL_KEPT_CARD_TEXT;'));
+  assert.ok(ca.includes('id="consentTlRetryBtn"'));
+  assert.ok(ca.includes('on("consentTlRetryBtn",'));
 });
 
 for (const file of ["consent-admin.js", "pre-guide.js"]) {

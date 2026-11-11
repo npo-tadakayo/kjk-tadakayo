@@ -21,7 +21,7 @@ import {
   RESEND_AFTER_UNKNOWN_CONFIRM_TEXT, savePending, loadPending, clearPending,
   reqKeyOf, matchPendingReq, PENDING_TARGET_MISSING_TEXT,
   markSendUnknown, isSendUnknown, clearSendUnknown,
-  sendResultOf, caseMailActivityOf,
+  sendResultOf, caseMailActivityOf, PENDING_TARGET_MISSING_LOGGED_TEXT, PENDING_TL_KEPT_TEXT,
 } from "./record-gaps-case.js";
 
 // 送った件名・本文（対応記録を画面から足すときに使う）。同じページの中だけに持ち、sessionStorage には入れない
@@ -47,15 +47,34 @@ export function restoreUnloadGuard(kind, caseId) {
  * 記録待ちを照合する（承諾書は書き込み先の依頼を、未署名の候補から印で探す）。
  * モーダルを開いたとき（bindMailSend）と、承諾書カードを読み込んだとき（consent-admin.js の reload）の両方から呼ぶ。
  * 承諾書で一致が無ければ（署名済み・取り消し済み）、記録待ちを消して beforeunload を外し、次の送信の前に確認をはさむ印を付ける。
- * @returns {Promise<{state:"none"|"matched"|"released", pending?:object, targetReqId?:string}>}
+ * ただし記録待ちが「対応記録もまだ（tl）」なら（2026-11-12 レビュー 中）、消す前に logActivity で対応記録を1件足す。
+ *   足せた → 記録待ちを消す（state "released"・logged:true。送ったことは分かっているので不明の印は付けない）
+ *   足せない → 記録待ちを残す（state "tl_kept"。やり直しでは対応記録だけを保存する。不明の印は付けない）
+ * @param {(act:object, sentAtIso:string) => Promise<unknown>} [logActivity]
+ * @returns {Promise<{state:"none"|"matched"|"released"|"tl_kept", pending?:object, targetReqId?:string, logged?:boolean}>}
  */
-export async function reconcilePending(kind, caseId, candidateReqIds) {
+export async function reconcilePending(kind, caseId, candidateReqIds, logActivity) {
   const key = `${kind}:${caseId}`;
   const p0 = loadPending(kind, caseId);
   if (!p0) return { state: "none" };
   if (kind !== "consent") { setUnloadGuard(key, true); return { state: "matched", pending: p0, targetReqId: "" }; }
   let found = null;
   try { found = await matchPendingReq(p0, candidateReqIds || []); } catch { found = null; }
+  if (!found && p0.tl) {
+    let logged = false;
+    if (typeof logActivity === "function") {
+      const d = drafts.get(key) || {};
+      try {
+        await logActivity(caseMailActivityOf({ kind, caseId, to: p0.to, subject: d.subject, body: d.body }), p0.sentAt);
+        logged = true;
+      } catch { logged = false; }
+    }
+    if (!logged) { setUnloadGuard(key, true); return { state: "tl_kept", pending: p0 }; }
+    drafts.delete(key);
+    clearPending(kind, caseId);
+    setUnloadGuard(key, false);
+    return { state: "released", logged: true };
+  }
   if (!found) {
     clearPending(kind, caseId);
     setUnloadGuard(key, false);
@@ -88,6 +107,7 @@ export function bindMailSend(o) {
   let busy = false;
   let pending = null;       // 記録待ち（{to, sentAt, reqId?, reqKey?, tl?}）tl＝対応記録もまだ
   let targetReqId = "";     // 承諾書: 記録の書き込み先（照合して決まった依頼ID）
+  let orphan = false;       // 承諾書: 書き込み先の依頼が無く、対応記録だけが残っている（tl_kept）。やり直しでは mailedAt を書かない
 
   const setBusy = (b) => {
     busy = b;
@@ -113,7 +133,7 @@ export function bindMailSend(o) {
       const { tl: _done, ...rest } = pending;
       pending = savePending(o.kind, o.caseId, rest) || rest;
     }
-    await o.record(to, sentAt, targetReqId || undefined);
+    if (!orphan) await o.record(to, sentAt, targetReqId || undefined);
   };
   const finish = async () => {
     drafts.delete(key);
@@ -131,9 +151,17 @@ export function bindMailSend(o) {
   setBusy(true);
   const ready = (async () => {
     let r = { state: "none" };
-    try { r = await reconcilePending(o.kind, o.caseId, o.candidateReqIds); } catch { r = { state: "none" }; }
+    try { r = await reconcilePending(o.kind, o.caseId, o.candidateReqIds, o.logActivity); } catch { r = { state: "none" }; }
     setBusy(false);
-    if (r.state === "released") { alert(PENDING_TARGET_MISSING_TEXT); return; }
+    if (r.state === "released") { alert(r.logged ? PENDING_TARGET_MISSING_LOGGED_TEXT : PENDING_TARGET_MISSING_TEXT); return; }
+    if (r.state === "tl_kept") {
+      pending = r.pending;
+      targetReqId = "";
+      orphan = true;
+      showRetry();
+      alert(PENDING_TL_KEPT_TEXT);
+      return;
+    }
     if (r.state === "matched") {
       pending = r.pending;
       targetReqId = r.targetReqId || "";
