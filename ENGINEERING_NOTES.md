@@ -711,7 +711,7 @@ stateDiagram-v2
 設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`／決定: `CRM改善2_計画_20261112.md` §2.1（発1〜発6・移行）。
 **スイッチ `appConfig/settings.orderByConsent`（真偽・既定オフ）**。オフのあいだは関数・画面とも従来どおり（`scripts/test-order-consent.mjs`・`test-order-consent-emu.mjs` の A で確認）。オンにするのは法人として条文 v1.2・利用規約の追記を決めたあと（発4）。入れた日は `orderByConsentFrom`（"YYYY-MM-DD"）に書く想定（コードは読まない・記録用）。
 
-**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**: 第1段ではスイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `method:"web_order"`・`acceptedVia:"consent_web"` として作る）。
+**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**（§C12.2・`method:"web_order"`・`acceptedVia:"consent_web"`）。
 
 ```mermaid
 sequenceDiagram
@@ -749,4 +749,34 @@ sequenceDiagram
 - **画面**（スイッチがオンのときだけ変わる）: 見積もりカード（`quote-admin.js`）の「承諾書を印刷」「署名済みの承諾書を受け取った（受注確定にする）」（従来の「受注確定にする（電話・メールで申込を受けた）」の代わり）・取り直しの2ボタン・「発注の承諾書」の1行／状態の選択の制限（`order-consent.js` の `statusChangeGuard`・`blockedStatusOptions`。受注前 1・2 → 3〜12 を選べない。失注 4・完了 13 も、`orderConsentToken` も `orderedAt` も無ければ受注前として同じく止める〔レビュー 中-1〕。管理者は理由を書けば可・対応記録に「手動で状態を変更（理由: …）」）／次の一手（`constants.js` の `nextActionFor`）／点検（`record-gaps.js` の `orderConsentNoticeOf`。次の一手の下・見積もりカード・カンバン）／承諾書の欄（`consent-admin.js`。発注の承諾書があればそれを署名済みとして出す）。サーバー側のルールでの手動変更の禁止はあとで（発5）
 - **練習モード**: 代役（`practice-stubs.js` の `staffAcceptQuote`・`reviseQuote`）が同じ道を練習DBで通す。スイッチは**練習DBの** `appConfig/settings.orderByConsent`。見積もりカードの「練習で新しい流れを試す」で入れる（`isPracticeRef` で練習DBであることを確かめてから書く）。毎晩の練習DBの初期化で切れた状態に戻る
 - 本番に出すときに要るもの: **Functions**（`staffAcceptQuote`・`reviseQuote`・`acceptQuote`〔`acceptQuoteTransaction` を分割したため〕・`onConsentSigned`）と **hosting（admin）**。rules の変更なし。スイッチはオフのまま出す
+
+### §C12.2 第2段: Web の道（2026-11-12・ブランチ `feat/order-by-consent-2`・スイッチはオフのまま）
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as 事業所（mitsumori.html）
+  participant W as webhookMitsumori
+  participant A as acceptQuote → acceptQuoteByConsent
+  participant T as Firestore（1つのトランザクション）
+  U->>W: この内容で発注へ進む（見積もりを登録し直す）
+  W-->>U: スイッチがオンのときだけ {orderByConsent:true, consentDocument:v1.2 全文, consentEntry（各見積もり・焼き込む形）}
+  U->>U: 発注の内容（consentEntry）と承諾書の全文・氏名・同意のチェック
+  U->>A: 従来の申込の入力＋consent:{agreed:true, version:"1.2"}
+  A->>A: 設定を読み直す（オフなら従来の道）。checkWebOrderConsentInput（同意・版・名前）
+  A->>T: acceptOrderByConsentTransaction（actor web・quoteToken で本人確認・同じ案件の版も読む・期限は時刻で比較）
+  T-->>A: 承諾書（kind order・signed {name, method:"web_order", signedAt サーバー時刻, userAgent}）＋受注確定（consent_web）
+  A-->>U: {status, consentUrl}（二重送信は already・同じ consentUrl）→ 確認メール「ご発注を承りました」＋承諾書のアドレス・Chat
+```
+
+- **スイッチの受け渡し**: 公開ページは未ログインで `appConfig` を読めないので、`webhookMitsumori` の応答で渡す（オンのときだけ `orderByConsent`・`consentDocument`・各見積もりの `consentEntry`＝`orderConsentQuoteEntry` の結果。オフのときは応答を1字も変えない）。設定は `readOrderByConsentFresh`（60秒キャッシュを使わない）
+- **条文の写しは公開ページに置かない**: 画面はサーバーの正本（`functions/consent-document.js`）を応答からそのまま出す（`js/order-consent-page.js` は表示の部品だけ）。版が違えば `acceptQuote` が `consent_version_mismatch` で拒否（見せた文面と記録する文面が違う事故を防ぐ）
+- **`acceptQuote`**: 冒頭の1行 `if (await readOrderByConsentFresh()) { await acceptQuoteByConsent(req, res, body); return; }` だけが従来の道との分かれ目。オンのとき: 1件（quoteId/quoteToken）もまとめ（quotes[]）も承諾書1件・1トランザクション（1件でも通らなければ何も入らない。オフのときの partial は無い）。拒否の応答は `{status:"error", code, message}`（400＝入力・403＝鍵違い・404＝見積もりなし・409＝期限切れ・古い版・申込済みなど）
+- **`acceptOrderByConsentTransaction` の Web 対応**: `actor {kind:"web"}`・`items[].quoteToken`・`acceptTxRead(..., withSiblings:true)`（Web でも同じ案件の版を読み、`checkOrderConsent` の old_version を効かせる）。全件がすでに承諾済みなら何も書かずに `already`（`consentToken` は見積もりの値）。`agreedPolicy:true`（v1.2 の同意文が利用規約・プライバシーポリシーへの同意を含むため）
+- **承諾書の文書にメールアドレスを入れない**（第1段のレビュー対応と同じ）: Web は `signed {name, method, signedAt, userAgent}` だけ。事業所の担当者のメールアドレスも入れない（`contactName` だけ）
+- **確認メール**: `acceptMailText`・`acceptMailTextGroup` に `consentUrl`。あるときだけ件名「ご発注を承りました」・書き出し・承諾書のアドレスの1行・「台数や機種を変える場合は、変更後のお見積書であらためて承諾書」（`Flow.acceptMailWording`）。無ければ main と一字一句同じ（`test-order-consent-web.mjs` が main の関数と比べる）。紙の道（`staffAcceptQuote` の sendMail）も承諾書があれば同じ1行。アドレスは `Flow.orderConsentPageUrl(CRM_BASE_URL, token)`＝`https://kjk-tadakayo-admin.web.app/consent?t=…`
+- **承諾書を開くページ**: `consent-sign.js` は `kind:"order"` を `admin/js/order-consent-view.js` で描く（読むだけ・署名のボタンなし・印刷ボタンは addEventListener）。Web は「オンラインで同意・同意した日時（JST）」、紙は「書面でご署名（受け取り方）・受け取った日・記録した日時」、焼き込んだ見積もりの表（スマホは縦並び）。v1.1 の署名ページの道は変えていない
+- **練習モード**: 公開ページは本番の Functions にだけつながるので、**Web の道は練習モードでは試せない**。練習の紙の承諾書を `consent?p=1` で開くと新しい表示になる
+- テスト: `scripts/test-order-consent-web.mjs`（普通）・`scripts/test-order-consent-web-emu.mjs`（エミュレータ・`test-all.sh` の2段目。`ORDER_EMU_FUNCTIONS_DIR`＋`ORDER_EMU_DUMP` で main の functions と書き込み・応答を突き合わせる）
+- 本番に出すときに要るもの（第2段の分）: **Functions** `acceptQuote`・`webhookMitsumori`・`staffAcceptQuote`（確認メールの1行）＋第1段の分／**hosting lp**（`mitsumori.html`・`js/order-consent-page.js`）／**hosting admin**（`consent.html`・`js/consent-sign.js`・`js/order-consent-view.js`）。rules 不変。`js/` は1年キャッシュなので `order-consent-page.js` は `?v=` を上げて差し替える
 
