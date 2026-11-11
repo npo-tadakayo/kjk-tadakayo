@@ -11,7 +11,7 @@
 #   ・ルール3本（test-rules / test-rules-appconfig / test-rules-catchall）は、リポジトリの外の
 #     作業フォルダ（既定 ${TMPDIR:-/tmp}/kjk-emu-run。EMU_RUN_DIR で変更可）に
 #     @firebase/rules-unit-testing と firebase を入れ（入っていれば入れ直さない）、そこへコピーして動かす。
-#   ・残り5本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu）はリポジトリ直下で動かす。functions/node_modules が要る。
+#   ・残り5本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu / test-ship-cancel-emu〔2026-11-12〕）はリポジトリ直下で動かす。functions/node_modules が要る。
 #     無ければ失敗扱いにして `cd functions && npm ci` を案内する（勝手に入れない）。
 #     FUNCTIONS_NODE_MODULES に既存の node_modules のパスを渡すと、その間だけ symlink を張り、終わったら外す。
 #
@@ -40,7 +40,7 @@ if [ "$RUN_NORMAL" = 0 ] && [ "$RUN_EMU" = 0 ]; then
   echo "--no-emu と --emu-only は同時に指定できません" >&2; exit 2
 fi
 
-EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs)
+EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs test-ship-cancel-emu.mjs)
 
 TMP_OUT="$(mktemp -d "${TMPDIR:-/tmp}/kjk-test-all.XXXXXX")"
 LINKED_NM=""          # このスクリプトが張った functions/node_modules の symlink

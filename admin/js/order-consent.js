@@ -24,11 +24,24 @@ export const STATUS_BLOCKED_TEXT =
 export const STATUS_REASON_PROMPT =
   "受注前の案件を、承諾書なしで手で進めます（管理者の例外）。\n理由を入れてください（対応記録に「手動で状態を変更（理由: …）」と残ります）";
 
-/** 受注前として扱うか（1・2 は常に。4・13 は発注の承諾書も受注日も無いとき） */
+/**
+ * 有効な受注（発注の承諾書か受注日）があるか。
+ * 出荷をキャンセルして見積もり確認中に戻した案件（cases.shipCancelRevert・点検9・ship-cancel-case.js）は、
+ * 戻したあとに新しい受注が入る（受注日 orderedAt が入り直す）までは、残っている承諾書のトークンを「有効な発注の承諾」と数えない
+ * （トークンは履歴として残す。「確認中→失注→受注確定」で承諾書なしに抜けられないように・2026-11-12 PR #81 検収）。
+ */
+export function hasActiveOrder(caseData) {
+  if (!caseData) return false;
+  if (caseData.orderedAt) return true;
+  if (caseData.shipCancelRevert) return false;
+  return !!caseData.orderConsentToken;
+}
+
+/** 受注前として扱うか（1・2 は常に。4・13 は有効な受注〔発注の承諾書か受注日〕が無いとき） */
 export function isBeforeOrder(from, caseData) {
   const f = Number(from) || 1;
   if (ORDER_GATED_FROM.includes(f)) return true;
-  if (ORDER_REOPEN_FROM.includes(f)) return !(caseData && (caseData.orderConsentToken || caseData.orderedAt));
+  if (ORDER_REOPEN_FROM.includes(f)) return !hasActiveOrder(caseData);
   return false;
 }
 

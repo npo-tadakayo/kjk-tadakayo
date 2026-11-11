@@ -2,6 +2,7 @@
 // 画面（supply.js / supply-print.js / quote-admin.js / case-detail.js / kanban.js）から呼ぶ純関数だけを置く。
 // Firestore にも DOM にも触らない（node scripts/test-record-gaps.mjs でそのまま試せるように）。
 import { MAILED_PENDING_LABEL, mailedPendingOf, shipStatusOf, paymentsOf, netPaidOf } from "./ship-flow.js";
+import { SHIP_CANCEL_STALE_TEXT } from "./ship-cancel-case.js"; // 点検9（出荷キャンセルで見積もり確認中に戻した案件の承諾書）
 
 // ===== 点検3: 請求書・領収証・催促のメールを、案件の対応記録（activities）に残す =====
 // 送信は Cloud Functions の sendPartnerMail が行い、出荷には invoiceMailedAt / receiptMailedAt / dunningSentAt を書くが、
@@ -141,7 +142,9 @@ export function orderedAtFillNeeded(prevStatus, newStatus, kase) {
 // 受注後に見積もりを直して、承諾書に署名いただいた内容（品目・台数・金額）と変わった案件（cases.orderConsentStale）。
 // 新しい版で承諾書を取り直すまで出し続ける。出荷は止めない（第1段）。
 export const ORDER_CONSENT_STALE_TEXT = "承諾書の取り直しが要ります（受注後に見積もりを直したため、署名いただいた内容と今の見積もりが違います）";
+// 出荷をキャンセルして見積もり確認中に戻した案件（点検9・ship-cancel-case.js）も同じ印を立てる。理由（orderConsentStaleReason）で文を変える
 export function orderConsentNoticeOf(kase) {
   if (!kase || kase.orderConsentStale !== true || kase.archived) return null;
-  return { key: "orderConsentStale", warn: true, text: ORDER_CONSENT_STALE_TEXT };
+  const text = kase.orderConsentStaleReason === "ship_canceled" ? SHIP_CANCEL_STALE_TEXT : ORDER_CONSENT_STALE_TEXT;
+  return { key: "orderConsentStale", warn: true, text };
 }
