@@ -11,6 +11,7 @@
 - **Web の道（`acceptQuote`・`mitsumori.html`）は第2段**。第1段では、スイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `web_order` として作る）。⚠️ だから**第2段を出すまで本番のスイッチは入れない**こと（入れると、紙は承諾書必須・Web は承諾書なし、という食い違いになる）
 - テスト: `scripts/test-order-consent.mjs`（普通）・`scripts/test-order-consent-emu.mjs`（エミュレータ。`test-all.sh` の2段目に追加）
 - 本番に出すときに要るもの: Functions を名指しで `--only "functions:staffAcceptQuote,functions:reviseQuote,functions:acceptQuote,functions:onConsentSigned"`（`acceptQuote` は `acceptQuoteTransaction` の分割で中身が変わったため）＋ hosting（admin）。rules は不変。スイッチはオフのまま
+- 確認用の版（管理画面のみ・Functions は本番の古いまま＝**練習モードで確かめる**）: `https://kjk-tadakayo-admin--order1-1112-apmimte9.web.app`（11/19 02:51 JST まで）。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--order1-1112-apmimte9.web.app --yes`
 - 判断したこと（設計書にない細かい点）: ①伴走支援だけの承諾書は v1.1 のまま（v1.2 は見積書を前提にした文面のため）②まとめ見積もりはスイッチがオンなら全件まとめて1トランザクション（1件でも通らなければ全部止める）③取り直しは `staffAcceptQuote` の `reconsent` で受ける（関数を増やさない）④改版で内容（品目・台数・合計）が同じなら印を立てない
 - 法人の決定に持っていく論点: v1.2 の §7「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません」は v1.1 のまま。紙の発注では署名済みの紙がタダカヨに届くので、§7 の書き方も見直しが要る（コードは条文を設計書どおりにしてあり、§7 は変えていない）
 - 未了: 練習モードでの次田さんの画面確認・マージ・本番反映（Functions のデプロイ）・第2段（Web の道・署名ページで焼き込んだ見積もりの表示・確認メールに承諾書のアドレス）
