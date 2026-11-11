@@ -3,6 +3,15 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（ブランチ `fix/auth-domains-guard`・未マージ）
+
+- **起きたこと**: 2026-11-09 17:13 JST、別の Claude セッションが curl で Identity Toolkit の config を `updateMask=authorizedDomains` で PATCH し、承認済みドメインの一覧を**空にした**（PATCH は追記でなく丸ごと置き換え）。その後プレビュー版を出すたびに Firebase CLI がその版のアドレスだけを足したため、本番 `kjk-tadakayo-admin.web.app` が抜けたままになり、**11/9〜11/11 は新しくログインする人全員が `auth/unauthorized-domain` で入れなかった**。11/11 宮地さんの報告で発覚し、正常時の4件を足し戻した。証拠は Cloud Audit Logs（identitytoolkit `UpdateConfig`）
+- **正常時の4件**: `kjk-tadakayo.firebaseapp.com`／`kjk-tadakayo.web.app`／`kjk-tadakayo-admin.web.app`／`kjk-tadakayo-admin.firebaseapp.com`
+- **やったこと**:
+  - `scripts/auth-domains.mjs`（`check`／`add <ドメイン> [--yes]`／`remove <ドメイン> [--yes]`）。GET → 4件を必ず含む和集合で PATCH → 読み戻して確認。`--yes` が無ければ計画を見せるだけ。`remove` は4件を消せない。計算は `scripts/lib/auth-domains-core.mjs`、テストは `scripts/test-auth-domains.mjs`（ネットワーク無し）
+  - `scripts/deploy-hosting.mjs` の `--channel`／`--live` の前後で4件を点検。前で欠けていれば**デプロイせず**終了コード1、後で欠けていれば終了コード3で知らせる。**自動では直さない**
+- **合意事項（蒸し返さない）**: 承認済みドメインの変更は `auth-domains.mjs` だけで行う。curl で手書きの配列を PATCH しない。`--yes` 付きの実行は本番の設定変更なので次田さんの指示のあとに行う
+
 ## 2026-11-10 当日の記録を同じ事業所の他の案件にも写す（ブランチ `feat/onsite-copy`・設計書 提案2 案B・未マージ）
 
 - **画面**: 当日タブの「当日の記録を確定」の下に「同じ事業所の他の案件にも写す」。`officeId` が同じ他の案件（自分・`archived` を除く）を案件番号・事業種別・状態つきで候補に出し、チェックで選ぶ。`officeId` なしは理由「事業所が未登録のため写せません」を出してボタンを出さない（**事業所名での補完は未対応**）。閲覧のみの人には出さない
@@ -654,7 +663,8 @@ Firebase Auth の認可ドメインを **15件 → 5件**にした。プレビ�
 
 - **html2canvas（html2pdf）は `@media print` を見ない**。画面の DOM をそのまま渡すと `.rcpt-noprint` や `<input>` が PDF に写る。帳票のメール添付は `printableClone()`（supply-print.js）で複製を整えてから渡す（2026-09-06）
 - **html2pdf は「そのときの画面幅のレイアウト」をそのまま写す**（2026-09-06 見積書で発生）。`mitsumori.html` の `.est-doc` は `@media (max-width:820px)` で `width:100%` になるため、狭い窓でPDF化するとA4に収まらず左が切れて2ページになった。**A4幅をインラインで固定した複製**（`quotePrintableClone()`・インラインは @media より優先）を渡して解決。`html2canvas.windowWidth` を渡してもCSSのメディアクエリ評価は変わらないので効かない
-- **プレビューチャンネルでログインするには Firebase Auth の承認済みドメインに追加が必要**（localhost も未登録）。`PATCH identitytoolkit.googleapis.com/admin/v2/projects/kjk-tadakayo/config?updateMask=authorizedDomains`（ヘッダー `x-goog-user-project: kjk-tadakayo`）。既に登録済みのチャンネル名（`sess-edit` 等）を再利用すると手間が省ける
+- 🔴 **`authorizedDomains` を `updateMask` で PATCH するときは一覧の丸ごと置き換えになる。必ず GET してから和集合で送る**（2026-11-09 に一覧を空にして、本番で3日間ログインできなくなった）。手で curl を打たず `node scripts/auth-domains.mjs add <ドメイン>`（計画表示）→ 次田さんの指示のあと `--yes` を使う。スクリプトは GET → 正常時の4件を必ず含む和集合で PATCH → 読み戻して確認まで行い、`remove` でも4件は消せない。今の状態を見るだけなら `node scripts/auth-domains.mjs check`（欠けていれば終了コード2）
+- **プレビューチャンネルでログインするには、そのアドレスを承認済みドメインに足す必要がある**（localhost も未登録）。上の `auth-domains.mjs add` で足す（`deploy-hosting.mjs --channel` は終了時に足すためのコマンドを表示する）。既に登録済みのチャンネル名（`sess-edit` 等）を再利用すると手間が省ける。使い終わったプレビューのアドレスは `auth-domains.mjs remove` で消す
 - **Functions デプロイは `NODE_OPTIONS=--max-old-space-size=8192 FUNCTIONS_DISCOVERY_TIMEOUT=180`** を付ければ Drive 上からでも通る（node_modules 読込 58秒・既定10秒で落ちる。2026-09-06 は CLI が Node ヒープ不足で落ちたのでヒープも広げる）。`zsh -ic 'gcp tadakayo && …'` で1回にまとめる。**成否は `gcloud functions describe … --format="value(updateTime)"` で確認**（`| tail` を挟むと exit code 0 に見える）
 - **Playwright MCP のブラウザ（user-data-dir `~/Library/Caches/ms-playwright-mcp/`）に CRM のログインセッションが残っている**（2026-09-06・次田芳尚でログイン）。実機テストはまず `browser_navigate` で本番 URL を開いて試す。ログイン画面が出たら Google のポップアップで次田さんがサインインする必要がある（Claude は資格情報を入力しない）
 - **AppleScript から Chrome に流す JS は分離ワールド**（ページの `window` が見えない）。ページの値が要るときは inline `<script>` を注入して `document.body.dataset` 経由で受け取る。ログイン済み窓が無いときは Playwright MCP も Google 認証を通せない（資格情報入力は不可）→ **ローカルハーネス＋Firestore エミュレータ**で検証する（2026-09-06 実施。ルールの境界テストは `firebase emulators:start --only firestore --project demo-kjk` に REST で当てる）
