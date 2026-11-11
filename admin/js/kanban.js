@@ -16,6 +16,9 @@ import { serviceTypeBadge } from "/js/service-types.js"; // 事業種別のラ�
 import { askLostReason } from "/js/case-detail-util.js";
 // 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
 import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
+import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
+// 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ）
+import { orderByConsentOn, statusChangeGuard, blockedStatusOptions, manualStatusNote } from "/js/order-consent.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect, toMs } from "/js/assignee-filter.js";
 // 完了(13)にするときの警告（案件詳細と同じ判定。設計 §6 W）
 import { completionWarnings } from "/js/case-complete-check.js";
@@ -66,6 +69,8 @@ function updateDeadlineBanner() {
 
 let allCases = [];
 let currentUser = null;
+let isAdminUser = false; // 承諾書のサイン＝発注の例外（理由を書けば受注前の案件を進められる）は管理者だけ
+const orderOn = () => orderByConsentOn(appSettings);
 
 function isStale(c) {
   if (TERMINAL.includes(c.status)) return false;
@@ -112,8 +117,10 @@ function filteredCases() {
 // フェーズ内に複数サブ状態 → セレクトで変更可。単一 → ラベルチップ。
 function substatusControl(c, col) {
   if (col.statuses.length > 1) {
+    // 受注前（1・2）の案件は、スイッチがオンなら 3 を選べなくする（管理者は選べて理由を聞く・発5）
+    const blocked = new Set(blockedStatusOptions({ from: c.status, orderByConsent: orderOn(), isAdmin: isAdminUser, caseData: c }));
     const opts = col.statuses.map((s) =>
-      `<option value="${s}" ${s === c.status ? "selected" : ""}>${escHtml(STATUS_LABELS[s])}</option>`).join("");
+      `<option value="${s}" ${s === c.status ? "selected" : ""}${blocked.has(s) ? " disabled" : ""}>${escHtml(STATUS_LABELS[s])}${blocked.has(s) ? "（承諾書の受け取りで進みます）" : ""}</option>`).join("");
     return `<select class="substatus" data-id="${c._id}" title="サブ状態を変更"
       onpointerdown="event.stopPropagation()" onmousedown="event.stopPropagation()">${opts}</select>`;
   }
@@ -135,6 +142,7 @@ function cardHtml(c, col) {
       <div class="kanban-card-sub" style="margin-top:2px">${serviceTypeBadge(c, escHtml)}</div>
       <div class="kanban-card-sub">${substatusControl(c, col)}</div>
       ${lostInfo}
+      ${orderConsentNoticeOf(c) ? `<div class="kanban-card-sub" style="font-size:12px;color:#8a5a1f"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 承諾書の取り直しが要ります</div>` : ""}
       <div class="kanban-card-meta">
         <span><i class="ti ti-user" aria-hidden="true"></i> ${escHtml(c.assignedUserName || "未割当")}</span>
         ${visit ? `<span title="訪問予定日 ${escHtml(c.visitDate)}"><i class="ti ti-calendar-event" aria-hidden="true"></i> 訪問 ${visit}</span>` : ""}
@@ -217,6 +225,15 @@ async function changeStatus(id, newStatus) {
   const c = allCases.find((x) => x._id === id);
   if (!c || c.status === newStatus) return;
   const prev = c.status;
+  // 承諾書のサイン＝発注（発5・スイッチがオンのとき）: 受注前の案件を手で 3〜12 に進めない。管理者は理由を書けば変えられる
+  let manualNote = "";
+  const guard = statusChangeGuard({ from: prev, to: newStatus, orderByConsent: orderOn(), isAdmin: isAdminUser, caseData: c });
+  if (guard.kind === "blocked") { alert(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${guard.message}`); renderBoard(); return; }
+  if (guard.kind === "reason") {
+    const reason = (prompt(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${guard.message}`, "") || "").trim();
+    if (!reason) { renderBoard(); return; }
+    manualNote = manualStatusNote(reason);
+  }
   // 失注にするときは理由を聞く（キャンセルなら何も変えない）。失注から戻すときは理由を消す
   const patch = { status: newStatus, updatedAt: serverTimestamp() };
   // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
@@ -274,7 +291,7 @@ async function changeStatus(id, newStatus) {
       caseId: id, type: "memo", occurredAt: serverTimestamp(),
       userId: currentUser.uid, userName: currentUser.displayName || currentUser.email,
       subject: `ステータス変更 ${STATUS_LABELS[prev]} → ${STATUS_LABELS[newStatus]}`,
-      body: "（カンバンで変更）" + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : "")
+      body: "（カンバンで変更）" + (manualNote ? `\n${manualNote}` : "") + (lostNote ? `\n${lostNote}` : "") + (warnNote ? `\n${warnNote}` : "")
         + (fillOrderedAt ? `\n${ORDERED_AT_FILLED_NOTE}` : ""), attachmentUrls: [],
     });
     toast(`#${c.caseNumber} ${c.officeName} → ${STATUS_LABELS[newStatus]}`);
@@ -292,6 +309,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!myRole) return;
   applyViewerMode(myRole);
   currentUser = user;
+  isAdminUser = myRole.role === "admin";
   document.getElementById("userEmail").textContent = user.displayName || user.email;
   document.getElementById("logoutBtn").addEventListener("click",
     () => signOut(auth).then(() => location.href = "/index.html"));

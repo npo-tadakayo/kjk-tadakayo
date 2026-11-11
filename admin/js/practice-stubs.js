@@ -12,6 +12,10 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, u
   from "/js/fs.js";
 import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote } from "/js/warehouse-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
+// 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
+import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise,
+  ORDER_RECEIVED_VIA, channelOfReceivedVia } from "/js/order-consent-rules.js";
+import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
 function me() {
@@ -395,6 +399,106 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
   return { soNumber, caseId };
 }
 
+// ===== 承諾書のサイン＝発注（staffAcceptQuote・reviseQuote の練習の代役。functions/index.js と同じ記録・2026-11-12）=====
+// スイッチは練習DBの appConfig/settings.orderByConsent（見積もりカードの「練習で新しい流れを試す」で入れる）。本番の設定は読まない
+async function practiceOrderOn() {
+  try { const s = await getDoc(doc(db(), "appConfig", "settings")); return orderByConsentOn(s.exists() ? s.data() : {}); }
+  catch (_) { return false; }
+}
+// 本番の acceptTxWrite（スタッフの受注）と同じ書き込み。consent があれば承諾書の印を足す
+function stubAcceptWrite(tx, { q, qRef, kase, caseRef, dl, P, u, name, channel, receivedDate, payKey, preferredDate, memo, n, setCounter = true, consent = null }) {
+  const cRef = doc(db(), "_counters", "shipments");
+  const soNumber = `SH-${todayJst().slice(0, 4)}-${String(n).padStart(4, "0")}`;
+  const now = serverTimestamp();
+  const shipRef = doc(collection(db(), "shipments"));
+  if (setCounter) tx.set(cRef, { value: n });
+  tx.set(shipRef, {
+    soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "", caseId: q.caseId,
+    caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
+    company: dl.company, officeName: dl.officeName, postal: dl.postalCode, address: dl.address,
+    contactName: dl.contactName, phone: dl.phone, items: shipmentItemsFromQuote(P, q),
+    subsidyCategory: q.plan || null, subsidyQty: subsidyQtyFromItems(q.items, P.SKU.BT),
+    preferredDate: preferredDate || "", payMethod: payKey, orderNote: memo,
+    shippingMethod: "manual", shippingFee: 0, shippingLabel: "", shipDate: todayJst(),
+    createdAt: now, createdBy: `staff（${CHANNEL_LABEL[channel] || "その他の方法"}の申込）: ${u.email}`,
+  });
+  tx.update(qRef, {
+    status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
+    acceptedBy: name, payMethod: payKey, delivery: dl,
+    acceptedVia: "staff", acceptedChannel: channel, acceptedReceivedDate: receivedDate,
+    acceptedByStaff: u.email, agreedName: name, agreedPolicy: null,
+    ...(consent ? { acceptedVia: "consent_paper", consentToken: consent.token } : {}),
+  });
+  const stp = caseStatusOnAccept(kase && kase.status);
+  const cu = { updatedAt: now, shipmentId: shipRef.id, payMethod: payKey, orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: u.email };
+  if (stp.status != null) cu.status = stp.status;
+  if (stp.reopenedFrom) Object.assign(cu, { reopenedFrom: stp.reopenedFrom, reopenedAt: now });
+  if (!(kase && kase.orderedAt)) cu.orderedAt = Timestamp.fromMillis(jstMidnightMs(receivedDate));
+  if (consent) Object.assign(cu, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false });
+  tx.update(caseRef, cu);
+  const re = reopenLabel(stp.reopenedFrom);
+  const tail = `出荷 ${soNumber} の下書きを作成\n` + (stp.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`)
+    + (preferredDate ? `ご希望日: ${preferredDate}\n` : "") + (memo ? `メモ: ${memo}\n` : "");
+  tx.set(doc(collection(db(), "activities")), consent ? {
+    caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
+    subject: `署名済みの承諾書（${ORDER_RECEIVED_VIA[consent.receivedVia] || "その他"}）を受け取り、受注確定にしました（${q.estNo || "見積"}・出荷 ${soNumber}${re ? `・${re}` : ""}）`,
+    body: `署名者: ${name}\n受け取り方: ${ORDER_RECEIVED_VIA[consent.receivedVia] || "その他"}\n受け取った日: ${receivedDate}\n`
+      + `承諾書: ${consent.displayNo}（条文の版 ${consent.version}・${q.estNo || ""} 第${q.version || "—"}版）\n`
+      + `支払方法: ${PAY_LABELS[payKey]}\n` + tail,
+    attachmentUrls: [],
+  } : {
+    caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
+    subject: `${CHANNEL_LABEL[channel] || "その他の方法"}で受けたお申し込みを受注確定にしました（${q.estNo || "見積"}・出荷 ${soNumber}${re ? `・${re}` : ""}）`,
+    body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[channel]}\n受付日: ${receivedDate}\n支払方法: ${PAY_LABELS[payKey]}\n` + tail,
+    attachmentUrls: [],
+  });
+  return { soNumber, shipRefId: shipRef.id, caseContactEmail: (kase && kase.contactEmail) || "" };
+}
+function newConsentToken() {
+  const a = new Uint8Array(16); crypto.getRandomValues(a);
+  return [...a].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function practiceReconsent(quoteId, consent) {
+  const u = me();
+  const q0 = await getDoc(doc(db(), "quotes", String(quoteId)));
+  if (!q0.exists()) throw fail("見積もりが見つかりません");
+  const sibList = await getDocs(query(collection(db(), "quotes"), where("caseId", "==", q0.data().caseId)));
+  return runTransaction(db(), async (tx) => {
+    const st = await tx.get(doc(db(), "appConfig", "settings"));
+    if (!orderByConsentOn(st.exists() ? st.data() : {})) throw fail("承諾書で受注確定にする設定が切れています。画面を読み込み直してください");
+    const qRef = doc(db(), "quotes", String(quoteId));
+    const qs = await tx.get(qRef);
+    const q = { id: qs.id, ...qs.data() };
+    const caseRef = doc(db(), "cases", String(q.caseId));
+    const cs = await tx.get(caseRef);
+    const kase = cs.exists() ? cs.data() : null;
+    const chk = checkOrderReconsent({ quote: q, siblings: sibList.docs.map((x) => ({ id: x.id, ...x.data() })), kase,
+      signedName: consent.signedName, receivedDate: consent.receivedDate, todayYmd: todayJst() });
+    if (!chk.ok) throw fail(chk.message);
+    const token = newConsentToken();
+    const cRef = doc(db(), "consentRequests", token);
+    if ((await tx.get(cRef)).exists()) throw fail("承諾書の番号が重なりました。もう一度お試しください");
+    const now = serverTimestamp();
+    const name = String(consent.signedName).trim().slice(0, 100);
+    const rec = buildOrderConsentRecord({ document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
+      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
+      retakeOf: kase.orderConsentToken });
+    rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";
+    tx.set(cRef, rec);
+    tx.update(qRef, { consentToken: token, consentRetakenAt: now });
+    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, updatedAt: now });
+    tx.set(doc(collection(db(), "activities")), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
+      subject: `承諾書を取り直しました（${q.estNo || "見積"} 第${Number(q.version) || "—"}版）`,
+      body: `署名者: ${name}\n受け取り方: ${ORDER_RECEIVED_VIA[rec.signed.receivedVia] || "その他"}\n受け取った日: ${consent.receivedDate}\n`
+        + `承諾書: ${rec.displayNo}（条文の版 ${ORDER_CONSENT_DOCUMENT.version}）\n前の承諾書: ${kase.orderConsentToken ? "あり（記録として残しています）" : "なし"}\n`
+        + "出荷・受注の内容は変えていません。",
+      attachmentUrls: [],
+    });
+    return { ok: true, reconsent: true, consentToken: token, displayNo: rec.displayNo, results: [], partial: false, errors: [], mailed: false, mailError: null };
+  });
+}
+
 export const PRACTICE_STUBS = {
   // AI アシスタント（Vertex AI）は動かさない
   async aiAssist({ task }) {
@@ -614,6 +718,19 @@ export const PRACTICE_STUBS = {
         throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
       }
     }
+    // 承諾書のサイン＝発注（本番の reviseQuote と同じ・2026-11-12）: 発注の承諾書がある案件で内容が変われば取り直しの印
+    let consentStale = null;
+    const kSnap = await getDoc(doc(db(), "cases", base.caseId));
+    const kaseR = kSnap.exists() ? kSnap.data() : null;
+    if (kaseR && kaseR.orderConsentToken) {
+      let entry = null;
+      try {
+        const cs = await getDoc(doc(db(), "consentRequests", String(kaseR.orderConsentToken)));
+        const qs = cs.exists() && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
+        entry = qs.find((e) => e && e.caseId === base.caseId) || null;
+      } catch (_) {}
+      consentStale = orderConsentStaleAfterRevise(entry, { items, amounts });
+    }
     const u = me();
     const now = serverTimestamp();
     const estNo = base.estNo;
@@ -643,6 +760,7 @@ export const PRACTICE_STUBS = {
       subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
+      ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
     });
     if (shipmentId && shipStatus === "draft") {
       b.update(doc(db(), "shipments", shipmentId), {
@@ -658,7 +776,8 @@ export const PRACTICE_STUBS = {
       subject: `見積もりを変更（${estNo} v${base.version} → v${version}）`,
       body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
         + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
-        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : ""),
+        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+        + (consentStale === true ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
       attachmentUrls: [],
     });
     await b.commit();
@@ -669,14 +788,35 @@ export const PRACTICE_STUBS = {
       mailed = true;
     }
     showPracticeNotice(mailed ? `見積もりを改版しました。変更のメールは送っていません（宛先 ${base.contactEmail}）` : "見積もりを改版しました（練習用のデータです）");
-    return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft") };
+    return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft"),
+      ...(consentStale == null ? {} : { orderConsentStale: consentStale }) };
   },
 
   // 電話・メール・FAX で受けた申込を受注確定にする（functions/index.js の staffAcceptQuote と同じ記録・2026-10-21）。
   // 確認メール・Chat は送らない。戻り値の形は本物と同じ {ok, results:[{quoteId, shipmentId, soNumber}], partial, errors, mailed, mailError}
   async staffAcceptQuote(d) {
-    const { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = d;
+    let { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = d;
     if (!quoteId || typeof quoteId !== "string") throw fail("quoteId は必須です");
+    // 承諾書のサイン＝発注（練習DBの設定がオンのとき・本番の staffAcceptQuote と同じ）
+    const orderOn = await practiceOrderOn();
+    let orderConsent = null;
+    if (orderOn) {
+      const c = d.consent;
+      if (!c || typeof c !== "object") throw fail("署名済みの承諾書を受け取ってから受注確定にしてください（署名者のお名前と、受け取った日が要ります）");
+      const signedName = String(c.signedName || "").trim().slice(0, 100);
+      if (!signedName) throw fail("承諾書に署名した方のお名前を入れてください");
+      if (!isValidYmd(c.receivedDate)) throw fail("承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）");
+      const receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, c.receivedVia) ? c.receivedVia : "other";
+      orderConsent = { method: "paper_order", signedName, receivedDate: c.receivedDate, receivedVia };
+      if (d.reconsent === true) {
+        const r = await practiceReconsent(quoteId, orderConsent);
+        showPracticeNotice("取り直した承諾書を記録しました（練習用のデータです）");
+        return r;
+      }
+      acceptedName = signedName; receivedDate = c.receivedDate; channel = channelOfReceivedVia(receivedVia);
+    } else if (d.reconsent === true) {
+      throw fail("承諾書で受注確定にする設定が入っていないため、承諾書の取り直しはできません");
+    }
     const name = String(acceptedName || "").trim().slice(0, 100);
     if (!name) throw fail("申込者のお名前を入れてください");
     if (!Object.prototype.hasOwnProperty.call(STAFF_ACCEPT_CHANNELS, channel)) throw fail("受付方法（電話・メール・FAX・その他）を選んでください");
@@ -698,14 +838,70 @@ export const PRACTICE_STUBS = {
     const P = await loadPricing();
     const u = me();
     const done = [], errors = [];
-    for (const pq of pre) {
+    const deliveryOf = async (pq) => {
+      let office = null;
+      if (pq.officeId) { const od = await getDoc(doc(db(), "offices", pq.officeId)); if (od.exists()) office = od.data(); }
+      return {
+        company: pq.corpName || office?.corpName || "", officeName: pq.officeName || office?.officeName || "",
+        postalCode: office?.postalCode || "", address: office?.address || "", contactName: pq.contactName || "", phone: office?.phone || "",
+      };
+    };
+    let consentDisplayNo = "", consentToken = null;
+    if (orderConsent) {
+      // 承諾書の記録と、全事業所の受注確定を1つの処理で（どれかが通らなければ、どれも入らない）
+      const items = [];
+      for (const pq of pre) {
+        items.push({
+          pq, dl: await deliveryOf(pq),
+          shipList: await getDocs(query(collection(db(), "shipments"), where("caseId", "==", pq.caseId))),
+          sibList: await getDocs(query(collection(db(), "quotes"), where("caseId", "==", pq.caseId))),
+        });
+      }
+      const r = await runTransaction(db(), async (tx) => {
+        const st = await tx.get(doc(db(), "appConfig", "settings"));
+        if (!orderByConsentOn(st.exists() ? st.data() : {})) throw fail("承諾書で受注確定にする設定が切れています。画面を読み込み直してください");
+        const sts = [];
+        for (const it of items) {
+          const qRef = doc(db(), "quotes", it.pq.id);
+          const qs = await tx.get(qRef);
+          if (!qs.exists()) throw fail("見積もりが見つかりません");
+          const q = { id: qs.id, ...qs.data() };
+          const caseRef = doc(db(), "cases", String(q.caseId));
+          const cs = await tx.get(caseRef);
+          const kase = cs.exists() ? cs.data() : null;
+          const siblings = it.sibList.docs.map((x) => ({ id: x.id, ...x.data() }));
+          const chk = checkStaffAccept({ quote: q, siblings, kase, shipments: it.shipList.docs.map((x) => ({ id: x.id, ...x.data() })),
+            receivedDate, todayYmd: todayJst(), acceptedName: orderConsent.signedName, channel });
+          if (!chk.ok) throw fail(chk.message);
+          sts.push({ q, qRef, kase, caseRef, siblings, dl: it.dl });
+        }
+        const oc = checkOrderConsent({ entries: sts.map((x) => ({ quote: x.q, siblings: x.siblings })), method: "paper_order",
+          signedName: orderConsent.signedName, receivedDate, todayYmd: todayJst(), nowMs: Date.now() });
+        if (!oc.ok) throw fail(oc.message);
+        const cRef = doc(db(), "_counters", "shipments");
+        const c = await tx.get(cRef);
+        let n = c.exists() ? c.data().value : 0;
+        const token = newConsentToken();
+        const consentRef = doc(db(), "consentRequests", token);
+        if ((await tx.get(consentRef)).exists()) throw fail("承諾書の番号が重なりました。もう一度お試しください");
+        const now = serverTimestamp();
+        const rec = buildOrderConsentRecord({ document: ORDER_CONSENT_DOCUMENT, quotes: sts.map((x) => x.q), groupId: sts[0].q.groupId || null,
+          signed: { name: orderConsent.signedName, method: "paper_order", receivedDate, receivedVia: orderConsent.receivedVia } });
+        rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote";
+        const link = { token, receivedVia: rec.signed.receivedVia, displayNo: rec.displayNo, version: ORDER_CONSENT_DOCUMENT.version };
+        const outs = sts.map((x) => {
+          n += 1;
+          return { ...stubAcceptWrite(tx, { ...x, P, u, name: orderConsent.signedName, channel, receivedDate, payKey, preferredDate, memo, n, setCounter: false, consent: link }), q: x.q };
+        });
+        tx.set(cRef, { value: n });
+        tx.set(consentRef, rec);
+        return { outs, token, displayNo: rec.displayNo };
+      });
+      consentToken = r.token; consentDisplayNo = r.displayNo;
+      r.outs.forEach((o, i) => done.push({ ...o, quoteId: items[i].pq.id }));
+    } else for (const pq of pre) {
       try {
-        let office = null;
-        if (pq.officeId) { const od = await getDoc(doc(db(), "offices", pq.officeId)); if (od.exists()) office = od.data(); }
-        const dl = {
-          company: pq.corpName || office?.corpName || "", officeName: pq.officeName || office?.officeName || "",
-          postalCode: office?.postalCode || "", address: office?.address || "", contactName: pq.contactName || "", phone: office?.phone || "",
-        };
+        const dl = await deliveryOf(pq);
         const shipList = await getDocs(query(collection(db(), "shipments"), where("caseId", "==", pq.caseId)));
         const sibList = await getDocs(query(collection(db(), "quotes"), where("caseId", "==", pq.caseId)));
         const r = await runTransaction(db(), async (tx) => {
@@ -725,42 +921,7 @@ export const PRACTICE_STUBS = {
           const cRef = doc(db(), "_counters", "shipments");
           const c = await tx.get(cRef);
           const n = (c.exists() ? c.data().value : 0) + 1;
-          const soNumber = `SH-${todayJst().slice(0, 4)}-${String(n).padStart(4, "0")}`;
-          const now = serverTimestamp();
-          const shipRef = doc(collection(db(), "shipments"));
-          tx.set(cRef, { value: n });
-          tx.set(shipRef, {
-            soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "", caseId: q.caseId,
-            caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
-            company: dl.company, officeName: dl.officeName, postal: dl.postalCode, address: dl.address,
-            contactName: dl.contactName, phone: dl.phone, items: shipmentItemsFromQuote(P, q),
-            subsidyCategory: q.plan || null, subsidyQty: subsidyQtyFromItems(q.items, P.SKU.BT),
-            preferredDate: preferredDate || "", payMethod: payKey, orderNote: memo,
-            shippingMethod: "manual", shippingFee: 0, shippingLabel: "", shipDate: todayJst(),
-            createdAt: now, createdBy: `staff（${CHANNEL_LABEL[channel] || "その他の方法"}の申込）: ${u.email}`,
-          });
-          tx.update(qRef, {
-            status: "accepted", acceptedAt: now, shipmentId: shipRef.id, shipmentNo: soNumber,
-            acceptedBy: name, payMethod: payKey, delivery: dl,
-            acceptedVia: "staff", acceptedChannel: channel, acceptedReceivedDate: receivedDate,
-            acceptedByStaff: u.email, agreedName: name, agreedPolicy: null,
-          });
-          const stp = caseStatusOnAccept(kase && kase.status);
-          const cu = { updatedAt: now, shipmentId: shipRef.id, payMethod: payKey, orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: u.email };
-          if (stp.status != null) cu.status = stp.status;
-          if (stp.reopenedFrom) Object.assign(cu, { reopenedFrom: stp.reopenedFrom, reopenedAt: now });
-          if (!(kase && kase.orderedAt)) cu.orderedAt = Timestamp.fromMillis(jstMidnightMs(receivedDate));
-          tx.update(caseRef, cu);
-          const re = reopenLabel(stp.reopenedFrom);
-          tx.set(doc(collection(db(), "activities")), {
-            caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
-            subject: `${CHANNEL_LABEL[channel] || "その他の方法"}で受けたお申し込みを受注確定にしました（${q.estNo || "見積"}・出荷 ${soNumber}${re ? `・${re}` : ""}）`,
-            body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[channel]}\n受付日: ${receivedDate}\n支払方法: ${PAY_LABELS[payKey]}\n`
-              + `出荷 ${soNumber} の下書きを作成\n` + (stp.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`)
-              + (preferredDate ? `ご希望日: ${preferredDate}\n` : "") + (memo ? `メモ: ${memo}\n` : ""),
-            attachmentUrls: [],
-          });
-          return { q, soNumber, shipRefId: shipRef.id, caseContactEmail: (kase && kase.contactEmail) || "" };
+          return { q, ...stubAcceptWrite(tx, { q, qRef, kase, caseRef, dl, P, u, name, channel, receivedDate, payKey, preferredDate, memo, n }) };
         });
         done.push({ ...r, quoteId: pq.id });
       } catch (e) {
@@ -781,6 +942,7 @@ export const PRACTICE_STUBS = {
     return {
       ok: true, results: done.map((r) => ({ quoteId: r.quoteId, shipmentId: r.shipRefId, soNumber: r.soNumber })),
       partial: errors.length > 0, errors, mailed, mailError,
+      ...(orderConsent ? { consentToken, displayNo: consentDisplayNo } : {}),
     };
   },
 

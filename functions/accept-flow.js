@@ -233,11 +233,36 @@ function assignedAtChanged(before, after) {
 }
 
 // ===== N4 承諾書の署名完了 =====
-/** onConsentSigned の発火条件（pending → signed・オンライン署名・案件あり） */
+/**
+ * onConsentSigned の発火条件（pending → signed・オンライン署名・案件あり）。
+ * 発注の承諾書（kind:"order"・2026-11-12）は対象外: 受注確定の処理（staffAcceptQuote／第2段で acceptQuote）が
+ * 同じ処理の中で作って通知するので、ここで通知すると二重になる。
+ */
 function shouldNotifyConsent(before, after) {
   const b = before || {}, a = after || {};
+  if (a.kind === "order" || b.kind === "order") return false;
   return b.status === "pending" && a.status === "signed"
     && !!a.signed && a.signed.method === "web" && !!a.caseId;
+}
+
+// ===== 承諾書で受注確定（2026-11-12・設計 改善1）=====
+const RECEIVED_VIA_LABEL = { post: "郵送", fax: "FAX", hand: "手渡し", email: "メール（スキャン）", other: "その他" };
+
+/** 紙の承諾書で受注確定にしたときの活動の件名。例「署名済みの承諾書（FAX）を受け取り、受注確定にしました（EST-…・出荷 SH-…）」 */
+function orderConsentAcceptSubject(receivedVia, estNo, soNumber, reopenedFrom = null) {
+  const via = RECEIVED_VIA_LABEL[receivedVia] || "その他";
+  const re = reopenLabel(reopenedFrom);
+  return `署名済みの承諾書（${via}）を受け取り、受注確定にしました（${estNo || "見積"}${soNumber ? `・出荷 ${soNumber}` : ""}${re ? `・${re}` : ""}）`;
+}
+
+/** 紙の承諾書の受注の Chat の見出し */
+function orderConsentChatHead(operatorName) {
+  return `📝 署名済みの承諾書を受け取り、受注確定にしました（操作: ${String(operatorName || "").replace(/[<>*_~`]/g, "")}）`;
+}
+
+/** 受注後に改版した見積もりで承諾書を取り直したときの活動の件名 */
+function orderReconsentSubject(estNo, version) {
+  return `承諾書を取り直しました（${estNo || "見積"} 第${Number(version) || "—"}版）`;
 }
 
 // ===== N2・N3 日次まとめ =====
@@ -339,5 +364,6 @@ module.exports = {
   acceptMailTo,
   shouldNotifyAssign, assignedAtChanged,
   shouldNotifyConsent,
+  orderConsentAcceptSubject, orderConsentChatHead, orderReconsentSubject,
   planDailyPosts, dailyPostTexts, dailyFailureAction,
 };
