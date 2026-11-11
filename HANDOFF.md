@@ -3,6 +3,16 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-12 進み具合の帯（案件一覧・案件詳細／ブランチ `feat/case-progress`・未マージ・本番未反映）
+
+- 決定: `06_介護情報基盤事業/docs/CRM改善2_計画_20261112.md` §3.5（進1 一覧と詳細の両方・カンバンは今のまま／進2 14日で黄・30日で赤・設定で変更・待ちが長い段階は対象外）。仕様の正本は `ENGINEERING_NOTES.md` §C13
+- やったこと: `admin/js/case-progress.js`（13段階→8区切り・日数・止まり具合・HTML）／案件詳細の上に大きな帯（次の一手の上）／案件一覧のステータスの下に点8つと日数・絞り込み「止まり具合」／状態を画面から変えたとき `statusChangedAt`・`statusChangedTo` を書く（案件詳細・カンバン・手動作成・コピー）／マニュアル（MANUAL.md・admin/manual.html `#s-progress`）
+- ⚠️ **Functions が状態を変えたとき（見積もり作成 1→2・受注 →3）は `statusChangedAt` が付かない**ので、一覧の日数は「—」（色なし）。案件詳細は対応記録から数えられるときだけ出る。直すなら Functions の `caseUpdate` に同じ2項目を足す（別 PR・本番の Functions のデプロイが要る）
+- 既存の案件は、次に画面から状態を変えるまで一覧では「—」。案件詳細は対応記録の最後の「ステータス変更」の行が今の状態と同じなら、その日から数える
+- 設定の画面に `stageStale` の入力欄は作っていない（変えるときは管理者が `appConfig/settings.stageStale = {warnDays, alertDays}` を書く）
+- テスト: `scripts/test-case-progress.mjs`（`test-all.sh --no-emu` で全部合格）
+- 本番に出すときに要るもの: hosting（admin）だけ。rules・Functions は不変
+
 ## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）
 
 - 設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`（決定は `CRM改善2_計画_20261112.md` §2.1 発1〜発6）。仕様の正本は `ENGINEERING_NOTES.md` §C12

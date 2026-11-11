@@ -1258,3 +1258,43 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
 @media (hover: none) {
   [data-tip] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 }
+
+/* ===== 進み具合の帯（2026-11-12・js/case-progress.js）=====
+   色だけに頼らない: 済＝チェックの印＋「済」、いま＝太字と枠＋「いま」、まだ＝白抜き。
+   文字色は背景に対して WCAG AA（4.5:1 以上）。点や枠の線は 3:1 以上。 */
+.cp-band { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-surface); }
+.cp-head { display: flex; align-items: center; gap: var(--space-2) var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-2); }
+.cp-title { font-size: 13px; font-weight: 700; color: var(--color-ink-muted); }
+.cp-pos { font-size: 13px; color: var(--color-ink); }
+.cp-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; }
+.cp-step { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 1px solid var(--color-line); border-radius: 8px; font-size: 12px; color: var(--color-ink-muted); background: var(--color-bg); text-align: center; min-width: 0; }
+.cp-step:focus-visible { outline: 2px solid var(--color-primary-dark); outline-offset: 2px; }
+.cp-mark { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #8a7e68; background: var(--color-surface); font-size: 14px; }
+.cp-label { font-weight: 500; line-height: 1.3; word-break: keep-all; overflow-wrap: anywhere; }
+.cp-state { font-size: 11px; }
+.cp-step.cp-done { color: #22652f; background: var(--color-success-soft); border-color: #9cc9a6; }
+.cp-step.cp-done .cp-mark { background: #2a7a3b; border-color: #2a7a3b; color: #fff; }
+.cp-step.cp-current { color: var(--color-ink); background: var(--color-primary-soft); border: 2px solid var(--color-primary-dark); font-weight: 700; }
+.cp-step.cp-current .cp-label { font-weight: 700; }
+.cp-step.cp-current .cp-mark { border-color: var(--color-primary-dark); color: var(--color-primary-dark); }
+.cp-step.cp-attn { border-style: dashed; border-color: #b06a12; }
+.cp-step.cp-lost, .cp-band-lost .cp-step { color: #5f5f5f; background: #f1f1f1; border-color: #d4d4d4; }
+.cp-band-lost .cp-mark { border-color: #8c8c8c; background: #d9d9d9; }
+.cp-lost-tag { font-size: 13px; font-weight: 700; color: #4b4b4b; background: #e6e6e6; border-radius: 10px; padding: 1px 10px; }
+.cp-days-big { font-size: 13px; font-weight: 600; border-radius: 10px; padding: 2px 10px; margin-left: auto; }
+.cp-lv-ok, .cp-lv-unknown, .cp-lv-exempt { color: var(--color-ink-muted); background: var(--color-bg); }
+.cp-lv-warn { color: #7a4b0c; background: #fdeec8; border: 1px solid #d9a441; }
+.cp-lv-alert { color: #8f1f1f; background: #fde3e3; border: 1px solid #c94b4b; }
+@media (max-width: 640px) {
+  .cp-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .cp-days-big { margin-left: 0; }
+}
+/* 一覧の小さな帯（点8つ） */
+.cp-mini { display: flex; align-items: center; gap: 6px; margin-top: 4px; white-space: nowrap; }
+.cp-dots { display: inline-flex; gap: 3px; align-items: center; }
+.cp-dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid #8a7e68; background: var(--color-surface); box-sizing: border-box; }
+.cp-dot.cp-done { background: #2a7a3b; border-color: #2a7a3b; }
+.cp-dot.cp-current { width: 12px; height: 12px; background: var(--color-primary-dark); border-color: var(--color-primary-dark); box-shadow: 0 0 0 2px var(--color-surface), 0 0 0 3px var(--color-primary-dark); margin: 0 2px; }
+.cp-dot.cp-lost { background: #9a9a9a; border-color: #8c8c8c; }
+.cp-days { font-size: 11px; font-weight: 600; border-radius: 8px; padding: 0 6px; }
+.cp-mini-lost { font-size: 11px; color: #4b4b4b; }

@@ -19,6 +19,10 @@ import { visitFull, FORMAT_LABELS } from "/js/schedule-core.js";
 import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js";
 // 事業種別（cases.serviceType・2026-11-01）。同じ事業所の案件が並んだとき、どの事業かをラベルで見分ける
 import { serviceTypeBadge, serviceTypeOptionsHtml, planHintText, isServiceType } from "/js/service-types.js";
+// 進み具合の帯（2026-11-12・CRM改善2 §3.5）。一覧は案件の文書の値だけで出す（出荷・対応記録は読まない）
+import { caseProgress, stageSince, stageDays, staleLevel, resolveStaleConfig, staleFilterMatch,
+  progressDotsHtml, progressAriaLabel } from "/js/case-progress.js";
+import { orderByConsentOn } from "/js/order-consent.js"; // 「発注（承諾書）」の名前（スイッチがオンのとき）
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -157,6 +161,7 @@ function currentFilters() {
     prefFilter: document.getElementById("prefFilter")?.value || "",
     cityFilter: document.getElementById("cityFilter")?.value || "",
     assigneeFilter: document.getElementById("assigneeFilter")?.value || "",
+    staleFilter: document.getElementById("staleFilter")?.value || "",
   };
 }
 
@@ -260,13 +265,24 @@ function updateFirstContactBanner(overCount) {
   btn.setAttribute("aria-pressed", firstContactOnly ? "true" : "false");
 }
 
+// 進み具合（一覧の小さな帯）。日数は案件の statusChangedAt だけで数える（無ければ「—」・色なし）
+function progressOf(c, now) {
+  const cfg = resolveStaleConfig(appSettings);
+  const p = caseProgress(c, { orderByConsent: orderByConsentOn(appSettings) });
+  const since = stageSince(c);
+  const days = since.at ? stageDays(since.at, now) : null;
+  const level = staleLevel(c.status, days, cfg);
+  return { p, days, level, cfg };
+}
+
 function renderCases() {
   const f = currentFilters();
   const now = new Date();
   // 件数は他の絞り込み条件に関わらず、全案件のうちの超過数（見落とし防止）
   updateFirstContactBanner(allCases.filter((c) => firstContactOver(c, now) > 0).length);
   const filtered = sortCases(allCases.filter((c) => matchFilters(c, f) && matchAssignedNone(c)
-    && (!firstContactOnly || firstContactOver(c, now) > 0)));
+    && (!firstContactOnly || firstContactOver(c, now) > 0)
+    && (!f.staleFilter || (!c.archived && staleFilterMatch(progressOf(c, now).level, f.staleFilter)))));
 
   const tbody = document.getElementById("casesBody");
   const table = document.getElementById("casesTable");
@@ -279,7 +295,7 @@ function renderCases() {
     tbody.innerHTML = ""; // 前回の行を残すと、絞り込みで0件のとき古い行がDOMに居座る
     // B1: 「条件に合致しない」と「そもそも0件」を区別
     const hasFilter = !!(f.search || f.statusFilter || f.sourceFilter || f.quoteFilter || f.intentFilter || f.referralFilter || f.lostFilter
-      || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone || firstContactOnly);
+      || f.regionFilter || f.prefFilter || f.cityFilter || urlAssignedNone || firstContactOnly || f.staleFilter);
     const msg = empty.querySelector("p");
     if (msg) msg.textContent = hasFilter
       ? "条件に合う案件がありません（検索・絞り込みを変えてみてください）"
@@ -292,9 +308,10 @@ function renderCases() {
 
   tbody.innerHTML = filtered.map((c) => {
     const over = firstContactOver(c, now);
+    const pg = progressOf(c, now);
     const rowStyle = c.archived ? "opacity:.55" : (over > 0 ? "background:#FFF4F6;box-shadow:inset 4px 0 0 #c02828" : "");
     return `
-    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く${over > 0 ? `（初期連絡 超過${over}日）` : ""}"${rowStyle ? ` style="${rowStyle}"` : ""}>
+    <tr tabindex="0" role="link" data-href="/case-detail.html?id=${c._id}" aria-label="案件 #${c.caseNumber || ""} ${escHtml(c.officeName || "")} の詳細を開く。${escHtml(progressAriaLabel(pg.p, pg.days, pg.level))}${over > 0 ? `（初期連絡 超過${over}日）` : ""}"${rowStyle ? ` style="${rowStyle}"` : ""}>
       <td><strong>#${c.caseNumber || "—"}</strong></td>
       <td class="col-office">
         <div style="font-weight:500">${escHtml(c.officeName || "—")}${c.archived ? archivedBadge(c) : ""}</div>
@@ -307,7 +324,7 @@ function renderCases() {
       <td>${escHtml(c._area?.city || "") || areaBlank()}</td>
       <td>${SOURCE_LABELS[c.source] || c.source || "—"}${intentBadge(c)}</td>
       <td>${escHtml(referralLabel(c.referralSource, appSettings)) || "—"}</td>
-      <td><span class="badge badge-${c.status}"${Number(c.status) === LOST ? ` title="失注の理由: ${escHtml(lostReasonLabel(c))}${c.lostReasonNote ? `（${escHtml(c.lostReasonNote)}）` : ""}"` : ""}>${STATUS_LABELS[c.status] || "—"}</span>${Number(c.status) === LOST ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:2px">${escHtml(lostReasonLabel(c))}</div>` : ""}${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}</td>
+      <td><span class="badge badge-${c.status}"${Number(c.status) === LOST ? ` title="失注の理由: ${escHtml(lostReasonLabel(c))}${c.lostReasonNote ? `（${escHtml(c.lostReasonNote)}）` : ""}"` : ""}>${STATUS_LABELS[c.status] || "—"}</span>${Number(c.status) === LOST ? `<div style="font-size:11px;color:var(--color-ink-muted);margin-top:2px">${escHtml(lostReasonLabel(c))}</div>` : ""}${over > 0 ? ` <span style="display:inline-block;font-size:11px;font-weight:700;color:#fff;background:#c02828;border-radius:10px;padding:1px 8px;white-space:nowrap" title="申込から${FIRST_CONTACT_LIMIT}営業日を超えています">初期連絡 超過${over}日</span>` : ""}${progressDotsHtml(pg.p, pg.days, pg.level, pg.cfg)}</td>
       <td>${escHtml(c.assignedUserName || "未割当")}</td>
       <td>${c.visitDate ? escHtml(visitFull(c.visitDate, c.visitTimeFrom)) : "—"}</td>
       <td>${formatDate(c.receivedAt)}</td>
@@ -507,6 +524,7 @@ async function createCase(user) {
       contactEmail: normalizeEmail(document.getElementById("contactEmail").value),
       contactPhone: normalizePhone(document.getElementById("contactPhone").value),
       source: "manual", status: 1, assignedUserId: null, assignedUserName: null,
+      ...statusChangePatch(1, now), // 進み具合の帯の日数は作った日から（2026-11-12）
       referralSource: null, // 紹介元は未設定で作る（案件詳細で選ぶ。決め打ちしない）
       serviceType: isServiceType(newServiceType) ? newServiceType : null, // 事業種別（任意。未設定なら案件詳細で選ぶ）
       receivedAt: now, updatedAt: now, cardReaders: [],
@@ -581,6 +599,7 @@ onAuthStateChanged(auth, async (user) => {
     firstContactOnly = !firstContactOnly; renderCases();
   });
   document.getElementById("statusFilter").addEventListener("change", renderCases);
+  document.getElementById("staleFilter")?.addEventListener("change", renderCases);
   document.getElementById("sourceFilter").addEventListener("change", renderCases);
   document.getElementById("quoteFilter")?.addEventListener("change", renderCases);
   document.getElementById("intentFilter")?.addEventListener("change", renderCases);
