@@ -520,7 +520,21 @@ sequenceDiagram
 | 認定事業者ポータル | https://kjk-tadakayo-admin.web.app/partner.html |
 | リージョン | asia-northeast1（Vertex AI も H-5 で global → asia-northeast1 に変更済） |
 | デプロイ | Node20 / `firebase deploy`（rule05: preview channel → 検証 → 本番昇格） |
-| Hosting のデプロイ | `node scripts/deploy-hosting.mjs --target admin --channel <名前>` → 検証 → `--live`（REST APIを直接叩く。firebase CLI の認証が279側に入れ替わっても通る） |
+| Hosting のデプロイ | `node scripts/deploy-hosting.mjs --target admin --channel <名前>` → 検証 → `--live`（REST APIを直接叩く。firebase CLI の認証が279側に入れ替わっても通る）。前後で承認済みドメインの4件を点検し、欠けていれば止める |
+| Auth 承認済みドメイン | `node scripts/auth-domains.mjs check` ／ `add <ドメイン> [--yes]` ／ `remove <ドメイン> [--yes]`（これ以外の方法で変えない） |
+
+### Firebase Auth の承認済みドメイン（2026-11-11 追記・事故の再発防止）
+
+> [!WARNING]
+> **`authorizedDomains` を `updateMask` で PATCH するときは一覧の丸ごと置き換えになる。必ず GET してから和集合で送る。**
+> 2026-11-09 17:13 JST に curl で手書きの配列を PATCH して一覧を空にし、11/9〜11/11 は本番で新しくログインする人全員が `auth/unauthorized-domain` で入れなかった（証拠: Cloud Audit Logs の identitytoolkit `UpdateConfig`）。
+
+- **正常時の4件**（1件でも欠けると、そのアドレスからログインできない）: `kjk-tadakayo.firebaseapp.com`／`kjk-tadakayo.web.app`／`kjk-tadakayo-admin.web.app`／`kjk-tadakayo-admin.firebaseapp.com`
+- **変更は `scripts/auth-domains.mjs` だけで行う**。GET → 4件を必ず含む和集合で PATCH → 読み戻して確認。`--yes` が無ければ計画を表示するだけ。`remove` は4件を消せない（別コマンドにしてある）。書く直前に読み直し、計画を立てたあとに一覧が変わっていれば書かずに中止する。足せるのは `kjk-tadakayo*` のアドレス（プレビュー版を含む）・`*.tadakayo.jp`・`localhost` だけ（承認済みドメインはサブドメインにも効くので、`web.app` のような広い名前を入れると他人のサイトまで承認してしまう）
+- **デプロイ時の点検**: `deploy-hosting.mjs` は `--channel`／`--live` の前後で4件を点検する。前で欠けていればデプロイせず終了コード1、後で欠けていれば終了コード3。**自動では直さない**（本番の設定変更なので、知らせて人が判断する）
+- **プレビュー版でログインする手順**: `deploy-hosting.mjs --channel <名前>` → 終了時に表示される `node scripts/auth-domains.mjs add <アドレス>` を次田さんの指示のうえで `--yes` 付きで実行 → 使い終わったら `remove`
+- firebase CLI の `hosting:channel:deploy` はチャンネルのアドレスを自動で足す（足すだけで、一覧が壊れていても直さない）
+- テスト: `node scripts/test-auth-domains.mjs`（計算部分のみ・ネットワーク無し）
 
 > [!INFO]
 > Webhook URL・メール送信元・振込先・印影などは「設定」画面（`appConfig/settings`）から変更でき、コード変更・再デプロイは不要（最大60秒で反映）。

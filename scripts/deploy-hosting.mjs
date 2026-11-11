@@ -37,6 +37,10 @@
  *   - `--live` を明示しない限り本番には出さない。引数なしは使い方を出して終了コード1
  *   - `--live` のときは対象・件数・サイト名を表示してから5秒待つ（Ctrl+C で中断できる）
  *   - アクセストークンは画面・ログ・エラーメッセージのどこにも出さない（出力前に必ず伏字化）
+ *   - --channel / --live の前後で Firebase Auth の承認済みドメインに正常時の4件があるかを点検する。
+ *     前で欠けていれば何もせず終了コード1、後で欠けていれば終了コード3で知らせる。
+ *     自動では直さない（本番の設定変更なので人が判断する。直すのは scripts/auth-domains.mjs）。
+ *     2026-11-09 に一覧が空にされ、本番で3日間ログインできなかった事故の再発防止
  *   - 配信ファイル一覧は firebase-tools の listFiles を使う。使えないときは自前走査に
  *     フォールバックせずエラーで停止する。ignore の解釈が CLI とずれると内部資料を
  *     本番公開する事故になる（2026-08-10 に実際に発生している）
@@ -60,6 +64,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
+import { readAuthorizedDomains, missingRequired } from "./lib/auth-domains-core.mjs";
 
 const HOSTING_API = "https://firebasehosting.googleapis.com/v1beta1";
 const DEFAULT_ACCOUNT = "yoshinao-tsukuda@tadakayo.jp";
@@ -480,6 +485,10 @@ async function main() {
   }
   log(`アクセストークンを取得しました（account=${opts.account}）。`);
 
+  // --- 0. 承認済みドメインの点検（前）。欠けていたら止める。自動では直さない ----
+  const domainsBefore = await checkAuthDomainsOrDie(project, "デプロイ前");
+  POST_CHECK_PROJECT = project; // ここから先で失敗しても、終了前に事後点検を行う
+
   // --- 1. version 作成 ----------------------------------------------------
   const createRes = await apiFetch(`${HOSTING_API}/projects/-/sites/${site}/versions`, {
     method: "POST",
@@ -575,9 +584,62 @@ async function main() {
   log("──────────────────────────────────────");
   log("\n確認は curl の目視ではなく version マニフェストで行うこと:");
   log(`  GET ${HOSTING_API}/sites/${site}/versions/${versionId}/files?pageSize=300`);
+
+  // プレビュー版でログインするには、そのアドレスを承認済みドメインに足す必要がある。
+  // このスクリプトは足さない（本番の設定変更なので人の判断で行う）。手順だけ示す。
+  if (channel !== "live" && release.channel?.url) {
+    const host = new URL(release.channel.url).hostname;
+    if (!domainsBefore.includes(host)) {
+      log("\n※ このプレビュー版でログインするには承認済みドメインへの追加が要ります（次田さんの指示のうえで）:");
+      log(`   node scripts/auth-domains.mjs add ${host} --yes`);
+      log("   ❌ curl で updateMask=authorizedDomains に手書きの配列を PATCH しないこと（一覧が丸ごと置き換わる）");
+    }
+  }
+
+  // --- 8. 承認済みドメインの点検（後）。デプロイは済んでいるので知らせて終了コード3 ----
+  try {
+    await checkAuthDomainsOrDie(project, "デプロイ後", { exitCode: 3 });
+  } catch (e) {
+    console.error(`\n★★ 警告: デプロイ後に承認済みドメインを読めませんでした（デプロイ自体は完了）: ${scrub(e?.message ?? e)}`);
+    console.error("   node scripts/auth-domains.mjs check で確認してください。");
+    process.exit(3);
+  }
 }
 
-main().catch((e) => {
+/**
+ * 承認済みドメインに正常時の4件があるかを点検する。欠けていたら止めて知らせる（直さない）。
+ * 2026-11-09 に一覧が空にされ、本番 kjk-tadakayo-admin.web.app で3日間ログインできなかった再発防止。
+ * 戻り値: 今の一覧
+ */
+async function checkAuthDomainsOrDie(project, when, { exitCode = 1 } = {}) {
+  const list = await readAuthorizedDomains(ACCESS_TOKEN, project);
+  const miss = missingRequired(list);
+  if (miss.length) {
+    console.error(`\n★★ ${when}の点検: Firebase Auth の承認済みドメインから正常時の必須ドメインが欠けています`);
+    console.error(`   欠けている: ${miss.join(", ")}`);
+    console.error("   この状態では、欠けたアドレスから新しくログインする人が auth/unauthorized-domain で入れません。");
+    console.error("   このスクリプトは自動では直しません。次田さんに知らせ、指示を受けてから:");
+    console.error("     node scripts/auth-domains.mjs check        （今の一覧を確認）");
+    console.error("     node scripts/auth-domains.mjs add --yes    （欠けた分を和集合で戻す）");
+    if (exitCode === 1) console.error("   デプロイは始めていません。");
+    else console.error("   デプロイ自体は完了しています。");
+    process.exit(exitCode);
+  }
+  log(`  承認済みドメイン（${when}）: 正常時の4件そろい（全 ${list.length} 件）`);
+  return list;
+}
+
+// 事前点検を通ったあとに途中で失敗した場合も、事後点検を飛ばさない
+let POST_CHECK_PROJECT = null;
+
+main().catch(async (e) => {
   console.error("失敗しました: " + scrub(e?.stack ?? e?.message ?? e));
+  if (POST_CHECK_PROJECT) {
+    try {
+      await checkAuthDomainsOrDie(POST_CHECK_PROJECT, "失敗後", { exitCode: 3 });
+    } catch (e2) {
+      console.error(`承認済みドメインの事後点検もできませんでした: ${scrub(e2?.message ?? e2)}`);
+    }
+  }
   process.exit(1);
 });
