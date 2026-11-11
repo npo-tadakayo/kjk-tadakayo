@@ -10,7 +10,7 @@
 - ⚠️ **Functions が状態を変えたとき（見積もり作成 1→2・受注 →3）は `statusChangedAt` が付かない**ので、一覧の日数は「—」（色なし）。案件詳細は対応記録から数えられるときだけ出る。直すなら Functions の `caseUpdate` に同じ2項目を足す（別 PR・本番の Functions のデプロイが要る）
 - 既存の案件は、次に画面から状態を変えるまで一覧では「—」。案件詳細は対応記録の最後の「ステータス変更」の行が今の状態と同じなら、その日から数える
 - 設定の画面に `stageStale` の入力欄は作っていない（変えるときは管理者が `appConfig/settings.stageStale = {warnDays, alertDays}` を書く）
-- テスト: `scripts/test-case-progress.mjs`（`test-all.sh --no-emu` で全部合格）
+- テスト: `scripts/test-case-progress.mjs`（`test-all.sh --no-emu` で全部合格）。独立レビュー（Claude・別エージェント）の高1件（一覧の `statusChangePatch` の取り込み漏れ＝手動の新規案件が作れない）・中1件（受注確定のまま出荷を依頼すると準備に「済」）・低3件を直した。取り込み漏れはテストで検出するようにした
 - 本番に出すときに要るもの: hosting（admin）だけ。rules・Functions は不変
 
 ## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）

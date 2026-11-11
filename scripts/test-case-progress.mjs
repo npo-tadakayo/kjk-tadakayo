@@ -73,6 +73,9 @@ t("出荷の状態（案件詳細）", () => {
   assert.match(progressBandHtml(c, 1, "ok"), /cp-attn/);
   // 出荷が無い／空 → 状態だけで決める
   assert.equal(states(caseProgress({ status: 7 }, { shipments: [] })), "dddddctt");
+  // 受注確定（発注）のままなら、依頼済みでも発注をいまのまま残す（準備に「済」を付けない）
+  const o = caseProgress({ status: 3 }, { shipments: [{ status: "requested" }] });
+  assert.equal(states(o), "ddcttttt"); assert.match(o.steps[SHIP_STEP].note, /依頼済み/);
   // 受付・見積の段階では依頼済みでも「出荷」に飛ばさない
   assert.equal(caseProgress({ status: 1 }, { shipments: [{ status: "requested" }] }).current, 0);
   // 完了は全部済
@@ -191,5 +194,23 @@ t("HTML（文字の差し込みはエスケープ・済はチェック・いま�
   assert.equal(progressDotsHtml(caseProgress({ status: 99 }), 1, "ok"), "");
   assert.ok(!/<script/i.test(progressBandHtml(p, 1, "ok", { sinceSource: '"><script>' })));
 });
+
+// 画面の JS が、使っている case-progress.js の関数をすべて取り込んでいる（2026-11-12 レビュー 高: cases.js で statusChangePatch の取り込み漏れ）
+{
+  const fs = await import("node:fs");
+  const mod = await import("../admin/js/case-progress.js");
+  const names = Object.keys(mod);
+  for (const f of ["admin/js/cases.js", "admin/js/case-detail.js", "admin/js/kanban.js"]) {
+    const src = fs.readFileSync(new URL(`../${f}`, import.meta.url), "utf8");
+    const m = src.match(/import\s*\{([^}]*)\}\s*from\s*"\/js\/case-progress\.js"/);
+    assert.ok(m, `${f} が case-progress.js を取り込んでいる`);
+    const imported = new Set(m[1].split(",").map((x) => x.trim()).filter(Boolean));
+    const body = src.replace(m[0], "");
+    for (const nm of names) {
+      if (new RegExp(`\\b${nm}\\s*\\(`).test(body)) assert.ok(imported.has(nm), `${f} は ${nm} を使っているので取り込みが要る`);
+    }
+  }
+  n++;
+}
 
 console.log(`test-case-progress: ${n} 件 合格`);

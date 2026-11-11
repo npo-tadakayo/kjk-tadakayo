@@ -116,7 +116,7 @@ export function caseProgress(kase, { shipments = null, orderByConsent = false } 
   if (ship && ship !== "none") {
     if (ship === "shipped") { shipState = "done"; shipNote = "発送済みです"; }
     else if (cur > SHIP_STEP) { shipState = "todo"; shipNote = ship === "requested" ? "依頼済みで、まだ発送済みになっていない出荷があります" : "下書きのままの出荷があります"; }
-    else if (cur >= 2 && ship === "requested") { cur = SHIP_STEP; shipNote = "出荷を依頼済みです（発送待ち）"; }
+    else if (cur === 3 && ship === "requested") { cur = SHIP_STEP; shipNote = "出荷を依頼済みです（発送待ち）"; } // 準備の段階でだけ出荷へ進める（受注確定のままなら発注をいまのまま残す）
     else if (ship === "draft") shipNote = "出荷は下書きです";
     else if (ship === "requested") shipNote = "出荷を依頼済みです（発送待ち）";
   }
@@ -191,7 +191,7 @@ export function progressAriaLabel(p, days, level) {
   if (p.lost) return "進み具合: 失注";
   if (p.current < 0) return "進み具合: 不明";
   const name = p.steps[p.current].label;
-  const head = p.finished ? `進み具合: 8段階すべて済（${name}）` : `進み具合: ${p.total}段階中${p.current + 1}番目 ${name}`;
+  const head = p.finished ? `進み具合: ${p.total}段階すべて済（${name}）` : `進み具合: ${p.total}段階中${p.current + 1}番目 ${name}`;
   const d = p.finished ? "" : (days == null ? "。この段階の日数は不明" : `。この段階に${days}日`);
   const lv = LEVEL_TEXT[level] ? `。${LEVEL_TEXT[level]}` : "";
   return head + d + lv;
@@ -239,7 +239,9 @@ export function progressBandHtml(p, days, level, { sinceSource = null, cfg = STA
     const tip = `${i + 1}. ${s.label}（${STATE_JA[s.state]}）: ${s.tip}${s.note ? `　いま: ${s.note}` : ""}`;
     const mark = s.state === "done" ? '<i class="ti ti-check" aria-hidden="true"></i>' : (s.state === "current" ? '<i class="ti ti-point-filled" aria-hidden="true"></i>' : "");
     const cur = s.state === "current" ? ' aria-current="step"' : "";
-    return `<li class="cp-step cp-${s.state}${s.note && s.key === "ship" && s.state === "todo" && p.current > SHIP_STEP ? " cp-attn" : ""}"${cur} tabindex="0" data-tip="${esc(tip)}" aria-label="${esc(`${s.label}: ${STATE_JA[s.state]}${s.note ? `（${s.note}）` : ""}`)}"><span class="cp-mark" aria-hidden="true">${mark}</span><span class="cp-label">${esc(s.label)}</span><span class="cp-state" aria-hidden="true">${STATE_JA[s.state]}</span></li>`;
+    // Tab で止まるのは「いま」の区切りと日数だけ（ほかの区切りの説明はマウス・長押し・読み上げの aria-label で）
+    const tab = s.state === "current" ? ' tabindex="0"' : "";
+    return `<li class="cp-step cp-${s.state}${s.note && s.key === "ship" && s.state === "todo" && p.current > SHIP_STEP ? " cp-attn" : ""}"${cur}${tab} data-tip="${esc(tip)}" aria-label="${esc(`${s.label}: ${STATE_JA[s.state]}${s.note ? `（${s.note}）` : ""}`)}"><span class="cp-mark" aria-hidden="true">${mark}</span><span class="cp-label">${esc(s.label)}</span><span class="cp-state" aria-hidden="true">${STATE_JA[s.state]}</span></li>`;
   }).join("");
   const daysHtml = p.finished ? `<span class="cp-days-big cp-lv-ok">すべて済</span>`
     : `<span class="cp-days-big cp-lv-${level}" tabindex="0" data-tip="${esc(daysTip)}">${level === "alert" || level === "warn" ? '<i class="ti ti-alert-triangle" aria-hidden="true"></i> ' : ""}この段階に ${esc(daysText(days))}${lvText ? `（${lvText}）` : ""}</span>`;

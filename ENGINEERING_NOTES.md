@@ -755,7 +755,7 @@ sequenceDiagram
 
 - **正本**: `admin/js/case-progress.js`（純粋関数のみ）。テスト `scripts/test-case-progress.mjs`
 - **13段階 → 8区切り**: 受付（1・2 で `latestQuoteId` なし）／見積（1・2 で `latestQuoteId` あり）／発注（3。`orderByConsent` オンなら名前が「発注（承諾書）」）／準備（5・6）／出荷（状態の対応なし・下記）／伴走支援（7・8）／申請（9・10・11）／完了（12 いま・13 すべて済）。4 失注は帯を灰色にして「失注」
-- **出荷の区切り**: 一覧＝案件の状態だけ（伴走支援待ち 7 以降なら済・それより前はまだ。出荷は読まない）。案件詳細＝購読中の `shipmentsCache` から `shipStageOf`（キャンセル除外。すべて shipped/invoiced/paid → 済／requested あり → 依頼済み／それ以外 → 下書き）。発注〜準備で依頼済みなら「いま」を出荷にする。準備中に発送済みなら出荷だけ済。伴走支援以降で発送済みでなければ出荷を「まだ」＋破線の注意
+- **出荷の区切り**: 一覧＝案件の状態だけ（伴走支援待ち 7 以降なら済・それより前はまだ。出荷は読まない）。案件詳細＝購読中の `shipmentsCache` から `shipStageOf`（キャンセル除外。すべて shipped/invoiced/paid → 済／requested あり → 依頼済み／それ以外 → 下書き）。準備（5・6）で依頼済みなら「いま」を出荷にする（受注確定 3 のままなら発注をいまのまま残し、出荷に「依頼済み」と添える）。準備中に発送済みなら出荷だけ済。伴走支援以降で発送済みでなければ出荷を「まだ」＋破線の注意
 - **日数（`stageSince`）**: ① `cases.statusChangedAt`（`cases.statusChangedTo` が今の状態と同じときだけ）② 案件詳細のみ: 対応記録の最後の「ステータス変更」（件名の「→」の後ろが今の状態の名前のときだけ）③ 案件詳細のみ: 状態1で「ステータス変更」が1行も無ければ `receivedAt`。それ以外は null（「—」・色なし）。`updatedAt` は使わない。日数は日本時間の暦日の差
 - **書く場所（画面だけ）**: `case-detail.js` の `changeStatus`・コピーで作る案件、`kanban.js` の `changeStatus`、`cases.js` の手動作成。`{statusChangedAt: serverTimestamp(), statusChangedTo: 新しい状態}`（`statusChangePatch`）。rules は不変（その他すべての match で editor が書ける）
 - **Functions は未対応**（今回は画面だけ）: 状態を変える Functions（`index.js` の見積もり作成 1→2 ×2か所、`acceptQuoteTransaction` の受注 1・2・4・13→3、作成時の 1・2）は `statusChangedAt` を書かない。そのため `statusChangedTo` が食い違い、一覧では「—」になる。直すときは同じ2項目を `caseUpdate` に足すだけ（練習モードの代役 `practice-stubs.js` も同じく）

@@ -21,7 +21,7 @@ import { countBusinessDaysOver, FIRST_CONTACT_LIMIT } from "/js/first-contact.js
 import { serviceTypeBadge, serviceTypeOptionsHtml, planHintText, isServiceType } from "/js/service-types.js";
 // 進み具合の帯（2026-11-12・CRM改善2 §3.5）。一覧は案件の文書の値だけで出す（出荷・対応記録は読まない）
 import { caseProgress, stageSince, stageDays, staleLevel, resolveStaleConfig, staleFilterMatch,
-  progressDotsHtml, progressAriaLabel } from "/js/case-progress.js";
+  progressDotsHtml, progressAriaLabel, statusChangePatch } from "/js/case-progress.js";
 import { orderByConsentOn } from "/js/order-consent.js"; // 「発注（承諾書）」の名前（スイッチがオンのとき）
 
 const app = initializeApp(firebaseConfig);
@@ -268,11 +268,16 @@ function updateFirstContactBanner(overCount) {
 // 進み具合（一覧の小さな帯）。日数は案件の statusChangedAt だけで数える（無ければ「—」・色なし）
 function progressOf(c, now) {
   const cfg = resolveStaleConfig(appSettings);
-  const p = caseProgress(c, { orderByConsent: orderByConsentOn(appSettings) });
-  const since = stageSince(c);
-  const days = since.at ? stageDays(since.at, now) : null;
-  const level = staleLevel(c.status, days, cfg);
-  return { p, days, level, cfg };
+  try {
+    const p = caseProgress(c, { orderByConsent: orderByConsentOn(appSettings) });
+    const since = stageSince(c);
+    const days = since.at ? stageDays(since.at, now) : null;
+    const level = staleLevel(c.status, days, cfg);
+    return { p, days, level, cfg };
+  } catch (e) { // 帯を出せなくても一覧は出す
+    console.warn("進み具合を出せませんでした", c && c._id, e);
+    return { p: null, days: null, level: "unknown", cfg };
+  }
 }
 
 function renderCases() {
