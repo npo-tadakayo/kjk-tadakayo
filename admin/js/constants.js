@@ -74,6 +74,23 @@ export const NEXT_ACTION = {
   // 13 完了・4 失注 は表示しない
 };
 
+// 承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのとき）の次の一手の差し替え。
+// 状態2 は「見積もりの承諾（発注）を待つ」。状態5 の「承諾書の署名依頼」は、発注の承諾書がある案件（cases.orderConsentToken）では出さない
+// （発注の承諾書が伴走支援の承諾も兼ねるため）。発注の承諾書が無い進行中の案件は、従来どおり署名依頼を出す（移行）。
+export const NEXT_ACTION_ORDER_BY_CONSENT = {
+  2:  { text: "見積もりの承諾（発注）を待ちます。署名済みの承諾書を受け取ったら、見積もりから受注確定にします", tab: "timeline", button: "見積もりを見る", focus: "quoteCard" },
+  5:  { text: "事前準備のご案内を送ります（承諾書は発注のときにいただき済み）", tab: "pre", button: "事前確認へ" },
+};
+/** 案件の次の一手（スイッチが切れていれば NEXT_ACTION のまま） */
+export function nextActionFor(status, kase, { orderByConsent = false } = {}) {
+  const st = Number(status);
+  if (orderByConsent) {
+    if (st === 2) return NEXT_ACTION_ORDER_BY_CONSENT[2];
+    if (st === 5 && kase && kase.orderConsentToken) return NEXT_ACTION_ORDER_BY_CONSENT[5];
+  }
+  return NEXT_ACTION[st] || null;
+}
+
 // パイプライン順（フェーズ1→5、失注は末尾）。サブ状態の順序も保持。
 export const STATUS_ORDER = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 4];
 

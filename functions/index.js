@@ -16,6 +16,10 @@ const { normalizeEmail, normalizePhone } = require("./normalize"); // メール�
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（公開ページと同じ計算）
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
+// 承諾書のサイン＝発注（2026-11-12）の判定（純粋関数）と、承諾書の条文の正本
+const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise, orderByConsentOn,
+  ORDER_RECEIVED_VIA, channelOfReceivedVia } = require("./accept-rules");
+const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
 // 通知の分類と文面（純粋 ESM）。CommonJS からは import() で遅延ロードする
 let _nt;
@@ -1212,157 +1216,302 @@ function acceptShipNoteBody(r) {
 //   Staff … checkStaffAccept（キャンセル以外の出荷があれば拒否・旧版・期限切れ〔受付日で比較〕など）
 // 案件の状態: 1・2 → 3。3・5〜12 は据え置き。4（失注）・13（完了）は再申込として受け付けて 3 に戻す（2026-10-21 レビュー指摘 4。
 //            活動の件名に「再申込で再開（失注から／完了から）」・cases.reopenedFrom/reopenedAt を記録）。
+// 1件分の読み取りと確認（トランザクションの中・書き込みはしない）。2026-11-12 acceptQuoteTransaction から切り出し
+// （承諾書で受注確定にするときに、まとめ見積もりの全事業所を1つのトランザクションで読むため）。読む順番は従来と同じ。
+async function acceptTxRead(tx, { quoteId, quoteToken, who, name }) {
+  const staff = who.kind === "staff";
+  const qRef = db.collection("quotes").doc(String(quoteId));
+  // ---- 読み取り（tx は読み取りを書き込みより前に済ませる）----
+  const snap = await tx.get(qRef);
+  if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
+  const q = { id: snap.id, ...snap.data() };
+  const st = { who, staff, name, qRef, q, alreadyAccepted: false };
+  if (!staff) {
+    if (q.accessToken !== quoteToken) throw new HttpsError("permission-denied", "この見積もりを操作する権限がありません");
+    if (q.status === "accepted") { st.alreadyAccepted = true; return st; }
+    if (q.status !== "issued") throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（新しい見積もりが発行されている可能性があります）");
+    if (q.validUntil && q.validUntil.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "この見積もりは有効期限が切れています。お手数ですが、もう一度お見積もりをお作りください");
+  }
+  const caseRef = db.collection("cases").doc(String(q.caseId));
+  const caseSnap = await tx.get(caseRef);
+  const kase = caseSnap.exists ? caseSnap.data() : null;
+  const shipSnap = await tx.get(db.collection("shipments").where("caseId", "==", q.caseId));
+  const shipments = shipSnap.docs.map((x) => ({ id: x.id, ...x.data() }));
+
+  let plan, siblings = null;
+  if (staff) {
+    const sibSnap = await tx.get(db.collection("quotes").where("caseId", "==", q.caseId));
+    siblings = sibSnap.docs.map((x) => ({ id: x.id, ...x.data() }));
+    const chk = checkStaffAccept({
+      quote: q, siblings, kase, shipments,
+      receivedDate: who.receivedDate, todayYmd: todayJst(), acceptedName: name, channel: who.channel,
+    });
+    if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
+    plan = { reuse: null, duplicateWarning: false, existingNos: [] };
+  } else {
+    if (!kase) throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（案件が見つかりません）。お手数ですがお問い合わせください");
+    plan = Flow.planWebShipment(shipments, kase.shipmentId || null);
+  }
+  const stPlan = Flow.caseStatusOnAccept(kase && kase.status); // 4・13 も受け付けて 3 に戻す（reopenedFrom）
+  Object.assign(st, { caseRef, kase, shipments, siblings, plan, stPlan });
+  return st;
+}
+
+function acceptOutBase(q) {
+  return { q, soNumber: null, alreadyAccepted: false, shipRefId: null,
+    reused: false, reusedStatus: null, duplicateWarning: false, existingNos: [], caseStatusTo: null,
+    reopenedFrom: null, caseContactEmail: "" };
+}
+
+// 1件分の書き込み（トランザクションの中）。n は新しい出荷の番号（使い直すときは null）。
+// opts.setCounter … 出荷の番号の控え（_counters/shipments）をここで書くか（まとめて書くときは false にして呼び出し側で1回だけ書く）
+// opts.consent    … 承諾書で受注確定にするとき {token, method, receivedVia, receivedDate, displayNo, version}（無ければ従来どおり）
+function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPolicy }, n, { setCounter = true, consent = null } = {}) {
+  const { who, staff, name, qRef, q, kase, caseRef, plan, stPlan } = st;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const d = delivery || {};
+  const out = acceptOutBase(q);
+  out.reopenedFrom = stPlan.reopenedFrom || null;
+  out.caseContactEmail = (kase && kase.contactEmail) || "";
+  const cRef = db.collection("_counters").doc("shipments");
+
+  // ---- 書き込み ----
+  // 申込の内容から決まる出荷の項目（新規作成と使い直しで同じもの。2026-10-21 レビュー指摘 1）
+  const orderFields = Flow.shipmentFieldsFromAccept({
+    q, delivery: d, shipItems: shipmentItemsFromQuote(q), btSku: Pricing.SKU.BT, preferredDate, payKey, note,
+  });
+  let shipId;
+  if (plan.reuse) {
+    shipId = plan.reuse.id;
+    out.soNumber = plan.reuse.soNumber || "";
+    out.reused = true;
+    out.reusedStatus = plan.reuse.status || "draft";
+    // 状態・番号・出荷元・作成日時は既存のまま。requested のときは Chat に「センターへ連絡」を注記（acceptShipNote）
+    tx.update(db.collection("shipments").doc(shipId), {
+      ...orderFields, updatedAt: now,
+      updatedBy: "web（事業所のお申し込み・既存の出荷を使い直し）",
+    });
+  } else {
+    if (setCounter) tx.set(cRef, { value: n });
+    out.soNumber = `${shipmentNumberPrefix()}${String(n).padStart(4, "0")}`;
+    const shipRef = db.collection("shipments").doc();
+    shipId = shipRef.id;
+    const shipDoc = {
+      soNumber: out.soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "",
+      caseId: q.caseId, ...orderFields,
+      shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
+      shipDate: todayJst(),
+      createdAt: now, createdBy: staff ? Flow.staffCreatedBy(who.channel, who.email) : "web（事業所のお申し込み）",
+    };
+    if (plan.duplicateWarning) Object.assign(shipDoc, { duplicateWarning: true, duplicateOf: plan.existingNos });
+    tx.set(shipRef, shipDoc);
+    out.duplicateWarning = !!plan.duplicateWarning;
+    out.existingNos = plan.existingNos || [];
+  }
+  out.shipRefId = shipId;
+
+  const deliveryRec = { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
+    address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" };
+  const quoteUpdate = {
+    status: "accepted", acceptedAt: now, shipmentId: shipId, shipmentNo: out.soNumber,
+    acceptedBy: name.slice(0, 100), payMethod: payKey, delivery: deliveryRec,
+  };
+  if (staff) {
+    Object.assign(quoteUpdate, {
+      acceptedVia: "staff", acceptedChannel: who.channel, acceptedReceivedDate: who.receivedDate,
+      acceptedByStaff: who.email, agreedName: name.slice(0, 100),
+      agreedPolicy: null, // 同意の画面を通っていないので「同意した」とは記録しない（偽装しない）
+    });
+  } else {
+    Object.assign(quoteUpdate, {
+      acceptedVia: "web",
+      // 申し込み画面で「プライバシーポリシー・利用規約に同意」に入れたかどうかを残す（監査用）
+      agreedPolicy: agreedPolicy === true, agreedPolicyAt: now,
+    });
+  }
+  // 承諾書で受注確定（2026-11-12）: どの承諾書で受けたかを見積もりに残す
+  if (consent) Object.assign(quoteUpdate, { acceptedVia: consent.method === "web_order" ? "consent_web" : "consent_paper", consentToken: consent.token });
+  tx.update(qRef, quoteUpdate);
+
+  const caseUpdate = { updatedAt: now, shipmentId: shipId, payMethod: payKey };
+  if (stPlan.status != null) { caseUpdate.status = stPlan.status; out.caseStatusTo = stPlan.status; }
+  if (stPlan.reopenedFrom) Object.assign(caseUpdate, { reopenedFrom: stPlan.reopenedFrom, reopenedAt: now });
+  if (staff) {
+    Object.assign(caseUpdate, { orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: who.email });
+    // 受注日は最初の申込の日を保つ（Web と同じ。2026-10-21 レビュー指摘 5）。無ければ受付日（JST 0時）
+    const oMs = Flow.staffOrderedAtMs(kase, who.receivedDate);
+    if (oMs != null) caseUpdate.orderedAt = admin.firestore.Timestamp.fromMillis(oMs);
+  } else {
+    // 受注日は最初の申込の日を保つ（進んだ案件に再度の申込があっても月ごとの集計を動かさない）
+    if (!kase.orderedAt) caseUpdate.orderedAt = now;
+    caseUpdate.orderedVia = kase.orderedVia || "web";
+  }
+  if (consent) Object.assign(caseUpdate, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false });
+  tx.update(caseRef, caseUpdate);
+
+  const shipLine = out.reused
+    ? `既存の出荷 ${out.soNumber}（${out.reusedStatus === "requested" ? "依頼済み" : "下書き"}）を新しい内容に更新（新しい下書きは作っていません）`
+    : `出荷 ${out.soNumber} の下書きを作成${out.duplicateWarning ? `（⚠️ 発送済みの出荷 ${out.existingNos.join("・")} があります。重複の確認を）` : ""}`;
+  const stLine = stPlan.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`;
+  if (staff && consent) {
+    tx.set(db.collection("activities").doc(), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: who.uid || null, userName: who.email,
+      subject: Flow.orderConsentAcceptSubject(consent.receivedVia, q.estNo, out.soNumber, out.reopenedFrom),
+      body: `署名者: ${name}\n受け取り方: ${ORDER_RECEIVED_VIA[consent.receivedVia] || "その他"}\n受け取った日: ${consent.receivedDate}\n`
+        + `承諾書: ${consent.displayNo}（条文の版 ${consent.version}・${q.estNo || ""} 第${q.version || "—"}版）\n`
+        + `支払方法: ${PAY_LABELS[payKey]}\n${shipLine}\n${stLine}`
+        + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+        + (note ? `メモ: ${note}\n` : ""),
+      attachmentUrls: [],
+    });
+  } else if (staff) {
+    tx.set(db.collection("activities").doc(), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: who.uid || null, userName: who.email,
+      subject: Flow.staffAcceptSubject(who.channel, q.estNo, out.soNumber, out.reused, out.reopenedFrom),
+      body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[who.channel] || who.channel}\n受付日: ${who.receivedDate}\n`
+        + `支払方法: ${PAY_LABELS[payKey]}\n${shipLine}\n${stLine}`
+        + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+        + (note ? `メモ: ${note}\n` : ""),
+      attachmentUrls: [],
+    });
+  } else {
+    tx.set(db.collection("activities").doc(), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: "system",
+      subject: Flow.webAcceptSubject(q.estNo, out.soNumber, out.reused, out.reopenedFrom),
+      body: `お申し込み者: ${name}\n支払方法: ${PAY_LABELS[payKey]}\n`
+        + `届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n`
+        + `${shipLine}\n${stLine}`
+        + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
+        + (note ? `ご要望: ${note}\n` : ""),
+      attachmentUrls: [],
+    });
+  }
+  return out;
+}
+
 async function acceptQuoteTransaction({ quoteId, quoteToken, delivery, payKey, preferredDate, note, agreedName, agreedPolicy, actor }) {
   const who = actor && actor.kind === "staff" ? actor : { kind: "web" };
   const staff = who.kind === "staff";
-  const qRef = db.collection("quotes").doc(String(quoteId));
-  const now = admin.firestore.FieldValue.serverTimestamp();
-  const d = delivery || {};
   const name = String(staff ? who.acceptedName : agreedName).trim();
-  const out = { q: null, soNumber: null, alreadyAccepted: false, shipRefId: null,
-    reused: false, reusedStatus: null, duplicateWarning: false, existingNos: [], caseStatusTo: null,
-    reopenedFrom: null, caseContactEmail: "" };
+  let out = null;
   await db.runTransaction(async (tx) => {
-    // ---- 読み取り（tx は読み取りを書き込みより前に済ませる）----
+    const st = await acceptTxRead(tx, { quoteId, quoteToken, who, name });
+    if (st.alreadyAccepted) { out = { ...acceptOutBase(st.q), alreadyAccepted: true }; return; }
+    let n = null;
+    if (!st.plan.reuse) {
+      // 採番はトランザクションの中で行う（採番だけ進んで書き込みが失敗する事故を避ける）
+      const cSnap = await tx.get(db.collection("_counters").doc("shipments"));
+      n = (cSnap.exists ? cSnap.data().value : 0) + 1;
+    }
+    out = acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPolicy }, n);
+  });
+  return out;
+}
+
+// ===== 承諾書のサイン＝発注（2026-11-12・設計 06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md）=====
+// 設定 appConfig/settings.orderByConsent がオンのときだけ使う（オフのときは上の acceptQuoteTransaction の従来どおり）。
+// 「承諾書の記録（consentRequests/{128bit}・kind:"order"・署名済み）」と「受注確定（見積もりを承諾済み・出荷の下書き・状態3・受注日）」を
+// 必ず1つのトランザクションで作る。まとめ見積もり（発6）は全事業所を1件の承諾書に焼き込み、1回で全部を受注確定にする
+// （どれか1件でも確認に通らなければ、どれも受注確定にならない＝従来のまとめ受注の「一部だけ確定」とは違う）。
+// 第1段は紙の道（staffAcceptQuote）だけ。Web の道（acceptQuote・method "web_order"）は第2段で公開ページと一緒に使う。
+// 設定の確認もトランザクションの中で読む（画面を開いたあとで切られたら止める）。
+async function readOrderByConsentFresh() {
+  // getSettings は60秒キャッシュなので使わない（切り替えた直後に古い値で動かないように）
+  const s = await db.collection("appConfig").doc("settings").get();
+  return orderByConsentOn(s.exists ? s.data() : {});
+}
+
+async function acceptOrderByConsentTransaction({ items, payKey, preferredDate, note, actor, consent }) {
+  const who = actor;
+  const name = String(consent.signedName || "").trim().slice(0, 100);
+  let outs = null, token = null, displayNo = "";
+  await db.runTransaction(async (tx) => {
+    const setSnap = await tx.get(db.collection("appConfig").doc("settings"));
+    if (!orderByConsentOn(setSnap.exists ? setSnap.data() : {})) {
+      throw new HttpsError("failed-precondition", "承諾書で受注確定にする設定が切れています。画面を読み込み直してください", { code: "order_by_consent_off" });
+    }
+    const sts = [];
+    for (const it of items) sts.push(await acceptTxRead(tx, { quoteId: it.quoteId, who, name }));
+    const chk = checkOrderConsent({
+      entries: sts.map((st) => ({ quote: st.q, siblings: st.siblings || [] })),
+      method: consent.method, signedName: name, receivedDate: consent.receivedDate,
+      todayYmd: todayJst(), nowMs: Date.now(),
+    });
+    if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
+    const cRef = db.collection("_counters").doc("shipments");
+    const needN = sts.some((st) => !st.plan.reuse);
+    let n = null;
+    if (needN) { const cSnap = await tx.get(cRef); n = cSnap.exists ? cSnap.data().value : 0; }
+
+    // ---- 書き込み ----
+    token = newToken();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const rec = buildOrderConsentRecord({
+      document: ORDER_CONSENT_DOCUMENT, quotes: sts.map((st) => st.q), groupId: sts[0].q.groupId || null,
+      signed: { name, method: consent.method, receivedDate: consent.receivedDate, receivedVia: consent.receivedVia, recordedBy: who.email },
+      createdBy: who.email,
+    });
+    displayNo = rec.displayNo;
+    rec.signed.signedAt = now;    // 署名の記録の時刻はサーバーの時刻（紙は受け取った日を receivedDate に別に持つ）
+    rec.createdAt = now;
+    rec.createdVia = consent.method === "web_order" ? "acceptQuote" : "staffAcceptQuote";
+    const link = { token, method: consent.method, receivedVia: rec.signed.receivedVia || "", receivedDate: consent.receivedDate || "",
+      displayNo, version: ORDER_CONSENT_DOCUMENT.version };
+    outs = sts.map((st, i) => {
+      let myN = null;
+      if (!st.plan.reuse) { n += 1; myN = n; }
+      return acceptTxWrite(tx, st, { delivery: items[i].delivery, payKey, preferredDate, note }, myN, { setCounter: false, consent: link });
+    });
+    if (needN) tx.set(cRef, { value: n });
+    tx.create(db.collection("consentRequests").doc(token), rec); // 同じトークンがあれば全体が失敗する（受注確定も入らない）
+  });
+  return { outs, token, displayNo };
+}
+
+// 受注後に見積もりを改版したとき（cases.orderConsentStale）の承諾書の取り直し（紙）。出荷・受注は変えない
+async function reconsentTransaction({ quoteId, consent, actor }) {
+  let token = null, q = null, displayNo = "";
+  await db.runTransaction(async (tx) => {
+    const setSnap = await tx.get(db.collection("appConfig").doc("settings"));
+    if (!orderByConsentOn(setSnap.exists ? setSnap.data() : {})) {
+      throw new HttpsError("failed-precondition", "承諾書で受注確定にする設定が切れています。画面を読み込み直してください", { code: "order_by_consent_off" });
+    }
+    const qRef = db.collection("quotes").doc(String(quoteId));
     const snap = await tx.get(qRef);
     if (!snap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
-    const q = { id: snap.id, ...snap.data() };
-    out.q = q;
-    if (!staff) {
-      if (q.accessToken !== quoteToken) throw new HttpsError("permission-denied", "この見積もりを操作する権限がありません");
-      if (q.status === "accepted") { out.alreadyAccepted = true; return; }
-      if (q.status !== "issued") throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（新しい見積もりが発行されている可能性があります）");
-      if (q.validUntil && q.validUntil.toMillis() < Date.now()) throw new HttpsError("failed-precondition", "この見積もりは有効期限が切れています。お手数ですが、もう一度お見積もりをお作りください");
-    }
+    q = { id: snap.id, ...snap.data() };
     const caseRef = db.collection("cases").doc(String(q.caseId));
     const caseSnap = await tx.get(caseRef);
     const kase = caseSnap.exists ? caseSnap.data() : null;
-    const shipSnap = await tx.get(db.collection("shipments").where("caseId", "==", q.caseId));
-    const shipments = shipSnap.docs.map((x) => ({ id: x.id, ...x.data() }));
-
-    let plan;
-    if (staff) {
-      const sibSnap = await tx.get(db.collection("quotes").where("caseId", "==", q.caseId));
-      const chk = checkStaffAccept({
-        quote: q, siblings: sibSnap.docs.map((x) => ({ id: x.id, ...x.data() })), kase, shipments,
-        receivedDate: who.receivedDate, todayYmd: todayJst(), acceptedName: name, channel: who.channel,
-      });
-      if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
-      plan = { reuse: null, duplicateWarning: false, existingNos: [] };
-    } else {
-      if (!kase) throw new HttpsError("failed-precondition", "この見積もりは現在お申し込みいただけません（案件が見つかりません）。お手数ですがお問い合わせください");
-      plan = Flow.planWebShipment(shipments, kase.shipmentId || null);
-    }
-    const stPlan = Flow.caseStatusOnAccept(kase && kase.status); // 4・13 も受け付けて 3 に戻す（reopenedFrom）
-    out.reopenedFrom = stPlan.reopenedFrom || null;
-    out.caseContactEmail = (kase && kase.contactEmail) || "";
-    let n = null;
-    const cRef = db.collection("_counters").doc("shipments");
-    if (!plan.reuse) {
-      // 採番はトランザクションの中で行う（採番だけ進んで書き込みが失敗する事故を避ける）
-      const cSnap = await tx.get(cRef);
-      n = (cSnap.exists ? cSnap.data().value : 0) + 1;
-    }
-
-    // ---- 書き込み ----
-    // 申込の内容から決まる出荷の項目（新規作成と使い直しで同じもの。2026-10-21 レビュー指摘 1）
-    const orderFields = Flow.shipmentFieldsFromAccept({
-      q, delivery: d, shipItems: shipmentItemsFromQuote(q), btSku: Pricing.SKU.BT, preferredDate, payKey, note,
+    const sibSnap = await tx.get(db.collection("quotes").where("caseId", "==", q.caseId));
+    const chk = checkOrderReconsent({
+      quote: q, siblings: sibSnap.docs.map((x) => ({ id: x.id, ...x.data() })), kase,
+      signedName: consent.signedName, receivedDate: consent.receivedDate, todayYmd: todayJst(),
     });
-    let shipId;
-    if (plan.reuse) {
-      shipId = plan.reuse.id;
-      out.soNumber = plan.reuse.soNumber || "";
-      out.reused = true;
-      out.reusedStatus = plan.reuse.status || "draft";
-      // 状態・番号・出荷元・作成日時は既存のまま。requested のときは Chat に「センターへ連絡」を注記（acceptShipNote）
-      tx.update(db.collection("shipments").doc(shipId), {
-        ...orderFields, updatedAt: now,
-        updatedBy: "web（事業所のお申し込み・既存の出荷を使い直し）",
-      });
-    } else {
-      tx.set(cRef, { value: n });
-      out.soNumber = `${shipmentNumberPrefix()}${String(n).padStart(4, "0")}`;
-      const shipRef = db.collection("shipments").doc();
-      shipId = shipRef.id;
-      const shipDoc = {
-        soNumber: out.soNumber, status: "draft", shipType: "direct", partnerEmail: "", partnerName: "",
-        caseId: q.caseId, ...orderFields,
-        shippingMethod: "manual", shippingFee: 0, shippingLabel: "",
-        shipDate: todayJst(),
-        createdAt: now, createdBy: staff ? Flow.staffCreatedBy(who.channel, who.email) : "web（事業所のお申し込み）",
-      };
-      if (plan.duplicateWarning) Object.assign(shipDoc, { duplicateWarning: true, duplicateOf: plan.existingNos });
-      tx.set(shipRef, shipDoc);
-      out.duplicateWarning = !!plan.duplicateWarning;
-      out.existingNos = plan.existingNos || [];
-    }
-    out.shipRefId = shipId;
-
-    const deliveryRec = { company: d.company || "", officeName: d.officeName || "", postalCode: d.postalCode || "",
-      address: d.address || "", contactName: d.contactName || "", phone: d.phone || "" };
-    const quoteUpdate = {
-      status: "accepted", acceptedAt: now, shipmentId: shipId, shipmentNo: out.soNumber,
-      acceptedBy: name.slice(0, 100), payMethod: payKey, delivery: deliveryRec,
-    };
-    if (staff) {
-      Object.assign(quoteUpdate, {
-        acceptedVia: "staff", acceptedChannel: who.channel, acceptedReceivedDate: who.receivedDate,
-        acceptedByStaff: who.email, agreedName: name.slice(0, 100),
-        agreedPolicy: null, // 同意の画面を通っていないので「同意した」とは記録しない（偽装しない）
-      });
-    } else {
-      Object.assign(quoteUpdate, {
-        acceptedVia: "web",
-        // 申し込み画面で「プライバシーポリシー・利用規約に同意」に入れたかどうかを残す（監査用）
-        agreedPolicy: agreedPolicy === true, agreedPolicyAt: now,
-      });
-    }
-    tx.update(qRef, quoteUpdate);
-
-    const caseUpdate = { updatedAt: now, shipmentId: shipId, payMethod: payKey };
-    if (stPlan.status != null) { caseUpdate.status = stPlan.status; out.caseStatusTo = stPlan.status; }
-    if (stPlan.reopenedFrom) Object.assign(caseUpdate, { reopenedFrom: stPlan.reopenedFrom, reopenedAt: now });
-    if (staff) {
-      Object.assign(caseUpdate, { orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: who.email });
-      // 受注日は最初の申込の日を保つ（Web と同じ。2026-10-21 レビュー指摘 5）。無ければ受付日（JST 0時）
-      const oMs = Flow.staffOrderedAtMs(kase, who.receivedDate);
-      if (oMs != null) caseUpdate.orderedAt = admin.firestore.Timestamp.fromMillis(oMs);
-    } else {
-      // 受注日は最初の申込の日を保つ（進んだ案件に再度の申込があっても月ごとの集計を動かさない）
-      if (!kase.orderedAt) caseUpdate.orderedAt = now;
-      caseUpdate.orderedVia = kase.orderedVia || "web";
-    }
-    tx.update(caseRef, caseUpdate);
-
-    const shipLine = out.reused
-      ? `既存の出荷 ${out.soNumber}（${out.reusedStatus === "requested" ? "依頼済み" : "下書き"}）を新しい内容に更新（新しい下書きは作っていません）`
-      : `出荷 ${out.soNumber} の下書きを作成${out.duplicateWarning ? `（⚠️ 発送済みの出荷 ${out.existingNos.join("・")} があります。重複の確認を）` : ""}`;
-    const stLine = stPlan.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`;
-    if (staff) {
-      tx.set(db.collection("activities").doc(), {
-        caseId: q.caseId, type: "memo", occurredAt: now, userId: who.uid || null, userName: who.email,
-        subject: Flow.staffAcceptSubject(who.channel, q.estNo, out.soNumber, out.reused, out.reopenedFrom),
-        body: `申込者: ${name}\n受付方法: ${STAFF_ACCEPT_CHANNELS[who.channel] || who.channel}\n受付日: ${who.receivedDate}\n`
-          + `支払方法: ${PAY_LABELS[payKey]}\n${shipLine}\n${stLine}`
-          + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
-          + (note ? `メモ: ${note}\n` : ""),
-        attachmentUrls: [],
-      });
-    } else {
-      tx.set(db.collection("activities").doc(), {
-        caseId: q.caseId, type: "memo", occurredAt: now, userId: "system",
-        subject: Flow.webAcceptSubject(q.estNo, out.soNumber, out.reused, out.reopenedFrom),
-        body: `お申し込み者: ${name}\n支払方法: ${PAY_LABELS[payKey]}\n`
-          + `届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n`
-          + `${shipLine}\n${stLine}`
-          + (preferredDate ? `ご希望日: ${preferredDate}\n` : "")
-          + (note ? `ご要望: ${note}\n` : ""),
-        attachmentUrls: [],
-      });
-    }
+    if (!chk.ok) throw new HttpsError("failed-precondition", chk.message, { code: chk.code });
+    token = newToken();
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const name = String(consent.signedName).trim().slice(0, 100);
+    const rec = buildOrderConsentRecord({
+      document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
+      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia, recordedBy: actor.email },
+      createdBy: actor.email, retakeOf: kase.orderConsentToken,
+    });
+    displayNo = rec.displayNo;
+    rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";
+    tx.create(db.collection("consentRequests").doc(token), rec);
+    tx.update(qRef, { consentToken: token, consentRetakenAt: now });
+    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, updatedAt: now });
+    tx.set(db.collection("activities").doc(), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: actor.uid || null, userName: actor.email,
+      subject: Flow.orderReconsentSubject(q.estNo, q.version),
+      body: `署名者: ${name}\n受け取り方: ${ORDER_RECEIVED_VIA[rec.signed.receivedVia] || "その他"}\n受け取った日: ${consent.receivedDate}\n`
+        + `承諾書: ${displayNo}（条文の版 ${ORDER_CONSENT_DOCUMENT.version}）\n前の承諾書: ${kase.orderConsentToken ? "あり（記録として残しています）" : "なし"}\n`
+        + "出荷・受注の内容は変えていません。",
+      attachmentUrls: [],
+    });
   });
-  return out;
+  return { token, q, displayNo };
 }
 
 // 「各事業所の住所へ」用に、見積もりに紐づく事業所の住所を届け先へ変換する（無ければ見積もりの事業所名だけ使う）
@@ -1527,12 +1676,42 @@ exports.acceptQuote = onRequest(
 //        mailed:boolean, mailError:string|null}（確認メールの宛先は案件の contactEmail → 見積もりの contactEmail の順）
 // 全件が拒否されたときは HttpsError（failed-precondition）で返す（メッセージは checkStaffAccept の文言そのまま）。
 // 確認メールは sendMail が真で宛先があるときだけ。Chat は常に投稿する（CRM通知の投稿先）。
+// 2026-11-12 承諾書のサイン＝発注: 設定 appConfig/settings.orderByConsent がオンなら consent:{signedName, receivedDate, receivedVia?} が必須
+//   （申込者名・受付日・受付方法は承諾書の値で決める）。承諾書の記録と受注確定を1つのトランザクションで作り、戻り値に consentToken・displayNo。
+//   reconsent:true は受注後に改版した見積もりの承諾書の取り直し（出荷・受注は変えない）。オフのときは従来どおり（consent は使わない）。
 exports.staffAcceptQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_MAIL },
   async (request) => {
     const me = await requireStaff(request, { allow: "editor" });
-    const { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = request.data || {};
+    let { quoteId, acceptedName, channel, receivedDate, payMethod, preferredDate, note, sendMail, groupQuoteIds } = request.data || {};
     if (!quoteId || typeof quoteId !== "string") throw new HttpsError("invalid-argument", "quoteId は必須です");
+
+    // ===== 承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ）=====
+    // オンのときは「署名済みの承諾書」の情報 consent:{signedName, receivedDate, receivedVia?} が必須。無ければ拒否する。
+    // 申込者名・受付日・受付方法は承諾書の値から決める（署名者名＝申込者名、受け取った日＝受付日）。
+    const orderOn = await readOrderByConsentFresh();
+    let orderConsent = null;
+    if (orderOn) {
+      const c = (request.data || {}).consent;
+      if (!c || typeof c !== "object") {
+        throw new HttpsError("failed-precondition", "署名済みの承諾書を受け取ってから受注確定にしてください（署名者のお名前と、受け取った日が要ります）", { code: "consent_required" });
+      }
+      const signedName = String(c.signedName || "").trim().slice(0, 100);
+      if (!signedName) throw new HttpsError("invalid-argument", "承諾書に署名した方のお名前を入れてください", { code: "no_signed_name" });
+      if (Flow.jstMidnightMs(c.receivedDate) == null) throw new HttpsError("invalid-argument", "承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）", { code: "invalid_consent_date" });
+      const receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, c.receivedVia) ? c.receivedVia : "other";
+      orderConsent = { method: "paper_order", signedName, receivedDate: c.receivedDate, receivedVia };
+      if ((request.data || {}).reconsent === true) {
+        // 受注後に改版した見積もりの、承諾書の取り直し（出荷・受注は変えない）
+        const r = await reconsentTransaction({ quoteId, consent: orderConsent, actor: { email: me.email, uid: me.uid } });
+        return { ok: true, reconsent: true, consentToken: r.token, displayNo: r.displayNo, results: [], partial: false, errors: [], mailed: false, mailError: null };
+      }
+      acceptedName = signedName;
+      receivedDate = c.receivedDate;
+      channel = channelOfReceivedVia(receivedVia);
+    } else if ((request.data || {}).reconsent === true) {
+      throw new HttpsError("failed-precondition", "承諾書で受注確定にする設定が入っていないため、承諾書の取り直しはできません", { code: "order_by_consent_off" });
+    }
     const name = String(acceptedName || "").trim().slice(0, 100);
     if (!name) throw new HttpsError("invalid-argument", "申込者のお名前を入れてください");
     if (!Object.prototype.hasOwnProperty.call(STAFF_ACCEPT_CHANNELS, channel)) throw new HttpsError("invalid-argument", "受付方法（電話・メール・FAX・その他）を選んでください");
@@ -1556,16 +1735,33 @@ exports.staffAcceptQuote = onCall(
 
     const actor = { kind: "staff", email: me.email, uid: me.uid, name: me.name, channel, receivedDate, acceptedName: name };
     const done = [], errors = [];
-    for (const pq of pre) {
+    let consentToken = null, consentDisplayNo = "";
+    if (orderConsent) {
+      // 承諾書の記録と、全事業所の受注確定を1つのトランザクションで（どれかが通らなければ、どれも入らない）
+      const items = [];
+      for (const pq of pre) items.push({ quoteId: pq.id, delivery: await deliveryFromOfficeForQuote(pq) });
       try {
-        const delivery = await deliveryFromOfficeForQuote(pq);
-        const r = await acceptQuoteTransaction({
-          quoteId: pq.id, delivery, payKey, preferredDate: preferredDate || "", note: memo, actor,
+        const r = await acceptOrderByConsentTransaction({
+          items, payKey, preferredDate: preferredDate || "", note: memo, actor, consent: orderConsent,
         });
-        done.push({ ...r, quoteId: pq.id });
+        consentToken = r.token; consentDisplayNo = r.displayNo;
+        r.outs.forEach((o, i) => done.push({ ...o, quoteId: items[i].quoteId }));
       } catch (e) {
-        if (!(e instanceof HttpsError)) console.error("staffAcceptQuote item error:", pq && pq.id, e);
-        errors.push({ quoteId: pq.id, code: (e && e.details && e.details.code) || (e && e.code) || "error", message: e.message || String(e) });
+        if (!(e instanceof HttpsError)) { console.error("staffAcceptQuote(consent) error:", e); throw new HttpsError("internal", e.message || String(e)); }
+        throw e;
+      }
+    } else {
+      for (const pq of pre) {
+        try {
+          const delivery = await deliveryFromOfficeForQuote(pq);
+          const r = await acceptQuoteTransaction({
+            quoteId: pq.id, delivery, payKey, preferredDate: preferredDate || "", note: memo, actor,
+          });
+          done.push({ ...r, quoteId: pq.id });
+        } catch (e) {
+          if (!(e instanceof HttpsError)) console.error("staffAcceptQuote item error:", pq && pq.id, e);
+          errors.push({ quoteId: pq.id, code: (e && e.details && e.details.code) || (e && e.code) || "error", message: e.message || String(e) });
+        }
       }
     }
     if (!done.length) {
@@ -1600,9 +1796,10 @@ exports.staffAcceptQuote = onCall(
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const regions = await Promise.all(done.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
       await notifyChat(await getWebhook("crm"),
-        `${Flow.staffAcceptChatHead(channel, me.name)}\n`
+        `${orderConsent ? Flow.orderConsentChatHead(me.name) : Flow.staffAcceptChatHead(channel, me.name)}\n`
         + done.map((r, i) => `・#${r.q.caseNumber} ${regions[i]}${r.q.officeName || ""}（${r.q.estNo}）出荷 ${r.soNumber} ${yen(r.q.amounts?.totalIncl)}`
           + (acceptShipNote(r) ? `\n　${acceptShipNote(r)}` : "")).join("\n")
+        + (orderConsent ? `\n承諾書: ${consentDisplayNo}（${ORDER_RECEIVED_VIA[orderConsent.receivedVia] || "その他"}で受け取り）` : "")
         + `\n受付日: ${receivedDate}／お支払い: ${PAY_LABELS[payKey]}`
         + (errors.length ? `\n⚠️ ${errors.length}件は受注確定にできませんでした（CRMで確認してください）` : "")
         + `\n供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`);
@@ -1614,6 +1811,7 @@ exports.staffAcceptQuote = onCall(
       partial: errors.length > 0,
       errors,
       mailed: mailed === true, mailError: mailError || null,
+      ...(orderConsent ? { consentToken, displayNo: consentDisplayNo } : {}),
     };
   }
 );
@@ -1675,6 +1873,22 @@ exports.reviseQuote = onCall(
     if (bt > 0 || btx > 0) cardReaders.push({ type: "BT", subsidyQty: bt, extraQty: btx });
     if (usb > 0 || usbx > 0) cardReaders.push({ type: "USB", subsidyQty: usb, extraQty: usbx, connector });
 
+    // 承諾書のサイン＝発注（2026-11-12・発3）: 発注の承諾書がある案件（cases.orderConsentToken）で見積もりを直したら、
+    // 承諾書に焼き込んだ内容（品目・台数・合計）と比べ、違えば cases.orderConsentStale:true（承諾書の取り直しが要る）。
+    // 出荷は止めない（第1段）。承諾書の無い案件（設定オフのときはすべて）は何も足さない（従来どおり）。
+    let consentStale = null;
+    const caseSnapR = await db.collection("cases").doc(base.caseId).get();
+    const kaseR = caseSnapR.exists ? caseSnapR.data() : null;
+    if (kaseR && kaseR.orderConsentToken) {
+      let entry = null;
+      try {
+        const cs = await db.collection("consentRequests").doc(String(kaseR.orderConsentToken)).get();
+        const qs = cs.exists && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
+        entry = qs.find((e) => e && e.caseId === base.caseId) || null;
+      } catch (e) { console.warn("reviseQuote: consent read failed", e.message); }
+      consentStale = orderConsentStaleAfterRevise(entry, { items, amounts });
+    }
+
     const batch = db.batch();
     // 同じ案件の生きている版はすべて superseded に
     const sibSnap = await db.collection("quotes").where("caseId", "==", base.caseId).get();
@@ -1701,6 +1915,7 @@ exports.reviseQuote = onCall(
       subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
+      ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
     });
     // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）
     if (shipmentId && shipStatus === "draft") {
@@ -1719,7 +1934,8 @@ exports.reviseQuote = onCall(
       subject: `見積もりを変更（${estNo} v${base.version} → v${version}）`,
       body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
         + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
-        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : ""),
+        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+        + (consentStale === true ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
       attachmentUrls: [],
     });
     await batch.commit();
@@ -1751,7 +1967,8 @@ exports.reviseQuote = onCall(
         });
       } catch (e) { console.error("reviseQuote mail error:", e); }
     }
-    return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft") };
+    return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft"),
+      ...(consentStale == null ? {} : { orderConsentStale: consentStale }) };
   }
 );
 
@@ -2158,6 +2375,7 @@ exports.onCaseAssigned = onDocumentUpdated(
 
 // ===== N4 承諾書にオンラインで署名されたら通知（2026-10-21 設計 §3）=====
 // 条件 Flow.shouldNotifyConsent（pending→signed・method==="web"・caseId あり）。紙の記録（新規作成で signed）は対象外。
+// 発注の承諾書（kind:"order"・2026-11-12）も対象外（受注確定の処理が通知するので二重にしない）。
 // 案件の活動に記録し cases.updatedAt を更新。Chat（CRM通知）へ担当を @メンション。確認者名・連絡先は載せない。
 // 投稿に失敗しても活動は残し、失敗したことを本文に書く。二重防止 _notifyLog/consent_${token}。
 // ⚠️ region はデプロイ時に Firestore のロケーションを確認（onCaseAssigned の注記と同じ）。

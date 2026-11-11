@@ -11,7 +11,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 import { getFunctions, httpsCallable }
   from "/js/fn.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
-  referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
+  referralOptions, referralLabel, NEXT_ACTION, nextActionFor, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
   officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
 import { visitSummary } from "/js/schedule-core.js";
@@ -39,6 +39,9 @@ import { isCompleting, completionConfirmText, completionActivityNote,
   isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
 // 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
 import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
+import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
+// 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ画面が変わる）
+import { orderByConsentOn, statusChangeGuard, blockedStatusOptions, manualStatusNote } from "/js/order-consent.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -64,6 +67,8 @@ let currentUser = null;
 let supportChecklist = null; // initSupportChecklist の戻り値（refreshPeople）
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
 let appSettings = {};
+// 承諾書のサイン＝発注のスイッチ（練習モードでは練習DBの設定。fs.js が切り替える）
+const orderOn = () => orderByConsentOn(appSettings);
 // users コレクション（担当営業の候補。doc id = メールアドレス / name・role・active を持つ）
 let usersList = [];
 // 「出荷・請求・入金」タブが購読している shipments のキャッシュ。
@@ -107,10 +112,24 @@ function renderCaseHeader(c) {
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
+  applyStatusGuard(c);
   renderLostReason(c);
   const vd = document.getElementById("visitDateInput");
   if (vd) vd.value = c.visitDate || "";
   renderVisitExtras(c);
+}
+
+// 状態の選択の制限（発5・スイッチがオンのとき）。受注前（1・2）の案件は 3〜12 を選べなくする（管理者は選べて、理由を聞く）
+function applyStatusGuard(c) {
+  const sel = document.getElementById("statusSelect");
+  if (!sel) return;
+  const blocked = new Set(blockedStatusOptions({ from: c?.status, orderByConsent: orderOn(), isAdmin }).map(String));
+  for (const opt of sel.options) {
+    const was = opt.dataset.origLabel || opt.textContent;
+    opt.dataset.origLabel = was;
+    opt.disabled = blocked.has(opt.value);
+    opt.textContent = blocked.has(opt.value) ? `${was}（承諾書の受け取りで進みます）` : was;
+  }
 }
 
 // 訪問の時刻・形式（visitTimeFrom / visitTimeTo "HH:MM"・visitFormat "onsite"|"online"）。日付が空なら無効
@@ -991,7 +1010,8 @@ function renderShipDupBanner(ships) {
 function renderNextStep() {
   const wrap = document.getElementById("nextStep");
   if (!wrap || !currentCase) return;
-  const na = NEXT_ACTION[Number(currentCase.status)];
+  // スイッチがオンのときは状態2・5 の文言を差し替える（nextActionFor・constants.js）。オフなら NEXT_ACTION のまま
+  const na = nextActionFor(currentCase.status, currentCase, { orderByConsent: orderOn() });
   if (!na) { wrap.style.display = "none"; wrap.innerHTML = ""; return; } // 13完了・4失注は非表示
 
   // 2行目（お金の流れ）: B1「出荷・請求・入金」タブと同じデータ・同じ判定（shipNextAction）を再利用。
@@ -1017,7 +1037,10 @@ function renderNextStep() {
       <span class="next-step-label">次の一手</span>
       <span class="next-step-text">${escHtml(na.text)}</span>
       <button type="button" class="btn btn-primary" id="nextStepBtn" data-tip="次にやることの場所（タブ・入力欄）へ移ります。押しただけではデータは変わりません。">${escHtml(na.button)}</button>
-    </div>${moneyHtml}`;
+    </div>${moneyHtml}${(() => {
+      const n = orderConsentNoticeOf(currentCase);
+      return n ? `<div class="next-step-money" role="status" style="color:#8a5a1f"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(n.text)}（対応記録タブの見積もりから）</div>` : "";
+    })()}`;
 
   document.getElementById("nextStepBtn")?.addEventListener("click", () => {
     if (na.tab) activateTab(na.tab);
@@ -1082,7 +1105,7 @@ async function saveSubsidyInfo() {
 // ステータス変更
 // lost: 失注にするときの { reason, note }（それ以外は null）。失注から戻すときは理由を消す。
 // warnNote: 完了(13)の警告を確認して続行したときの1行（completionActivityNote の戻り。無ければ ""）
-async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "") {
+async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "", manualNote = "") {
   const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
   // 13 以外 → 13 にしたときだけ完了日時を残す（13 のまま保存し直しても上書きしない）
   if (isCompleting(currentCase?.status, newStatus)) patch.completedAt = serverTimestamp();
@@ -1109,7 +1132,7 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
       userName,
       subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
       body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}`
-        : [warnNote, fillOrderedAt ? ORDERED_AT_FILLED_NOTE : ""].filter(Boolean).join("\n"),
+        : [manualNote, warnNote, fillOrderedAt ? ORDERED_AT_FILLED_NOTE : ""].filter(Boolean).join("\n"),
       attachmentUrls: [],
     });
   } catch (err) {
@@ -1871,6 +1894,8 @@ function askSupportDone() {
   const sel = document.getElementById("statusSelect");
   if (!sel || sel.disabled || !currentCase) return;
   if (!shouldAskSupportDone({ status: currentCase.status, archived: !!currentCase.archived, canChangeStatus: canCopy })) return;
+  // 受注前の案件は、承諾書のサイン＝発注のスイッチがオンなら手で進めないので聞かない（発5）
+  if (statusChangeGuard({ from: currentCase.status, to: SUPPORT_DONE_STATUS, orderByConsent: orderOn(), isAdmin }).kind !== "ok") return;
   if (!confirm(supportDoneAskText(currentCase.status))) return;
   sel.value = String(SUPPORT_DONE_STATUS);
   sel.dispatchEvent(new Event("change"));
@@ -2077,6 +2102,7 @@ onAuthStateChanged(auth, async (user) => {
     sendMail: (payload) => sendCaseEmailFn(payload),
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
+    orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
   }).catch((e) => console.warn("consent card init:", e.message));
   // 資料の事前送付カード（承諾書カードの上に出る。挿入順で先頭になるよう後から init）
   initPreGuideCard({
@@ -2092,6 +2118,7 @@ onAuthStateChanged(auth, async (user) => {
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
     functions,
+    orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
   }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
@@ -2202,6 +2229,15 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
     let lost = null;
     let warnNote = "";
+    // 承諾書のサイン＝発注（発5・スイッチがオンのとき）: 受注前の案件を手で 3〜12 に進めない。管理者は理由を書けば変えられる
+    let manualNote = "";
+    const guard = statusChangeGuard({ from: currentCase.status, to: e.target.value, orderByConsent: orderOn(), isAdmin });
+    if (guard.kind === "blocked") { alert(guard.message); e.target.value = String(currentCase.status || 1); return; }
+    if (guard.kind === "reason") {
+      const reason = (prompt(guard.message, "") || "").trim();
+      if (!reason) { e.target.value = String(currentCase.status || 1); return; } // キャンセル・空欄は変えない
+      manualNote = manualStatusNote(reason);
+    }
     if (Number(e.target.value) === LOST) {
       lost = await askLostReason(LOST_REASONS);
       if (!lost) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
@@ -2226,7 +2262,7 @@ onAuthStateChanged(auth, async (user) => {
       }
     }
     try {
-      await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote);
+      await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote, manualNote);
     } catch (err) {
       if (invTab) invTab.close();
       e.target.value = String(currentCase.status || 1);
@@ -2235,6 +2271,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     if (invUrl) { if (invTab) invTab.location.href = invUrl; else location.href = invUrl; }
     currentCase.status = Number(e.target.value);
+    applyStatusGuard(currentCase);
     renderLostReason(currentCase);
     renderNextStep(); // 次の一手を即座に更新
     showToast(`ステータスを「${STATUS_LABELS[e.target.value]}」に変更しました`);

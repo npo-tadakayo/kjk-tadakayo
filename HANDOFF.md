@@ -3,6 +3,18 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）
+
+- 設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`（決定は `CRM改善2_計画_20261112.md` §2.1 発1〜発6）。仕様の正本は `ENGINEERING_NOTES.md` §C12
+- **スイッチ `appConfig/settings.orderByConsent`（既定オフ）**。オフのあいだは関数・画面とも従来どおり。**本番でオンにするのは、法人として承諾書 v1.2・利用規約の物品販売の追記を決めたあと**（発4）。オンにする操作は管理者が `appConfig/settings` に `orderByConsent: true`・`orderByConsentFrom: "YYYY-MM-DD"` を書く（設定画面にスイッチは作っていない）
+- 第1段でやったこと: 条文の正本 `functions/consent-document.js`（v1.1・v1.2）と画面の写し（v1.2 を現行・v1.1 を凍結庫・伴走支援だけの承諾書は v1.1 のまま）／判定の純粋関数（`accept-rules.js`・写し `admin/js/order-consent-rules.js`）／`acceptQuoteTransaction` を読み取り・書き込みに分割し、`acceptOrderByConsentTransaction`（承諾書の記録と受注確定を1つのトランザクション・まとめ見積もりは全件まとめて）／`staffAcceptQuote` の紙の道（スイッチがオンなら `consent:{signedName, receivedDate, receivedVia}` 必須・`reconsent:true` で取り直し）／`reviseQuote` の取り直しの印 `cases.orderConsentStale`／`onConsentSigned` は kind order を除外／管理画面（承諾書を印刷・署名済みの承諾書を受け取った・状態の選択の制限・次の一手・取り直しのお知らせ・発注の承諾書の1行）／練習モード（練習DBの設定で新しい流れを試せる）
+- **Web の道（`acceptQuote`・`mitsumori.html`）は第2段**。第1段では、スイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `web_order` として作る）。⚠️ だから**第2段を出すまで本番のスイッチは入れない**こと（入れると、紙は承諾書必須・Web は承諾書なし、という食い違いになる）
+- テスト: `scripts/test-order-consent.mjs`（普通）・`scripts/test-order-consent-emu.mjs`（エミュレータ。`test-all.sh` の2段目に追加）
+- 本番に出すときに要るもの: Functions を名指しで `--only "functions:staffAcceptQuote,functions:reviseQuote,functions:acceptQuote,functions:onConsentSigned"`（`acceptQuote` は `acceptQuoteTransaction` の分割で中身が変わったため）＋ hosting（admin）。rules は不変。スイッチはオフのまま
+- 判断したこと（設計書にない細かい点）: ①伴走支援だけの承諾書は v1.1 のまま（v1.2 は見積書を前提にした文面のため）②まとめ見積もりはスイッチがオンなら全件まとめて1トランザクション（1件でも通らなければ全部止める）③取り直しは `staffAcceptQuote` の `reconsent` で受ける（関数を増やさない）④改版で内容（品目・台数・合計）が同じなら印を立てない
+- 法人の決定に持っていく論点: v1.2 の §7「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません」は v1.1 のまま。紙の発注では署名済みの紙がタダカヨに届くので、§7 の書き方も見直しが要る（コードは条文を設計書どおりにしてあり、§7 は変えていない）
+- 未了: 練習モードでの次田さんの画面確認・マージ・本番反映（Functions のデプロイ）・第2段（Web の道・署名ページで焼き込んだ見積もりの表示・確認メールに承諾書のアドレス）
+
 ## 2026-11-12 ボタンの説明の吹き出し（案件詳細の画面・ブランチ `feat/button-tooltips`・未マージ・本番未反映）
 
 - 次田さん決定（2026-11-12）: 各ボタンにマウスを乗せると機能の説明を吹き出しで出す。**まず案件詳細の画面から**。評判を見て他の画面へ広げる

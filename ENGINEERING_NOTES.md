@@ -319,6 +319,8 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 flowchart TD
   A["介護事業所<br/>(LP・見積もり)"] -->|問い合わせ/成約| B["案件 受付<br/>新規受信"]
   B --> C["担当者決定"]
+  B -.->|"見積もり → 承諾書のサイン＝発注<br/>(orderByConsent オン時・§C12)"| O["受注確定<br/>(承諾書の記録と同時)"]
+  O -.-> C
   C --> D["伴走支援<br/>(訪問・設定・写真)"]
   D --> E["書類準備・申請ガイド"]
   E --> F["助成金 申請"]
@@ -329,7 +331,7 @@ flowchart TD
   I --> J["出荷を依頼（指示をChatへ）<br/>→ 発送済（在庫を引く）<br/>送付状"]
   classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
-  class A,C2 care; class B,C,D,E,F,G,H,I,J sys;
+  class A,C2 care; class B,C,D,E,F,G,H,I,J,O sys;
 ```
 
 ## §C2 アーキテクチャ（ARCH）
@@ -382,7 +384,8 @@ erDiagram
   products ||--o{ inventoryMovements : "在庫増減"
   partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
   shipments ||--|| receipts : "領収書の発行記録"
-  cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼"
+  cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼／発注の承諾書(kind order・orderConsentToken)"
+  quotes }o--o{ consentRequests : "発注の承諾書に焼き込み(quotes[]・quotes.consentToken)"
   cases ||--o{ quotes : "見積もり（版で積む）"
   cases ||--o{ leadTokens : "問い合わせ→見積もり→申込の継続トークン"
   quotes ||--o| shipments : "Web申込で出荷下書きを自動作成(quoteId)"
@@ -447,7 +450,7 @@ erDiagram
 
 | コレクション | 役割 |
 |---|---|
-| `cases` | 案件（問い合わせ〜完了の中心データ） |
+| `cases` | 案件（問い合わせ〜完了の中心データ）。2026-11-12〜 承諾書のサイン＝発注: `orderConsentToken`（発注の承諾書 consentRequests のID）・`orderConsentAt`・`orderConsentStale`（受注後に見積もりを直して承諾書の取り直しが要る＝true。取り直すと false）→ §C12 |
 | `offices` | 介護事業所マスタ。住所は `prefecture`/`city`/`addressDetail` と、それをつなげた `address`。`officeCode`＝介護保険の事業所番号（10桁・2026-11-01〜 事業所画面の新規登録で入る。それ以前の事業所には無い） |
 | `activities` | 対応記録（電話・メール・訪問・メモ・メール送信）。任意の `refType`（"session"＝伴走支援の記録／"onsite"＝当日の確定）・`refId`（sessionId／案件ID）・`refDate`（onsite の訪問日）で元の記録を指す（2026-11-10〜。それ以前の行には無い） |
 | `sessions` | 伴走支援セッション（日付・メモ・写真）。新規保存のあと、案件の `status` が `STATUS_ORDER` で受注確定(3)〜8 の手前（3,5,6,7）なら「伴走支援実施済にしますか」と確認し（受注前の 1・2・空は聞かない＝`orderedAt` を付けずに実施済へ進ませない。2026-11-10 次田さん決定）、OK のときだけ `#statusSelect` に change を起こして既存の状態変更を通す（自動では変えない・受注前/失注/対象外/閲覧のみ/編集では聞かない・`admin/js/record-gaps-case.js` の `shouldAskSupportDone`・2026-11-10 点検5） |
@@ -699,3 +702,47 @@ stateDiagram-v2
 - **`findActiveCase`（Functions）は事業種別を見ない。** コピーで同じ事業所・同じメールの案件が2件になったあと、同じメールの再問い合わせ・見積もりが**新しいコピーの方に付くことがある**。第2弾で LP・見積もりツールから事業種別を受け取って解消する。
 
 本番に出すときに要るもの: **hosting（admin）だけ**。rules・Functions の変更なし。
+
+## §C12 見積もり必須・承諾書のサイン＝発注（2026-11-12・第1段・スイッチはオフ）
+
+設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`／決定: `CRM改善2_計画_20261112.md` §2.1（発1〜発6・移行）。
+**スイッチ `appConfig/settings.orderByConsent`（真偽・既定オフ）**。オフのあいだは関数・画面とも従来どおり（`scripts/test-order-consent.mjs`・`test-order-consent-emu.mjs` の A で確認）。オンにするのは法人として条文 v1.2・利用規約の追記を決めたあと（発4）。入れた日は `orderByConsentFrom`（"YYYY-MM-DD"）に書く想定（コードは読まない・記録用）。
+
+**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**: 第1段ではスイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `method:"web_order"`・`acceptedVia:"consent_web"` として作る）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as スタッフ（見積もりカード）
+  participant F as staffAcceptQuote
+  participant T as Firestore（1つのトランザクション）
+  S->>S: 「承諾書を印刷」（v1.2・見積番号/版/品目/台数/金額。まとめは全事業所を1枚）
+  Note over S: 事業所が署名 → FAX・郵送・手渡し・メールで戻る
+  S->>F: 「署名済みの承諾書を受け取った」{quoteId, groupQuoteIds, consent:{signedName, receivedDate, receivedVia}}
+  F->>F: 設定を読み直す（60秒キャッシュを使わない）。オンなのに consent が無ければ拒否（consent_required）
+  F->>T: appConfig/settings（オンか）・各見積もり・案件・出荷・同じ案件の版・_counters/shipments を読む
+  T-->>F: checkStaffAccept（各件）＋ checkOrderConsent（発行中・最新版・期限〔受け取った日〕・署名者名・まとめの整合）
+  F->>T: 各件: 出荷の下書き・quotes(accepted, acceptedVia consent_paper, consentToken)・cases(3, orderConsentToken/At, orderConsentStale:false)・活動
+  F->>T: consentRequests/{128bit} を tx.create（kind order・signed・条文全文・quotes[] の焼き込み）
+  Note over T: どれか1つでも失敗 → 何も入らない（承諾書だけ／受注だけ、は起きない）
+  F-->>S: {results, consentToken, displayNo} → Chat（署名者名は載せない）・確認メール（任意）
+```
+
+| 場所 | 足した項目 |
+|---|---|
+| `consentRequests/{token}`（kind:"order"） | `kind`・`caseId`（まとめは先頭の案件）・`caseIds[]`・`displayNo`（`CST-{案件番号}`、まとめは `-G{件数}`）・`officeName`・`company`・`contactName`・`status:"signed"`・`document`（v1.2 全文）・`quotes[{quoteId, estNo, version, caseId, caseNumber, officeName, corpName, plan, items[{sku,subsidyQty,extraQty,connector?}], amounts{readers,accompanyFee,discount,totalIncl,grantAmt,selfPay}}]`・`quoteGroupId`・`totalIncl`・`signed{name, signedAt(サーバー時刻), method:"paper_order"|"web_order", receivedDate, receivedVia(post/fax/hand/email/other), recordedBy}`・`createdAt/By/Via`・取り直しは `retakeOf`（前のトークン） |
+| `quotes/{id}` | `acceptedVia:"consent_paper"`（第2段で `"consent_web"`）・`consentToken`・取り直しで `consentRetakenAt`。紙の道の `acceptedBy`・`acceptedReceivedDate`・`acceptedChannel` は承諾書の署名者名・受け取った日・受け取り方（fax→fax、email→email、ほか→other）から |
+| `cases/{id}` | `orderConsentToken`・`orderConsentAt`・`orderConsentStale` |
+| `appConfig/settings` | `orderByConsent`・（記録用）`orderByConsentFrom`。**練習DBへ写す許可リストには入れない**（本番のスイッチを練習へ持ち込まない） |
+
+- **ルールは変えていない**: 発注の承諾書はサーバー（Admin SDK）だけが作る。公開の署名ページは従来どおり `get` で読める（署名後の画面を同じアドレスで開ける）。署名ページで発注の内容（焼き込んだ見積もり）を表示するのは第2段（`admin/js/consent-sign.js`）
+- **条文の正本**: `functions/consent-document.js`（CommonJS。`CONSENT_V1_1`・`CONSENT_V1_2`）。画面の写し `admin/js/consent-document.js` は `CONSENT_DOCUMENT`＝v1.2、`CONSENT_ARCHIVE`＝[1.1, 1.0]、`SUPPORT_CONSENT_DOCUMENT`＝1.1。一字一句の一致は `test-order-consent.mjs`。**伴走支援だけの承諾書（事前確認タブの署名依頼・紙で取得済みを記録）は v1.1 のまま**（v1.2 は「本書に表示する見積書」を前提にした文面なので、見積もりの無い承諾書には使わない）
+- **判定**: `functions/accept-rules.js` の `checkOrderConsent`・`checkOrderReconsent`・`buildOrderConsentRecord`・`orderConsentStaleAfterRevise`・`orderByConsentOn`・`channelOfReceivedVia`。練習モード用の写し `admin/js/order-consent-rules.js`（本文が同じ・同じ結果になることをテストで確認）
+- **`acceptQuoteTransaction` の分割**: 読み取り `acceptTxRead`（読む順は従来と同じ）／書き込み `acceptTxWrite`（`consent` を渡したときだけ承諾書の項目を足す・`setCounter:false` で採番の書き込みを呼び出し側に回す）。1件の申込（Web・スイッチオフのスタッフ）は従来と同じ1件1トランザクション
+- **まとめ見積もり（発6）**: スイッチがオンのときは全事業所を1つのトランザクションで受注確定（1件でも通らなければ全部止める。オフのときの「一部だけ確定（partial）」とは違う）。出荷番号は連番でまとめて採り、`_counters/shipments` は最後に1回だけ書く
+- **受注後の改版（発3）**: `reviseQuote` は案件に `orderConsentToken` があるとき、承諾書に焼き込んだその案件の見積もりと新しい版の「品目（品番・補助対象・追加）・合計（税込）」を比べ、違えば `orderConsentStale:true`（同じなら false）。出荷は止めない。取り直しは `staffAcceptQuote` に `reconsent:true` と `consent` を渡す（受注済み・最新版・発注の承諾がある案件だけ。新しい承諾書を作り `retakeOf` に前の承諾書。出荷・受注は変えない）
+- **`onConsentSigned`**: `kind:"order"` は対象外（`Flow.shouldNotifyConsent`。受注の処理が通知するため）
+- **画面**（スイッチがオンのときだけ変わる）: 見積もりカード（`quote-admin.js`）の「承諾書を印刷」「署名済みの承諾書を受け取った（受注確定にする）」（従来の「受注確定にする（電話・メールで申込を受けた）」の代わり）・取り直しの2ボタン・「発注の承諾書」の1行／状態の選択の制限（`order-consent.js` の `statusChangeGuard`・`blockedStatusOptions`。受注前 1・2 → 3〜12 を選べない。管理者は理由を書けば可・対応記録に「手動で状態を変更（理由: …）」）／次の一手（`constants.js` の `nextActionFor`）／点検（`record-gaps.js` の `orderConsentNoticeOf`。次の一手の下・見積もりカード・カンバン）／承諾書の欄（`consent-admin.js`。発注の承諾書があればそれを署名済みとして出す）。サーバー側のルールでの手動変更の禁止はあとで（発5）
+- **練習モード**: 代役（`practice-stubs.js` の `staffAcceptQuote`・`reviseQuote`）が同じ道を練習DBで通す。スイッチは**練習DBの** `appConfig/settings.orderByConsent`。見積もりカードの「練習で新しい流れを試す」で入れる（`isPracticeRef` で練習DBであることを確かめてから書く）。毎晩の練習DBの初期化で切れた状態に戻る
+- 本番に出すときに要るもの: **Functions**（`staffAcceptQuote`・`reviseQuote`・`acceptQuote`〔`acceptQuoteTransaction` を分割したため〕・`onConsentSigned`）と **hosting（admin）**。rules の変更なし。スイッチはオフのまま出す
+
