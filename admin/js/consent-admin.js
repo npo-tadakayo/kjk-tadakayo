@@ -121,8 +121,8 @@ function render() {
         伴走支援を始める前に、事業所から承諾書（条文の版 ${esc(CONSENT_DOCUMENT.version)}）をいただきます。
         署名はオンライン（メール・当日画面・二次元バーコード）と紙のどちらでも取れます。</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="consentIssueBtn"><i class="ti ti-signature" aria-hidden="true"></i> 署名を依頼する</button>
-        <button class="btn btn-secondary" id="consentPaperBtn"><i class="ti ti-file-text" aria-hidden="true"></i> 紙で取得済みを記録</button>
+        <button class="btn btn-primary" id="consentIssueBtn" data-tip="署名ページのアドレスを発行します。発行しただけでは事業所へ届きません（メール・二次元バーコード・署名ページで渡します）。"><i class="ti ti-signature" aria-hidden="true"></i> 署名を依頼する</button>
+        <button class="btn btn-secondary" id="consentPaperBtn" data-tip="紙で署名をもらったことを記録します。確認者のお名前と署名日を聞かれます。"><i class="ti ti-file-text" aria-hidden="true"></i> 紙で取得済みを記録</button>
       </div>`;
   } else if (r.status === "pending") {
     bodyHtml = `
@@ -130,13 +130,13 @@ function render() {
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <input class="form-control" readonly value="${esc(url)}" id="consentUrlBox"
                  style="flex:1;min-width:240px;font-size:12px" aria-label="署名ページのアドレス">
-          <button class="btn btn-secondary" id="consentCopyBtn"><i class="ti ti-copy" aria-hidden="true"></i> コピー</button>
+          <button class="btn btn-secondary" id="consentCopyBtn" data-tip="署名ページのアドレスをコピーします。"><i class="ti ti-copy" aria-hidden="true"></i> コピー</button>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-secondary" id="consentMailBtn"><i class="ti ti-mail" aria-hidden="true"></i> メールで依頼を送る</button>
-          <button class="btn btn-secondary" id="consentQrBtn"><i class="ti ti-qrcode" aria-hidden="true"></i> 二次元バーコードを表示</button>
-          <a class="btn btn-secondary" id="consentOpenLink" href="${esc(url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名ページを開く</a>
-          <button class="btn btn-secondary" id="consentCancelBtn" style="margin-left:auto;color:var(--color-danger)">依頼を取り消す</button>
+          <button class="btn btn-secondary" id="consentMailBtn" data-tip="署名のお願いメールの宛先と文面を確かめる画面を開きます。送るのはその画面の「送信する」です。"><i class="ti ti-mail" aria-hidden="true"></i> メールで依頼を送る</button>
+          <button class="btn btn-secondary" id="consentQrBtn" data-tip="署名ページの二次元バーコードを出す・しまうを切り替えます。事業所のスマートフォンで読み取ると署名ページが開きます。"><i class="ti ti-qrcode" aria-hidden="true"></i> 二次元バーコードを表示</button>
+          <a class="btn btn-secondary" id="consentOpenLink" data-tip="署名ページを新しいタブで開きます（当日その場で署名してもらうとき）。" href="${esc(url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名ページを開く</a>
+          <button class="btn btn-secondary" id="consentCancelBtn" data-tip="この署名依頼を取り消します。送ったアドレスは開けなくなり、元に戻せません。押すと確認が出ます。" style="margin-left:auto;color:var(--color-danger)">依頼を取り消す</button>
         </div>
         <div id="consentQrWrap" style="display:${openedQrToken === r._id ? "flex" : "none"};flex-direction:column;align-items:center;gap:8px;padding:14px;background:#fff;border:1px solid var(--color-border);border-radius:12px">
           <div id="consentQrBox">${openedQrToken === r._id ? qrSvg(url, 220) : ""}</div>
@@ -150,8 +150,8 @@ function render() {
         ${r.signed?.method === "paper"
           ? `<div style="font-size:12.5px;color:var(--color-ink-muted)">紙で取得（原本は事業所へお渡し済み）。記録者: ${esc(r.signed?.recordedBy || "")}</div>`
           : `<div style="display:flex;gap:8px;flex-wrap:wrap">
-               <a class="btn btn-secondary" href="${esc(url)}" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名済みの承諾書を開く</a>
-               <button class="btn btn-secondary" id="consentCopyBtn"><i class="ti ti-copy" aria-hidden="true"></i> URLをコピー</button>
+               <a class="btn btn-secondary" href="${esc(url)}" data-tip="署名済みの承諾書を新しいタブで開きます。印刷もできます。" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 署名済みの承諾書を開く</a>
+               <button class="btn btn-secondary" id="consentCopyBtn" data-tip="署名ページのアドレスをコピーします。"><i class="ti ti-copy" aria-hidden="true"></i> URLをコピー</button>
              </div>
              <div style="font-size:12px;color:var(--color-ink-muted)">同じURLでいつでも表示・印刷できます（事業所の控えも同じURLです）</div>`}
       </div>`;
@@ -273,7 +273,7 @@ function openMailModal(r, url) {
       <div class="modal" style="position:relative;background:var(--color-bg,#FAFAF8);border-radius:16px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:0">
         <div style="display:flex;align-items:center;gap:10px;padding:18px 22px;border-bottom:1px solid var(--color-border)">
           <strong style="font-size:15px">承諾書の署名依頼メール</strong>
-          <button id="consentMailClose" class="btn btn-secondary" style="margin-left:auto" aria-label="閉じる">×</button>
+          <button id="consentMailClose" data-tip="送らずに閉じます。" class="btn btn-secondary" style="margin-left:auto" aria-label="閉じる">×</button>
         </div>
         <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px">
           <div>
@@ -291,8 +291,8 @@ function openMailModal(r, url) {
           <div style="font-size:12px;color:var(--color-ink-muted)">送信するとタイムラインにも記録されます（sendCaseEmail 経由）</div>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--color-border)">
-          <button class="btn btn-secondary" id="consentMailCancel">キャンセル</button>
-          <button class="btn btn-primary" id="consentMailSend"><i class="ti ti-send" aria-hidden="true"></i> 送信する</button>
+          <button class="btn btn-secondary" id="consentMailCancel" data-tip="送らずに閉じます。">キャンセル</button>
+          <button class="btn btn-primary" id="consentMailSend" data-tip="事務局から承諾書の署名のお願いメールを送り、送った日時を記録します。対応記録にも残り、取り消せません（「記録だけやり直す」のときはメールは送りません）。"><i class="ti ti-send" aria-hidden="true"></i> 送信する</button>
         </div>
       </div>
     </div>`;

@@ -61,7 +61,7 @@ t("タブの並びは 対応記録 → 事前確認 → 当日 → 書類 → �
   const tabs = [...html.matchAll(/class="tab[^"]*" role="tab" data-tab="([a-z]+)"/g)].map((m) => m[1]);
   assert.deepEqual(tabs, ["timeline", "pre", "onsite", "documents", "shipping", "subsidy", "after", "ai"]);
   assert.ok(!html.includes('id="tab-sessions"'));
-  assert.match(html, /<button class="tab active" role="tab" data-tab="timeline" aria-selected="true">/, "既定は対応記録");
+  assert.match(html, /<button class="tab active" role="tab" data-tab="timeline" aria-selected="true"(?: data-tip="[^"]*")?>/, "既定は対応記録");
   assert.match(html, /<div class="tab-content active" id="tab-timeline">/);
 });
 

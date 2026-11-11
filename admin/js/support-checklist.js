@@ -287,7 +287,7 @@ function cardCpEvidence() {
         <div data-cp-skip>
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">利用申請完了画面・ライセンス情報や、電子証明書の有効期間がわかる画面の写真を保存できます。個人情報（パスワード等）が写り込まないよう注意。</p>
         <input type="file" id="sc-cp-photo-input" accept="image/*" multiple style="display:none">
-        <button type="button" class="btn btn-secondary" id="sc-cp-photo-btn" style="min-height:44px">
+        <button type="button" class="btn btn-secondary" id="sc-cp-photo-btn" data-tip="ケアプラン連携の証憑の写真を選びます。選ぶとすぐ保存されます。" style="min-height:44px">
           <i class="ti ti-camera" aria-hidden="true"></i> 写真を追加
         </button>
         <span id="sc-cp-photo-progress" aria-live="polite" style="display:none;font-size:13px;color:var(--color-ink-muted);margin-left:10px"></span>
@@ -339,7 +339,7 @@ function cardPerformance() {
           <label class="form-label" for="sc-perf-note">メモ</label>
           <input class="form-control" type="text" id="sc-perf-note" maxlength="200">
         </div>
-        <button type="button" class="btn btn-primary" id="sc-perf-save" style="min-height:44px">実施の記録を保存</button>
+        <button type="button" class="btn btn-primary" id="sc-perf-save" data-tip="実施日・実施者・トレーナー・同行者・メモを、実施の記録として保存します。押すまで保存されません。" style="min-height:44px">実施の記録を保存</button>
         <span id="sc-perf-error" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-left:10px"></span>
       </div>
     </div>`;
@@ -383,7 +383,7 @@ function cardEvaluation() {
           <textarea class="form-control" id="sc-eval-note" rows="2" maxlength="500"></textarea>
           <p style="font-size:12px;color:var(--color-ink-muted);margin:4px 0 0">利用者（被保険者）の個人情報は書かないでください。</p>
         </div>
-        <button type="button" class="btn btn-primary" id="sc-eval-save" style="min-height:44px">評価を保存</button>
+        <button type="button" class="btn btn-primary" id="sc-eval-save" data-tip="トレーニング評価を保存します（トレーナーだけ）。同じ日・同じ受講者の評価は上書きします。" style="min-height:44px">評価を保存</button>
         <span id="sc-eval-error" role="alert" style="display:none;font-size:13px;color:var(--color-danger);margin-left:10px"></span>
         <div id="sc-eval-badge" style="margin-top:12px;font-size:13px"></div>
       </div>
@@ -401,7 +401,7 @@ function cardOnsiteConfirm() {
       </div>
       <div class="card-body">
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">訪問日と、完了した工程の数を対応記録に残します。同じ訪問日では1回だけ残ります。</p>
-        <button type="button" class="btn btn-primary" id="sc-onsite-confirm" style="min-height:44px"><i class="ti ti-circle-check" aria-hidden="true"></i> 当日の記録を確定</button>
+        <button type="button" class="btn btn-primary" id="sc-onsite-confirm" data-tip="訪問日と完了した工程の数を、対応記録に1行残します。同じ訪問日では1回だけです。" style="min-height:44px"><i class="ti ti-circle-check" aria-hidden="true"></i> 当日の記録を確定</button>
         <span id="sc-onsite-confirm-status" role="status" aria-live="polite" style="font-size:13px;margin-left:10px;color:var(--color-ink-muted)"></span>
       </div>
     </div>`;
@@ -420,14 +420,14 @@ function cardCopy() {
         <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 10px">写すのは「介護情報基盤の当日工程」のチェックとメモ、当日の所感、訪問日です。ケアプラン連携（導入済み欄・導入作業・証憑写真）、実施の記録、伴走支援の記録は写しません。写したあと片方だけ直すと内容がずれるので、直すときは写し元を直してもう一度写してください。</p>
         <p id="sc-copy-reason" role="status" style="display:none;font-size:13px;margin:0 0 10px;color:var(--color-ink-muted)"></p>
         <p id="sc-copy-to" style="display:none;font-size:13px;margin:0 0 10px"></p>
-        <button type="button" class="btn btn-secondary" id="sc-copy-open" style="min-height:44px;display:none"><i class="ti ti-copy" aria-hidden="true"></i> 同じ事業所の他の案件にも写す</button>
+        <button type="button" class="btn btn-secondary" id="sc-copy-open" data-tip="写し先にする、同じ事業所の他の案件を選ぶ欄を開きます。まだ写しません。" style="min-height:44px;display:none"><i class="ti ti-copy" aria-hidden="true"></i> 同じ事業所の他の案件にも写す</button>
         <div id="sc-copy-panel" style="display:none;margin-top:10px">
           <fieldset style="border:0;padding:0;margin:0">
             <legend class="form-label" style="margin-bottom:6px">写し先（同じ事業所の他の案件）</legend>
             <div id="sc-copy-list" style="font-size:13px"></div>
           </fieldset>
-          <button type="button" class="btn btn-primary" id="sc-copy-run" style="min-height:44px;margin-top:8px"><i class="ti ti-copy" aria-hidden="true"></i> 選んだ案件に写す</button>
-          <button type="button" class="btn btn-ghost" id="sc-copy-close" style="min-height:44px;margin-top:8px">閉じる</button>
+          <button type="button" class="btn btn-primary" id="sc-copy-run" data-tip="選んだ案件の当日の記録（工程のチェック・メモ・所感・訪問日）を、この案件の内容で置き換えます。両方の対応記録に1行残ります。" style="min-height:44px;margin-top:8px"><i class="ti ti-copy" aria-hidden="true"></i> 選んだ案件に写す</button>
+          <button type="button" class="btn btn-ghost" id="sc-copy-close" data-tip="写し先を選ぶ欄を閉じます。何も写しません。" style="min-height:44px;margin-top:8px">閉じる</button>
         </div>
         <p id="sc-copy-status" role="status" aria-live="polite" style="font-size:13px;margin:10px 0 0;color:var(--color-ink-muted)"></p>
       </div>
@@ -630,7 +630,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
           <img src="${escapeHtml(p.url)}" alt="証憑写真${i + 1}" style="width:64px;height:64px;object-fit:cover;border-radius:6px;border:1px solid var(--color-line)">
         </a>
         <span style="flex:1;font-size:12px;color:var(--color-ink-muted);word-break:break-all">${escapeHtml(p.name || "")}</span>
-        <button type="button" class="sc-photo-del btn btn-ghost" data-idx="${i}" aria-label="この写真を削除" style="min-width:44px;min-height:44px">
+        <button type="button" class="sc-photo-del btn btn-ghost" data-tip="この証憑の写真を削除します。すぐ保存され、元に戻せません。" data-idx="${i}" aria-label="この写真を削除" style="min-width:44px;min-height:44px">
           <i class="ti ti-trash" aria-hidden="true"></i>
         </button>
       </div>`).join("");
@@ -790,7 +790,7 @@ export function initSupportChecklist(db, caseId, storage, opts = {}) {
       el.innerHTML = `<strong>伴走支援者バッジ：付与済み</strong>（${escapeHtml(holder.grantedDate)}／認定：${escapeHtml(holder.grantedByName)}／${holder.basis === "discretion" ? "特別裁量" : "評価シート"}）${roleNote}`;
     } else if (ev && ev.judgement === "independent") {
       el.innerHTML = isTrainer(actorId(), users(), rosterIds)
-        ? `<button type="button" class="btn btn-secondary" id="sc-badge-grant" style="min-height:44px"><i class="ti ti-award" aria-hidden="true"></i> ${escapeHtml(ev.traineeName)}さんにバッジを付与する（認定：あなた）</button> <span id="sc-badge-msg" role="alert" style="font-size:13px;color:var(--color-danger)"></span>`
+        ? `<button type="button" class="btn btn-secondary" id="sc-badge-grant" data-tip="この受講者に伴走支援者バッジを付与します。押すと確認が出て、付与した記録が残ります。" style="min-height:44px"><i class="ti ti-award" aria-hidden="true"></i> ${escapeHtml(ev.traineeName)}さんにバッジを付与する（認定：あなた）</button> <span id="sc-badge-msg" role="alert" style="font-size:13px;color:var(--color-danger)"></span>`
         : `<span style="color:var(--color-ink-muted)">この評価は「独り立ち可」です。バッジの付与はトレーナーが行います。</span>`;
     } else {
       el.innerHTML = `<span style="color:var(--color-ink-muted)">バッジ：未付与（総合判定が「独り立ち可」で評価を保存すると、トレーナーが付与できます）</span>`;
