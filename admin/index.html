@@ -62,7 +62,11 @@
         }
         location.href = "/cases.html";
       } catch (e) {
-        errorEl.textContent = `ログインに失敗しました: ${e.message}`;
+        console.error("login failed:", e);
+        // 説明の部品は失敗したときだけ読む（読めなくてもログインボタン自体は動くように）
+        const msg = await import("/js/login-errors.js").then((m) => m.loginErrorMessage(e, "staff"))
+          .catch(() => ({ text: `ログインに失敗しました: ${e.message}` }));
+        errorEl.textContent = msg.text;
         errorEl.style.display = "block";
       }
     });
