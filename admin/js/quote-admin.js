@@ -32,7 +32,8 @@ import { todayYmdJst, ACCEPT_CHANNELS, PAY_METHODS, buildGroupChoices, buildAcce
 import { quoteMailNotesOf } from "/js/record-gaps.js";
 import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
 // 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ画面が変わる）
-import { RECEIVED_VIA_OPTIONS, buildPaperConsentPayload, buildOrderConsentPrintHtml, orderConsentLine } from "/js/order-consent.js";
+import { RECEIVED_VIA_OPTIONS, buildPaperConsentPayload, buildOrderConsentPrintHtml, orderConsentLine,
+  PAPER_MAIL_LABEL, PAPER_MAIL_NOTE, orderConfirmFollowupText } from "/js/order-consent.js";
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -778,8 +779,9 @@ async function openPaperAccept(q) {
             <input class="form-control" id="acNote" placeholder="例: 11/12 FAXで受領。発送先は事業所あて">
           </div>
           <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px">
-            <input type="checkbox" id="acMail" ${hasEmail ? "checked" : "disabled"}> お申し込みの確認メールを事業所へ送る
+            <input type="checkbox" id="acMail" ${hasEmail ? "checked" : "disabled"}> ${esc(PAPER_MAIL_LABEL)}
           </label>
+          <p style="font-size:12.5px;color:var(--color-ink-muted);margin:0;line-height:1.7">${esc(PAPER_MAIL_NOTE)}</p>
           ${!hasEmail ? `<p style="font-size:12.5px;color:var(--color-ink-muted);margin:0">案件・見積もりにメールアドレスがないため、確認メールは送れません。</p>` : ""}`}
           <div id="acGroup"></div>
           <p id="acError" role="alert" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7;white-space:pre-wrap"></p>
@@ -930,6 +932,7 @@ function showAcceptResult(sum) {
       <p style="font-size:14px;font-weight:600;margin:0;color:#1F7A4F"><i class="ti ti-circle-check" aria-hidden="true"></i> 受注確定にしました</p>
       <p style="font-size:13px;margin:0;line-height:1.8">出荷番号: ${soLinks || "—"}</p>
       ${sum.consentNo ? `<p style="font-size:13px;margin:0;line-height:1.8"><i class="ti ti-signature" aria-hidden="true"></i> 承諾書の記録: ${esc(sum.consentNo)}（受注確定と同時に入れました。画面を読み込み直すと、見積もりカードの上に出ます）</p>` : ""}
+      ${orderConfirmFollowupText(sum) ? `<div role="alert" style="font-size:13px;line-height:1.8;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:10px 12px"><strong><i class="ti ti-phone" aria-hidden="true"></i> 受注確認のご連絡がまだです</strong><br>${esc(orderConfirmFollowupText(sum))}</div>` : ""}
       <p style="font-size:13px;margin:0;line-height:1.8"><strong>供給管理で出荷を依頼してください。</strong>（出荷の下書きができています）</p>
       ${sum.mail === "sent" ? `<p style="font-size:13px;margin:0;line-height:1.8"><i class="ti ti-mail-check" aria-hidden="true"></i> 事業所へ確認メールを送りました</p>` : ""}
       ${sum.mail === "failed" ? `

@@ -233,6 +233,8 @@ section("C. スイッチがオン: 承諾書の記録と受注確定が同時に
 posted.length = 0;
 r = await http("acceptQuote", webBody("wqB", { agreedName: "  同意 一郎  ", payMethod: "before", consent: { agreed: true, version: "1.2" } }));
 check("200 ok", r.status === 200 && r.body.status === "ok", JSON.stringify(r));
+// エミュレータでは Gmail に送れない → 受注確認のメールは送れていない、と応答で伝える（見積もりページが「お送りしました」と出さない・2026-11-12 スイッチ前の点検）
+check("応答の mailed は false（受注確認のメールを送れなかった）", r.body.mailed === false, JSON.stringify(r.body));
 const urlC = r.body.consentUrl || "";
 const tokC = (/consent\?t=([0-9a-f]{32})$/.exec(urlC) || [])[1] || "";
 check("応答の consentUrl は管理画面の /consent?t=（128bit）", urlC.startsWith("https://kjk-tadakayo-admin.web.app/consent?t=") && !!tokC, urlC);
@@ -278,6 +280,7 @@ posted.length = 0;
 r = await http("acceptQuote", { quotes: [{ quoteId: "wqD1", quoteToken: "tok-wqD1" }, { quoteId: "wqD2", quoteToken: "tok-wqD2" }],
   deliveryMode: "single", delivery: DELIVERY, payMethod: "after", agreedName: "まとめ 同意", agreedPolicy: true, consent: { agreed: true, version: "1.2" } });
 check("200 ok・2件", r.status === 200 && r.body.status === "ok" && r.body.results.length === 2, JSON.stringify(r));
+check("まとめの応答にも mailed: false", r.body.mailed === false, JSON.stringify(r.body));
 const tokD = (/t=([0-9a-f]{32})$/.exec(r.body.consentUrl || "") || [])[1];
 const recD = await get(db.collection("consentRequests").doc(tokD || "x"));
 check("承諾書1件に2事業所・グループ・合計", recD && recD.quotes.length === 2 && recD.quoteGroupId === "GRP-D" && recD.caseIds.join(",") === "wD1,wD2"

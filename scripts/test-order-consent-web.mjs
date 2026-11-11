@@ -203,7 +203,7 @@ t("署名者名: 制御文字・改行を空白に（Web・紙・写しとも同
 });
 t("受注確認のメールを出せなかったときの Chat の文（案件番号と見積番号だけ）", () => {
   const a = F.orderConsentMailProblemText("failed", [{ caseNumber: 12, estNo: "EST-1" }, { caseNumber: 13, estNo: "EST-2" }]);
-  assert.equal(a, "⚠️ 受注確認のメールを送れませんでした（案件 #12（EST-1）・案件 #13（EST-2））。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください。");
+  assert.equal(a, "⚠️ 受注確認のメールを送れませんでした（案件 #12（EST-1）・案件 #13（EST-2））。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください（承諾書 第6条）。");
   assert.match(F.orderConsentMailProblemText("no_address", [{ caseNumber: 1, estNo: "E" }]), /宛先のメールアドレスが無い/);
   const src = read("functions/index.js");
   const b = src.slice(src.indexOf("async function acceptQuoteByConsent("), src.indexOf("exports.acceptQuote = onRequest("));

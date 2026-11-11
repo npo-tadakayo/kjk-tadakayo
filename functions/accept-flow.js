@@ -267,13 +267,29 @@ function orderReconsentSubject(estNo, version) {
 
 /**
  * 受注確認のメールを出せなかったときの Chat の文（事業所名・個人名は書かない。案件番号と見積番号だけ）
- * @param {"failed"|"no_address"} kind
+ * 承諾書 v1.2 §6 は「当法人が受注確認のご連絡をお送りした時点で契約が成立」なので、メールが出ていなければ手で連絡してもらう。
+ * @param {"failed"|"no_address"|"not_sent"} kind  not_sent＝紙の道で「確認メールを送る」を外して受注確定にした（2026-11-12 スイッチ前の点検）
  * @param {{caseNumber:any, estNo:string}[]} list
+ * @param {{paper?:boolean}} [opt]  紙の道（署名済みの承諾書を受け取った）なら true
  */
-function orderConsentMailProblemText(kind, list) {
+function orderConsentMailProblemText(kind, list, { paper = false } = {}) {
   const ids = (list || []).map((x) => `案件 #${x.caseNumber ?? "—"}（${x.estNo || "見積"}）`).join("・");
-  const why = kind === "no_address" ? "宛先のメールアドレスが無いため、受注確認のメールを送っていません" : "受注確認のメールを送れませんでした";
-  return `⚠️ ${why}（${ids}）。承諾書への同意による発注は受け付けています。手で事業所へ受注確認の連絡をしてください。`;
+  const why = kind === "no_address" ? "宛先のメールアドレスが無いため、受注確認のメールを送っていません"
+    : kind === "not_sent" ? "「確認メールを送る」を外して受注確定にしたため、受注確認のメールを送っていません"
+      : "受注確認のメールを送れませんでした";
+  const what = paper ? "署名済みの承諾書による発注は受注確定にしています" : "承諾書への同意による発注は受け付けています";
+  return `⚠️ ${why}（${ids}）。${what}。手で事業所へ受注確認の連絡をしてください（承諾書 第6条）。`;
+}
+
+/**
+ * 紙の道（staffAcceptQuote・スイッチがオン）で、受注確認のメールが出ていない理由。出ていれば（またはスイッチがオフなら）""。
+ * not_sent＝「確認メールを送る」を外した／no_address＝宛先なし／failed＝送信に失敗（2026-11-12 スイッチ前の点検）
+ */
+function orderConsentMailProblemKind({ orderConsent, sendMail, to, mailed } = {}) {
+  if (!orderConsent || mailed === true) return "";
+  if (!sendMail) return "not_sent";
+  if (!to) return "no_address";
+  return "failed";
 }
 
 // ===== 進み具合の帯（§C13・2026-11-12）=====
@@ -302,7 +318,7 @@ function orderConsentPageUrl(base, token) {
  * 承諾書 v1.2 §6「当法人が受注確認のご連絡をお送りした時点で契約が成立」に合わせて「ご発注を承りました」にする。
  * consentUrl が無ければ従来の文言（お申し込み）をそのまま返す。
  */
-function acceptMailWording(consentUrl) {
+function acceptMailWording(consentUrl, { paper = false } = {}) {
   if (!consentUrl) {
     return {
       subjectHead: "お申し込みを受け付けました",
@@ -311,10 +327,14 @@ function acceptMailWording(consentUrl) {
       changeNote: "台数や機種（Bluetooth／USB、USBの口の形）は、日程の調整をする際に変更できます。",
     };
   }
+  // 紙の道（署名済みの承諾書を当法人が受け取った）は「ご署名」と書く（Web は見積もりページでの「ご同意」・2026-11-12 スイッチ前の点検）
+  const how = paper ? "ご署名" : "ご同意";
   return {
     subjectHead: "ご発注を承りました",
-    lead: "承諾書（発注書を兼ねます）へのご同意によるご発注をいただき、ありがとうございます。以下の内容で受注いたしました。",
-    consentLine: `ご同意いただいた承諾書はこちらのアドレスでいつでもご覧いただけます: ${consentUrl}`,
+    lead: `承諾書（発注書を兼ねます）への${how}によるご発注をいただき、ありがとうございます。以下の内容で受注いたしました。`,
+    consentLine: paper
+      ? `ご署名いただいた承諾書の記録（見積書の内容入り）は、こちらのアドレスでいつでもご覧いただけます: ${consentUrl}`
+      : `ご同意いただいた承諾書はこちらのアドレスでいつでもご覧いただけます: ${consentUrl}`,
     changeNote: "台数や機種（Bluetooth／USB、USBの口の形）を変える場合は、変更後のお見積書について、あらためて承諾書をご確認いただきます。",
   };
 }
@@ -419,6 +439,6 @@ module.exports = {
   shouldNotifyAssign, assignedAtChanged,
   shouldNotifyConsent,
   orderConsentAcceptSubject, orderConsentChatHead, orderReconsentSubject,
-  orderConsentWebSubject, orderConsentPageUrl, acceptMailWording, statusChangePatch, orderConsentMailProblemText,
+  orderConsentWebSubject, orderConsentPageUrl, acceptMailWording, statusChangePatch, orderConsentMailProblemText, orderConsentMailProblemKind,
   planDailyPosts, dailyPostTexts, dailyFailureAction,
 };

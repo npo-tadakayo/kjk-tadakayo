@@ -85,6 +85,22 @@ export function buildPaperConsentPayload(form, todayYmd) {
   };
 }
 
+// ===== 受注確認のご連絡（承諾書 v1.2 §6・2026-11-12 スイッチ前の点検）=====
+// §6「当法人が受注確認のご連絡をお送りした時点で、発注の内容による契約が成立します」。紙の道では、確認メールが
+// 受注確認のご連絡になる。メールを送らない・送れなかったときは、手で連絡するよう画面に出す（サーバーは Chat にも出す）。
+export const PAPER_MAIL_LABEL = "受注確認のメール（承諾書のアドレス入り）を事業所へ送る";
+export const PAPER_MAIL_NOTE = "承諾書 第6条では、当法人からの「受注確認のご連絡」で契約が成立します。メールを送らない場合は、電話などで受注を確認した旨を事業所へお伝えください。";
+/**
+ * 紙の承諾書で受注確定にしたあと、受注確認のご連絡を手でするよう促す文。要らなければ ""。
+ * @param {{consentNo?:string, ok?:boolean, mail?:"sent"|"failed"|"off"}} sum  summarizeAcceptResult の結果に consentNo を足したもの
+ */
+export function orderConfirmFollowupText(sum) {
+  const s = sum || {};
+  if (!s.consentNo || s.ok === false || s.mail === "sent") return "";
+  return "事業所へ受注確認のメールを送っていません（または送れませんでした）。承諾書 第6条では「受注確認のご連絡」で契約が成立します。"
+    + "電話などで受注を確認した旨を事業所へお伝えし、対応記録に残してください。";
+}
+
 // ===== 発注の承諾書の表示 =====
 const METHOD_LABEL = { paper_order: "紙", web_order: "オンライン", paper: "紙", web: "オンライン" };
 export function consentMethodLabel(method) { return METHOD_LABEL[method] || "—"; }
