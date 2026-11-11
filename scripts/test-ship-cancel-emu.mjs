@@ -19,6 +19,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { planShipCancelRevert, revertWrites, holdActivity } from "../admin/js/ship-cancel-case.js";
+import { hasActiveOrder, statusChangeGuard } from "../admin/js/order-consent.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) { console.error("FIRESTORE_EMULATOR_HOST がありません（emulators:exec で動かす）"); process.exit(2); }
 process.env.GCLOUD_PROJECT ||= "demo-ship-cancel-test";
@@ -212,11 +213,15 @@ plan = await cancelLikeScreen(shipF.id);
 let kF = await get(cd("cF"));
 check("判定は revert・承諾書の印（理由 ship_canceled）・承諾書のトークンは残す", plan.kind === "revert" && kF.status === 2
   && kF.orderConsentStale === true && kF.orderConsentStaleReason === "ship_canceled" && kF.orderConsentToken === tok1);
+check("戻した案件（実際の保存値）は受注前: 失注→受注確定を手で選べない", !hasActiveOrder(kF)
+  && statusChangeGuard({ from: 4, to: 3, orderByConsent: true, isAdmin: false, caseData: { ...kF, status: 4 } }).kind === "blocked");
 check("見積もりは発行中（前の承諾書のトークンは prevAccept に）", (await get(qd("qF"))).status === "issued" && (await get(qd("qF"))).prevAccept.consentToken === tok1);
 r = await call("staffAcceptQuote", STAFF, { quoteId: "qF", payMethod: "after", sendMail: false, consent: { signedName: "鈴木 一郎", receivedDate: TODAY, receivedVia: "post" } });
 kF = await get(cd("cF"));
 check("新しい承諾書で受注確定 → 新しいトークン・印が消える・案件3", r.ok && kF.orderConsentToken && kF.orderConsentToken !== tok1
   && kF.orderConsentStale === false && kF.status === 3, JSON.stringify(r).slice(0, 300));
+check("取り直しで受注確定したあとは通常どおり（有効な受注として数える）", hasActiveOrder(kF)
+  && statusChangeGuard({ from: 4, to: 3, orderByConsent: true, isAdmin: false, caseData: { ...kF, status: 4 } }).kind === "ok");
 await setSwitch(false);
 
 console.log(results.join("\n"));

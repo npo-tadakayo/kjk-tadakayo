@@ -8,6 +8,7 @@ import {
   holdMessage, cancelPreviewText, shipCancelNoticeOf, SHIP_CANCEL_STALE_TEXT,
 } from "../admin/js/ship-cancel-case.js";
 import { orderConsentNoticeOf, ORDER_CONSENT_STALE_TEXT } from "../admin/js/record-gaps.js";
+import { isBeforeOrder, hasActiveOrder, statusChangeGuard, blockedStatusOptions, ORDER_GATED_TO } from "../admin/js/order-consent.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 const has = (src, re, msg) => assert.ok(re.test(src), msg || `見つからない: ${re}`);
@@ -157,6 +158,43 @@ t("全部キャンセルなのに受注確定のまま: 入金があれば保留
 t("承諾書の印: 出荷キャンセルで立てたときは文を変える", () => {
   assert.equal(orderConsentNoticeOf({ orderConsentStale: true, orderConsentStaleReason: "ship_canceled" }).text, SHIP_CANCEL_STALE_TEXT);
   assert.equal(orderConsentNoticeOf({ orderConsentStale: true }).text, ORDER_CONSENT_STALE_TEXT);
+});
+
+// ===== 承諾書で受注した案件を戻したあと、手の状態変更で抜けられない（PR #81 検収・スイッチ orderByConsent オン）=====
+t("戻した案件は、承諾書のトークンが残っていても受注前（確認中→失注→受注確定で抜けられない）", () => {
+  const before = { status: 5, orderedAt: { ts: 1 }, orderConsentToken: "tok1", shipmentId: "a" };
+  const w = revertWrites({ kase: before, quotes: [], ship: S("a", "draft"), by: "x", now: NOW });
+  const reverted = { ...before, ...w.casePatch };
+  assert.equal(reverted.orderConsentToken, "tok1", "トークンは履歴として残る");
+  assert.equal(hasActiveOrder(reverted), false);
+  // 2 → 4（失注）は止めない
+  assert.equal(statusChangeGuard({ from: 2, to: 4, orderByConsent: true, isAdmin: false, caseData: reverted }).kind, "ok");
+  // 4（失注）・13（完了）→ 3〜12 は止まる（管理者は理由つき）
+  const lost = { ...reverted, status: 4 };
+  for (const f of [4, 13]) {
+    assert.equal(isBeforeOrder(f, lost), true, String(f));
+    for (const to of ORDER_GATED_TO) {
+      assert.equal(statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false, caseData: lost }).kind, "blocked", `${f}→${to}`);
+      assert.equal(statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: true, caseData: lost }).kind, "reason", `${f}→${to}`);
+    }
+    assert.deepEqual(blockedStatusOptions({ from: f, orderByConsent: true, isAdmin: false, caseData: lost }), [...ORDER_GATED_TO]);
+  }
+  // スイッチが切れていれば今までどおり
+  assert.equal(statusChangeGuard({ from: 4, to: 3, orderByConsent: false, isAdmin: false, caseData: lost }).kind, "ok");
+});
+t("取り直しの承諾書で受注確定したら（受注日が入り直す）通常どおり", () => {
+  const reaccepted = { status: 4, orderConsentToken: "tok2", orderConsentStale: false, orderedAt: { ts: 9 }, shipCancelRevert: { soNumber: "SH-a" } };
+  assert.equal(hasActiveOrder(reaccepted), true);
+  assert.equal(isBeforeOrder(4, reaccepted), false);
+  assert.equal(statusChangeGuard({ from: 4, to: 3, orderByConsent: true, isAdmin: false, caseData: reaccepted }).kind, "ok");
+});
+t("戻していない案件の判定は今までどおり（承諾書だけ・受注日だけ・どちらも無い）", () => {
+  assert.equal(isBeforeOrder(4, { orderConsentToken: "t" }), false);
+  assert.equal(isBeforeOrder(13, { orderedAt: { ts: 1 } }), false);
+  assert.equal(isBeforeOrder(4, {}), true);
+  assert.equal(isBeforeOrder(4, null), true);
+  for (const f of [1, 2]) assert.equal(isBeforeOrder(f, { orderConsentToken: "t", orderedAt: { ts: 1 } }), true);
+  for (const f of [3, 5, 12]) assert.equal(isBeforeOrder(f, { shipCancelRevert: {} }), false);
 });
 
 // ===== 画面へのつなぎ =====
