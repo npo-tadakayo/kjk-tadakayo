@@ -109,7 +109,8 @@ onAuthStateChanged(auth, async (user) => {
   $("grantBtn").addEventListener("click", grant);
   $("csvBtn").addEventListener("click", downloadCsv);
   $("gate").style.display = "none"; $("main").style.display = "block";
-  try { const d = await getDoc(doc(db, "appConfig", "supportTrainers")); if (d.exists()) rosterIds = d.data().ids || null; } catch (_) {}
+  // 名簿はトレーナー合格・取り消し（trainer-badges.js）で変わるので、読み続ける（2026-11-12）
+  onSnapshot(doc(db, "appConfig", "supportTrainers"), (d) => { rosterIds = d.exists() ? (d.data().ids || null) : null; render(); }, () => {});
   // 職員の名簿は練習モード中も本番の users（練習DBに users は置かない）
   onSnapshot(collection(getProdFirestore(app), "users"), (s) => { users = s.docs.map((d) => ({ _id: d.id, ...d.data() })); render(); },
     (e) => console.warn("users:", e.message));

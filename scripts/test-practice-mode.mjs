@@ -57,6 +57,10 @@ ok(!/uploadBytes|deleteObject/.test(src["js/video-player.js"]), "video-player.js
 // 4) 画面から呼ぶ Functions（httpsCallable の名前）すべてに練習用の代役がある
 const stubSrc = src["js/practice-stubs.js"];
 const stubNames = new Set([...stubSrc.matchAll(/^\s{2}async ([A-Za-z]+)\(/gm)].map((m) => m[1]));
+// トレーナー認定の代役は別ファイル（practice-stubs-trainer.js）にあり、PRACTICE_STUBS に混ぜている（2026-11-12）
+const trainerStubSrc = src["js/practice-stubs-trainer.js"];
+ok(/\.\.\.TRAINER_PRACTICE_STUBS,/.test(stubSrc), "practice-stubs.js がトレーナー認定の代役を混ぜていない");
+for (const m of trainerStubSrc.matchAll(/^\s{2}async ([A-Za-z]+)\(/gm)) stubNames.add(m[1]);
 const called = new Set();
 for (const [f, s] of Object.entries(src)) {
   for (const m of s.matchAll(/httpsCallable\(\s*[A-Za-z_.]+\s*,\s*"([^"]+)"/g)) called.add(m[1]);
@@ -70,6 +74,7 @@ ok(/throw new Error\(`練習モードでは/.test(src["js/fn.js"]), "fn.js が�
 
 // 6) 代役は fetch などで外へ出ない
 ok(!/fetch\(|XMLHttpRequest|sendBeacon/.test(stubSrc), "practice-stubs.js が外部へ通信している");
+ok(!/fetch\(|XMLHttpRequest|sendBeacon/.test(trainerStubSrc), "practice-stubs-trainer.js が外部へ通信している");
 
 // 7) 作成者の印（_practiceBy）を付けない共有コレクション
 ok(/SHARED = new Set\(\["_counters", "appConfig"\]\)/.test(src["js/fs.js"]), "fs.js の共有コレクションの指定が変わっている");

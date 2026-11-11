@@ -12,6 +12,7 @@ import { getFirestore, collection, doc, getDoc, getDocs, query, where, addDoc, u
   from "/js/fs.js";
 import { deliveryModeOf, canPickup, shipStatusOf, senderForLabel, warehouseActionable, projectForWarehouse, orderLocations, defaultLocationIdOf, validateWarehouseNote } from "/js/warehouse-rules.js";
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
+import { TRAINER_PRACTICE_STUBS } from "/js/practice-stubs-trainer.js"; // トレーナー認定の代役（2026-11-12・別ファイル）
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
 function me() {
@@ -396,6 +397,7 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
 }
 
 export const PRACTICE_STUBS = {
+  ...TRAINER_PRACTICE_STUBS, // trainerSaveCriteria・trainerRecordTalk・trainerCourseSubmit・trainerCertify・trainerRevoke
   // AI アシスタント（Vertex AI）は動かさない
   async aiAssist({ task }) {
     showPracticeNotice("AIアシスタントは練習中は動きません");

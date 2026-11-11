@@ -3,6 +3,18 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-12 トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース）（ブランチ `feat/trainer-certification`・未マージ・本番未反映）
+
+- 計画と決定: `06_介護情報基盤事業/docs/トレーナーコース_計画_20261110.md` §7（ト1〜ト8・蒸し返さない）。仕様の正本は ENGINEERING_NOTES §C12
+- 作ったもの: `/badges` に「トレーナー条件とトレーナー合格」（条件・メンバーごとの 伴走支援 n/10・登壇 n回・コース・判定／登壇の記録／合格・特別裁量・取り消し／合格の記録）、新しい画面 `/trainer-course`（動画の視聴の記録・確認テスト6問・自分の条件）、サイドバーに「トレーナーコース」（練習生には出さない）
+- **ルールは変えていない**。置き場は `appConfig/trainerCriteria` と `appConfig/trainerProgram/{talks|certs|course}`（2段目より下は catch-all で「登録スタッフは読める・誰も書けない」）。書き込みはすべて Callable（`functions/trainer.js`）
+- **デプロイが要る関数（5本）**: `trainerSaveCriteria`・`trainerRecordTalk`・`trainerCourseSubmit`・`trainerCertify`・`trainerRevoke`。Functions を先に、そのあと hosting（admin）
+- 本番の名簿（`appConfig/supportTrainers`）はまだ作られていない（初期4名を氏名で照合のまま）。最初の合格のときに「初期4名＋合格者」で作られる。条件の文書も無い＝既定値（10件・1回・かつ・コース必須）で動く
+- 練習モード: 代役 `admin/js/practice-stubs-trainer.js`（練習DBの同じ置き場に書く。本番の名簿は変わらない）
+- テスト: `test-trainer-rules.mjs`・`test-trainer-emu.mjs`（test-all の2段目に追加）・`test-rules-appconfig.mjs` に確認を追加
+- 気づいたこと: Google ドライブ上の `functions/node_modules` をエミュレーターのテストで使うと、ファイルの読み込みが ETIMEDOUT で落ちる／止まることがある（Drive の遅延読み込み）。scratchpad で `npm ci` したものを `FUNCTIONS_NODE_MODULES` に渡すと安定する
+- 未了: 次田さんの画面確認 → マージ → Functions 5本のデプロイ → hosting。確認用の版の承認済みドメインは使い終わったら外す
+
 ## 2026-11-12 ボタンの説明の吹き出し（案件詳細の画面・ブランチ `feat/button-tooltips`・未マージ・本番未反映）
 
 - 次田さん決定（2026-11-12）: 各ボタンにマウスを乗せると機能の説明を吹き出しで出す。**まず案件詳細の画面から**。評判を見て他の画面へ広げる

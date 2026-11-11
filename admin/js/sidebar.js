@@ -42,6 +42,7 @@
     ["/manual.html", "ti-book-2", "マニュアル"],
     ["/learning.html", "ti-school", "育成コース"],
     ["/videos.html", "ti-video", "動画マニュアル"],
+    ["/trainer-course.html", "ti-certificate", "トレーナーコース"], // 2026-11-12 練習生には出さない（下の render）
     ["/engineering.html", "ti-notebook", "エンジニアノート"],
   ];
 
@@ -80,7 +81,8 @@
     });
     if (!wh) {
       html += '<div class="nav-divider-line"></div>';
-      HELP.forEach(function (it) { html += link(it, path); });
+      var trainee = currentRole() === "trainee";
+      HELP.forEach(function (it) { if (trainee && it[0] === "/trainer-course.html") return; html += link(it, path); });
     }
     el.innerHTML = html;
   }
