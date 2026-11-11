@@ -3,6 +3,18 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-12 管理画面のセキュリティヘッダー（ブランチ `feat/admin-security-headers`・未マージ・本番未反映）
+
+- **何を**: `firebase.json` の hosting target `admin`（`**`）に、リリース前チェックが「付いていない」と出していた6つを足した。既存の `Cache-Control`・`Cross-Origin-Opener-Policy: same-origin-allow-popups` は変えていない。公開ページ（lp）も変えていない
+  - `X-Content-Type-Options: nosniff`／`Referrer-Policy: strict-origin-when-cross-origin`／`X-Robots-Tag: noindex, nofollow`
+  - `X-Frame-Options: SAMEORIGIN`（DENY にしない理由: `supply-print.js` の `buildReportPdf` が `report.html` を画面外の iframe で開いて PDF にしている）。CSP の `frame-ancestors 'self'` も同じ理由
+  - `Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()`（lp は `camera=()`。管理画面は `supply.html` の写真の欄が `<input type=file capture="environment">` なので、実機のスマホで確かめるまではカメラを止めない）
+  - **CSP は `Content-Security-Policy-Report-Only`**（違反しても止めず、コンソールに出すだけ）。許可している先: スクリプト＝`www.gstatic.com`（firebasejs）・`apis.google.com`（ログインのポップアップ）・`cdn.jsdelivr.net`（mermaid）・`cdnjs.cloudflare.com`（html2pdf）／スタイル＝`fonts.googleapis.com`・`cdn.jsdelivr.net`（tabler-icons）／フォント＝`fonts.gstatic.com`・`cdn.jsdelivr.net`／通信＝`identitytoolkit`・`securetoken`・`www.googleapis.com`・`firestore`・`firebasestorage`・`asia-northeast1-kjk-tadakayo.cloudfunctions.net`／画像・動画＝`firebasestorage.googleapis.com`・`data:`・`blob:`／iframe＝自分・`kjk-tadakayo.firebaseapp.com`（authDomain）・`apis.google.com`・`accounts.google.com`。インラインの `<script>` と `onclick` があるので `script-src 'unsafe-inline'` を残している（`unsafe-eval` は入れていない）
+- テスト `scripts/test-admin-security-headers.mjs`: 必須ヘッダーの有無・値と、**管理画面の HTML/JS/CSS が読み込む外部の先がすべて CSP に入っていること**を照合する（新しい CDN を足して CSP を直し忘れると落ちる）
+- 確認用の版 `https://kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app`（11/19 02:58 JST まで・承認済みドメイン追加済み）。curl で全ヘッダーを確認。ログイン画面・認定事業者ポータル・ログインのポップアップを開くところまで（資格情報は入れていない）で CSP の違反は0件。⚠️ プレビューの版は Firebase が `x-robots-tag: noindex` に差し替える（本番では `noindex, nofollow` のはず＝本番反映後に curl で確かめる）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app --yes`
+- 🔜 **強制に切り替える手順（本番で1〜2週間ようすを見てから）**: ① ログイン後の各画面（案件詳細の写真・研修動画・支援報告書のPDF・マニュアルの図・出荷の写真）でコンソールに `[Report Only]` が出ないかを見る → ② 出たら許可先を足し、テストにも足す → ③ `firebase.json` のキーを `Content-Security-Policy-Report-Only` → `Content-Security-Policy` に変える（テストはどちらのキーでも通る）→ ④ 確認用の版で同じ画面を見てから `--live`。あわせて `camera=(self)` を `camera=()` にできるか、スマホの写真の欄で確かめる
+- 未検証: ログイン後の画面（Firestore・Storage・Functions の通信、mermaid、html2pdf、研修動画）での CSP の違反の有無。ローカルのエミュレーター（`?emu=1`）では `localhost:8080` 等への通信が Report-Only の違反として出る（止まらない）
+
 ## 2026-11-12 ボタンの説明の吹き出し（案件詳細の画面・ブランチ `feat/button-tooltips`・未マージ・本番未反映）
 
 - 次田さん決定（2026-11-12）: 各ボタンにマウスを乗せると機能の説明を吹き出しで出す。**まず案件詳細の画面から**。評判を見て他の画面へ広げる
