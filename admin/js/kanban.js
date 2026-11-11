@@ -118,7 +118,7 @@ function filteredCases() {
 function substatusControl(c, col) {
   if (col.statuses.length > 1) {
     // 受注前（1・2）の案件は、スイッチがオンなら 3 を選べなくする（管理者は選べて理由を聞く・発5）
-    const blocked = new Set(blockedStatusOptions({ from: c.status, orderByConsent: orderOn(), isAdmin: isAdminUser }));
+    const blocked = new Set(blockedStatusOptions({ from: c.status, orderByConsent: orderOn(), isAdmin: isAdminUser, caseData: c }));
     const opts = col.statuses.map((s) =>
       `<option value="${s}" ${s === c.status ? "selected" : ""}${blocked.has(s) ? " disabled" : ""}>${escHtml(STATUS_LABELS[s])}${blocked.has(s) ? "（承諾書の受け取りで進みます）" : ""}</option>`).join("");
     return `<select class="substatus" data-id="${c._id}" title="サブ状態を変更"
@@ -227,7 +227,7 @@ async function changeStatus(id, newStatus) {
   const prev = c.status;
   // 承諾書のサイン＝発注（発5・スイッチがオンのとき）: 受注前の案件を手で 3〜12 に進めない。管理者は理由を書けば変えられる
   let manualNote = "";
-  const guard = statusChangeGuard({ from: prev, to: newStatus, orderByConsent: orderOn(), isAdmin: isAdminUser });
+  const guard = statusChangeGuard({ from: prev, to: newStatus, orderByConsent: orderOn(), isAdmin: isAdminUser, caseData: c });
   if (guard.kind === "blocked") { alert(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${guard.message}`); renderBoard(); return; }
   if (guard.kind === "reason") {
     const reason = (prompt(`#${c.caseNumber || "—"} ${c.officeName || ""}\n\n${guard.message}`, "") || "").trim();

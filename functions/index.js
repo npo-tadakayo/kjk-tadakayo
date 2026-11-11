@@ -1448,8 +1448,7 @@ async function acceptOrderByConsentTransaction({ items, payKey, preferredDate, n
     const now = admin.firestore.FieldValue.serverTimestamp();
     const rec = buildOrderConsentRecord({
       document: ORDER_CONSENT_DOCUMENT, quotes: sts.map((st) => st.q), groupId: sts[0].q.groupId || null,
-      signed: { name, method: consent.method, receivedDate: consent.receivedDate, receivedVia: consent.receivedVia, recordedBy: who.email },
-      createdBy: who.email,
+      signed: { name, method: consent.method, receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
     });
     displayNo = rec.displayNo;
     rec.signed.signedAt = now;    // 署名の記録の時刻はサーバーの時刻（紙は受け取った日を receivedDate に別に持つ）
@@ -1494,8 +1493,8 @@ async function reconsentTransaction({ quoteId, consent, actor }) {
     const name = String(consent.signedName).trim().slice(0, 100);
     const rec = buildOrderConsentRecord({
       document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
-      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia, recordedBy: actor.email },
-      createdBy: actor.email, retakeOf: kase.orderConsentToken,
+      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
+      retakeOf: kase.orderConsentToken,
     });
     displayNo = rec.displayNo;
     rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";

@@ -147,7 +147,7 @@ function render() {
       <div style="display:flex;flex-direction:column;gap:8px">
         <div style="font-size:14px">確認者 <strong>${esc(line.signer)}</strong>　／　${paper ? "受け取った日" : "署名日"} <strong>${esc(line.date)}</strong>　／　条文の版 ${esc(line.version)}</div>
         <div style="font-size:12.5px;color:var(--color-ink-muted)">発注の承諾書 ${esc(line.displayNo)}（${esc(line.quotes.join("・"))}）。${paper
-          ? `紙で受け取り（${esc(ORDER_RECEIVED_VIA[r.signed?.receivedVia] || "その他")}）。記録者: ${esc(r.signed?.recordedBy || "")}`
+          ? `紙で受け取り（${esc(ORDER_RECEIVED_VIA[r.signed?.receivedVia] || "その他")}）。記録した職員は対応記録に残っています`
           : "オンラインで同意"}</div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <a class="btn btn-secondary" href="${esc(url)}" data-tip="発注の承諾書（署名済み）を新しいタブで開きます。印刷もできます。データは変わりません。" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 承諾書を開く</a>

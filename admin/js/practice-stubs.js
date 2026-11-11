@@ -481,8 +481,8 @@ async function practiceReconsent(quoteId, consent) {
     const now = serverTimestamp();
     const name = String(consent.signedName).trim().slice(0, 100);
     const rec = buildOrderConsentRecord({ document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
-      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia, recordedBy: u.email },
-      createdBy: u.email, retakeOf: kase.orderConsentToken });
+      signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
+      retakeOf: kase.orderConsentToken });
     rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";
     tx.set(cRef, rec);
     tx.update(qRef, { consentToken: token, consentRetakenAt: now });
@@ -886,8 +886,7 @@ export const PRACTICE_STUBS = {
         if ((await tx.get(consentRef)).exists()) throw fail("承諾書の番号が重なりました。もう一度お試しください");
         const now = serverTimestamp();
         const rec = buildOrderConsentRecord({ document: ORDER_CONSENT_DOCUMENT, quotes: sts.map((x) => x.q), groupId: sts[0].q.groupId || null,
-          signed: { name: orderConsent.signedName, method: "paper_order", receivedDate, receivedVia: orderConsent.receivedVia, recordedBy: u.email },
-          createdBy: u.email });
+          signed: { name: orderConsent.signedName, method: "paper_order", receivedDate, receivedVia: orderConsent.receivedVia } });
         rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote";
         const link = { token, receivedVia: rec.signed.receivedVia, displayNo: rec.displayNo, version: ORDER_CONSENT_DOCUMENT.version };
         const outs = sts.map((x) => {

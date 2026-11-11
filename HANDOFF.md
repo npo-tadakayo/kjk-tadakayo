@@ -12,6 +12,7 @@
 - テスト: `scripts/test-order-consent.mjs`（普通）・`scripts/test-order-consent-emu.mjs`（エミュレータ。`test-all.sh` の2段目に追加）
 - 本番に出すときに要るもの: Functions を名指しで `--only "functions:staffAcceptQuote,functions:reviseQuote,functions:acceptQuote,functions:onConsentSigned"`（`acceptQuote` は `acceptQuoteTransaction` の分割で中身が変わったため）＋ hosting（admin）。rules は不変。スイッチはオフのまま
 - 確認用の版（管理画面のみ・Functions は本番の古いまま＝**練習モードで確かめる**）: `https://kjk-tadakayo-admin--order1-1112-apmimte9.web.app`（11/19 02:51 JST まで）。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--order1-1112-apmimte9.web.app --yes`
+- 独立レビュー（結論: スイッチがオフのまま本番に出してよい・高なし）の指摘3件を直した: 中-1 失注・完了をはさんで承諾書なしで受注確定へ進めた → 承諾書も受注日も無い案件は 4・13 からも止める／気づき-5 承諾書の文書に職員のメールアドレスを入れない（記録者は対応記録・見積もり・案件の側）／低-3 取り直しの二度押しで承諾書が2件 → `already_retaken` で止める。中-2（署名ページの kind order の表示）は第2段
 - 判断したこと（設計書にない細かい点）: ①伴走支援だけの承諾書は v1.1 のまま（v1.2 は見積書を前提にした文面のため）②まとめ見積もりはスイッチがオンなら全件まとめて1トランザクション（1件でも通らなければ全部止める）③取り直しは `staffAcceptQuote` の `reconsent` で受ける（関数を増やさない）④改版で内容（品目・台数・合計）が同じなら印を立てない
 - **§7 は v1.2 で変更**（紙の発注では署名済みの紙を当法人が受け取るため・2026-11-12 司令塔判断。次田さんへ朝に報告）: 「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。」→「書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。」。v1.1 は一字も変えていない
 - 未了: 練習モードでの次田さんの画面確認・マージ・本番反映（Functions のデプロイ）・第2段（Web の道・署名ページで焼き込んだ見積もりの表示・確認メールに承諾書のアドレス）

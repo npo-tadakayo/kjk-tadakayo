@@ -140,7 +140,10 @@ t("buildOrderConsentRecord: kind order・署名済み・条文全文・焼き込
   assert.equal(r.caseId, "c1"); assert.deepEqual(r.caseIds, ["c1"]);
   assert.equal(r.displayNo, "CST-12");
   assert.equal(r.totalIncl, 1000);
-  assert.deepEqual(r.signed, { name: "山田", method: "paper_order", receivedDate: "2026-11-12", receivedVia: "fax", recordedBy: "s@tadakayo.jp" });
+  assert.deepEqual(r.signed, { name: "山田", method: "paper_order", receivedDate: "2026-11-12", receivedVia: "fax" });
+  // 気づき-5: 承諾書の文書（トークンを知っていれば誰でも読める）に職員のメールアドレスを入れない
+  assert.ok(!/@/.test(JSON.stringify({ ...r, document: null })), "承諾書に @ を含む値がある");
+  assert.ok(!("createdBy" in r) && !("recordedBy" in r.signed));
   assert.equal(r.quoteGroupId, null);
   assert.ok(!("retakeOf" in r));
   assert.equal(rec({ retakeOf: "abc" }).retakeOf, "abc");
@@ -158,10 +161,12 @@ t("orderConsentStaleAfterRevise: 品目・台数・合計が変われば取り�
   assert.equal(R.orderConsentStaleAfterRevise(e, { items: [{ sku: "c", subsidyQty: 2 }, { sku: "b", subsidyQty: 1 }], amounts: { totalIncl: 100 } }), true);
   assert.equal(R.orderConsentStaleAfterRevise(null, { items: [], amounts: {} }), true);
 });
-const RC = { quote: Q({ status: "accepted" }), siblings: [], kase: { orderConsentToken: "t" }, signedName: "山田", receivedDate: "2026-11-12", todayYmd: "2026-11-12" };
+const RC = { quote: Q({ status: "accepted" }), siblings: [], kase: { orderConsentToken: "t", orderConsentStale: true }, signedName: "山田", receivedDate: "2026-11-12", todayYmd: "2026-11-12" };
 const RCASES = [{}, { quote: null }, { quote: Q() }, { siblings: [{ id: "x", version: 9 }] }, { kase: null }, { kase: {} }, { signedName: "" },
-  { receivedDate: "x" }, { receivedDate: "2026-11-13" }];
-const REXP = ["ok", "quote_not_found", "not_accepted", "old_version", "case_not_found", "no_order_consent", "no_signed_name", "invalid_consent_date", "future_consent_date"];
+  { receivedDate: "x" }, { receivedDate: "2026-11-13" },
+  { kase: { orderConsentToken: "t" } }, { kase: { orderConsentToken: "t", orderConsentStale: false } }]; // 低-3: 取り直し済みの二度押し
+const REXP = ["ok", "quote_not_found", "not_accepted", "old_version", "case_not_found", "no_order_consent", "no_signed_name", "invalid_consent_date", "future_consent_date",
+  "already_retaken", "already_retaken"];
 t("checkOrderReconsent: 受注済み・最新版・発注の承諾がある案件だけ", () => {
   RCASES.forEach((p, i) => { const r = R.checkOrderReconsent({ ...RC, ...p }); assert.equal(r.ok ? "ok" : r.code, REXP[i], `case ${i}`); });
 });
@@ -218,10 +223,27 @@ t("状態の選択の制限: 受注前（1・2）→ 3〜12 は止める。4・1
     }
     for (const to of [1, 2, 4, 13]) assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false }).kind, "ok");
   }
-  for (const f of [3, 4, 5, 8, 12, 13]) for (let to = 1; to <= 13; to++) assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false }).kind, "ok");
+  for (const f of [3, 5, 8, 12]) for (let to = 1; to <= 13; to++) assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false }).kind, "ok");
   assert.deepEqual(S.blockedStatusOptions({ from: 2, orderByConsent: true, isAdmin: false }), [3, 5, 6, 7, 8, 9, 10, 11, 12]);
   assert.deepEqual(S.blockedStatusOptions({ from: 2, orderByConsent: true, isAdmin: true }), []);
   assert.deepEqual(S.blockedStatusOptions({ from: 3, orderByConsent: true, isAdmin: false }), []);
+  // 中-1: 失注(4)・完了(13)をはさんでも、承諾書も受注日も無ければ 3〜12 へ進めない
+  for (const f of [4, 13]) {
+    for (const to of [3, 5, 8, 12]) {
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false, caseData: {} }).kind, "blocked", `${f}→${to} 受注前`);
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false }).kind, "blocked", `${f}→${to} 案件なし`);
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: true, caseData: {} }).kind, "reason");
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false, caseData: { orderConsentToken: "t" } }).kind, "ok", "発注の承諾がある");
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false, caseData: { orderedAt: { seconds: 1 } } }).kind, "ok", "前から受注していた進行中の案件");
+      assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: false, isAdmin: false, caseData: {} }).kind, "ok", "スイッチがオフ");
+    }
+    for (const to of [1, 2, 4, 13]) assert.equal(S.statusChangeGuard({ from: f, to, orderByConsent: true, isAdmin: false, caseData: {} }).kind, "ok");
+    assert.deepEqual(S.blockedStatusOptions({ from: f, orderByConsent: true, isAdmin: false, caseData: {} }), [3, 5, 6, 7, 8, 9, 10, 11, 12]);
+    assert.deepEqual(S.blockedStatusOptions({ from: f, orderByConsent: true, isAdmin: false, caseData: { orderedAt: 1 } }), []);
+    assert.deepEqual(S.blockedStatusOptions({ from: f, orderByConsent: true, isAdmin: true, caseData: {} }), []);
+  }
+  // 1・2 は承諾書・受注日の有無にかかわらず受注前（従来どおり）
+  assert.equal(S.statusChangeGuard({ from: 2, to: 3, orderByConsent: true, isAdmin: false, caseData: { orderedAt: 1 } }).kind, "blocked");
   assert.equal(S.manualStatusNote(" 紙の承諾書を後日回収 "), "手動で状態を変更（理由: 紙の承諾書を後日回収）");
 });
 t("次の一手: スイッチがオフなら NEXT_ACTION のまま（全状態）", () => {
@@ -333,9 +355,11 @@ t("画面: スイッチが切れていれば従来のボタン・選択肢のま
   assert.match(qa, /受注確定にする（電話・メールで申込を受けた）/);    // 従来のボタンは残す（オフのとき）
   const cd = read("admin/js/case-detail.js");
   assert.match(cd, /const orderOn = \(\) => orderByConsentOn\(appSettings\);/);
-  assert.match(cd, /const guard = statusChangeGuard\(\{ from: currentCase\.status, to: e\.target\.value, orderByConsent: orderOn\(\), isAdmin \}\);/);
+  assert.match(cd, /const guard = statusChangeGuard\(\{ from: currentCase\.status, to: e\.target\.value, orderByConsent: orderOn\(\), isAdmin, caseData: currentCase \}\);/);
   const kb = read("admin/js/kanban.js");
-  assert.match(kb, /const guard = statusChangeGuard\(\{ from: prev, to: newStatus, orderByConsent: orderOn\(\), isAdmin: isAdminUser \}\);/);
+  assert.match(kb, /const guard = statusChangeGuard\(\{ from: prev, to: newStatus, orderByConsent: orderOn\(\), isAdmin: isAdminUser, caseData: c \}\);/);
+  assert.match(kb, /blockedStatusOptions\(\{ from: c\.status, orderByConsent: orderOn\(\), isAdmin: isAdminUser, caseData: c \}\)/);
+  assert.match(cd, /blockedStatusOptions\(\{ from: c\?\.status, orderByConsent: orderOn\(\), isAdmin, caseData: c \}\)/);
   const ca = read("admin/js/consent-admin.js");
   assert.match(ca, /import \{ SUPPORT_CONSENT_DOCUMENT as CONSENT_DOCUMENT \} from "\/js\/consent-document\.js";/); // 伴走支援だけの承諾書は v1.1 のまま
 });

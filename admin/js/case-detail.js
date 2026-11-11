@@ -123,7 +123,7 @@ function renderCaseHeader(c) {
 function applyStatusGuard(c) {
   const sel = document.getElementById("statusSelect");
   if (!sel) return;
-  const blocked = new Set(blockedStatusOptions({ from: c?.status, orderByConsent: orderOn(), isAdmin }).map(String));
+  const blocked = new Set(blockedStatusOptions({ from: c?.status, orderByConsent: orderOn(), isAdmin, caseData: c }).map(String));
   for (const opt of sel.options) {
     const was = opt.dataset.origLabel || opt.textContent;
     opt.dataset.origLabel = was;
@@ -1895,7 +1895,7 @@ function askSupportDone() {
   if (!sel || sel.disabled || !currentCase) return;
   if (!shouldAskSupportDone({ status: currentCase.status, archived: !!currentCase.archived, canChangeStatus: canCopy })) return;
   // 受注前の案件は、承諾書のサイン＝発注のスイッチがオンなら手で進めないので聞かない（発5）
-  if (statusChangeGuard({ from: currentCase.status, to: SUPPORT_DONE_STATUS, orderByConsent: orderOn(), isAdmin }).kind !== "ok") return;
+  if (statusChangeGuard({ from: currentCase.status, to: SUPPORT_DONE_STATUS, orderByConsent: orderOn(), isAdmin, caseData: currentCase }).kind !== "ok") return;
   if (!confirm(supportDoneAskText(currentCase.status))) return;
   sel.value = String(SUPPORT_DONE_STATUS);
   sel.dispatchEvent(new Event("change"));
@@ -2231,7 +2231,7 @@ onAuthStateChanged(auth, async (user) => {
     let warnNote = "";
     // 承諾書のサイン＝発注（発5・スイッチがオンのとき）: 受注前の案件を手で 3〜12 に進めない。管理者は理由を書けば変えられる
     let manualNote = "";
-    const guard = statusChangeGuard({ from: currentCase.status, to: e.target.value, orderByConsent: orderOn(), isAdmin });
+    const guard = statusChangeGuard({ from: currentCase.status, to: e.target.value, orderByConsent: orderOn(), isAdmin, caseData: currentCase });
     if (guard.kind === "blocked") { alert(guard.message); e.target.value = String(currentCase.status || 1); return; }
     if (guard.kind === "reason") {
       const reason = (prompt(guard.message, "") || "").trim();
