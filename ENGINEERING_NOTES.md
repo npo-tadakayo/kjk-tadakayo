@@ -301,6 +301,7 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 | 2026-10-28 | **予定 第2段: ホームに「今日の訪問」カード（ブランチ `feat/today-visits-card`）**。`dashboard.html` の「今日やること」の次に `#visitCard`、`dashboard.js` の `renderVisits`（cases の既存 onSnapshot の結果から作る。追加読み込みは users 1回のみ・読めなければ案件の名前で補う）。ロジックは `schedule-core.js` の `todayVisitsSummary(cases, today, myEmail, userNames, limit=5)`（自分の分→時刻順→時刻未定・失注/対象外を除く・{all,mine,rows,more}）。リンクは `data-viewer-ok`（viewer でも使える）。テスト `scripts/test-schedule.mjs` に追加。ルール・Functions の変更なし |
 | 2026-10-28 | **メール・電話の全角を自動で半角に（ブランチ `fix/normalize-contact`）**。事象: 案件 #377 のメールが全角「＠」で手入力登録され、見積書の送付が「宛先メールアドレスが不正です」で失敗。共通の純粋関数 `admin/js/normalize.js`（`normalizeEmail`＝NFKC→空白除去・大文字小文字は不変／`normalizePhone`＝NFKC→長音・ダッシュ類を「-」→空白除去→連続「-」を1つ→前後の「-」を除く。空白以外は消さない）と同じ規則の `functions/normalize.js`（CommonJS）。**保存する直前・送信する直前に通す**: cases.js（新規案件の contactEmail・contactPhone・同時に作る offices.phone。入力欄は blur/change で半角に見せる）／offices.js（事業所編集の phone）／quote-admin.js（見積作成時に案件から写す contactEmail）／supply.js（出荷の shipEmail・shipPhone、認定事業者の prMail）／case-detail.js（mailTo）・consent-admin.js（cmTo）・pre-guide.js（pgTo）・supply-print.js（mailDocTo・mailDocCc）／constants.js の `dupKeys`（重複判定）／functions/index.js（LP問い合わせ・見積ツールの body.email/phone、`findActiveCase` と LP 重複判定の検索キー、見積・受注・再送・スタッフ見積の宛先）。既存データの全角は書き換えない（読むときに半角へ）。テスト `scripts/test-normalize.mjs`（admin 版と functions 版の一致を検査）。ルールの変更なし |
 | 2026-10-29 | **助成金申請の手順（`subsidy-guide.js`）から画面のスクショを外した（ブランチ `fix/subsidy-guide-no-screens`・次田さん判断）**。外した図: p14_web_menu／p15_shinsei_kaishi／p16_kihon／p17_cardreader／p18_support／p19_koza／p21_tenpu1／p22_tenpu2／p33_kakunin。残した図（書類の見本）: p09_tsucho／p10_shitei／p12_ryoshusho。入力欄の説明・金額の差し込み（`subsidyGuideData`）は文章のまま残し、画面前提の言い回しを直した。**8ページ→6ページにまとめ直し**（P.4＝申請開始〜金額入力、P.5＝口座・書類の添付・申請、P.6＝申請のあと。ページ参照・もくじ・フロー図を更新。実ブラウザで各ページが A4 に収まることを確認）。`supply-print.html` の同封チェック文言・`supply-print.js` のコメント・MANUAL を更新。画像ファイルは `admin/images/subsidy-guide/` に残す（参照しない）。テスト `scripts/test-subsidy-guide.mjs` |
+| 2026-11-12 | **`sendCaseEmail` が送信後の記録の失敗を `{ok:true, sent:true, sentAt, recordError}` で返す（ブランチ `fix/send-mail-record-error`・点検4 の根本対応・§C8 ⑩）**。新しい `functions/case-mail.js`。画面は `sendResultOf` で読み、`recordError` なら再送させず対応記録を画面から足す。`mailedAt`・`preGuideMailedAt` はサーバーの `sentAt`（古い Functions では端末の時刻）。Gmail の 4xx・送る前の失敗は `failed-precondition` |
 | 2026-11-10 | **当日の記録を同じ事業所の他の案件にも写す（ブランチ `feat/onsite-copy`・設計書 提案2 案B＝複写方式）**: 当日タブ末尾（`#sc-copy-card`・`support-checklist.js` が `#onsiteChecklist` に追記）。候補＝`cases` を `where("officeId","==",…)` で読み、自分・`archived` を除いて案件番号順（`copyCandidates`）。`officeId` なしは `copyUnavailableReason`＝「事業所が未登録のため写せません」（事業所名の補完は未対応）。写す＝`COPY_SECTIONS=["onsite"]` から `COPY_EXCLUDE_KEYS`（既定 `onsite.visitPlace/visitTimeFrom/visitTimeTo`）と Storage 参照（`{url,path}`・`storagePath`・`gs://`。メモ本文の URL は写す）を除いた部分。写し元の訪問日が空なら写し先の訪問日を残す。写し先は `buildCopiedOnsite`（写す部分＝写し元で置換・除外部分＝写し先を保持）を `onsite` に丸ごと書く（`tx.update`／無ければ `tx.set`）。印: 写し先 `copiedFrom{caseId,caseNumber,copiedAt,copiedAtMs,copiedBy,copiedById,fingerprint,excludeKeys}`（指紋は写した時点の除外キー `excludeKeys` で計算し直す＝除外キーを足しても過去の複写が変更あり扱いにならない）・写し元 `copiedTo.{targetId}{caseNumber,copiedAt,copiedAtMs,copiedBy,copiedById}`。上書き確認 `overwriteCheck`: 変わる入力（`filledLeaves` の差）があり、かつ copiedFrom が別案件／無い／`fingerprint≠copyFingerprint(現在)` のとき件数つき confirm。確認後の変化はトランザクション内で指紋を比べて止める。1写し先＝1トランザクション（写し先 checklist・写し元 copiedTo・写し先 activities・写し先 cases.updatedAt）、写し元 activities は成功分で最後に1行。activities は `type:memo`・`refType:"onsiteCopy"`・`refId`（自分の案件）・`refDate`・写し先は `copyFromCaseId`。`findOnsiteConfirmation` は `"onsite"` のみ＝誤認なし。`activityRefLink` に onsiteCopy（当日タブの写すカードへ）。保存中の自動保存は `startSave` で待ち、失敗していれば写さない。純関数 `admin/js/onsite-copy.js`（`scripts/test-onsite-copy.mjs`）。ルール変更なし（catch-all isEditor） |
 | 2026-11-10 | **伴走支援と当日の統合・対応記録の参照（PR #59・設計書 提案1・5）**: 案件詳細のタブから「伴走支援」を外し、sessions の入力・一覧を当日タブ末尾（`#onsiteSessions`）へ。`support-checklist.js` は `#onsiteChecklist` にだけ描く。`activateTab` は `resolveTab`（`sessions`→`onsite`）。訪問日＝`effectiveVisitDate(onsite, case)`（`onsite.visitDate` → `cases.visitDate`）を `sessionDate`（新規欄）と `performance.date` の初期値に（`dateDefault`／`perfDateDefault`: 欄が空、または最後に自動で入れた値 `lastAuto` のままで未保存でないときだけ。保存済みの `performance.date` は不変＝評価ID保護。値を入れるだけでは未保存にしない）。ヘッダーの `saveVisitDate` 後に `refreshVisitDate()`（訪問日欄の表示と初期値を更新）。`activities` に任意の `refType`("session"\|"onsite")・`refId`・`refDate`（onsite のみ）。伴走支援の追加・編集の対応記録に `refType:session`（削除には付けない）。「当日の記録を確定」は画面の訪問日欄の値（`confirmVisitDate`・保存済みと違えば `onsite.visitDate` を保存）で、`getDocs` で読み直して同じ `refDate` の `refType:onsite` があれば書かない（refId は見ない＝統合後も二重にしない）。判定は `admin/js/onsite-record.js`（`scripts/test-onsite-record.mjs`）。ルール変更なし（catch-all isEditor）。許容: 同時押しで2行（低-4）・種別は visit（低-5） |
 | 2026-11-10 | **領収証メール送信後に発行記録を確認する**（`admin/js/supply-print.js`・PR #56・`d384169`・本番反映済み）: 送信（`receiptMailedAt`）と発行記録（`receiptIssuedAt`）が別操作で、メール済みなのに画面は「領収証を出す」のままの出荷が出ていた。`setupMailDoc` に `userEmail` を渡し、領収証のメール送信成功後に「発行として記録しますか？」を確認する。OK＝`saveReceiptIssue(d,id,email,{snap,skipContactCheck:true})`（`snap` は **PDF作成の直前に `collectReceiptSnapshot()` で控えた明細**＝送付PDFと記録が一致）／キャンセル＝記録しない／既発行＝聞かずに送付内容へ更新。`saveReceiptIssue` は成功で true を返し、画面内の `d` も更新。練習モードは `fs.js` が練習DBへ向けるため同じ流れ（`practice-stubs.js` の `sendPartnerMail` は元から `receiptMailedAt` を書く）。経緯: 発行記録（7/30 `09da5d1`）は印刷控え・再発行用、メール送信（9/2 `08adc72`）は後付けで、バウンスを理由に分けた記述はない。SH-2026-0050/0063/0073/0117 の4件は11/10に画面から発行を記録（各¥64,000） |
@@ -319,6 +320,8 @@ ICT導入支援事業（割合型）と介護情報基盤助成金（定額型�
 flowchart TD
   A["介護事業所<br/>(LP・見積もり)"] -->|問い合わせ/成約| B["案件 受付<br/>新規受信"]
   B --> C["担当者決定"]
+  B -.->|"見積もり → 承諾書のサイン＝発注<br/>(orderByConsent オン時・§C12)"| O["受注確定<br/>(承諾書の記録と同時)"]
+  O -.-> C
   C --> D["伴走支援<br/>(訪問・設定・写真)"]
   D --> E["書類準備・申請ガイド"]
   E --> F["助成金 申請"]
@@ -329,7 +332,7 @@ flowchart TD
   I --> J["出荷を依頼（指示をChatへ）<br/>→ 発送済（在庫を引く）<br/>送付状"]
   classDef care fill:#e8f2ec,stroke:#1F7A4F,color:#2C2416;
   classDef sys fill:#e5edf5,stroke:#3a6e9e,color:#2C2416;
-  class A,C2 care; class B,C,D,E,F,G,H,I,J sys;
+  class A,C2 care; class B,C,D,E,F,G,H,I,J,O sys;
 ```
 
 ## §C2 アーキテクチャ（ARCH）
@@ -382,7 +385,8 @@ erDiagram
   products ||--o{ inventoryMovements : "在庫増減"
   partnerOrders ||--o{ shipments : "受注→出荷(partnerOrderId)"
   shipments ||--|| receipts : "領収書の発行記録"
-  cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼"
+  cases ||--o{ consentRequests : "伴走支援承諾書の署名依頼／発注の承諾書(kind order・orderConsentToken)"
+  quotes }o--o{ consentRequests : "発注の承諾書に焼き込み(quotes[]・quotes.consentToken)"
   cases ||--o{ quotes : "見積もり（版で積む）"
   cases ||--o{ leadTokens : "問い合わせ→見積もり→申込の継続トークン"
   quotes ||--o| shipments : "Web申込で出荷下書きを自動作成(quoteId)"
@@ -447,7 +451,7 @@ erDiagram
 
 | コレクション | 役割 |
 |---|---|
-| `cases` | 案件（問い合わせ〜完了の中心データ） |
+| `cases` | 案件（問い合わせ〜完了の中心データ）。2026-11-12〜 承諾書のサイン＝発注: `orderConsentToken`（発注の承諾書 consentRequests のID）・`orderConsentAt`・`orderConsentStale`（受注後に見積もりを直して承諾書の取り直しが要る＝true。取り直すと false）→ §C12 |
 | `offices` | 介護事業所マスタ。住所は `prefecture`/`city`/`addressDetail` と、それをつなげた `address`。`officeCode`＝介護保険の事業所番号（10桁・2026-11-01〜 事業所画面の新規登録で入る。それ以前の事業所には無い） |
 | `activities` | 対応記録（電話・メール・訪問・メモ・メール送信）。任意の `refType`（"session"＝伴走支援の記録／"onsite"＝当日の確定）・`refId`（sessionId／案件ID）・`refDate`（onsite の訪問日）で元の記録を指す（2026-11-10〜。それ以前の行には無い） |
 | `sessions` | 伴走支援セッション（日付・メモ・写真）。新規保存のあと、案件の `status` が `STATUS_ORDER` で受注確定(3)〜8 の手前（3,5,6,7）なら「伴走支援実施済にしますか」と確認し（受注前の 1・2・空は聞かない＝`orderedAt` を付けずに実施済へ進ませない。2026-11-10 次田さん決定）、OK のときだけ `#statusSelect` に change を起こして既存の状態変更を通す（自動では変えない・受注前/失注/対象外/閲覧のみ/編集では聞かない・`admin/js/record-gaps-case.js` の `shouldAskSupportDone`・2026-11-10 点検5） |
@@ -459,7 +463,7 @@ erDiagram
 | `quotes` | 見積もり（2026-09-06〜）。1案件に v1, v2… を積む。`estNo` は案件で引き継ぎ、版だけ上げる。`items[{sku,connector,subsidyQty,extraQty}]` は**品番ベース**、`amounts` は**サーバ計算のみ**（`functions/estimate-pricing.js`＝`js/estimate-pricing.js` と同一内容・`scripts/check-pricing-sync.sh`）。`status`: issued / accepted / superseded。`createdVia`: web（見積もりツール）/ staff（CRM「見積もりを作る」・2026-09-14）。`accessToken` は事業所側の操作（PDF送付・申込）の鍵。`pdfPath/pdfUrl/mailedAt` は PDF 送付済みの印。`groupId/groupIndex/groupSize` は同一法人の複数事業所まとめ見積もり（2026-09-14）。`validUntil`=発行＋30日（期限切れは画面で判定・status は書き換えない） |
 | `leadTokens` | 継続トークン（128bit 乱数・30日）。LP問い合わせの応答で発行し `mitsumori.html?t=` で事業所情報を引き継ぐ。`get` のみ公開・`list` はスタッフ・書き込みは Functions のみ |
 | `locations` | 保管場所マスタ（2026-09-12）。`products.stockByLocation` と `shipments.originLocationId` が参照 |
-| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない）。`mailedAt/mailedTo` は依頼メールを送った印。送信と記録は別に扱い、送信後に記録だけ失敗したら「記録だけやり直す」（メールは再送しない・2026-11-10 点検4）。結線は `admin/js/mail-send-guard.js`、判定は `admin/js/record-gaps-case.js`。送信エラーの code が internal／deadline-exceeded／unavailable／unknown なら「送れたか不明」（次の送信の前に確認）。記録待ちは sessionStorage `kjk.mailRecordPending.{consent\|preGuide}.{caseId}`（宛先・送信日時ISO・承諾書は照合用の印 `reqKey`＝依頼IDの SHA-256 の16進の先頭16文字。依頼IDそのものは入れない。開いたとき未署名の依頼から印を計算して書き込み先を決め、無ければ記録待ちを消す。`crypto.subtle` が無ければ承諾書は sessionStorage に書かない。生の `reqId` 入りの古い形式は読んだ時点で捨てる）。照合は `mail-send-guard.js` の `reconcilePending` に1本化し、モーダルを開いたときと承諾書カードの読み込みの両方で呼ぶ（一致が無ければ記録待ちを消し、カードに1行出す）。「送れたか不明」の印は sessionStorage `kjk.mailUnknown.{kind}.{caseId}`＝"1"（値はこれだけ）。`beforeunload` は送信開始〜記録完了の間。`mailedAt` は送信成功時点の端末時刻（Date。やり直しでも同じ値）。事前準備のご案内の `cases.preGuideMailedAt/To` も同じ（送付日は同じ時刻の JST 日付） |
+| `consentRequests` | 伴走支援承諾書のオンライン署名依頼（v1.1 条文・署名者情報・メールは保存しない）。`mailedAt/mailedTo` は依頼メールを送った印。送信と記録は別に扱い、送信後に記録だけ失敗したら「記録だけやり直す」（メールは再送しない・2026-11-10 点検4）。結線は `admin/js/mail-send-guard.js`、判定は `admin/js/record-gaps-case.js`。送信エラーの code が internal／deadline-exceeded／unavailable／unknown なら「送れたか不明」（次の送信の前に確認）。記録待ちは sessionStorage `kjk.mailRecordPending.{consent\|preGuide}.{caseId}`（宛先・送信日時ISO・承諾書は照合用の印 `reqKey`＝依頼IDの SHA-256 の16進の先頭16文字。依頼IDそのものは入れない。開いたとき未署名の依頼から印を計算して書き込み先を決め、無ければ記録待ちを消す。`crypto.subtle` が無ければ承諾書は sessionStorage に書かない。生の `reqId` 入りの古い形式は読んだ時点で捨てる）。照合は `mail-send-guard.js` の `reconcilePending` に1本化し、モーダルを開いたときと承諾書カードの読み込みの両方で呼ぶ（一致が無ければ記録待ちを消し、カードに1行出す）。「送れたか不明」の印は sessionStorage `kjk.mailUnknown.{kind}.{caseId}`＝"1"（値はこれだけ）。`beforeunload` は送信開始〜記録完了の間。`mailedAt` は送信成功時点の時刻（Date。やり直しでも同じ値）＝`sendCaseEmail` の返事の `sentAt`（サーバー時刻・2026-11-12〜）、無ければ（古い Functions）端末時刻。事前準備のご案内の `cases.preGuideMailedAt/To` も同じ（送付日は同じ時刻の JST 日付）。返事に `recordError` があれば対応記録を画面から足す（記録待ちの `tl`・§C8 ⑩） |
 | `appConfig/settings` | Webhook URL・送信元・振込先・印影などの設定。**2026-10-21〜 読めるのは登録スタッフ・書けるのは管理者だけ**（`match /appConfig/{docId}`）。`settings.js`・`pricing.js`・`simulator.js` はいずれも管理者画面 |
 | `bankTxns/{hash}` | 入金明細の取込記録（2026-10-21）。**記録した行だけ**を最小限（日付・金額・正規化名義・出荷）で残し、同じ行の二重取り込みを防ぐ。CSV 全体は保存しない。職員が書く（catch-all のまま） |
 | `bankConfig/{presets,payerAliases}` | 銀行CSVの列割り当てプリセットと、名義の学習（2026-10-21）。**appConfig に置かない**（staff が書くため）。職員が書く |
@@ -535,6 +539,9 @@ sequenceDiagram
 - **プレビュー版でログインする手順**: `deploy-hosting.mjs --channel <名前>` → 終了時に表示される `node scripts/auth-domains.mjs add <アドレス>` を次田さんの指示のうえで `--yes` 付きで実行 → 使い終わったら `remove`
 - firebase CLI の `hosting:channel:deploy` はチャンネルのアドレスを自動で足す（足すだけで、一覧が壊れていても直さない）
 - テスト: `node scripts/test-auth-domains.mjs`（計算部分のみ・ネットワーク無し）
+- **なぜ人の目で見つからないか**: 承認済みドメインはログインする瞬間（`signInWithPopup` が Google の画面を開くとき）にしか確かめられない。ログイン済みの人はトークンの自動更新だけで使い続けられ、そこでは承認済みドメインを見ない。壊れても困るのは新しくログインする人だけ
+- **毎朝の自動点検** `dailyAuthDomainCheck`（8:00 JST・`fn-batch-sa`・判定と文面は `functions/auth-domain-watch.js`）: config を読み、4件が欠けていれば Chat（`pmChatWebhookUrl`、空なら CRM の投稿先）に知らせる。正常なら知らせない。読めなかったときも知らせる。書き込みはしない。要権限: `fn-batch-sa` に `roles/firebaseauth.viewer`
+- **ログイン失敗の表示** `admin/js/login-errors.js`: Firebase のエラーコードごとに日本語の説明を出す（管理画面は連絡先「管理者（次田）」、認定事業者ポータルは「タダカヨの担当者」）。システム側の問題（`auth/unauthorized-domain` 等）は「あなたの操作の問題ではありません」と伝え、問い合わせ用にコードを添える。英語の生メッセージは出さない
 
 > [!INFO]
 > Webhook URL・メール送信元・振込先・印影などは「設定」画面（`appConfig/settings`）から変更でき、コード変更・再デプロイは不要（最大60秒で反映）。
@@ -636,6 +643,8 @@ stateDiagram-v2
 - ⑧ **日次まとめの途中の例外**: `_notifyLog/daily_日付` を作ったあとに組み立て・投稿先の取得・記録の更新で例外が出たら、**1件も投稿していなければ記録を削除**（次の再実行で投稿できる）、**1件以上投稿済みなら `status:"partial"`・`error`・`posted` を記録**（消すと二重投稿になる）。判定は `Flow.dailyFailureAction`、例外は `console.error`。
 - ⑨ `requireStaff` で `users` の読み取りが失敗したら（実行 SA に Firestore 読み取り権限が無い等）、`HttpsError("internal","権限の確認に失敗しました（サービスアカウントの Firestore 読み取り権限を確認）")` に変換して返す（元の例外は `console.error`）。**デプロイ手順: `fn-ai-sa` に `roles/datastore.viewer` 以上を付与**（`aiAssist` が `requireStaff` を呼ぶため。`index.js` の `SA_AI` の横にコマンドを記載）。
 - テスト: `test-functions-wiring.mjs`（15件）・`test-accept-rules.mjs`（9件）に上記の判定と `index.js` の結線（静的検査）を追加。
+- ⑩ **`sendCaseEmail` の返事（2026-11-12・点検4 の根本対応）**: 進め方は `functions/case-mail.js` の `runCaseMail({prepare, post, record, touch})`。送る前（設定・トークン・本文の組み立て）の失敗と Gmail の 400・401・403・404・429 → `failed-precondition`（送っていない）。Gmail のほかの 4xx（408・499 など途中の機器）・5xx・`fetch` の例外 → `internal`（送れたか不明）。対応記録・更新日時の書き込みは15秒で打ち切り（`withTimeout`・関数の60秒のタイムアウトに届かせない）。送れたら `sentAt`（サーバー時刻 ISO）を決め、以後は投げない: 応答の JSON が読めなければ `id:""`、対応記録（`activities` の `gmail_sent`）の失敗は `recordError`（短い理由・120字まで）、`cases.updatedAt` の失敗はログだけ。返事は `{ ok:true, sent:true, id, sentAt, recordError? }`。画面は `record-gaps-case.js` の `sendResultOf` で読み（古い `{ok,id}` は「sentAt・recordError なし」）、`recordError` なら `caseMailActivityOf` の形で対応記録を画面から足す（`case-detail.js` の `logCaseMailActivity`・`occurredAt` は `sentAt`）。承諾書・事前案内は `mail-send-guard.js` の記録待ちに `tl` を付けてやり直しで二重に足さない。`tl` のまま承諾書の依頼が署名済み・取り消しになり照合が外れたら、`reconcilePending(…, logActivity)` が消す前に対応記録を足し、足せなければ記録待ちを残す（`tl_kept`・不明の印なし・やり直しは対応記録だけで `mailedAt` は書かない・カードに「記録だけやり直す」）。テスト `test-case-mail.mjs`（偽の送信・Gmail を呼ばない）
+- **同じ形（送信後の記録の失敗が送信失敗と同じエラーになる／送信済みなのに mailError を書く）のほかの関数（2026-11-12 時点・今回は直していない）**: `resendQuoteMail`（見積書の再送。送信後の `quotes.mailedAt`・対応記録・`cases` の失敗で `internal`）／`sendSupplierOrder`（発注書。送信後の `purchaseOrders` の更新失敗で `internal`）／`sendPartnerMail`（請求書・領収証・催促。送信後の `shipments` の更新失敗で `internal`＝入金・請求なので触らない）／`saveQuotePdf`（送信後の `quotes` 更新・対応記録の失敗を `mailError` として書く）／`staffAcceptQuote`・`reviseQuote`・`staffCreateQuote`（`mailed=true` のあと対応記録の失敗を同じ catch で拾う。`staffAcceptQuote` は `mailError` を返す）／`sendQuotePdf`（Webhook・同じく `mailError` が立つ）
 
 ## §C9 入金明細（銀行CSV）の取り込み（2026-10-21）
 
@@ -700,7 +709,63 @@ stateDiagram-v2
 
 本番に出すときに要るもの: **hosting（admin）だけ**。rules・Functions の変更なし。
 
-## §C12 トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース・2026-11-12）
+## §C12 見積もり必須・承諾書のサイン＝発注（2026-11-12・第1段・スイッチはオフ）
+
+設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`／決定: `CRM改善2_計画_20261112.md` §2.1（発1〜発6・移行）。
+**スイッチ `appConfig/settings.orderByConsent`（真偽・既定オフ）**。オフのあいだは関数・画面とも従来どおり（`scripts/test-order-consent.mjs`・`test-order-consent-emu.mjs` の A で確認）。オンにするのは法人として条文 v1.2・利用規約の追記を決めたあと（発4）。入れた日は `orderByConsentFrom`（"YYYY-MM-DD"）に書く想定（コードは読まない・記録用）。
+
+**第1段の範囲**: サーバーの核（`acceptQuoteTransaction` の分割と `acceptOrderByConsentTransaction`）・紙の道（`staffAcceptQuote`）・`reviseQuote` の取り直しの印・`onConsentSigned` の除外・管理画面・練習モード。**Web の道（`acceptQuote`・公開ページ `mitsumori.html`）は第2段**: 第1段ではスイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `method:"web_order"`・`acceptedVia:"consent_web"` として作る）。
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as スタッフ（見積もりカード）
+  participant F as staffAcceptQuote
+  participant T as Firestore（1つのトランザクション）
+  S->>S: 「承諾書を印刷」（v1.2・見積番号/版/品目/台数/金額。まとめは全事業所を1枚）
+  Note over S: 事業所が署名 → FAX・郵送・手渡し・メールで戻る
+  S->>F: 「署名済みの承諾書を受け取った」{quoteId, groupQuoteIds, consent:{signedName, receivedDate, receivedVia}}
+  F->>F: 設定を読み直す（60秒キャッシュを使わない）。オンなのに consent が無ければ拒否（consent_required）
+  F->>T: appConfig/settings（オンか）・各見積もり・案件・出荷・同じ案件の版・_counters/shipments を読む
+  T-->>F: checkStaffAccept（各件）＋ checkOrderConsent（発行中・最新版・期限〔受け取った日〕・署名者名・まとめの整合）
+  F->>T: 各件: 出荷の下書き・quotes(accepted, acceptedVia consent_paper, consentToken)・cases(3, orderConsentToken/At, orderConsentStale:false)・活動
+  F->>T: consentRequests/{128bit} を tx.create（kind order・signed・条文全文・quotes[] の焼き込み）
+  Note over T: どれか1つでも失敗 → 何も入らない（承諾書だけ／受注だけ、は起きない）
+  F-->>S: {results, consentToken, displayNo} → Chat（署名者名は載せない）・確認メール（任意）
+```
+
+| 場所 | 足した項目 |
+|---|---|
+| `consentRequests/{token}`（kind:"order"） | `kind`・`caseId`（まとめは先頭の案件）・`caseIds[]`・`displayNo`（`CST-{案件番号}`、まとめは `-G{件数}`）・`officeName`・`company`・`contactName`・`status:"signed"`・`document`（v1.2 全文）・`quotes[{quoteId, estNo, version, caseId, caseNumber, officeName, corpName, plan, items[{sku,subsidyQty,extraQty,connector?}], amounts{readers,accompanyFee,discount,totalIncl,grantAmt,selfPay}}]`・`quoteGroupId`・`totalIncl`・`signed{name, signedAt(サーバー時刻), method:"paper_order"|"web_order", receivedDate, receivedVia(post/fax/hand/email/other)}`・`createdAt/Via`・取り直しは `retakeOf`（前のトークン）。**職員のメールアドレス（記録者など）は入れない**（トークンを知れば誰でも読めるため・レビュー 気づき-5）。記録した職員は対応記録の `userName`・`quotes.acceptedByStaff`・`cases.orderConfirmedBy` に残る |
+| `quotes/{id}` | `acceptedVia:"consent_paper"`（第2段で `"consent_web"`）・`consentToken`・取り直しで `consentRetakenAt`。紙の道の `acceptedBy`・`acceptedReceivedDate`・`acceptedChannel` は承諾書の署名者名・受け取った日・受け取り方（fax→fax、email→email、ほか→other）から |
+| `cases/{id}` | `orderConsentToken`・`orderConsentAt`・`orderConsentStale` |
+| `appConfig/settings` | `orderByConsent`・（記録用）`orderByConsentFrom`。**練習DBへ写す許可リストには入れない**（本番のスイッチを練習へ持ち込まない） |
+
+- **ルールは変えていない**: 発注の承諾書はサーバー（Admin SDK）だけが作る。公開の署名ページは従来どおり `get` で読める（署名後の画面を同じアドレスで開ける）。署名ページで発注の内容（焼き込んだ見積もり）を表示するのは第2段（`admin/js/consent-sign.js`）
+- **§7 の変更（2026-11-12 司令塔判断・次田さんへ朝に報告）**: v1.2 だけ、§7 の「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。」を「書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。」に替えた（紙の発注では署名済みの紙を当法人が受け取るため）。v1.1 は不変
+- **条文の正本**: `functions/consent-document.js`（CommonJS。`CONSENT_V1_1`・`CONSENT_V1_2`）。画面の写し `admin/js/consent-document.js` は `CONSENT_DOCUMENT`＝v1.2、`CONSENT_ARCHIVE`＝[1.1, 1.0]、`SUPPORT_CONSENT_DOCUMENT`＝1.1。一字一句の一致は `test-order-consent.mjs`。**伴走支援だけの承諾書（事前確認タブの署名依頼・紙で取得済みを記録）は v1.1 のまま**（v1.2 は「本書に表示する見積書」を前提にした文面なので、見積もりの無い承諾書には使わない）
+- **判定**: `functions/accept-rules.js` の `checkOrderConsent`・`checkOrderReconsent`・`buildOrderConsentRecord`・`orderConsentStaleAfterRevise`・`orderByConsentOn`・`channelOfReceivedVia`。練習モード用の写し `admin/js/order-consent-rules.js`（本文が同じ・同じ結果になることをテストで確認）
+- **`acceptQuoteTransaction` の分割**: 読み取り `acceptTxRead`（読む順は従来と同じ）／書き込み `acceptTxWrite`（`consent` を渡したときだけ承諾書の項目を足す・`setCounter:false` で採番の書き込みを呼び出し側に回す）。1件の申込（Web・スイッチオフのスタッフ）は従来と同じ1件1トランザクション
+- **まとめ見積もり（発6）**: スイッチがオンのときは全事業所を1つのトランザクションで受注確定（1件でも通らなければ全部止める。オフのときの「一部だけ確定（partial）」とは違う）。出荷番号は連番でまとめて採り、`_counters/shipments` は最後に1回だけ書く
+- **受注後の改版（発3）**: `reviseQuote` は案件に `orderConsentToken` があるとき、承諾書に焼き込んだその案件の見積もりと新しい版の「品目（品番・補助対象・追加）・合計（税込）」を比べ、違えば `orderConsentStale:true`（同じなら false）。出荷は止めない。取り直しは `staffAcceptQuote` に `reconsent:true` と `consent` を渡す（受注済み・最新版・発注の承諾があり `orderConsentStale` が立っている案件だけ。取り直し済みの二度押しは `already_retaken` で止める〔レビュー 低-3〕。新しい承諾書を作り `retakeOf` に前の承諾書。出荷・受注は変えない）
+- **`onConsentSigned`**: `kind:"order"` は対象外（`Flow.shouldNotifyConsent`。受注の処理が通知するため）
+- **画面**（スイッチがオンのときだけ変わる）: 見積もりカード（`quote-admin.js`）の「承諾書を印刷」「署名済みの承諾書を受け取った（受注確定にする）」（従来の「受注確定にする（電話・メールで申込を受けた）」の代わり）・取り直しの2ボタン・「発注の承諾書」の1行／状態の選択の制限（`order-consent.js` の `statusChangeGuard`・`blockedStatusOptions`。受注前 1・2 → 3〜12 を選べない。失注 4・完了 13 も、`orderConsentToken` も `orderedAt` も無ければ受注前として同じく止める〔レビュー 中-1〕。管理者は理由を書けば可・対応記録に「手動で状態を変更（理由: …）」）／次の一手（`constants.js` の `nextActionFor`）／点検（`record-gaps.js` の `orderConsentNoticeOf`。次の一手の下・見積もりカード・カンバン）／承諾書の欄（`consent-admin.js`。発注の承諾書があればそれを署名済みとして出す）。サーバー側のルールでの手動変更の禁止はあとで（発5）
+- **練習モード**: 代役（`practice-stubs.js` の `staffAcceptQuote`・`reviseQuote`）が同じ道を練習DBで通す。スイッチは**練習DBの** `appConfig/settings.orderByConsent`。見積もりカードの「練習で新しい流れを試す」で入れる（`isPracticeRef` で練習DBであることを確かめてから書く）。毎晩の練習DBの初期化で切れた状態に戻る
+- 本番に出すときに要るもの: **Functions**（`staffAcceptQuote`・`reviseQuote`・`acceptQuote`〔`acceptQuoteTransaction` を分割したため〕・`onConsentSigned`）と **hosting（admin）**。rules の変更なし。スイッチはオフのまま出す
+
+
+## §C13 進み具合の帯（2026-11-12・CRM改善2 計画 §3.5 進1・進2）
+
+- **正本**: `admin/js/case-progress.js`（純粋関数のみ）。テスト `scripts/test-case-progress.mjs`
+- **13段階 → 8区切り**: 受付（1・2 で `latestQuoteId` なし）／見積（1・2 で `latestQuoteId` あり）／発注（3。`orderByConsent` オンなら名前が「発注（承諾書）」）／準備（5・6）／出荷（状態の対応なし・下記）／伴走支援（7・8）／申請（9・10・11）／完了（12 いま・13 すべて済）。4 失注は帯を灰色にして「失注」
+- **出荷の区切り**: 一覧＝案件の状態だけ（伴走支援待ち 7 以降なら済・それより前はまだ。出荷は読まない）。案件詳細＝購読中の `shipmentsCache` から `shipStageOf`（キャンセル除外。すべて shipped/invoiced/paid → 済／requested あり → 依頼済み／それ以外 → 下書き）。準備（5・6）で依頼済みなら「いま」を出荷にする（受注確定 3 のままなら発注をいまのまま残し、出荷に「依頼済み」と添える）。準備中に発送済みなら出荷だけ済。伴走支援以降で発送済みでなければ出荷を「まだ」＋破線の注意
+- **日数（`stageSince`）**: ① `cases.statusChangedAt`（`cases.statusChangedTo` が今の状態と同じときだけ）② 案件詳細のみ: 対応記録の最後の「ステータス変更」（件名の「→」の後ろが今の状態の名前のときだけ）③ 案件詳細のみ: 状態1で「ステータス変更」が1行も無ければ `receivedAt`。それ以外は null（「—」・色なし）。`updatedAt` は使わない。日数は日本時間の暦日の差
+- **書く場所（画面だけ）**: `case-detail.js` の `changeStatus`・コピーで作る案件、`kanban.js` の `changeStatus`、`cases.js` の手動作成。`{statusChangedAt: serverTimestamp(), statusChangedTo: 新しい状態}`（`statusChangePatch`）。rules は不変（その他すべての match で editor が書ける）
+- **Functions は未対応**（今回は画面だけ）: 状態を変える Functions（`index.js` の見積もり作成 1→2 ×2か所、`acceptQuoteTransaction` の受注 1・2・4・13→3、作成時の 1・2）は `statusChangedAt` を書かない。そのため `statusChangedTo` が食い違い、一覧では「—」になる。直すときは同じ2項目を `caseUpdate` に足すだけ（練習モードの代役 `practice-stubs.js` も同じく）
+- **止まり具合**: `appConfig/settings.stageStale = {warnDays, alertDays}`（正の整数・warn < alert。無ければ 14／30）。対象外は状態 10・11・12・4・13。一覧の絞り込み `#staleFilter`（黄色以上／赤）。対象外（アーカイブ）の案件は絞り込みで出さない
+- **画面**: 案件詳細 `#caseProgress`（次の一手の上。`renderNextStep` と対応記録の購読で描き直す）。一覧はステータスの欄に点8つ（`aria-hidden`。読み上げは行の `aria-label` に同じ文）。吹き出しは `tooltip.js`（一覧の画面でも読み込む）。CSS は `crm.css` の `.cp-*`（文字のコントラストは 5.3:1 以上、点・枠は 3.3:1 以上を計算で確認）
+
+## §C13 トレーナー認定（条件のチェック・合格・特別裁量・取り消し・トレーナーコース・2026-11-12）
 
 **計画と決定**: `06_介護情報基盤事業/docs/トレーナーコース_計画_20261110.md` §3・§7（ト1〜ト8・次田さん 2026-11-12・蒸し返さない）。
 条件は「登壇（または類似）**かつ** 伴走支援10件」＋トレーナーコースの修了。特別裁量は管理者だけ（理由必須）。取り消しは管理者だけ（理由必須・記録は消さない）。今の4名は「制度開始時の認定」。

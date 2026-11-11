@@ -14,18 +14,22 @@
 
 import { normalizeEmail } from "/js/normalize.js";
 import {
-  collection, doc, getDocs, setDoc, updateDoc, deleteField, query, where,
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteField, query, where,
   serverTimestamp,
 } from "/js/fs.js";
 import { isPracticeMode } from "/js/mode.js";
-import { CONSENT_DOCUMENT } from "/js/consent-document.js";
+// ここで発行する「伴走支援だけの承諾書」は v1.1 のまま（2026-11-12）。発注書を兼ねる v1.2 はサーバーが受注確定と同時に作る
+// （consentRequests の kind:"order"）。発注の承諾書がある案件では、このカードはその承諾書を「署名済み」として出す。
+import { SUPPORT_CONSENT_DOCUMENT as CONSENT_DOCUMENT } from "/js/consent-document.js";
+import { isOrderConsent, orderConsentLine, ORDER_RECEIVED_VIA } from "/js/order-consent.js";
 import { bindMailSend, restoreUnloadGuard, reconcilePending } from "/js/mail-send-guard.js";
-import { PENDING_RELEASED_CARD_TEXT } from "/js/record-gaps-case.js";
+import { PENDING_RELEASED_CARD_TEXT, PENDING_RELEASED_LOGGED_CARD_TEXT, PENDING_TL_KEPT_CARD_TEXT } from "/js/record-gaps-case.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-let ctx = null;          // { db, caseId, getCase, sendMail, toast, userName }
+let ctx = null;          // { db, caseId, getCase, sendMail, logActivity, toast, userName, orderByConsent?: () => boolean }
 let pendingNotice = "";   // 記録待ちを解除したときにカードへ出す1行（PENDING_RELEASED_CARD_TEXT）
+let pendingTlRetry = false; // 対応記録もまだの記録待ちが残っている（カードに「記録だけやり直す」＝読み込み直して対応記録を足し直す）
 let requests = [];       // この案件の consentRequests（作成日降順）
 let openedQrToken = null;
 
@@ -50,11 +54,23 @@ async function reload() {
   requests = qs.docs
     .map((d) => ({ _id: d.id, ...d.data() }))
     .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  // 発注の承諾書（2026-11-12）: まとめ見積もりでは先頭の案件の caseId で作るので、ほかの事業所の案件からは
+  // cases.orderConsentToken で直接読む
+  const tok = ctx.getCase()?.orderConsentToken;
+  if (tok && !requests.some((r) => r._id === tok)) {
+    try {
+      const s = await getDoc(doc(ctx.db, "consentRequests", String(tok)));
+      if (s.exists()) requests.unshift({ _id: s.id, ...s.data() });
+    } catch (e) { console.warn("consent card: order consent load failed", e.message); }
+  }
   // 送信済み・記録待ちの依頼が署名済み・取り消し済みになっていたら、記録待ちを解除してカードに1行で知らせる
   // （署名済みのカードには「メールで依頼を送る」が無く、モーダルからは解除できないため。2026-11-10 再レビュー 中-1）
   try {
-    const rc = await reconcilePending("consent", ctx.caseId, pendingReqIds());
-    if (rc.state === "released") pendingNotice = PENDING_RELEASED_CARD_TEXT;
+    // 対応記録もまだ（tl）なら、解除の前に対応記録を足す（足せなければ残してカードにやり直しのボタン。2026-11-12 レビュー 中）
+    const rc = await reconcilePending("consent", ctx.caseId, pendingReqIds(), ctx.logActivity);
+    pendingTlRetry = rc.state === "tl_kept";
+    if (rc.state === "released") pendingNotice = rc.logged ? PENDING_RELEASED_LOGGED_CARD_TEXT : PENDING_RELEASED_CARD_TEXT;
+    if (rc.state === "tl_kept") pendingNotice = PENDING_TL_KEPT_CARD_TEXT;
   } catch { /* 照合できなくてもカードは出す */ }
   render();
 }
@@ -65,7 +81,10 @@ function pendingReqIds() {
 }
 
 function current() {
-  return requests.find((r) => r.status === "signed") || requests.find((r) => r.status === "pending") || null;
+  // 発注の承諾書（cases.orderConsentToken が指すもの）があれば、それを先に出す（発注の承諾書が伴走支援の承諾も兼ねる）
+  const tok = ctx.getCase()?.orderConsentToken;
+  const order = tok ? requests.find((r) => r._id === tok && r.status === "signed") : null;
+  return order || requests.find((r) => r.status === "signed") || requests.find((r) => r.status === "pending") || null;
 }
 
 // ---- QR 描画（自己ホストの qrcode-generator。CDNは読まない）----
@@ -89,6 +108,10 @@ function qrSvg(text, sizePx) {
 // ---- 表示 ----
 function statusBadge(r) {
   if (!r) return `<span class="badge" style="background:var(--color-bg-alt,#F1EEE7);color:var(--color-ink-muted,#7d715b)">未依頼</span>`;
+  if (r.status === "signed" && isOrderConsent(r)) {
+    const line = orderConsentLine(r);
+    return `<span class="badge" style="background:#E8F3EC;color:#1F7A4F">発注の承諾書・署名済み（${esc(line.method)}・${esc(line.date)}）</span>`;
+  }
   if (r.status === "signed") {
     const m = r.signed?.method === "paper" ? "紙" : "オンライン";
     return `<span class="badge" style="background:#E8F3EC;color:#1F7A4F">署名済み（${m}・${fmt(r.signed?.signedAt)}）</span>`;
@@ -115,7 +138,26 @@ function render() {
   const url = r ? signUrl(r._id) : "";
 
   let bodyHtml = "";
-  if (!r) {
+  // 承諾書のサイン＝発注のスイッチがオンで、まだ発注の承諾書が無い案件: 新しい流れの案内を1行（ボタンは移行中の案件のために残す）
+  const orderNote = (!r || r.status !== "signed") && typeof ctx.orderByConsent === "function" && ctx.orderByConsent()
+    ? `<p style="font-size:12.5px;color:#2F5878;background:#E9EEF5;border-radius:8px;padding:8px 10px;margin:0 0 10px">
+        新しい流れでは、承諾書（発注書を兼ねます）は見積もりの承諾のときにいただきます（対応記録タブの見積もりの「承諾書を印刷」）。
+        ここからの署名依頼は、承諾書なしで受注確定になっている案件のためのものです。</p>`
+    : "";
+  if (r && r.status === "signed" && isOrderConsent(r)) {
+    const line = orderConsentLine(r);
+    const paper = r.signed?.method === "paper_order";
+    bodyHtml = `
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="font-size:14px">確認者 <strong>${esc(line.signer)}</strong>　／　${paper ? "受け取った日" : "署名日"} <strong>${esc(line.date)}</strong>　／　条文の版 ${esc(line.version)}</div>
+        <div style="font-size:12.5px;color:var(--color-ink-muted)">発注の承諾書 ${esc(line.displayNo)}（${esc(line.quotes.join("・"))}）。${paper
+          ? `紙で受け取り（${esc(ORDER_RECEIVED_VIA[r.signed?.receivedVia] || "その他")}）。記録した職員は対応記録に残っています`
+          : "オンラインで同意"}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <a class="btn btn-secondary" href="${esc(url)}" data-tip="発注の承諾書（署名済み）を新しいタブで開きます。印刷もできます。データは変わりません。" target="_blank" rel="noopener"><i class="ti ti-external-link" aria-hidden="true"></i> 承諾書を開く</a>
+        </div>
+      </div>`;
+  } else if (!r) {
     bodyHtml = `
       <p style="font-size:13px;color:var(--color-ink-muted);margin:0 0 12px">
         伴走支援を始める前に、事業所から承諾書（条文の版 ${esc(CONSENT_DOCUMENT.version)}）をいただきます。
@@ -165,8 +207,8 @@ function render() {
         <span style="margin-left:auto;font-size:11.5px;color:var(--color-ink-muted)">署名をいただいてから伴走支援を始めます</span>
       </div>
       <div class="card-body">${pendingNotice
-        ? `<div role="status" style="font-size:12.5px;color:var(--color-warning,#B45309);background:#FBF3E4;border-radius:8px;padding:8px 10px;margin-bottom:10px">${esc(pendingNotice)}</div>`
-        : ""}${bodyHtml}</div>
+        ? `<div role="status" style="font-size:12.5px;color:var(--color-warning,#B45309);background:#FBF3E4;border-radius:8px;padding:8px 10px;margin-bottom:10px">${esc(pendingNotice)}${pendingTlRetry ? ` <button class="btn btn-secondary btn-sm" id="consentTlRetryBtn" data-tip="メールは送らずに、対応記録だけをもう一度保存します。" style="margin-left:6px"><i class="ti ti-refresh" aria-hidden="true"></i> 記録だけやり直す</button>` : ""}</div>`
+        : ""}${orderNote}${bodyHtml}</div>
     </div>`;
 
   wire(r, url);
@@ -176,6 +218,12 @@ function wire(r, url) {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.addEventListener("click", fn); };
 
   on("consentIssueBtn", issue);
+  on("consentTlRetryBtn", async (e) => { // 読み込み直す＝reconcilePending が対応記録を足し直す（メールは送らない）
+    if (e?.currentTarget) e.currentTarget.disabled = true;
+    await reload();
+    if (pendingTlRetry) alert("対応記録の保存にまた失敗しました（メールは送信済みです。再送しないでください）。時間をおいてもう一度押してください。");
+    else ctx.toast("対応記録に保存しました");
+  });
   on("consentPaperBtn", recordPaper);
   on("consentCopyBtn", async () => {
     try { await navigator.clipboard.writeText(url); ctx.toast("署名ページのURLをコピーしました"); }
@@ -313,6 +361,8 @@ function openMailModal(r, url) {
     send: ({ to, subject, body }) => ctx.sendMail({ to, subject, body, caseId: ctx.caseId }),
     // reqId は照合で決まった書き込み先（記録待ちを開き直したとき、いま開いている依頼と違うことがある）
     record: (to, sentAtIso, reqId) => updateDoc(doc(ctx.db, "consentRequests", reqId || r._id), { mailedAt: new Date(sentAtIso), mailedTo: to }),
+    // サーバーが対応記録を書けなかったとき（sendCaseEmail の recordError）に画面から足す。sentAtIso はサーバーの送信時刻（2026-11-12）
+    logActivity: ctx.logActivity,
     onDone: async (close) => {
       pendingNotice = ""; // 新しく送って記録まで済んだら、前回の解除のお知らせは消す
       ctx.toast("署名依頼メールを送信しました");

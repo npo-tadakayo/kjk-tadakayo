@@ -11,7 +11,7 @@ import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObjec
 import { getFunctions, httpsCallable }
   from "/js/fn.js";
 import { STATUS_LABELS, SOURCE_LABELS, ARCHIVE_REASONS, dupKeys, pairKey,
-  referralOptions, referralLabel, NEXT_ACTION, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
+  referralOptions, referralLabel, NEXT_ACTION, nextActionFor, INQUIRY_INTENT_LABELS, LOST, LOST_REASONS, lostReasonLabel } from "/js/constants.js";
 import { ACTIVITY_ICONS, ACTIVITY_LABELS, AI_TITLES, escHtml, formatDateTime, toDateInput, toYmdJst, calcExpectedDeposit, askLostReason,
   officeAddressText, mapsSearchUrl } from "/js/case-detail-util.js";
 import { visitSummary } from "/js/schedule-core.js";
@@ -26,6 +26,7 @@ import { trackUnsaved, unsavedSpanHtml, discardUnsaved } from "/js/save-mode.js"
 import { initConsentCard } from "/js/consent-admin.js";
 import { initPreGuideCard } from "/js/pre-guide.js";
 import { shouldAskSupportDone, supportDoneAskText, SUPPORT_DONE_STATUS } from "/js/record-gaps-case.js";
+import { sendResultOf, caseMailActivityOf, freeMailRecordRetryText } from "/js/record-gaps-case.js"; // メール送信の返事（2026-11-12）
 import { initQuoteCard } from "/js/quote-admin.js";
 // 「出荷・請求・入金」タブ用。金額計算はここでは行わず、必ず invoiceTotals（正本）を通す
 import { invoiceTotals } from "/js/invoice-doc.js";
@@ -39,6 +40,11 @@ import { isCompleting, completionConfirmText, completionActivityNote,
   isFinishingSupport, invoicePending, invoicePromptText, invoicePromptUrl, invoicePromptNote } from "/js/screen-rules.js";
 // 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
 import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
+import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
+// 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ画面が変わる）
+import { orderByConsentOn, statusChangeGuard, blockedStatusOptions, manualStatusNote } from "/js/order-consent.js";
+// 進み具合の帯（2026-11-12・CRM改善2 §3.5）。状態を変えるときに statusChangedAt・statusChangedTo も書く
+import { caseProgress, stageSince, stageDays, staleLevel, resolveStaleConfig, progressBandHtml, statusChangePatch } from "/js/case-progress.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -64,6 +70,8 @@ let currentUser = null;
 let supportChecklist = null; // initSupportChecklist の戻り値（refreshPeople）
 // appConfig/settings（紹介元の一覧などを持つ）。読み込み前は既定値で動く。
 let appSettings = {};
+// 承諾書のサイン＝発注のスイッチ（練習モードでは練習DBの設定。fs.js が切り替える）
+const orderOn = () => orderByConsentOn(appSettings);
 // users コレクション（担当営業の候補。doc id = メールアドレス / name・role・active を持つ）
 let usersList = [];
 // 「出荷・請求・入金」タブが購読している shipments のキャッシュ。
@@ -107,10 +115,24 @@ function renderCaseHeader(c) {
 
   const statusSel = document.getElementById("statusSelect");
   statusSel.value = String(c.status || 1);
+  applyStatusGuard(c);
   renderLostReason(c);
   const vd = document.getElementById("visitDateInput");
   if (vd) vd.value = c.visitDate || "";
   renderVisitExtras(c);
+}
+
+// 状態の選択の制限（発5・スイッチがオンのとき）。受注前（1・2）の案件は 3〜12 を選べなくする（管理者は選べて、理由を聞く）
+function applyStatusGuard(c) {
+  const sel = document.getElementById("statusSelect");
+  if (!sel) return;
+  const blocked = new Set(blockedStatusOptions({ from: c?.status, orderByConsent: orderOn(), isAdmin, caseData: c }).map(String));
+  for (const opt of sel.options) {
+    const was = opt.dataset.origLabel || opt.textContent;
+    opt.dataset.origLabel = was;
+    opt.disabled = blocked.has(opt.value);
+    opt.textContent = blocked.has(opt.value) ? `${was}（承諾書の受け取りで進みます）` : was;
+  }
 }
 
 // 訪問の時刻・形式（visitTimeFrom / visitTimeTo "HH:MM"・visitFormat "onsite"|"online"）。日付が空なら無効
@@ -370,7 +392,7 @@ async function copyCaseWithServiceType() {
       srcTypeSet = built.setSource ? built.sourceServiceType : "";
       const texts = copyActivityTexts(fresh, next, serviceType, srcTypeSet);
       tx.set(counterRef, { value: next });
-      tx.set(newRef, built.data);
+      tx.set(newRef, { ...built.data, ...statusChangePatch(built.data.status, now) }); // 進み具合の日数はコピーで作った日から
       if (srcTypeSet) {
         tx.update(srcRef, { serviceType: srcTypeSet, updatedAt: now });
         tx.set(srcTypeActRef, { caseId, type: "memo", occurredAt: now, userId, userName,
@@ -986,12 +1008,33 @@ function renderShipDupBanner(ships) {
       <i class="ti ti-list-check" aria-hidden="true"></i> 供給管理で選ぶ</a></div>`;
 }
 
+// ===== 進み具合の帯（2026-11-12・js/case-progress.js が正本）=====
+// 13段階の状態を 8つの区切りにまとめ、済／いま／まだ と「この段階に何日」を出す。出荷の区切りは出荷の状態（shipmentsCache）で決める。
+// 日数は statusChangedAt（今の状態と statusChangedTo が同じとき）→ 対応記録の最後の「ステータス変更」→（新規受信のまま）受信日 の順。
+// どれも無ければ「—」。対応記録を読み込む前は対応記録を使わない（読み込み後に描き直す）。
+let activitiesLoaded = false;
+function renderCaseProgress() {
+  const wrap = document.getElementById("caseProgress");
+  if (!wrap || !currentCase) return;
+  try {
+    const cfg = resolveStaleConfig(appSettings);
+    const p = caseProgress(currentCase, { shipments: shipmentsCache, orderByConsent: orderOn() });
+    const since = stageSince(currentCase, { activities: activitiesLoaded ? latestActivities : null });
+    const days = since.at ? stageDays(since.at) : null;
+    wrap.innerHTML = progressBandHtml(p, days, staleLevel(currentCase.status, days, cfg), { sinceSource: since.source, cfg });
+  } catch (e) {
+    console.warn("進み具合の帯を描けませんでした", e); wrap.innerHTML = "";
+  }
+}
+
 // ===== 次の一手（案件ヘッダー最下部・タブの上。2026-09-14） =====
 // ステータス→次にやることは NEXT_ACTION（constants.js）が正本。マニュアル §0 表1 と同じ内容を指す。
 function renderNextStep() {
+  renderCaseProgress(); // 進み具合の帯（次の一手と同じきっかけで描き直す）
   const wrap = document.getElementById("nextStep");
   if (!wrap || !currentCase) return;
-  const na = NEXT_ACTION[Number(currentCase.status)];
+  // スイッチがオンのときは状態2・5 の文言を差し替える（nextActionFor・constants.js）。オフなら NEXT_ACTION のまま
+  const na = nextActionFor(currentCase.status, currentCase, { orderByConsent: orderOn() });
   if (!na) { wrap.style.display = "none"; wrap.innerHTML = ""; return; } // 13完了・4失注は非表示
 
   // 2行目（お金の流れ）: B1「出荷・請求・入金」タブと同じデータ・同じ判定（shipNextAction）を再利用。
@@ -1017,7 +1060,10 @@ function renderNextStep() {
       <span class="next-step-label">次の一手</span>
       <span class="next-step-text">${escHtml(na.text)}</span>
       <button type="button" class="btn btn-primary" id="nextStepBtn" data-tip="次にやることの場所（タブ・入力欄）へ移ります。押しただけではデータは変わりません。">${escHtml(na.button)}</button>
-    </div>${moneyHtml}`;
+    </div>${moneyHtml}${(() => {
+      const n = orderConsentNoticeOf(currentCase);
+      return n ? `<div class="next-step-money" role="status" style="color:#8a5a1f"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(n.text)}（対応記録タブの見積もりから）</div>` : "";
+    })()}`;
 
   document.getElementById("nextStepBtn")?.addEventListener("click", () => {
     if (na.tab) activateTab(na.tab);
@@ -1082,8 +1128,8 @@ async function saveSubsidyInfo() {
 // ステータス変更
 // lost: 失注にするときの { reason, note }（それ以外は null）。失注から戻すときは理由を消す。
 // warnNote: 完了(13)の警告を確認して続行したときの1行（completionActivityNote の戻り。無ければ ""）
-async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "") {
-  const patch = { status: Number(newStatus), updatedAt: serverTimestamp() };
+async function changeStatus(newStatus, userId, userName, lost = null, warnNote = "", manualNote = "") {
+  const patch = { status: Number(newStatus), updatedAt: serverTimestamp(), ...statusChangePatch(newStatus, serverTimestamp()) };
   // 13 以外 → 13 にしたときだけ完了日時を残す（13 のまま保存し直しても上書きしない）
   if (isCompleting(currentCase?.status, newStatus)) patch.completedAt = serverTimestamp();
   // 手で受注確定(3)にしたとき、受注日が無ければこの操作の日時を受注日にする（すでにあれば上書きしない・2026-11-10 点検10）
@@ -1095,6 +1141,7 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
     patch.lostReason = null; patch.lostReasonNote = null;
   }
   await updateDoc(doc(db, "cases", caseId), patch);
+  if (currentCase) Object.assign(currentCase, statusChangePatch(newStatus, new Date())); // 進み具合の日数をすぐ0日にする
   // 画面内の案件にも受注日を入れておく（同じ画面で 3→他→3 と変えたときに、補った受注日を上書きしないため）
   if (fillOrderedAt && currentCase) currentCase.orderedAt = new Date();
   if (lost) { currentCase.lostReason = lost.reason; currentCase.lostReasonNote = lost.note || null; }
@@ -1109,7 +1156,7 @@ async function changeStatus(newStatus, userId, userName, lost = null, warnNote =
       userName,
       subject: `ステータス変更 → ${STATUS_LABELS[newStatus]}`,
       body: lost ? `失注の理由: ${LOST_REASONS[lost.reason]}${lost.note ? `（${lost.note}）` : ""}`
-        : [warnNote, fillOrderedAt ? ORDERED_AT_FILLED_NOTE : ""].filter(Boolean).join("\n"),
+        : [manualNote, warnNote, fillOrderedAt ? ORDERED_AT_FILLED_NOTE : ""].filter(Boolean).join("\n"),
       attachmentUrls: [],
     });
   } catch (err) {
@@ -1871,6 +1918,8 @@ function askSupportDone() {
   const sel = document.getElementById("statusSelect");
   if (!sel || sel.disabled || !currentCase) return;
   if (!shouldAskSupportDone({ status: currentCase.status, archived: !!currentCase.archived, canChangeStatus: canCopy })) return;
+  // 受注前の案件は、承諾書のサイン＝発注のスイッチがオンなら手で進めないので聞かない（発5）
+  if (statusChangeGuard({ from: currentCase.status, to: SUPPORT_DONE_STATUS, orderByConsent: orderOn(), isAdmin, caseData: currentCase }).kind !== "ok") return;
   if (!confirm(supportDoneAskText(currentCase.status))) return;
   sel.value = String(SUPPORT_DONE_STATUS);
   sel.dispatchEvent(new Event("change"));
@@ -1951,6 +2000,18 @@ function aiResultToComposer() {
 
 // メール送信
 const sendCaseEmailFn = httpsCallable(functions, "sendCaseEmail");
+
+// 送信後にサーバーで対応記録が書けなかったとき（sendCaseEmail の返事の recordError・2026-11-12）、画面から対応記録を1件足す。
+// act は caseMailActivityOf の形。occurredAt は送信時刻（サーバーの sentAt。古い Functions なら端末の時刻）。
+// 案件の更新日時も進める（sendCaseEmail と同じ。失敗しても記録の成否にしない）
+async function logCaseMailActivity(act, sentAtIso) {
+  await addDoc(collection(db, "activities"), {
+    ...act, occurredAt: new Date(sentAtIso),
+    userId: currentUser?.uid || null, userName: currentUser?.email || "",
+  });
+  try { await updateDoc(doc(db, "cases", act.caseId), { updatedAt: serverTimestamp() }); }
+  catch (e) { console.warn("案件の更新日時の更新に失敗", e); }
+}
 async function sendMail() {
   const to = normalizeEmail(document.getElementById("mailTo").value);
   const subject = document.getElementById("mailSubject").value.trim();
@@ -1968,11 +2029,30 @@ async function sendMail() {
   status.style.color = "var(--color-ink-muted)";
   status.innerHTML = '<i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 送信中...';
   try {
-    await sendCaseEmailFn({ to, subject, body, caseId });
-    status.style.color = "var(--color-success)";
-    status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（タイムラインに記録）';
+    const srv = sendResultOf(await sendCaseEmailFn({ to, subject, body, caseId }));
     document.getElementById("mailSubject").value = "";
     document.getElementById("mailBody").value = "";
+    if (srv.recordError) {
+      // 送信済み・サーバーで対応記録だけ失敗（再送させない）。画面から対応記録を足す。失敗したら確認のうえ記録だけやり直す
+      const sentAt = srv.sentAt || new Date().toISOString();
+      const act = caseMailActivityOf({ kind: "free", caseId, to, subject, body });
+      let recorded = false, lastErr = srv.recordError;
+      for (;;) {
+        try { await logCaseMailActivity(act, sentAt); recorded = true; break; }
+        catch (e2) { lastErr = e2; if (!confirm(freeMailRecordRetryText(e2))) break; }
+      }
+      if (recorded) {
+        status.style.color = "var(--color-success)";
+        status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（対応記録は画面から記録）';
+        showToast("メールを送信しました");
+      } else {
+        status.style.color = "var(--color-danger)";
+        status.textContent = `メールは送信済みです。対応記録への記録だけ失敗しました（再送しないでください）: ${lastErr?.message || lastErr}`;
+      }
+      return;
+    }
+    status.style.color = "var(--color-success)";
+    status.innerHTML = '<i class="ti ti-circle-check" aria-hidden="true"></i> 送信しました（タイムラインに記録）';
     showToast("メールを送信しました");
   } catch (e) {
     status.style.color = "var(--color-danger)";
@@ -2075,14 +2155,17 @@ onAuthStateChanged(auth, async (user) => {
     db, caseId,
     getCase: () => ({ ...currentCase, email: currentCase.contactEmail || currentCase.email || "" }),
     sendMail: (payload) => sendCaseEmailFn(payload),
+    logActivity: logCaseMailActivity, // 送信後にサーバーで対応記録が書けなかったとき（2026-11-12）
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
+    orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
   }).catch((e) => console.warn("consent card init:", e.message));
   // 資料の事前送付カード（承諾書カードの上に出る。挿入順で先頭になるよう後から init）
   initPreGuideCard({
     db, caseId,
     getCase: () => currentCase,
     sendMail: (payload) => sendCaseEmailFn(payload),
+    logActivity: logCaseMailActivity, // 送信後にサーバーで対応記録が書けなかったとき（2026-11-12）
     toast: showToast,
   });
   // 見積もりカード（対応記録タブの先頭）。事業所側の見積もりツールで作成された quotes を表示・再送
@@ -2092,6 +2175,7 @@ onAuthStateChanged(auth, async (user) => {
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
     functions,
+    orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
   }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();
@@ -2202,6 +2286,15 @@ onAuthStateChanged(auth, async (user) => {
   document.getElementById("statusSelect").addEventListener("change", async (e) => {
     let lost = null;
     let warnNote = "";
+    // 承諾書のサイン＝発注（発5・スイッチがオンのとき）: 受注前の案件を手で 3〜12 に進めない。管理者は理由を書けば変えられる
+    let manualNote = "";
+    const guard = statusChangeGuard({ from: currentCase.status, to: e.target.value, orderByConsent: orderOn(), isAdmin, caseData: currentCase });
+    if (guard.kind === "blocked") { alert(guard.message); e.target.value = String(currentCase.status || 1); return; }
+    if (guard.kind === "reason") {
+      const reason = (prompt(guard.message, "") || "").trim();
+      if (!reason) { e.target.value = String(currentCase.status || 1); return; } // キャンセル・空欄は変えない
+      manualNote = manualStatusNote(reason);
+    }
     if (Number(e.target.value) === LOST) {
       lost = await askLostReason(LOST_REASONS);
       if (!lost) { e.target.value = String(currentCase.status || 1); return; } // キャンセル
@@ -2226,7 +2319,7 @@ onAuthStateChanged(auth, async (user) => {
       }
     }
     try {
-      await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote);
+      await changeStatus(e.target.value, user.uid, user.displayName || user.email, lost, warnNote, manualNote);
     } catch (err) {
       if (invTab) invTab.close();
       e.target.value = String(currentCase.status || 1);
@@ -2235,6 +2328,7 @@ onAuthStateChanged(auth, async (user) => {
     }
     if (invUrl) { if (invTab) invTab.location.href = invUrl; else location.href = invUrl; }
     currentCase.status = Number(e.target.value);
+    applyStatusGuard(currentCase);
     renderLostReason(currentCase);
     renderNextStep(); // 次の一手を即座に更新
     showToast(`ステータスを「${STATUS_LABELS[e.target.value]}」に変更しました`);
@@ -2329,6 +2423,7 @@ onAuthStateChanged(auth, async (user) => {
   );
   onSnapshot(actQ, (snap) => {
     latestActivities = snap.docs.map((d) => ({ _id: d.id, ...d.data() }));
+    activitiesLoaded = true; renderCaseProgress(); // 進み具合の日数（対応記録の「ステータス変更」から数える案件がある）
     renderTimeline(latestActivities);
     supportChecklist?.setActivities?.(latestActivities); // 当日タブの「記録済み」の表示
   });

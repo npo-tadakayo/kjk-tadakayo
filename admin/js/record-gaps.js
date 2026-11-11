@@ -136,3 +136,12 @@ export function orderedAtFillNeeded(prevStatus, newStatus, kase) {
   return Number(newStatus) === ORDER_CONFIRMED_STATUS && Number(prevStatus) !== ORDER_CONFIRMED_STATUS
     && !(kase && kase.orderedAt);
 }
+
+// ===== 承諾書の取り直し（2026-11-12・設計 改善1 §2 発3）=====
+// 受注後に見積もりを直して、承諾書に署名いただいた内容（品目・台数・金額）と変わった案件（cases.orderConsentStale）。
+// 新しい版で承諾書を取り直すまで出し続ける。出荷は止めない（第1段）。
+export const ORDER_CONSENT_STALE_TEXT = "承諾書の取り直しが要ります（受注後に見積もりを直したため、署名いただいた内容と今の見積もりが違います）";
+export function orderConsentNoticeOf(kase) {
+  if (!kase || kase.orderConsentStale !== true || kase.archived) return null;
+  return { key: "orderConsentStale", warn: true, text: ORDER_CONSENT_STALE_TEXT };
+}

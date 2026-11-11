@@ -15,6 +15,73 @@
 - 気づいたこと: Google ドライブ上の `functions/node_modules` をエミュレーターのテストで使うと、ファイルの読み込みが ETIMEDOUT で落ちる／止まることがある（Drive の遅延読み込み）。scratchpad で `npm ci` したものを `FUNCTIONS_NODE_MODULES` に渡すと安定する
 - 未了: 次田さんの画面確認 → マージ → Functions 5本のデプロイ → hosting。確認用の版の承認済みドメインは使い終わったら外す
 
+## 2026-11-12 メール送信後の記録の失敗をサーバーから知らせる（点検4 の根本対応・ブランチ `fix/send-mail-record-error`・未マージ・本番未反映）
+
+- **`sendCaseEmail`**（要デプロイ）: 送信の進め方を `functions/case-mail.js`（`runCaseMail`・firebase に依存しない）に出した。**Gmail で送れたあとの失敗は投げず** `{ ok:true, sent:true, id, sentAt, recordError }` を返す（`recordError`＝対応記録 `activities` の `gmail_sent` が書けなかった短い理由。`cases.updatedAt` だけの失敗は recordError にしない）。返事には毎回 `sentAt`（送信成功時点のサーバー時刻 ISO）を足した。送る前の失敗（設定・トークン）と Gmail の 4xx は `failed-precondition`（はっきりした失敗＝画面は「送信に失敗しました」）、Gmail の 5xx・通信の失敗は従来どおり `internal`（「送れたか不明」）。送信前の検証・文面・宛先・送信元・対応記録の書式は変えていない
+- **画面**: 返事は `record-gaps-case.js` の `sendResultOf` で読む。`mail-send-guard.js`（承諾書・事前案内）は、`recordError` があれば記録待ちに `tl`（対応記録もまだ）を付け、記録の段で対応記録を画面から1件足してから（`caseMailActivityOf`・`case-detail.js` の `logCaseMailActivity`）、`mailedAt`／`preGuideMailedAt` を書く。どちらかが失敗したら「メールは送信済みです。記録だけ失敗しました（再送しないでください）…『記録だけやり直す』」。対応記録を足せたら `tl` を外して保存し直すので、やり直しで二重に足さない。sessionStorage に入るのは `tl` の印だけ（件名・本文は同じページのモジュール変数だけ。再読み込みのあとは「メール送信: 承諾書の署名依頼メール」などの名前と注記で記録）。**`sentAt` があれば `mailedAt`・`preGuideMailedAt` にサーバーの時刻を使う**。案件詳細の自由文面のメールも、`recordError` なら対応記録を画面から足し、失敗したら確認のうえ記録だけやり直す（メールは送らない）
+- **新旧どちらの順で出しても動く**: 古い Functions の返事（`{ok,id}`）は `sendResultOf` が「sentAt・recordError なし」と読み、今までどおり端末の時刻・サーバーが対応記録を書いた前提。古い画面に新しい Functions の返事が来ても、余分な項目は読まれず送信成功として扱われる（`recordError` のときだけ対応記録が欠けたままになる＝今までは「送れたか不明」と出ていた場面）。新しい画面に古い Functions の `internal` が来れば、今までどおり「送れたか不明」
+- **PR #73 独立レビューの指摘（中1・低2）を同じ枝で修正**: ①中: 記録待ちが「対応記録もまだ（`tl`）」のまま承諾書の依頼が署名済み・取り消しになって照合が外れると、`tl` ごと消えて「対応記録に出ていれば送信済み」と案内していた（行が無い＝送っていないと読まれる）→ `reconcilePending` に `logActivity` を渡し、消す前に対応記録を1件足す。足せなければ記録待ちを残し（`tl_kept`）、「メールは送信済みです。対応記録にはまだ残っていません（『記録だけやり直す』を押してください）」と出す（不明の印は付けない）。モーダルのやり直しでは対応記録だけを保存し `mailedAt` は書かない。承諾書カードにも「記録だけやり直す」ボタン（読み込み直して足し直す）②低1: 対応記録・更新日時の書き込みを15秒で打ち切り（`withTimeout`）、`recordError` にする（止まり続けると関数の60秒のタイムアウトで deadline-exceeded＝送れたか不明になっていた）③低2: `failed-precondition` にする Gmail の返事を 400・401・403・404・429 に限定。ほかの 4xx（408・499 など途中の機器）は `internal`
+- テスト: `scripts/test-case-mail.mjs`（11件・偽の送信で Gmail は呼ばない）・`scripts/test-record-gaps-case.mjs`（53件に増）
+- 未検証: Functions エミュレータ・本番での実際の送信（メールを送らない方針のため）。画面の実機確認
+
+## 2026-11-12 進み具合の帯（案件一覧・案件詳細／ブランチ `feat/case-progress`・未マージ・本番未反映）
+
+- 決定: `06_介護情報基盤事業/docs/CRM改善2_計画_20261112.md` §3.5（進1 一覧と詳細の両方・カンバンは今のまま／進2 14日で黄・30日で赤・設定で変更・待ちが長い段階は対象外）。仕様の正本は `ENGINEERING_NOTES.md` §C13
+- やったこと: `admin/js/case-progress.js`（13段階→8区切り・日数・止まり具合・HTML）／案件詳細の上に大きな帯（次の一手の上）／案件一覧のステータスの下に点8つと日数・絞り込み「止まり具合」／状態を画面から変えたとき `statusChangedAt`・`statusChangedTo` を書く（案件詳細・カンバン・手動作成・コピー）／マニュアル（MANUAL.md・admin/manual.html `#s-progress`）
+- ⚠️ **Functions が状態を変えたとき（見積もり作成 1→2・受注 →3）は `statusChangedAt` が付かない**ので、一覧の日数は「—」（色なし）。案件詳細は対応記録から数えられるときだけ出る。直すなら Functions の `caseUpdate` に同じ2項目を足す（別 PR・本番の Functions のデプロイが要る）
+- 既存の案件は、次に画面から状態を変えるまで一覧では「—」。案件詳細は対応記録の最後の「ステータス変更」の行が今の状態と同じなら、その日から数える
+- 設定の画面に `stageStale` の入力欄は作っていない（変えるときは管理者が `appConfig/settings.stageStale = {warnDays, alertDays}` を書く）
+- テスト: `scripts/test-case-progress.mjs`（`test-all.sh --no-emu` で全部合格）。独立レビュー（Claude・別エージェント）の高1件（一覧の `statusChangePatch` の取り込み漏れ＝手動の新規案件が作れない）・中1件（受注確定のまま出荷を依頼すると準備に「済」）・低3件を直した。取り込み漏れはテストで検出するようにした
+- 本番に出すときに要るもの: hosting（admin）だけ。rules・Functions は不変
+- 確認用の版（管理画面のみ）: `https://kjk-tadakayo-admin--progress-1112-2omm1str.web.app`（11/19 03:30 JST まで）。サイドバー「練習モードに入る」で練習DBに切り替えてから、案件一覧（`/cases.html`）と案件詳細を見る。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--progress-1112-2omm1str.web.app --yes`
+- ⚠️ 練習DBの初期データ（`functions/practice-seed.js`）は `statusChangedAt` を持たないので、練習モードでも最初は日数が「—」。状態を変えると0日から数える（黄・赤は日数が経たないと出ない。見た目は `scripts/test-case-progress.mjs` の HTML の確認と、手元の描画で確かめた）
+
+## 2026-11-12 見積もり必須・承諾書のサイン＝発注 第1段（ブランチ `feat/order-by-consent-1`・未マージ・本番未反映・**スイッチはオフ**）
+
+- 設計: `06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md`（決定は `CRM改善2_計画_20261112.md` §2.1 発1〜発6）。仕様の正本は `ENGINEERING_NOTES.md` §C12
+- **スイッチ `appConfig/settings.orderByConsent`（既定オフ）**。オフのあいだは関数・画面とも従来どおり。**本番でオンにするのは、法人として承諾書 v1.2・利用規約の物品販売の追記を決めたあと**（発4）。オンにする操作は管理者が `appConfig/settings` に `orderByConsent: true`・`orderByConsentFrom: "YYYY-MM-DD"` を書く（設定画面にスイッチは作っていない）
+- 第1段でやったこと: 条文の正本 `functions/consent-document.js`（v1.1・v1.2）と画面の写し（v1.2 を現行・v1.1 を凍結庫・伴走支援だけの承諾書は v1.1 のまま）／判定の純粋関数（`accept-rules.js`・写し `admin/js/order-consent-rules.js`）／`acceptQuoteTransaction` を読み取り・書き込みに分割し、`acceptOrderByConsentTransaction`（承諾書の記録と受注確定を1つのトランザクション・まとめ見積もりは全件まとめて）／`staffAcceptQuote` の紙の道（スイッチがオンなら `consent:{signedName, receivedDate, receivedVia}` 必須・`reconsent:true` で取り直し）／`reviseQuote` の取り直しの印 `cases.orderConsentStale`／`onConsentSigned` は kind order を除外／管理画面（承諾書を印刷・署名済みの承諾書を受け取った・状態の選択の制限・次の一手・取り直しのお知らせ・発注の承諾書の1行）／練習モード（練習DBの設定で新しい流れを試せる）
+- **Web の道（`acceptQuote`・`mitsumori.html`）は第2段**。第1段では、スイッチがオンでも Web の申込は今のまま通り、**承諾書の記録は作らない**（第2段で `web_order` として作る）。⚠️ だから**第2段を出すまで本番のスイッチは入れない**こと（入れると、紙は承諾書必須・Web は承諾書なし、という食い違いになる）
+- テスト: `scripts/test-order-consent.mjs`（普通）・`scripts/test-order-consent-emu.mjs`（エミュレータ。`test-all.sh` の2段目に追加）
+- 本番に出すときに要るもの: Functions を名指しで `--only "functions:staffAcceptQuote,functions:reviseQuote,functions:acceptQuote,functions:onConsentSigned"`（`acceptQuote` は `acceptQuoteTransaction` の分割で中身が変わったため）＋ hosting（admin）。rules は不変。スイッチはオフのまま
+- 確認用の版（管理画面のみ・Functions は本番の古いまま＝**練習モードで確かめる**）: `https://kjk-tadakayo-admin--order1-1112-apmimte9.web.app`（11/19 02:51 JST まで）。承認済みドメインに `auth-domains.mjs add --yes` で追加済み（読み戻しで正常時の4件そろい）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--order1-1112-apmimte9.web.app --yes`
+- 独立レビュー（結論: スイッチがオフのまま本番に出してよい・高なし）の指摘3件を直した: 中-1 失注・完了をはさんで承諾書なしで受注確定へ進めた → 承諾書も受注日も無い案件は 4・13 からも止める／気づき-5 承諾書の文書に職員のメールアドレスを入れない（記録者は対応記録・見積もり・案件の側）／低-3 取り直しの二度押しで承諾書が2件 → `already_retaken` で止める。中-2（署名ページの kind order の表示）は第2段
+- 判断したこと（設計書にない細かい点）: ①伴走支援だけの承諾書は v1.1 のまま（v1.2 は見積書を前提にした文面のため）②まとめ見積もりはスイッチがオンなら全件まとめて1トランザクション（1件でも通らなければ全部止める）③取り直しは `staffAcceptQuote` の `reconsent` で受ける（関数を増やさない）④改版で内容（品目・台数・合計）が同じなら印を立てない
+- **§7 は v1.2 で変更**（紙の発注では署名済みの紙を当法人が受け取るため・2026-11-12 司令塔判断。次田さんへ朝に報告）: 「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。」→「書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。」。v1.1 は一字も変えていない
+- 未了: 練習モードでの次田さんの画面確認・マージ・本番反映（Functions のデプロイ）・第2段（Web の道・署名ページで焼き込んだ見積もりの表示・確認メールに承諾書のアドレス）
+
+## 2026-11-12 助成金申請の手順の文字拡大（ブランチ `feat/subsidy-guide-larger-font-pr`・PR #71・未マージ）
+
+- **何を**: 次田さん「もう少し大きな文字に」（11/10）で、`admin/js/subsidy-guide.js` の文字を全体に約15%大きくし、行間を 1.6→1.7 にした（6ページのまま）
+- **もくじの箱を外した理由**: 文字を大きくしたら**1ページ目（表紙）があふれた**。ページは 296mm 固定・`overflow:hidden` なので、あふれた分は黙って切れる。品名が2種類のとき、もくじがフッターに重なって下が切れた。頁番号は「申請の流れ」の図と「そろえる書類」の一覧に載っているので、内容は減らない
+- それでも品名が2種類のときは余白が 15px しかなかった。そこで、**1ページ目の金額の表だけ文字の大きさを拡大前の値に戻した**（表 9pt・金額 10pt・品名の欄 8.4pt）
+  - 品名を1行に収める案は採らなかった。2種類の品名は欄の幅の約2倍あり、文字を半分にしないと入らないため
+- 2〜6ページ目は拡大したまま変えていない
+- 1ページ目の余白（フッターまで・px）は次の表のとおり。測り方は playwright で描いて、中身の下端と `.sg-pfoot` の上端を比べた。基準は 24px 以上
+
+| 差し込む値 | 拡大前 | 拡大しただけ | 直した後 |
+|---|---|---|---|
+| 普通 | 238 | 41 | 134 |
+| 請求書から・品名は既定 | 256 | 17 | 130 |
+| 金額7桁・12台 | 256 | −3 | 130 |
+| 品名2種類 | 221 | −49（切れ） | 93 |
+| 品名2種類＋金額7桁＋長い事業所名 | 202 | −27（切れ） | 93 |
+
+- ⚠️ **1ページ目に何か足すときは、品名2種類＋金額7桁＋長い事業所名で余白を測り直す**（いまの余裕は約 93px）
+- 未検証: html2pdf で作った PDF そのものの見た目（描画は画面と同じ CSS だが、PDF にした結果は目視していない）
+
+## 2026-11-12 管理画面のセキュリティヘッダー（ブランチ `feat/admin-security-headers`・未マージ・本番未反映）
+
+- **何を**: `firebase.json` の hosting target `admin`（`**`）に、リリース前チェックが「付いていない」と出していた6つを足した。既存の `Cache-Control`・`Cross-Origin-Opener-Policy: same-origin-allow-popups` は変えていない。公開ページ（lp）も変えていない
+  - `X-Content-Type-Options: nosniff`／`Referrer-Policy: strict-origin-when-cross-origin`／`X-Robots-Tag: noindex, nofollow`
+  - `X-Frame-Options: SAMEORIGIN`（DENY にしない理由: `supply-print.js` の `buildReportPdf` が `report.html` を画面外の iframe で開いて PDF にしている）。CSP の `frame-ancestors 'self'` も同じ理由
+  - `Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()`（lp は `camera=()`。管理画面は `supply.html` の写真の欄が `<input type=file capture="environment">` なので、実機のスマホで確かめるまではカメラを止めない）
+  - **CSP は `Content-Security-Policy-Report-Only`**（違反しても止めず、コンソールに出すだけ）。許可している先: スクリプト＝`www.gstatic.com`（firebasejs）・`apis.google.com`（ログインのポップアップ）・`cdn.jsdelivr.net`（mermaid）・`cdnjs.cloudflare.com`（html2pdf）／スタイル＝`fonts.googleapis.com`・`cdn.jsdelivr.net`（tabler-icons）／フォント＝`fonts.gstatic.com`・`cdn.jsdelivr.net`／通信＝`identitytoolkit`・`securetoken`・`www.googleapis.com`・`firestore`・`firebasestorage`・`asia-northeast1-kjk-tadakayo.cloudfunctions.net`／画像・動画＝`firebasestorage.googleapis.com`・`data:`・`blob:`／iframe＝自分・`kjk-tadakayo.firebaseapp.com`（authDomain）・`apis.google.com`・`accounts.google.com`。インラインの `<script>` と `onclick` があるので `script-src 'unsafe-inline'` を残している（`unsafe-eval` は入れていない）
+- テスト `scripts/test-admin-security-headers.mjs`: 必須ヘッダーの有無・値と、**管理画面の HTML/JS/CSS が読み込む外部の先がすべて CSP に入っていること**を照合する（新しい CDN を足して CSP を直し忘れると落ちる）
+- 確認用の版 `https://kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app`（11/19 02:58 JST まで・承認済みドメイン追加済み）。curl で全ヘッダーを確認。ログイン画面・認定事業者ポータル・ログインのポップアップを開くところまで（資格情報は入れていない）で CSP の違反は0件。⚠️ プレビューの版は Firebase が `x-robots-tag: noindex` に差し替える（本番では `noindex, nofollow` のはず＝本番反映後に curl で確かめる）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--sec-headers-1112-9avjkls6.web.app --yes`
+- 🔜 **強制に切り替える手順（本番で1〜2週間ようすを見てから）**: ① ログイン後の各画面（案件詳細の写真・研修動画・支援報告書のPDF・マニュアルの図・出荷の写真）でコンソールに `[Report Only]` が出ないかを見る → ② 出たら許可先を足し、テストにも足す → ③ `firebase.json` のキーを `Content-Security-Policy-Report-Only` → `Content-Security-Policy` に変える（テストはどちらのキーでも通る）→ ④ 確認用の版で同じ画面を見てから `--live`。あわせて `camera=(self)` を `camera=()` にできるか、スマホの写真の欄で確かめる
+- 未検証: ログイン後の画面（Firestore・Storage・Functions の通信、mermaid、html2pdf、研修動画）での CSP の違反の有無。ローカルのエミュレーター（`?emu=1`）では `localhost:8080` 等への通信が Report-Only の違反として出る（止まらない）
+
 ## 2026-11-12 ボタンの説明の吹き出し（案件詳細の画面・ブランチ `feat/button-tooltips`・未マージ・本番未反映）
 
 - 次田さん決定（2026-11-12）: 各ボタンにマウスを乗せると機能の説明を吹き出しで出す。**まず案件詳細の画面から**。評判を見て他の画面へ広げる
@@ -46,7 +113,13 @@
 - 気づいたこと（直していない）: 事業所向け（税込）の領収証で、送料の X 行は税抜の保存値をそのまま「税込」として出している（請求書の `invoiceTotals` は ×1.1）。申請額（A・B）には影響しないが、領収証の明細合計と請求額がずれる原因になりうる
 - 確認用の版: `https://kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app`（11/18 まで。承認済みドメインに `auth-domains.mjs add --yes` で追加済み・4件の残りを読み戻しで確認）。使い終わったら `node scripts/auth-domains.mjs remove kjk-tadakayo-admin--subsidy-amounts-1112-cecf6xp0.web.app --yes`
 
-## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（ブランチ `fix/auth-domains-guard`・未マージ）
+## 2026-11-11 承認済みドメインの事故（11/9〜11/11 ログイン不可）の再発防止（PR #64・main にマージ済み `be57301`）
+
+- **前からログインしていた人（次田さん含む）は入れて、新しく入る人だけ入れなかった理由**: 承認済みドメインは**ログインする瞬間（Google のログイン画面を開くとき）にしか確かめられない**。ログイン済みの人は保存されたログイン状態のまま鍵（トークン）を自動更新するだけで、その更新では承認済みドメインを見ない。だから使い慣れた人ほど気づかず、困るのは初めての人・別のPC・ログアウトした人・シークレットウィンドウの人だけだった＝**人の目では見つからない壊れ方**
+- **追加の改善（ブランチ `feat/login-error-and-domain-watch`・未マージ・本番未反映）**:
+  - ① ログイン失敗の表示を日本語に（`admin/js/login-errors.js`・管理画面 `index.html` と認定事業者ポータル `partner.js`）。今回の `auth/unauthorized-domain` は「システム側の設定に問題があり…あなたの操作の問題ではありません…管理者（次田）にご連絡ください（エラーコード）」。テスト `scripts/test-login-errors.mjs`
+  - ② 毎朝 8:00 JST の自動点検 `dailyAuthDomainCheck`（`functions/auth-domain-watch.js`）。4件が欠けていれば Chat（PMスペース・空なら CRM）に知らせる。正常なら知らせない。読めなかったときも知らせる。テスト `scripts/test-auth-domain-watch.mjs`
+  - **本番反映の手順（次田さんの指示のあと）**: ⓐ `fn-batch-sa` に `roles/firebaseauth.viewer` を付与（中身は `firebaseauth.configs.get` 等の読み取りのみ）→ ⓑ Functions は `--only "functions:dailyAuthDomainCheck"` で名指し（Drive 上からは不可。ハマりポイントの rsync 手順）→ ⓒ 管理画面は `deploy-hosting.mjs --target admin --channel` で確認 → `--live`
 
 - **起きたこと**: 2026-11-09 17:13 JST、別の Claude セッションが curl で Identity Toolkit の config を `updateMask=authorizedDomains` で PATCH し、承認済みドメインの一覧を**空にした**（PATCH は追記でなく丸ごと置き換え）。その後プレビュー版を出すたびに Firebase CLI がその版のアドレスだけを足したため、本番 `kjk-tadakayo-admin.web.app` が抜けたままになり、**11/9〜11/11 は新しくログインする人全員が `auth/unauthorized-domain` で入れなかった**。11/11 宮地さんの報告で発覚し、正常時の4件を足し戻した。証拠は Cloud Audit Logs（identitytoolkit `UpdateConfig`）
 - **正常時の4件**: `kjk-tadakayo.firebaseapp.com`／`kjk-tadakayo.web.app`／`kjk-tadakayo-admin.web.app`／`kjk-tadakayo-admin.firebaseapp.com`
@@ -88,11 +161,11 @@
 - **点検4 の補強（PR #61 独立レビュー 中-A・中-B・低-C・低-D）**: 画面の結線は `admin/js/mail-send-guard.js`（`bindMailSend`）に1本化。①エラーの code が internal・deadline-exceeded・unavailable・unknown（`functions/` 接頭辞も）なら「送れたか不明」＝「対応記録に『メール送信』が出ていないか確かめてから送って」と出し、次の送信の前に確認を1回はさむ（明確な失敗は従来どおり「送信に失敗しました」）②記録待ちを sessionStorage（キー `kjk.mailRecordPending.{consent|preGuide}.{caseId}`・値は宛先・送信日時と、承諾書なら依頼IDの照合用の印 `reqKey`＝SHA-256 の16進の先頭16文字。**依頼IDそのもの（署名ページの URL の鍵）は入れない**）に持ち、モーダルを開き直すと最初から「記録だけやり直す」。承諾書は、画面が読み込んでいる未署名の依頼の ID から同じ印を計算して書き込み先を決める。一致する依頼が無い（取り消し・署名済み）ときは記録待ちを消し、「前回の送信の記録先が見つかりません。対応記録を確かめて」と出し、次の送信の前に確認をはさむ。`crypto.subtle` が無いときは承諾書の記録待ちを sessionStorage に書かない。古い形式（生の依頼ID入り）は読んだ時点で捨てる。同じページの中ではモジュール変数に依頼IDを持つ。記録待ちの間は `beforeunload` で確認。sessionStorage が使えなければモジュール変数だけ ③送信中は「×」「キャンセル」を押せない ④承諾書の `mailedAt` は送信成功時点の端末時刻（`serverTimestamp` をやめた・やり直しでも同じ値）。事前案内の送付日も同じ時刻の JST 日付
 - **点検4 の再補強（PR #61 独立再レビュー 中-1・中-2・低-1）**: ①承諾書カードの読み込み（`consent-admin.js` の `reload`）でも記録待ちを照合し（`mail-send-guard.js` の `reconcilePending`＝モーダルを開いたときと同じ関数）、未署名の依頼に一致が無ければ記録待ちと `beforeunload` を外し、カードに「前回メールを送った依頼は署名済み・取り消し済みのため、記録待ちを解除しました…」と1行出す（署名済みのカードにはメールのボタンが無く、モーダルから解除できなかった）②「送れたか不明」の印を sessionStorage `kjk.mailUnknown.{consent|preGuide}.{caseId}`＝"1" にも持ち、再読み込みしても次の送信の前に確認が出る（送信成功・確認のうえ送り直す・記録待ちに移った時点で消す。読み書きは `record-gaps-case.js`）③`beforeunload` は送信を始めた時点で付け（失敗で外す）、送信成功の直後に印の計算を待たずモジュール変数へ記録待ちを入れ、sessionStorage へは印ができてから。モーダルを開いた直後の照合中は送信・×・キャンセルを押せず、照合中に続けて押しても先頭の1回だけ進む。`mail-send-guard.js` の import を相対パスにし、テストで偽の DOM から実際に動かす
 - **既知の制限（今回は直さない）**:
-  - 根本対応（`sendCaseEmail` が送信後の失敗を `{ok:true, recordError}` で返す）は Functions の変更が要るので別PR。いまは Gmail 自体の送信失敗も `internal` なので「送れたか不明」と出る
+  - ~~根本対応（`sendCaseEmail` が送信後の失敗を `{ok:true, recordError}` で返す）は別PR~~ → 2026-11-12 `fix/send-mail-record-error` で対応（`sendCaseEmail` のデプロイ後に効く）。Gmail 自体の送信失敗は 4xx なら「送信に失敗しました」、5xx・通信の失敗だけ「送れたか不明」
   - 点検5 で OK を押したあと、既存の請求書の確認で開く `window.open` はユーザー操作の直後でないためブロックされうる（ブロック時は既存コードどおり今のタブで請求書へ移る）
   - 記録待ちの印は sessionStorage なので、同じタブの中だけで効く（別タブ・別端末からは再送できてしまう）
   - 同じ案件を2つのタブで開いて同時に送ると、それぞれのタブの記録待ち・不明の印は相手のタブに伝わらない（再レビュー 低-2。MANUAL・manual.html に「同じ案件は1つのタブで開く」と書いた）
-  - 承諾書の「メール送信日時（`mailedAt`）」は、サーバー時刻（`serverTimestamp`）ではなく送信した端末の時刻（`mail-send-guard.js` の `new Date().toISOString()` を `consent-admin.js` で `new Date(sentAtIso)` にして書く）で記録される。端末の時計がずれていると、その分ずれる（事前案内の送付日 `preGuideMailedAt` も同じ時刻の JST 日付）
+  - ~~承諾書の `mailedAt`・事前案内の `preGuideMailedAt` は端末の時刻~~ → 2026-11-12 `fix/send-mail-record-error` で、`sendCaseEmail` の返事の `sentAt`（サーバー時刻）を使うようにした。**`sendCaseEmail` をデプロイするまで（古い Functions のあいだ）は今までどおり端末の時刻**
   - 点検5 の「実施済にしますか」を聞くかどうかは、手元の `currentCase.status` で判断する。`currentCase` は案件を開いたとき `getDoc` で1回だけ読み（購読しない）、この画面で状態を変えたときだけ手元の値も更新する。開いているあいだに別の人・別のタブが状態を進めていた場合、古い状態をもとに聞くことがある
 - **点検5 伴走支援の記録と案件の状態**: 当日タブの「伴走支援の記録」を新しく保存したあと、案件の状態が受注確定(3)・担当者決定(5)・事前準備中(6)・伴走支援待ち(7)なら「伴走支援実施済にしますか」と確認（**11/10 決定：受注前＝新規受信(1)・確認中(2)・状態なしは聞かない**。受注確定を通らずに実施済へ進むと受注日 `orderedAt` が付かず「見積もり発行済（未申込）」の絞り込みに残るため。聞かないときも保存はそのまま・文言なし）。OK のときだけヘッダーの状態の選択を 8 にして change を起こし、既存の状態変更の処理（請求書の確認・対応記録・次の一手）をそのまま通す。受注前・8 以降・完了・失注・対象外・閲覧のみ・記録の編集では聞かない。当日の記録（`onsite`）とはつながない（PR #60 と衝突させないため）
 - 未検証: 画面の実機確認（記録だけ失敗する状態は練習モードでも作りにくい。点検5は練習モードで、伴走支援待ちの案件に記録を追加して確認）
