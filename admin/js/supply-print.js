@@ -6,12 +6,14 @@ import { getFirestore, doc, getDoc, getDocs, collection, setDoc, updateDoc, addD
 import { getFunctions, httpsCallable } from "/js/fn.js";
 import { itemConnection } from "/js/product-label.js";
 import { renderPOHtml } from "/js/po-doc.js";
-import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, itemPurposeNote, buildOnePagePdf, payerCodeOf,
+import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issuerContactHtml, buildOnePagePdf, payerCodeOf,
   fillInvoiceReportText, billToForReportOf, DEFAULT_INVOICE_MAIL_SUBJECT, DEFAULT_INVOICE_MAIL_BODY } from "/js/invoice-doc.js";
 // 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
 import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
 import { markInvoiced } from "/js/invoice-mark.js";
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
+// 助成金の A・B・X の振り分け（正本・2026-11-12）。領収証の初期明細・区分ごとの丸め・手順PDFの A・B はここを通す
+import { receiptRowsFromShipment, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
 // 送ったメールを案件の対応記録に残す（設計書 §3 点検3・2026-11-10）
 import { billingMailActivityOf, mailRecordFailedText, receiptSaveInfoOf } from "/js/record-gaps.js";
@@ -189,7 +191,6 @@ function confirmContactFilled(what){
 }
 function renderReceipt(s, st, saved, contactName){
   st = st || {};
-  const items=s.items||[];
   const taxIncl = priceIsTaxIncluded(s);
   rcptTaxIncluded = taxIncl;
   // 明細: 発行を記録済みならその内容を復元（同じ領収証を再発行できる）。無ければ出荷から組み立てる
@@ -198,21 +199,8 @@ function renderReceipt(s, st, saved, contactName){
     rowsInit = saved.items.map(r=>({ kind:r.usage||"A", name:r.name||"", note:r.note||"", qty:Number(r.qty)||0, price:Number(r.unitPrice)||0 }));
   }else{
     // 初期明細＝出荷の商品＋送料（X:対象外）。あとから編集・行追加できる。
-    // 🔴 区分は品番から自動で振る（2026-09-13）。以前は全部Aだったため、
-    //    伴走支援費も値引きも「カードリーダー費」に混ざり、助成金の申請対象額の内訳がずれていた。
-    rowsInit = items.map(i=>{
-      const sku=String(i.sku||"");
-      const qty=Number(i.qty)||0, price=Number(i.unitPrice)||0;
-      const note = itemPurposeNote(sku);
-      if(sku==="support-fee") return { kind:"B", name: i.name || "介護情報基盤との接続サポート等経費", note, qty, price };
-      // 値引き（金額調整）は伴走支援費から引いている性格なのでBに入れる。
-      // これでA＋B＝実際にお支払いいただいた額＝助成金の申請対象額になる
-      if(sku==="discount")    return { kind:"B", name: i.name || "値引き", note:"", qty, price };
-      return { kind:"A",
-        name: i.sku ? `カードリーダー（型名: ${i.sku}・マイナ資格確認アプリ対応）` : (i.name||"カードリーダー"),
-        note, qty, price };
-    });
-    if(Number(s.shippingFee)>0) rowsInit.push({kind:"X", name:s.shippingLabel||"送料", qty:1, price:Number(s.shippingFee)}); // 税抜で保存（2026-07-28 統一）
+    // 🔴 区分は品番から自動で振る（2026-09-13）。振り分けの正本は subsidy-amounts.js（2026-11-12 共通化）
+    rowsInit = receiptRowsFromShipment(s);
   }
   const rcptNo=(s.soNumber||"").replace(/^SH/,"RCPT");
   const toName = s.shipType==="dropship" ? (s.partnerName||"") : (s.company||s.officeName||"");
@@ -398,10 +386,7 @@ function wireReceiptEditor(){
   const tbody=document.getElementById("rcptItems"); if(!tbody) return;
   const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=yen(v); };
   // 単価が税込のときは足さずに割り戻す。税抜のときは従来どおり10%を足す
-  const ti = rcptTaxIncluded;
-  const incl  = ti ? (v=>v)                        : (e=>e+Math.floor(e*0.1));
-  const taxOf = ti ? (v=>Math.floor(v*10/110))     : (e=>Math.floor(e*0.1));
-  const exclOf= ti ? (v=>v-Math.floor(v*10/110))   : (e=>e);
+  const { incl, taxOf, exclOf } = taxFnsOf(rcptTaxIncluded); // 丸め方の正本は subsidy-amounts.js
   const amtInput=document.getElementById("rcptAmountInput");
   let itemsTotal=0;
   // 領収金額は明細合計と別建て（実入金を初期値にしている）。ズレは画面上で知らせる
@@ -647,16 +632,10 @@ function buildReportPdf(caseId){
 function subsidyGuideData(d){
   // 請求書から送るとき（領収証の明細欄が無い）は、出荷の明細から A・B を出す（領収証と同じ振り分け: 2026-10-01）
   if(!document.querySelector("#rcptItems tr")){
-    const incl = priceIsTaxIncluded(d);
-    // 税抜の出荷は、区分ごとの小計に1回だけ税を掛ける（領収証画面の sub.A / sub.B と同じ計算）
-    const line = (i) => (Number(i.qty)||0)*(Number(i.unitPrice)||0);
-    const withTax = (sub) => incl ? sub : sub + Math.floor(sub*0.1);
-    const items = d.items || [];
-    const isB = (i) => i.sku==="support-fee" || i.sku==="discount";
-    const aItems = items.filter(i => !isB(i) && !i.nonStock);
+    // 振り分け・丸めは subsidy-amounts.js の guideAmountsFromShipment（領収証画面の sub.A / sub.B と同じ計算）
+    const g = guideAmountsFromShipment(d);
     return { corpName: d.company || "", officeName: d.officeName || "", rcptNo: "RCPT-" + String(d.soNumber || "").replace(/^SH-/, ""),
-             aIncl: withTax(aItems.reduce((n,i)=>n+line(i),0)), bIncl: withTax(items.filter(isB).reduce((n,i)=>n+line(i),0)),
-             units: aItems.reduce((n,i)=>n+(Number(i.qty)||0),0), readerName: [...new Set(aItems.map(i=>i.sku).filter(Boolean))].join("／"), fromInvoice: true };
+             aIncl: g.aIncl, bIncl: g.bIncl, units: g.units, readerName: g.readerName, fromInvoice: true };
   }
   const yenNum = (id) => Number(String(document.getElementById(id)?.textContent || "").replace(/[−–]/g, "-").replace(/[^\d-]/g, "")) || 0;
   const aRows = [...document.querySelectorAll("#rcptItems tr")].filter(tr => (tr.querySelector(".ri-kind")?.value || "A") === "A");
