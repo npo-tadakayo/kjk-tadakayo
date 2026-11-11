@@ -1166,10 +1166,10 @@ function shipmentNumberPrefix() {
 // お申し込みの確認メール（事業所宛）の本文。Web の申込（単一）とスタッフの受注確定で共用する（2026-10-21 切り出し）。
 // consentUrl（2026-11-12 承諾書のサイン＝発注・スイッチがオンで承諾書の記録があるときだけ）を渡すと、件名・書き出しを
 // 「ご発注を承りました」にし、承諾書のアドレスを1行足す（Flow.acceptMailWording）。渡さなければ従来と一字一句同じ。
-function acceptMailText({ q, agreedName, payKey, delivery, preferredDate, consentUrl = "" }) {
+function acceptMailText({ q, agreedName, payKey, delivery, preferredDate, consentUrl = "", consentPaper = false }) {
   const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
   const d = delivery || {};
-  const w = Flow.acceptMailWording(consentUrl);
+  const w = Flow.acceptMailWording(consentUrl, { paper: consentPaper });
   return {
     subject: `【NPO法人タダカヨ】${w.subjectHead}（${q.estNo}）`,
     body:
@@ -1188,10 +1188,10 @@ function acceptMailText({ q, agreedName, payKey, delivery, preferredDate, consen
   };
 }
 // 複数事業所分をまとめた確認メール（Web の一括申込・スタッフのグループ受注確定で共用）。items = [{q, soNumber}]
-function acceptMailTextGroup({ items, agreedName, payKey, preferredDate, consentUrl = "" }) {
+function acceptMailTextGroup({ items, agreedName, payKey, preferredDate, consentUrl = "", consentPaper = false }) {
   const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
   const first = items[0].q;
-  const w = Flow.acceptMailWording(consentUrl);
+  const w = Flow.acceptMailWording(consentUrl, { paper: consentPaper });
   const lines = items.map((r) => `・${r.q.estNo}（${r.q.officeName || ""}） 出荷 ${r.soNumber} — 合計 ${yen(r.q.amounts?.totalIncl)}（自己負担 ${yen(r.q.amounts?.selfPay)}）`).join("\n");
   return {
     subject: `【NPO法人タダカヨ】${w.subjectHead}（${items.length}事業所分）`,
@@ -1678,9 +1678,10 @@ async function acceptQuoteByConsent(req, res, body) {
     );
   }
 
+  // mailed: 受注確認のメールを送れたか（見積もりページの完了の表示で「お送りしました」と書くかに使う・2026-11-12 スイッチ前の点検）
   res.status(200).json(group
-    ? { status: "ok", results: resultsOut, consentUrl }
-    : { status: "ok", soNumber: outs[0].soNumber, caseNumber: first.caseNumber, consentUrl });
+    ? { status: "ok", results: resultsOut, consentUrl, mailed: !mailProblem }
+    : { status: "ok", soNumber: outs[0].soNumber, caseNumber: first.caseNumber, consentUrl, mailed: !mailProblem });
 }
 
 exports.acceptQuote = onRequest(
@@ -1935,9 +1936,11 @@ exports.staffAcceptQuote = onCall(
     if (sendMail && !to) mailError = "宛先のメールアドレスが案件にも見積もりにも登録されていないため、確認メールは送っていません";
     if (sendMail && to) {
       try {
+        const consentUrl = Flow.orderConsentPageUrl(CRM_BASE_URL, consentToken);
+        const consentPaper = !!orderConsent; // 紙の道は「ご署名」の文言（2026-11-12 スイッチ前の点検）
         const m = done.length === 1
-          ? acceptMailText({ q: first, agreedName: name, payKey, delivery: await deliveryFromOfficeForQuote(first), preferredDate, consentUrl: Flow.orderConsentPageUrl(CRM_BASE_URL, consentToken) })
-          : acceptMailTextGroup({ items: done, agreedName: name, payKey, preferredDate, consentUrl: Flow.orderConsentPageUrl(CRM_BASE_URL, consentToken) });
+          ? acceptMailText({ q: first, agreedName: name, payKey, delivery: await deliveryFromOfficeForQuote(first), preferredDate, consentUrl, consentPaper })
+          : acceptMailTextGroup({ items: done, agreedName: name, payKey, preferredDate, consentUrl, consentPaper });
         const sent = await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body });
         mailed = true;
         for (const r of done) {
@@ -1949,6 +1952,8 @@ exports.staffAcceptQuote = onCall(
         }
       } catch (e) { mailError = String((e && e.message) || e || "送信に失敗しました"); console.error("staffAcceptQuote mail error:", e); }
     }
+    // 承諾書のサイン＝発注（スイッチがオン）: 受注確認のメールが出ていない理由（無ければ ""）。Chat に手で連絡するよう出す
+    const orderConsentMailProblem = Flow.orderConsentMailProblemKind({ orderConsent: !!orderConsent, sendMail: !!sendMail, to, mailed });
 
     // Chat（CRM通知の投稿先）。利用者の情報・申込者名・連絡先は載せない
     try {
@@ -1959,6 +1964,8 @@ exports.staffAcceptQuote = onCall(
         + done.map((r, i) => `・#${r.q.caseNumber} ${regions[i]}${r.q.officeName || ""}（${r.q.estNo}）出荷 ${r.soNumber} ${yen(r.q.amounts?.totalIncl)}`
           + (acceptShipNote(r) ? `\n　${acceptShipNote(r)}` : "")).join("\n")
         + (orderConsent ? `\n承諾書: ${consentDisplayNo}（${ORDER_RECEIVED_VIA[orderConsent.receivedVia] || "その他"}で受け取り）` : "")
+        // 紙の道で受注確認のメール（承諾書 v1.2 §6 の「受注確認のご連絡」）を出していなければ、手で連絡するよう知らせる（スイッチがオンのときだけ）
+        + (orderConsentMailProblem ? `\n${Flow.orderConsentMailProblemText(orderConsentMailProblem, done.map((r) => ({ caseNumber: r.q.caseNumber, estNo: r.q.estNo })), { paper: true })}` : "")
         + `\n受付日: ${receivedDate}／お支払い: ${PAY_LABELS[payKey]}`
         + (errors.length ? `\n⚠️ ${errors.length}件は受注確定にできませんでした（CRMで確認してください）` : "")
         + `\n供給管理から「在庫から発送」か「AB Circle へ発注」を選んでください。`);

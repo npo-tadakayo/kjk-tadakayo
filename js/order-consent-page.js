@@ -108,15 +108,22 @@
     return /^https:\/\/[a-z0-9.-]+\/consent\?t=[A-Za-z0-9_-]{16,128}$/.test(s) ? s : "";
   }
 
-  /** 受け付けたあとの表示（承諾書のアドレス入り） */
+  /**
+   * 受け付けたあとの表示（承諾書のアドレス入り）。
+   * mailed はサーバーの応答（受注確認のメールを送れたか）。false のときだけ「お送りしました」と書かず、担当から連絡すると書く
+   * （送れなかったのに「お送りしました」と出さない・2026-11-12 スイッチ前の点検。未指定〔二重送信の already など〕は従来の文言）。
+   */
   function doneHtml(p) {
     var o = p || {};
     var url = safeConsentUrl(o.consentUrl);
+    var mailLine = o.mailed === false
+      ? "受注確認のメールを自動でお送りできませんでした。担当スタッフから、あらためて受注確認のご連絡をいたします。<br>"
+      : "受注確認のメールを " + esc(o.email || "") + " 宛にお送りしました。<br>";
     return "<b>ご発注（承諾書への同意）を受け付けました。</b>" + (o.label ? "（" + esc(o.label) + "）" : "") + "<br>"
       + (o.listHtml ? o.listHtml + "<br>" : "")
       + (o.failedHtml ? o.failedHtml + "<br>" : "")
       + (url ? 'ご同意いただいた承諾書は、<a href="' + esc(url) + '" target="_blank" rel="noopener">こちらのアドレス</a>でいつでもご覧いただけます（印刷・PDF保存もできます）。<br>' : "")
-      + "受注確認のメールを " + esc(o.email || "") + " 宛にお送りしました。<br>"
+      + mailLine
       + "このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。";
   }
 
