@@ -41,6 +41,7 @@ import { isCompleting, completionConfirmText, completionActivityNote,
 // 手で「受注確定」にしたときの受注日の補い（設計書 CRM改善_設計書_20261110 §3 点検10・2026-11-10）
 import { orderedAtFillNeeded, ORDERED_AT_FILLED_NOTE } from "/js/record-gaps.js";
 import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り直し（2026-11-12）
+import { shipCancelNoticeOf } from "/js/ship-cancel-case.js"; // 点検9: 出荷キャンセル後の案件（2026-11-12）
 // 見積もり必須・承諾書のサイン＝発注（2026-11-12・設定 appConfig/settings.orderByConsent がオンのときだけ画面が変わる）
 import { orderByConsentOn, statusChangeGuard, blockedStatusOptions, manualStatusNote } from "/js/order-consent.js";
 // 進み具合の帯（2026-11-12・CRM改善2 §3.5）。状態を変えるときに statusChangedAt・statusChangedTo も書く
@@ -1063,6 +1064,9 @@ function renderNextStep() {
     </div>${moneyHtml}${(() => {
       const n = orderConsentNoticeOf(currentCase);
       return n ? `<div class="next-step-money" role="status" style="color:#8a5a1f"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${escHtml(n.text)}（対応記録タブの見積もりから）</div>` : "";
+    })()}${(() => {
+      const n = shipCancelNoticeOf(currentCase, shipmentsCache);
+      return n ? `<div class="next-step-money" role="status"${n.warn ? ' style="color:#8a5a1f"' : ""}><i class="ti ${n.warn ? "ti-alert-triangle" : "ti-info-circle"}" aria-hidden="true"></i> ${escHtml(n.text)}</div>` : "";
     })()}`;
 
   document.getElementById("nextStepBtn")?.addEventListener("click", () => {

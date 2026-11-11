@@ -25,7 +25,8 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
   netPaidOf, CANCEL_BLOCKED_BY_PAYMENT, notifyInFlight, NOTIFY_IN_FLIGHT_MSG, lpPickupNotice, letterPackOrDefault, DEFAULT_LETTERPACK,
   isPickup, shipStatusLabelOf, markShippedLabel, recordShippedLabel, shipQtySummary, mailedPendingNotes } from "/js/ship-flow.js";
 // 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3・2026-11-10）
-import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf } from "/js/record-gaps.js";
+import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf, ymdJstOf } from "/js/record-gaps.js";
+import { planShipCancelRevert, revertWrites, holdActivity, holdMessage, cancelPreviewText } from "/js/ship-cancel-case.js"; // 点検9（出荷キャンセル後の案件・2026-11-12）
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
@@ -2371,12 +2372,24 @@ function openCancelShipModal(s, opts){
     stockMsg += "<br>請求書を送っている場合は、先方への取り消し連絡は別途行ってください。";
   }
   document.getElementById("cancelShipStockNote").innerHTML = stockMsg;
+  if(s.caseId) previewCaseRevert(s, stockMsg);
   const reasonSel = document.getElementById("cancelReason");
   reasonSel.innerHTML = CANCEL_REASONS.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join("");
   if(opts.reason && CANCEL_REASONS.includes(opts.reason)) reasonSel.value = opts.reason;
   document.getElementById("cancelNote").value = opts.note || "";
   document.getElementById("cancelShipError").style.display = "none";
   document.getElementById("cancelShipModal").classList.add("open");
+}
+// 点検9: この出荷で案件の出荷が全部キャンセルになるなら、案件がどうなるか（確認中に戻す／自動では戻さない）を画面に足す。
+// 表示だけ（実際の判定はキャンセルのトランザクションの中で最新の値でやり直す）。読めなければ何も足さない
+async function previewCaseRevert(s, stockMsg){
+  try{
+    const cs = await getDoc(doc(db,"cases",s.caseId));
+    if(cancelTargetShip!==s || !cs.exists()) return;
+    const plan = planShipCancelRevert({ kase: cs.data(), shipments: shipments.filter(x=>x.caseId===s.caseId), canceledId: s._id });
+    const t = cancelPreviewText(plan, cs.data());
+    if(t) document.getElementById("cancelShipStockNote").innerHTML = stockMsg + `<br><strong>案件:</strong> ${esc(t)}`;
+  }catch(e){ console.warn("キャンセル後の案件の予告を出せませんでした", e); }
 }
 function closeCancelShipModal(){
   document.getElementById("cancelShipModal").classList.remove("open");
@@ -2416,8 +2429,23 @@ async function doCancelShipment(){
   try{
     // 状態の確かめ・キャンセル・在庫の戻しを1つのトランザクションで行う
     // （開いている間に別の人が発送済にしていた／先にキャンセルしていた、で在庫を戻し損ねる・二重に戻すのを防ぐ）
+    // 点検9（2026-11-12）: 案件の出荷がこれで全部キャンセルになるなら、同じトランザクションで案件を「確認中」に戻し、
+    //   申し込み済みの見積もりを「発行中」に戻す（ship-cancel-case.js）。入金・請求・発送の記録があれば戻さず、対応記録だけ残す。
+    //   トランザクションの中では検索ができないので、同じ案件の出荷・見積もりの一覧は先に読み、中で1件ずつ読み直す
     const ref = doc(db,"shipments",s._id);
+    const who = currentUser.displayName||currentUser.email;
+    let sibIds = [], quoteIds = [];
+    if(s.caseId){
+      const [shs, qs] = await Promise.all([
+        getDocs(query(collection(db,"shipments"),where("caseId","==",s.caseId))),
+        getDocs(query(collection(db,"quotes"),where("caseId","==",s.caseId))),
+      ]);
+      sibIds = shs.docs.map(d=>d.id).filter(id=>id!==s._id);
+      quoteIds = qs.docs.map(d=>d.id);
+    }
+    let casePlan = { kind:"none", reasons:[] };
     await runTransaction(db, async (tx)=>{
+      // ---- 読み取り（書き込みより前にすべて読む）----
       const snap = await tx.get(ref);
       if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
       const cur = snap.data();
@@ -2425,10 +2453,21 @@ async function doCancelShipment(){
         throw new Error(`この出荷は「${SHIP_STATUS[shipStatusOf(cur)]||cur.status}」になっています。画面を更新してください`);
       // 開いている間に入金が記録された場合も止める（返金していない入金を残したままキャンセルにしない・Codex 指摘2）
       if(netPaidOf(cur)>0) throw new Error(CANCEL_BLOCKED_BY_PAYMENT);
+      let caseRef = null, kase = null, quotes = [];
+      if(s.caseId){
+        caseRef = doc(db,"cases",s.caseId);
+        const cSnap = await tx.get(caseRef);
+        kase = cSnap.exists() ? cSnap.data() : null;
+        const sibs = [];
+        for(const id of sibIds){ const d = await tx.get(doc(db,"shipments",id)); if(d.exists()) sibs.push({ _id:d.id, ...d.data() }); }
+        for(const id of quoteIds){ const d = await tx.get(doc(db,"quotes",id)); if(d.exists()) quotes.push({ id:d.id, ...d.data() }); }
+        casePlan = planShipCancelRevert({ kase, shipments:[{ _id:s._id, ...cur }, ...sibs], canceledId:s._id });
+      }
+      // ---- 書き込み ----
       usesStock = cancelShipUsesStock(cur);
       tx.update(ref, {
         status: "canceled", statusBeforeCancel: shipStatusOf(cur),
-        canceledAt: serverTimestamp(), canceledBy: currentUser.displayName||currentUser.email,
+        canceledAt: serverTimestamp(), canceledBy: who,
         cancelReason: reason, cancelNote: note, updatedAt: serverTimestamp(),
       });
       if(usesStock){
@@ -2438,10 +2477,26 @@ async function doCancelShipment(){
           tx.set(doc(collection(db,"inventoryMovements")), movement(it.sku, it.qty, "shipment_canceled", s.soNumber, backTo));
         }
       }
+      const actBase = { caseId:s.caseId, type:"memo", occurredAt:serverTimestamp(),
+        userId: currentUser?.uid||null, userName: who, attachmentUrls: [] };
+      const cancelText = note ? `${reason}・${note}` : reason;
+      if(casePlan.kind==="revert"){
+        const w = revertWrites({ kase, quotes, ship:{ _id:s._id, ...cur }, by:who, now:serverTimestamp(),
+          cancelReason: cancelText, orderedYmd: kase&&kase.orderedAt ? ymdJstOf(kase.orderedAt) : "" });
+        tx.update(caseRef, w.casePatch);
+        for(const qp of w.quotePatches) tx.update(doc(db,"quotes",qp.id), qp.patch);
+        tx.set(doc(collection(db,"activities")), { ...actBase, ...w.activity });
+      } else if(casePlan.kind==="hold"){
+        tx.set(doc(collection(db,"activities")), { ...actBase, ...holdActivity({ ship:{ _id:s._id, ...cur }, by:who, reasons:casePlan.reasons, cancelReason: cancelText }) });
+        tx.update(caseRef, { updatedAt: serverTimestamp() });
+      }
     });
     const dupNext = dupCancelCtx; // 閉じると消えるので先に控える
     closeCancelShipModal();
-    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）${dupNext&&dupNext.queue.length?`。続けて重複の残り ${dupNext.queue.length}件を確かめます`:""}`);
+    const caseNote = casePlan.kind==="revert" ? "。案件を「確認中」に戻し、見積もりを「発行中」に戻しました（見積書を送り直して確認してください）"
+      : casePlan.kind==="hold" ? `。${holdMessage(casePlan.reasons)}` : "";
+    if(casePlan.kind==="hold") alert(`${s.soNumber} をキャンセルにしました。\n\n案件: ${holdMessage(casePlan.reasons)}`);
+    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）${caseNote}${dupNext&&dupNext.queue.length?`。続けて重複の残り ${dupNext.queue.length}件を確かめます`:""}`);
     openNextDupCancel(dupNext);
   }catch(e){ err.textContent = `キャンセルに失敗: ${e.message}`; err.style.display = "block"; }
   finally{ btn.disabled = false; }
