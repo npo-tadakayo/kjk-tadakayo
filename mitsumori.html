@@ -295,6 +295,38 @@
       background: #E8F3EC; border: 1px solid #a5d6a7; color: #1b5e20;
       border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.8;
     }
+    /* 承諾書のサイン＝発注 第2段（2026-11-12）: スイッチがオンのときだけ #orderModal に .consent-mode が付く。
+       オフのときはここの指定はどれも効かない（申込の画面は今のまま） */
+    #orderModal.consent-mode .modal-box { width: 680px !important; }
+    #orderModal.consent-mode .modal-desc { font-size: 13px; color: var(--text); }
+    .oc-head { font-size: 13px; font-weight: 700; margin: 2px 0 8px; color: var(--text); }
+    .oc-quote { background: #faf7f2; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .oc-row { display: flex; gap: 10px; font-size: 13px; line-height: 1.75; padding: 2px 0; }
+    .oc-k { flex: none; width: 6.5em; color: var(--muted); font-size: 12px; padding-top: 1px; }
+    .oc-v { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+    .oc-sub { font-size: 11.5px; color: var(--muted); }
+    .oc-total { font-size: 13px; font-weight: 700; margin: 4px 0 8px; }
+    .oc-note { font-size: 12px; color: var(--muted); line-height: 1.7; }
+    .oc-doc { border: 1px solid var(--border); border-radius: 10px; padding: 14px 14px 6px; background: #fff; color: var(--text); }
+    .oc-doc-title { font-size: 15px; font-weight: 700; line-height: 1.6; }
+    .oc-doc-ver { font-size: 11.5px; color: var(--muted); margin: 2px 0 8px; }
+    .oc-pre { font-size: 13px; line-height: 1.85; margin: 0 0 10px; }
+    .oc-sec { border-top: 1px solid var(--border); padding: 8px 0 4px; }
+    .oc-sec h4 { font-size: 13.5px; margin: 0 0 4px; }
+    .oc-sec p { font-size: 13px; line-height: 1.85; margin: 0 0 4px; }
+    .oc-links { font-size: 12px; line-height: 1.8; color: var(--muted); margin: 8px 0; overflow-wrap: anywhere; }
+    .oc-statement { background: #fff5f5; border: 2px solid var(--primary); border-radius: 8px; padding: 10px 12px; margin: 10px 0; }
+    .oc-statement-h { font-size: 12.5px; font-weight: 700; margin-bottom: 4px; }
+    .oc-statement p { font-size: 13.5px; line-height: 1.85; margin: 0; }
+    .oc-issuer { font-size: 11.5px; color: var(--muted); line-height: 1.7; margin: 6px 0; }
+    @media (max-width: 560px) {
+      #orderModal.consent-mode { padding: 8px; }
+      #orderModal.consent-mode .modal-box { max-width: 100%; padding: 20px 14px 18px; }
+      #orderModal.consent-mode .modal-actions { bottom: -18px; margin-bottom: -18px; padding-bottom: 18px; }
+      #orderModal.consent-mode input, #orderModal.consent-mode select, #orderModal.consent-mode textarea { font-size: 16px; }
+      .oc-row { flex-direction: column; gap: 0; }
+      .oc-k { width: auto; }
+    }
     .zip-hint { display: block; font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.6; }
     .zip-hint.is-ok { color: #2e7d32; font-weight: 700; }
     .zip-hint.is-error { color: var(--primary); font-weight: 700; }
@@ -891,8 +923,8 @@
     <div class="order-cta" id="orderCta">
       <div class="order-cta-inner">
         <div>
-          <div class="order-cta-title">この内容でお申し込みになりますか？</div>
-          <div class="order-cta-note">
+          <div class="order-cta-title" id="orderCtaTitle">この内容でお申し込みになりますか？</div>
+          <div class="order-cta-note" id="orderCtaNote">
             お申し込み後も、<b>台数や機種（Bluetooth／USB、USBの口の形）は支援の日程を調整する際に変更できます</b>。いまの時点で決めきれなくても大丈夫です。
           </div>
         </div>
@@ -909,7 +941,7 @@
 <!-- ======== お申し込みモーダル ======== -->
 <div class="modal-overlay" id="orderModal">
   <div class="modal-box" style="width:560px">
-    <div class="modal-title">お申し込みの確認</div>
+    <div class="modal-title" id="orderModalTitle">お申し込みの確認</div>
     <div class="modal-desc" id="orderSummary"></div>
 
     <!-- 事業所が複数のときだけ表示。既定は「各事業所の住所へ」（配送先の入力は不要） -->
@@ -956,10 +988,13 @@
       <label class="modal-label" for="odNote">ご要望・ご連絡事項（任意）</label>
       <textarea id="odNote" rows="2" placeholder="例: 複数事業所分をまとめて相談したい"></textarea>
     </div>
+    <!-- 承諾書（発注書を兼ねます）の全文。スイッチがオンのときだけ JS が中身を入れて出す（2026-11-12 第2段） -->
+    <div class="modal-field oc-doc" id="orderConsentDoc" hidden></div>
+
     <div class="modal-field">
-      <label class="modal-label" for="odName">お申し込み者のお名前<span class="req">*</span></label>
+      <label class="modal-label" for="odName"><span id="odNameLabel">お申し込み者のお名前</span><span class="req">*</span></label>
       <input type="text" id="odName" placeholder="例: 山田 太郎">
-      <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">
+      <div id="odNameNote" style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">
         お申し込みは、上のお見積もりの内容とお支払い条件にご同意いただくものです。
         伴走支援の進め方と個人情報の取扱いについての承諾書は、支援の前に別途ご確認いただきます。
       </div>
@@ -968,7 +1003,7 @@
     <div class="modal-field">
       <label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;line-height:1.8;cursor:pointer">
         <input type="checkbox" id="odAgree" style="width:18px;height:18px;margin-top:2px;flex:none">
-        <span><a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>と<a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>を確認し、同意します<span class="req">*</span></span>
+        <span><span id="odAgreeText"><a href="https://tadakayo.jp/privacy-policy/" target="_blank" rel="noopener noreferrer">個人情報保護方針</a>と<a href="https://tadakayo.jp/user-policy/" target="_blank" rel="noopener noreferrer">利用規約</a>を確認し、同意します</span><span class="req">*</span></span>
       </label>
     </div>
 
@@ -985,6 +1020,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
 <script src="js/split-city.js"></script>
+<script src="js/order-consent-page.js?v=20261112"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -1091,6 +1127,9 @@
   let contactZipAutofill = null; // 事業所1（既定事業所）の郵便番号自動入力（引き継ぎ時に検索を抑えるために持つ）
   let quoteInfo = null;    // 事業所1件のときにサーバが返した見積もり情報 { quoteId, estNo, quoteToken, validUntil, caseNumber }（既存互換）
   let quoteGroup = null;   // 事業所2件以上のときにサーバが返したグループ情報 { groupId, quotes: [...] }
+  // 承諾書のサイン＝発注 第2段（2026-11-12）: 見積もりの登録の応答に orderByConsent:true と条文（consentDocument）があれば入る。
+  // null のあいだ（スイッチがオフ・古い Functions）は、申込の画面・送る内容とも今のまま。
+  let orderConsent = null;
   const officeQuoteInfo = {}; // seq -> quoteInfo（1件のときも seq=0 に同じ内容を入れて内部処理を共通化する）
   const localEstNoPreview = {}; // seq -> 発行前のプレビュー用の仮番号（「見積番号を更新する」ボタン用）
   const officeZipAutofills = {}; // seq -> wireZipAutofill の戻り値
@@ -1555,6 +1594,8 @@
       if (!res.ok) { console.warn('見積もり登録エラー:', res.status); return; }
       const data = await res.json().catch(() => null);
       if (!data) return;
+      orderConsent = (data.orderByConsent === true && window.OrderConsentPage && OrderConsentPage.isValidDocument(data.consentDocument))
+        ? { document: data.consentDocument } : null;
       if (payload.offices) {
         if (!data.quotes) return;
         quoteGroup = { groupId: data.groupId, quotes: data.quotes };
@@ -1801,6 +1842,39 @@
       ? !!(quoteInfo && quoteInfo.quoteId && quoteInfo.quoteToken)
       : offices.length > 0 && offices.every((o) => { const q = officeQuoteInfo[o.seq]; return q && q.quoteId && q.quoteToken; });
     cta.style.display = ready ? 'block' : 'none';
+    applyOrderMode();
+  }
+
+  // スイッチがオンなら文言を「発注（承諾書への同意）」に替える。オンからオフに戻ったときだけ元の文言に戻す
+  // （オフのままなら何も触らない＝今の画面と同じ）。元の文言は最初に替える直前に覚えておく。
+  // 処理中（ボタンが押せない間）のボタンは、いまの「確認しています...」などを消さずに「あとで替える」印を付け、
+  // 処理が終わってボタンを戻したあと（openOrderModal・submitOrder の finally）にもう一度呼んで替える（2026-11-12 レビュー 低-1）。
+  const ORDER_ORIG = {};
+  const ORDER_PENDING = new Set();
+  let orderModeOn = false;
+  function applyOrderMode() {
+    const on = !!orderConsent;
+    if (!on && !orderModeOn && !ORDER_PENDING.size) return;
+    const T = OrderConsentPage.TEXT;
+    const html = {
+      orderCtaTitle: esc(T.ctaTitle), orderCtaNote: T.ctaNote,
+      orderBtn: '<i class="ti ti-circle-check"></i>' + esc(T.ctaButton),
+      orderModalTitle: esc(T.modalTitle), odNameLabel: esc(T.nameLabel), odNameNote: esc(T.nameNote),
+      odAgreeText: esc(T.agreeText), orderSubmit: esc(T.submit),
+    };
+    Object.keys(html).forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (!(id in ORDER_ORIG)) ORDER_ORIG[id] = el.innerHTML;
+      if (el.disabled) { ORDER_PENDING.add(id); return; }
+      ORDER_PENDING.delete(id);
+      el.innerHTML = on ? html[id] : ORDER_ORIG[id];
+    });
+    orderModeOn = on;
+    const modal = document.getElementById('orderModal');
+    if (modal) modal.classList.toggle('consent-mode', on);
+    const docEl = document.getElementById('orderConsentDoc');
+    if (docEl && !on) { docEl.hidden = true; docEl.innerHTML = ''; }
   }
 
   function updateDeliveryModeUI() {
@@ -1838,6 +1912,7 @@
       }
     } finally {
       btn.disabled = false; btn.innerHTML = orig;
+      applyOrderMode(); // 処理中に切り替わっていたら、ここで文言を合わせる（オフのままなら何もしない）
     }
 
     const offices = getAllOfficeData();
@@ -1849,8 +1924,29 @@
       return;
     }
 
+    applyOrderMode();
+    if (orderConsent) {
+      // 発注の内容は、サーバーが承諾書に焼き込む形（consentEntry）をそのまま出す（画面の計算ではなく、記録される内容）
+      const entries = offices.map((o) => (officeQuoteInfo[o.seq] || {}).consentEntry || null);
+      const qHtml = OrderConsentPage.quotesHtml(entries);
+      const dHtml = OrderConsentPage.documentHtml(orderConsent.document);
+      if (!qHtml || !dHtml) {
+        alert('承諾書の内容を確認できませんでした。お手数ですが、ページを読み込み直してからもう一度お試しください。');
+        return;
+      }
+      const intro = fromIntent
+        ? `<div style="background:#eef3fb;border:1px solid #c5d5ee;color:#1f3a6e;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.8;">`
+          + `LPで「正式に申込みたい」を選ばれた方は、内容と承諾書をご確認のうえ、このまま発注してください。</div>`
+        : '';
+      document.getElementById('orderSummary').innerHTML = intro + qHtml;
+      const docEl = document.getElementById('orderConsentDoc');
+      docEl.innerHTML = dHtml;
+      docEl.hidden = false;
+    }
+
     const yen = (n) => `¥${Number(n || 0).toLocaleString()}`;
     let summaryHtml = '';
+    if (!orderConsent) { // 承諾書の画面（スイッチがオン）は上で出したので、従来の要約は作らない
     if (fromIntent) {
       summaryHtml += `<div style="background:#eef3fb;border:1px solid #c5d5ee;color:#1f3a6e;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.8;">`
         + `LPで「正式に申込みたい」を選ばれた方は、内容をご確認のうえ、このままお申し込みください。</div>`;
@@ -1886,6 +1982,7 @@
         + `内容を変えたい場合は「やめる」を押し、左のフォームで台数を選び直してください。`;
     }
     document.getElementById('orderSummary').innerHTML = summaryHtml;
+    }
 
     updateDeliveryModeUI();
 
@@ -1919,7 +2016,11 @@
       if (!v('odOffice')) { show('お届け先の事業所名をご入力ください'); return; }
       if (!v('odPref') || !v('odCity') || !v('odAddress')) { show('お届け先の住所（都道府県・市町村・番地）をご入力ください'); return; }
     }
-    if (!document.getElementById('odAgree').checked) { show('個人情報保護方針と利用規約への同意にチェックをお願いします'); return; }
+    if (!document.getElementById('odAgree').checked) {
+      show(orderConsent ? OrderConsentPage.TEXT.agreeMissing : '個人情報保護方針と利用規約への同意にチェックをお願いします');
+      return;
+    }
+    const consentDoc = orderConsent ? orderConsent.document : null;
 
     const btn = document.getElementById('orderSubmit');
     const orig = btn.textContent;
@@ -1957,6 +2058,8 @@
         };
       }
 
+      // スイッチがオン: 「画面に出した承諾書の版に同意した」印を足す（サーバーは版が違えば受け付けない）
+      if (consentDoc) body.consent = OrderConsentPage.consentPayload(consentDoc);
       const res = await fetch(ACCEPT_QUOTE_URL, { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || (data.status !== 'ok' && data.status !== 'already' && data.status !== 'partial')) {
@@ -1970,7 +2073,16 @@
       document.getElementById('orderBtn').disabled = true;
       document.querySelector('.order-cta-inner').style.display = 'none';
       const done = document.getElementById('orderDone');
-      if (offices.length <= 1) {
+      // 承諾書の文言にするかは、サーバーが承諾書のアドレスを返したかで決める（送った側の画面の状態では決めない。2026-11-12 レビュー 中-1）
+      if (consentDoc && OrderConsentPage.safeConsentUrl(data.consentUrl)) {
+        const okList = (data.results || []).filter((r) => !r.error);
+        done.innerHTML = OrderConsentPage.doneHtml({
+          label: offices.length <= 1 ? `お見積書 ${estNo}` : `事業所 ${okList.length}件`,
+          listHtml: offices.length <= 1 ? '' : okList.map((r) =>
+            `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`).join('<br>'),
+          consentUrl: data.consentUrl, email: val('contactEmail'),
+        });
+      } else if (offices.length <= 1) {
         done.innerHTML = `<b>お申し込みを受け付けました。</b>（お見積書 ${esc(estNo)}）<br>`
           + `確認のメールを ${esc(val('contactEmail'))} 宛にお送りしました。<br>`
           + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
@@ -1993,6 +2105,7 @@
       show('お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
     } finally {
       btn.disabled = false; btn.textContent = orig;
+      applyOrderMode(); // 処理中に切り替わっていたら、ここで文言を合わせる（オフのままなら何もしない）
     }
   }
 

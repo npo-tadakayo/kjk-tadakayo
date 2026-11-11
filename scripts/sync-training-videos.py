@@ -50,12 +50,13 @@ FILES["guide-annai"] = (_annai / "ばんそう支援の進み方とお願い_v1.
 _intro = KIBAN / "動画_育成_伴走支援者になるまで_20261024"
 FILES["learn-intro"] = (_intro / "伴走支援者になるまで_v1.1.mp4", _intro / "伴走支援者になるまで_v1.1.srt")  # 2026-10-27 v1.1（報酬は完了した暦月で算定を追加）
 _pledge = KIBAN / "動画_育成_伴走支援者の約束_20261024"
-FILES["learn-pledge"] = (_pledge / "伴走支援者の約束_v1.1.mp4", _pledge / "伴走支援者の約束_v1.1.srt")  # 2026-10-26 v1.1（約束10の報告先）
+FILES["learn-pledge"] = (_pledge / "伴走支援者の約束_v1.2.mp4", _pledge / "伴走支援者の約束_v1.2.srt")  # 2026-11-12 v1.2（約束9の相談先: まず担当のトレーナー→TM_介護情報基盤普及推進室）
 # 育成コースの使い方（2026-10-25）。操作動画スキルの modern で作ったので字幕は映像に焼き込み済み → vtt は置かない（None）
 _course = KIBAN / "動画_育成_コースの進め方_20261025"
-FILES["learn-course"] = (_course / "out.mp4", None)
+# 2026-11-12 v1.1（相談先の文言）。out.mp4 は作り直しで中身が変わるので、版の付いた完成品を指す
+FILES["learn-course"] = (_course / "伴走支援_育成コースの進め方_新人向け_v1.1.mp4", None)
 _trainer = KIBAN / "動画_育成_新人の見守り方_20261025"
-FILES["learn-trainer"] = (_trainer / "out.mp4", None)
+FILES["learn-trainer"] = (_trainer / "伴走支援_新人の見守り方_トレーナー向け_v1.1.mp4", None)
 # --only の短い呼び名（u5・g0・annai・intro・pledge）
 ALIAS = {**{f"u{n}": f"crm-u{n}" for n in range(1, 11)}, **{f"g{p}": f"guide-part{p}" for p in range(4)},
          "annai": "guide-annai", "intro": "learn-intro", "pledge": "learn-pledge",

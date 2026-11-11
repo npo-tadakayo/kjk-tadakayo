@@ -18,8 +18,9 @@ import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, c
 import { TRAINER_PRACTICE_STUBS } from "/js/practice-stubs-trainer.js"; // トレーナー認定の代役（2026-11-12・別ファイル）
 // 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
 import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise,
-  ORDER_RECEIVED_VIA, channelOfReceivedVia } from "/js/order-consent-rules.js";
+  ORDER_RECEIVED_VIA, channelOfReceivedVia, cleanSignedName } from "/js/order-consent-rules.js";
 import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document.js";
+import { statusChangePatch } from "/js/case-progress.js"; // 進み具合の帯（状態を変えたら2項目を書く）
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
 function me() {
@@ -459,7 +460,11 @@ function stubAcceptWrite(tx, { q, qRef, kase, caseRef, dl, P, u, name, channel, 
   });
   const stp = caseStatusOnAccept(kase && kase.status);
   const cu = { updatedAt: now, shipmentId: shipRef.id, payMethod: payKey, orderedVia: "staff", orderConfirmedAt: now, orderConfirmedBy: u.email };
-  if (stp.status != null) cu.status = stp.status;
+  if (stp.status != null) {
+    cu.status = stp.status;
+    // 進み具合の帯（本番の Functions と同じ）: 状態が実際に変わるときだけ
+    if (Number(kase && kase.status) !== Number(stp.status)) Object.assign(cu, statusChangePatch(stp.status, now));
+  }
   if (stp.reopenedFrom) Object.assign(cu, { reopenedFrom: stp.reopenedFrom, reopenedAt: now });
   if (!(kase && kase.orderedAt)) cu.orderedAt = Timestamp.fromMillis(jstMidnightMs(receivedDate));
   if (consent) Object.assign(cu, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false });
@@ -507,7 +512,7 @@ async function practiceReconsent(quoteId, consent) {
     const cRef = doc(db(), "consentRequests", token);
     if ((await tx.get(cRef)).exists()) throw fail("承諾書の番号が重なりました。もう一度お試しください");
     const now = serverTimestamp();
-    const name = String(consent.signedName).trim().slice(0, 100);
+    const name = cleanSignedName(consent.signedName).slice(0, 100);
     const rec = buildOrderConsentRecord({ document: ORDER_CONSENT_DOCUMENT, quotes: [q], groupId: q.groupId || null,
       signed: { name, method: "paper_order", receivedDate: consent.receivedDate, receivedVia: consent.receivedVia },
       retakeOf: kase.orderConsentToken });
@@ -712,7 +717,7 @@ export const PRACTICE_STUBS = {
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
     };
-    if (Number(kase.status) === 1) caseUpdate.status = 2; // 新規受信 → 確認中（本番と同じ）
+    if (Number(kase.status) === 1) { caseUpdate.status = 2; Object.assign(caseUpdate, statusChangePatch(2, now)); } // 新規受信 → 確認中（本番と同じ・進み具合の帯の2項目も）
     b.update(doc(db(), "cases", kase.id), caseUpdate);
     b.set(doc(collection(db(), "activities")), {
       caseId: kase.id, type: "memo", occurredAt: now, userId: u.uid, userName: u.email,
@@ -841,7 +846,7 @@ export const PRACTICE_STUBS = {
     if (orderOn) {
       const c = d.consent;
       if (!c || typeof c !== "object") throw fail("署名済みの承諾書を受け取ってから受注確定にしてください（署名者のお名前と、受け取った日が要ります）");
-      const signedName = String(c.signedName || "").trim().slice(0, 100);
+      const signedName = cleanSignedName(c.signedName).slice(0, 100);
       if (!signedName) throw fail("承諾書に署名した方のお名前を入れてください");
       if (!isValidYmd(c.receivedDate)) throw fail("承諾書を受け取った日を正しく入れてください（YYYY-MM-DD）");
       const receivedVia = Object.prototype.hasOwnProperty.call(ORDER_RECEIVED_VIA, c.receivedVia) ? c.receivedVia : "other";
