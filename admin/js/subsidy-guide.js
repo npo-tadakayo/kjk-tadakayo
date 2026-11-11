@@ -85,9 +85,7 @@ export function renderSubsidyGuideHtml(g) {
       <label>□ ③ 領収書の写し ＝ <strong>${RC} PDF</strong><small>P.3</small></label>
       <label>□ ④ 介護WEBサービスの「管理メニュー」の画面コピー<small>P.3</small></label>
     </div>
-    <div class="sg-toc">
-      <b>もくじ</b>　1 全体像 ／ 2 書類①通帳・サービス種類 ／ 3 書類②領収書・介護WEBの画面コピー ／ 4 申請の開始・基本情報・金額の入力 ／ 5 口座・書類の添付・申請 ／ 6 申請のあと
-    </div>
+    <!-- 2026-11-12 もくじの箱は外した（文字を大きくしたら1ページ目があふれたため。頁番号は流れの図と書類の一覧に載っている） -->
     ${foot()}
   </section>`;
 
@@ -246,13 +244,15 @@ export const SUBSIDY_GUIDE_STYLE = `
 .sg-t{width:100%;border-collapse:collapse;font-size:10.3pt;}
 .sg-t td,.sg-t th{border:1px solid #e3dcd0;padding:4px 6px;vertical-align:middle;}
 .sg-t th{background:#F5F5F5;text-align:left;font-weight:700;}
-.sg-amt td.v{font-weight:800;white-space:nowrap;text-align:right;color:#b02525;font-size:11.5pt;}
-.sg-amt td.v.small{white-space:normal;text-align:left;color:#111;font-weight:500;font-size:9.7pt;}
+/* 1ページ目の金額の表だけ、文字の大きさを拡大前（main）の値に戻す（2026-11-12）。品名が2種類・金額7桁のときに表紙がフッターに重なって切れたため。
+   もくじの箱を外しても足りなかった（品名2種類で余白15px）。品名を1行に収める案は、欄の幅の約2倍あり文字を半分にしないと入らないので採らなかった */
+.sg-t.sg-amt{font-size:9pt;}
+.sg-amt td.v{font-weight:800;white-space:nowrap;text-align:right;color:#b02525;font-size:10pt;}
+.sg-amt td.v.small{white-space:normal;text-align:left;color:#111;font-weight:500;font-size:8.4pt;}
 .sg-amt td.c{text-align:center;color:#666;width:34px;}
 .sg-note{font-size:9.5pt;color:#555;}
 .sg-docs{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;border:1px dashed #E33535;border-radius:6px;padding:6px 9px;font-size:10.3pt;}
 .sg-docs small{color:#888;margin-left:6px;font-size:9pt;}
-.sg-toc{margin-top:8px;background:#F5F5F5;border-radius:6px;padding:6px 9px;font-size:9.7pt;color:#333;}
 .sg-fig{margin:4px 0 6px;flex:none;}
 .sg-fig img{display:block;width:100%;height:auto;border:1px solid #d9d2c5;border-radius:3px;}
 .sg-fig figcaption{font-size:8.3pt;color:#777;margin-top:2px;}
