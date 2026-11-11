@@ -61,7 +61,7 @@ function render() {
         <p style="font-size:13px;color:var(--color-ink-muted);margin-bottom:10px">
           支援当日までに事業所にご準備いただくもの（下の事前確認チェックリストと同じ8項目）を、メールでご案内します。
         </p>
-        <button class="btn ${sent ? "btn-secondary" : "btn-primary"}" id="preGuideMailBtn" type="button">
+        <button class="btn ${sent ? "btn-secondary" : "btn-primary"}" id="preGuideMailBtn" data-tip="事前準備のご案内メールの宛先と文面を確かめる画面を開きます。送るのはその画面の「送信する」です。" type="button">
           <i class="ti ti-send" aria-hidden="true"></i> ${sent ? "もう一度案内を送る" : "準備のご案内を送る"}
         </button>
       </div>
@@ -80,7 +80,7 @@ function openModal() {
       <div class="modal" style="position:relative;background:var(--color-bg,#FAFAF8);border-radius:16px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:0">
         <div style="display:flex;align-items:center;gap:10px;padding:18px 22px;border-bottom:1px solid var(--color-border)">
           <strong style="font-size:15px">事前準備のご案内メール</strong>
-          <button id="pgClose" class="btn btn-secondary" style="margin-left:auto" aria-label="閉じる">×</button>
+          <button id="pgClose" data-tip="送らずに閉じます。" class="btn btn-secondary" style="margin-left:auto" aria-label="閉じる">×</button>
         </div>
         <div style="padding:18px 22px;display:flex;flex-direction:column;gap:12px">
           <div>
@@ -98,8 +98,8 @@ function openModal() {
           <div style="font-size:12px;color:var(--color-ink-muted)">送信するとタイムラインにも記録されます（sendCaseEmail 経由）</div>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;padding:14px 22px;border-top:1px solid var(--color-border)">
-          <button class="btn btn-secondary" id="pgCancel">キャンセル</button>
-          <button class="btn btn-primary" id="pgSend"><i class="ti ti-send" aria-hidden="true"></i> 送信する</button>
+          <button class="btn btn-secondary" id="pgCancel" data-tip="送らずに閉じます。">キャンセル</button>
+          <button class="btn btn-primary" id="pgSend" data-tip="事務局から事前準備のご案内メールを送り、送付日を記録します。対応記録にも残り、取り消せません（「記録だけやり直す」のときはメールは送りません）。"><i class="ti ti-send" aria-hidden="true"></i> 送信する</button>
         </div>
       </div>
     </div>`;

@@ -522,7 +522,7 @@ async function renderDuplicateCandidates() {
         ${escHtml(c.officeName || "—")}
         <span style="font-size:12px;color:var(--color-ink-muted)">${SOURCE_LABELS[c.source] || c.source || ""} ／ ${STATUS_LABELS[c.status] || ""}</span>
       </a>
-      ${canMerge ? `<button class="btn btn-ghost" type="button" data-merge="${c._id}" style="white-space:nowrap">
+      ${canMerge ? `<button class="btn btn-ghost" type="button" data-merge="${c._id}" data-tip="その案件の対応記録・伴走支援の記録・見積もり・出荷をこの案件へ移し、その案件は対象外（重複）にします。押すと確認が出ます。元に戻せません。" style="white-space:nowrap">
         <i class="ti ti-arrow-merge" aria-hidden="true"></i>この案件に統合
       </button>` : ""}
     </div>`).join("");
@@ -565,7 +565,7 @@ function renderTimeline(activities) {
 function refLinkHtml(a) {
   const link = activityRefLink(a);
   if (!link) return "";
-  return `<div style="margin-top:6px"><button type="button" class="btn btn-ghost act-ref-open" data-ref-type="${escHtml(a.refType)}" data-ref-id="${escHtml(a.refId)}" style="font-size:12px;padding:4px 10px"><i class="ti ti-external-link" aria-hidden="true"></i> ${escHtml(link.label)}</button></div>`;
+  return `<div style="margin-top:6px"><button type="button" class="btn btn-ghost act-ref-open" data-tip="当日タブへ切り替えて、この行のもとになった記録を開きます。データは変わりません。" data-ref-type="${escHtml(a.refType)}" data-ref-id="${escHtml(a.refId)}" style="font-size:12px;padding:4px 10px"><i class="ti ti-external-link" aria-hidden="true"></i> ${escHtml(link.label)}</button></div>`;
 }
 
 // 当日タブへ切り替えて、該当の記録（無ければ当日タブの先頭）へスクロールする
@@ -875,8 +875,17 @@ function shipNextActionHtml(s) {
     return `<span class="ship-next-msg"><i class="ti ti-truck-delivery" aria-hidden="true"></i> ${a.label}です（${isPickup(s) ? "受け渡し" : "発送済"}は倉庫の担当が押します）。 <a href="${a.url}">出荷の行を開く</a></span>`;
   }
   const targetAttrs = a.external ? ` target="_blank" rel="noopener"` : "";
-  return `<a class="btn btn-primary" href="${a.url}"${targetAttrs}><i class="ti ti-${a.icon}" aria-hidden="true"></i> ${a.label}</a>`;
+  const tip = SHIP_NEXT_TIPS[a.label] || "";
+  const tipAttr = tip ? ` data-tip="${escHtml(tip)}"` : "";
+  return `<a class="btn btn-primary" href="${a.url}"${targetAttrs}${tipAttr}><i class="ti ti-${a.icon}" aria-hidden="true"></i> ${a.label}</a>`;
 }
+// 上のボタンの説明の吹き出し（admin/js/tooltip.js・2026-11-12）。どれもリンクで、ここでは何も書き込まない
+const SHIP_NEXT_TIPS = {
+  "出荷を依頼する": "出荷・請求・入金の画面で、この出荷の行を開きます。出荷の依頼はその画面で行います（ここを押しただけでは何も変わりません）。",
+  "請求書を出す": "出荷・請求・入金の画面で、この出荷の行を開きます。請求書の発行と「請求済にする」はその画面で行います。",
+  "入金を記録する": "出荷・請求・入金の画面で、この出荷の行を開きます。入金の記録はその画面で行います。",
+  "領収証を出す": "領収証の画面を新しいタブで開きます。発行・印刷はその画面で行います。",
+};
 // 送付済み・記録待ち（メールで送ったが「請求済にする」「発行を記録」がまだ・2026-11-10）。判定は ship-flow.js の mailedPendingNotes
 function shipMailedPendingHtml(s) {
   return mailedPendingNotes(s).map((n) =>
@@ -898,12 +907,12 @@ function shipCardHtml(s) {
   const soUrl = `/supply.html?tab=shipments&so=${encodeURIComponent(s.soNumber || "")}`;
   const invUrl = `/supply-print.html?type=invoice&id=${s._id}`;
   const receiptUrl = `/supply-print.html?type=receipt&id=${s._id}`;
-  const links = [`<a class="btn btn-secondary" href="${soUrl}" style="font-size:12px;padding:6px 12px"><i class="ti ti-list" aria-hidden="true"></i> 一覧で開く</a>`];
+  const links = [`<a class="btn btn-secondary" href="${soUrl}" data-tip="出荷・請求・入金の画面で、この出荷の行を開きます。" style="font-size:12px;padding:6px 12px"><i class="ti ti-list" aria-hidden="true"></i> 一覧で開く</a>`];
   if (st === "invoiced" || st === "paid") {
-    links.push(`<a class="btn btn-secondary" href="${invUrl}" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-file-invoice" aria-hidden="true"></i> 請求書PDF</a>`);
+    links.push(`<a class="btn btn-secondary" href="${invUrl}" data-tip="請求書を新しいタブで開きます。" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-file-invoice" aria-hidden="true"></i> 請求書PDF</a>`);
   }
   if (st === "paid") {
-    links.push(`<a class="btn btn-secondary" href="${receiptUrl}" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-receipt-2" aria-hidden="true"></i> 領収証PDF</a>`);
+    links.push(`<a class="btn btn-secondary" href="${receiptUrl}" data-tip="領収証の画面を新しいタブで開きます。" target="_blank" rel="noopener" style="font-size:12px;padding:6px 12px"><i class="ti ti-receipt-2" aria-hidden="true"></i> 領収証PDF</a>`);
   }
   return `
     <div class="ship-card${canceled ? " is-canceled" : ""}">
@@ -973,7 +982,7 @@ function renderShipDupBanner(ships) {
     <strong>まだ発送していない出荷が ${b.count} 件あります</strong>（${b.soNumbers.map(escHtml).join("・")}）。
     二重に送らないよう、1件だけ残して、ほかは理由「重複登録」でキャンセルしてください。
     ${b.keepSo ? `<br>残す候補: ${escHtml(b.keepSo)}（案件に結び付いている出荷）` : ""}
-    <div style="margin-top:6px"><a class="btn btn-secondary" href="${soLink(target)}" style="font-size:12px;padding:6px 12px">
+    <div style="margin-top:6px"><a class="btn btn-secondary" href="${soLink(target)}" data-tip="出荷・請求・入金の画面で出荷を開きます。重複している出荷のキャンセルは、その画面で行います。" style="font-size:12px;padding:6px 12px">
       <i class="ti ti-list-check" aria-hidden="true"></i> 供給管理で選ぶ</a></div>`;
 }
 
@@ -1007,7 +1016,7 @@ function renderNextStep() {
       <i class="ti ti-arrow-big-right-line" aria-hidden="true"></i>
       <span class="next-step-label">次の一手</span>
       <span class="next-step-text">${escHtml(na.text)}</span>
-      <button type="button" class="btn btn-primary" id="nextStepBtn">${escHtml(na.button)}</button>
+      <button type="button" class="btn btn-primary" id="nextStepBtn" data-tip="次にやることの場所（タブ・入力欄）へ移ります。押しただけではデータは変わりません。">${escHtml(na.button)}</button>
     </div>${moneyHtml}`;
 
   document.getElementById("nextStepBtn")?.addEventListener("click", () => {
@@ -1319,7 +1328,7 @@ function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
       <div class="modal">
         <div class="modal-header">
           <h2><i class="ti ti-arrow-merge" aria-hidden="true"></i> 統合する内容を選んでください</h2>
-          <button class="btn btn-secondary" data-merge-cancel type="button" aria-label="閉じる">
+          <button class="btn btn-secondary" data-merge-cancel type="button" data-tip="やめて閉じます。統合はしません。" aria-label="閉じる">
             <i class="ti ti-x" aria-hidden="true"></i>
           </button>
         </div>
@@ -1354,8 +1363,8 @@ function openMergeChoiceModal(keep, other, conflicts, autoNotes) {
             </div>` : ""}
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" data-merge-cancel type="button">キャンセル</button>
-          <button class="btn btn-primary" data-merge-ok type="button">
+          <button class="btn btn-secondary" data-merge-cancel type="button" data-tip="やめて閉じます。統合はしません。">キャンセル</button>
+          <button class="btn btn-primary" data-merge-ok type="button" data-tip="選んだ内容でこの案件に統合します。統合元は対象外（重複）になり、元に戻せません。">
             <i class="ti ti-arrow-merge" aria-hidden="true"></i>この内容で統合する
           </button>
         </div>
@@ -1585,7 +1594,7 @@ function sessionViewHtml(s) {
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">
           <strong style="font-size:14px"><i class="ti ti-calendar-event" aria-hidden="true"></i> ${escHtml(s.sessionDate || "日付未設定")}</strong>
           <span style="font-size:12px;color:var(--color-ink-muted);margin-left:auto">${escHtml(s.userName || "")} ・ ${formatDateTime(s.createdAt)}</span>
-          <button class="btn btn-secondary sess-edit" data-id="${s._id}" type="button" style="font-size:12px;padding:4px 10px"><i class="ti ti-edit" aria-hidden="true"></i>編集</button>
+          <button class="btn btn-secondary sess-edit" data-tip="この伴走支援の記録を直す欄を開きます。「変更を保存」を押すまで保存されません。" data-id="${s._id}" type="button" style="font-size:12px;padding:4px 10px"><i class="ti ti-edit" aria-hidden="true"></i>編集</button>
         </div>
         ${s.summary ? `<div style="font-size:13px;white-space:pre-wrap;margin-bottom:${photos ? "10px" : "0"}">${escHtml(s.summary)}</div>` : ""}
         ${photos ? `<div class="session-photos">${photos}</div>` : ""}
@@ -1598,7 +1607,7 @@ function sessionEditHtml(s) {
   const photos = (s.photoUrls || []).map((u) => `
     <div style="position:relative;display:inline-block">
       <img class="session-photo" src="${u}" alt="支援写真" loading="lazy">
-      <button class="sess-photo-del" data-url="${u.replace(/"/g, "&quot;")}" type="button" aria-label="この写真を外す"
+      <button class="sess-photo-del" data-tip="この写真を外します。「変更を保存」を押したときに写真が削除されます。" data-url="${u.replace(/"/g, "&quot;")}" type="button" aria-label="この写真を外す"
         style="position:absolute;top:2px;right:2px;width:24px;height:24px;border-radius:50%;border:none;background:rgba(184,74,74,.92);color:#fff;font-size:14px;line-height:1;cursor:pointer">×</button>
     </div>`).join("");
   return `
@@ -1622,9 +1631,9 @@ function sessionEditHtml(s) {
         </div>
         <div id="sessEditErr" style="display:none;font-size:13px;color:var(--color-danger);font-weight:600;margin-bottom:8px"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn btn-primary sess-save" data-id="${s._id}" type="button"><i class="ti ti-check" aria-hidden="true"></i>変更を保存</button>
-          <button class="btn btn-secondary sess-cancel" type="button">キャンセル</button>
-          <button class="btn btn-danger sess-delete" data-id="${s._id}" type="button" style="margin-left:auto"><i class="ti ti-trash" aria-hidden="true"></i>この記録を削除</button>
+          <button class="btn btn-primary sess-save" data-tip="直した実施日・メモ・写真を保存し、対応記録に1行残します。外した写真はこのとき削除されます。" data-id="${s._id}" type="button"><i class="ti ti-check" aria-hidden="true"></i>変更を保存</button>
+          <button class="btn btn-secondary sess-cancel" data-tip="直した内容を捨てて、編集をやめます。" type="button">キャンセル</button>
+          <button class="btn btn-danger sess-delete" data-tip="この伴走支援の記録と写真を削除し、削除したことを対応記録に残します。押すと確認が出ます。元に戻せません。" data-id="${s._id}" type="button" style="margin-left:auto"><i class="ti ti-trash" aria-hidden="true"></i>この記録を削除</button>
         </div>
       </div>
     </div>`;

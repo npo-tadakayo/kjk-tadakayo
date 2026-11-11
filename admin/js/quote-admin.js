@@ -80,13 +80,13 @@ function itemsLine(items) {
 
 function pdfCell(q) {
   if (q.pdfUrl) {
-    return `<a class="btn btn-secondary" href="${esc(q.pdfUrl)}" target="_blank" rel="noopener"><i class="ti ti-file-text" aria-hidden="true"></i> PDFを開く</a>`;
+    return `<a class="btn btn-secondary" href="${esc(q.pdfUrl)}" data-tip="保存済みの見積書 PDF を新しいタブで開きます。" target="_blank" rel="noopener"><i class="ti ti-file-text" aria-hidden="true"></i> PDFを開く</a>`;
   }
   return `<span style="font-size:12px;color:var(--color-ink-muted)">PDF未保存（下の「見積書を表示」からPDFを作れます）</span>`;
 }
 
 function quoteDocBtn(q) {
-  return `<a class="btn btn-secondary" href="/quote-print.html?quote=${esc(q._id)}" target="_blank" rel="noopener">
+  return `<a class="btn btn-secondary" href="/quote-print.html?quote=${esc(q._id)}" target="_blank" rel="noopener" data-tip="見積書を新しいタブで開きます。印刷・PDF の保存・事業所への送付は、その画面で行います。">
     <i class="ti ti-file-description" aria-hidden="true"></i> 見積書を表示
   </a>`;
 }
@@ -109,7 +109,7 @@ function createdMetaLine(q) {
 function reviseBtn(q, isLatest) {
   if (!isLatest) return "";
   if (q.status === "superseded" || q.status === "expired") return "";
-  return `<button class="btn btn-secondary" data-revise-id="${esc(q._id)}">
+  return `<button class="btn btn-secondary" data-revise-id="${esc(q._id)}" data-tip="台数・機種を変える画面を開きます。保存すると新しい版になり、前の版は記録として残ります。">
     <i class="ti ti-edit" aria-hidden="true"></i> 内容を変更する
   </button>`;
 }
@@ -117,13 +117,13 @@ function reviseBtn(q, isLatest) {
 // 事業所へ送付する操作。PDFが無いと送りようがないので、無いときは「見積書を表示」へ誘導する
 function resendBtn(q) {
   if (!q.pdfPath) {
-    return `<a class="btn btn-secondary" href="/quote-print.html?quote=${esc(q._id)}" target="_blank" rel="noopener">
+    return `<a class="btn btn-secondary" href="/quote-print.html?quote=${esc(q._id)}" target="_blank" rel="noopener" data-tip="見積書を新しいタブで開きます。PDF の保存と事業所への送付は、その画面で行います。">
       <i class="ti ti-send" aria-hidden="true"></i> 見積書を表示してPDFを送付
     </a>`;
   }
   const busy = sendingIds.has(q._id);
   const label = q.mailedAt ? "事業所へ再送" : "事業所へ送付";
-  return `<button class="btn btn-secondary" data-resend-id="${esc(q._id)}" ${busy ? "disabled" : ""}>
+  return `<button class="btn btn-secondary" data-resend-id="${esc(q._id)}" data-tip="保存済みの見積書 PDF を、案件のメール宛てに事務局から送ります。送った記録は対応記録に残り、取り消せません。" ${busy ? "disabled" : ""}>
     <i class="ti ti-send" aria-hidden="true"></i> ${busy ? "送信中..." : label}
   </button>`;
 }
@@ -140,7 +140,7 @@ function acceptBtn(q, isLatest) {
   const expiredNote = isExpired(q)
     ? `<span style="font-size:12px;color:#8a5a1f">有効期限を過ぎています。申込を受けた日（受付日）が有効期限内のときだけ確定できます</span>`
     : "";
-  return `<button class="btn btn-primary" data-accept-id="${esc(q._id)}" type="button">
+  return `<button class="btn btn-primary" data-accept-id="${esc(q._id)}" data-tip="電話・メール・FAX などで受けた申込を記録する画面を開きます。そこで確定すると出荷の下書きができ、Chat に知らせが出ます。" type="button">
     <i class="ti ti-circle-check" aria-hidden="true"></i> 受注確定にする（電話・メールで申込を受けた）
   </button>${expiredNote}`;
 }
@@ -180,10 +180,10 @@ function rowHtml(q, isLatest) {
 // 「見積もりを作る」ボタン。見積もりが1件も無い案件では主ボタンとして目立たせる
 function createQuoteBtn(prominent) {
   return prominent
-    ? `<button class="btn btn-primary" id="createQuoteBtn" type="button" style="font-size:13.5px">
+    ? `<button class="btn btn-primary" id="createQuoteBtn" data-tip="台数・機種を選んで、この案件の見積もりを作る画面を開きます。" type="button" style="font-size:13.5px">
         <i class="ti ti-file-plus" aria-hidden="true"></i> 見積もりを作る
       </button>`
-    : `<button class="btn btn-secondary" id="createQuoteBtn" type="button">
+    : `<button class="btn btn-secondary" id="createQuoteBtn" data-tip="台数・機種を選んで、この案件の見積もりを作る画面を開きます。" type="button">
         <i class="ti ti-file-plus" aria-hidden="true"></i> 見積もりを作る
       </button>`;
 }
@@ -195,7 +195,7 @@ function groupDocBtn(latest) {
   if (!gid) return "";
   const caseParam = ctx?.caseId ? `&case=${encodeURIComponent(ctx.caseId)}` : "";
   return `<a class="btn btn-secondary" href="/quote-group-print.html?group=${encodeURIComponent(gid)}${caseParam}" target="_blank" rel="noopener"
-             title="同じ法人の事業所ぶんをまとめた合計見積書を開きます">
+             data-tip="同じ法人の事業所ぶんをまとめた合計見積書を、新しいタブで開きます。">
     <i class="ti ti-building-community" aria-hidden="true"></i> 合計見積書（法人まとめ）
   </a>`;
 }
@@ -342,8 +342,8 @@ function openRevise(quoteId) {
           <p id="rvError" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7"></p>
         </div>
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn btn-secondary" id="reviseCancel">やめる</button>
-          <button class="btn btn-primary" id="reviseSubmit">この内容で変更する</button>
+          <button class="btn btn-secondary" id="reviseCancel" data-tip="やめて閉じます。見積もりは変わりません。">やめる</button>
+          <button class="btn btn-primary" id="reviseSubmit" data-tip="新しい版の見積もりを作り、前の版は旧版として残します。出荷の下書きがあれば同じ内容に作り直し、チェックを入れていれば事業所へメールで知らせます。">この内容で変更する</button>
         </div>
       </div>
     </div>`;
@@ -455,8 +455,8 @@ function openCreate() {
           <p id="cqError" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7"></p>
         </div>
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">
-          <button class="btn btn-secondary" id="createCancel">やめる</button>
-          <button class="btn btn-primary" id="createSubmit">この内容で見積もりを作る</button>
+          <button class="btn btn-secondary" id="createCancel" data-tip="やめて閉じます。見積もりは作りません。">やめる</button>
+          <button class="btn btn-primary" id="createSubmit" data-tip="見積もりを作り、対応記録に残します。チェックを入れていれば、内容を事業所へメールで知らせます（PDF はまだ作りません）。">この内容で見積もりを作る</button>
         </div>
       </div>
     </div>`;
@@ -581,8 +581,8 @@ async function openAccept(quoteId) {
           <p id="acError" role="alert" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7;white-space:pre-wrap"></p>
         </div>
         <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end" id="acFooter">
-          <button class="btn btn-secondary" id="acceptCancel" type="button">やめる</button>
-          <button class="btn btn-primary" id="acceptSubmit" type="button">受注確定にする</button>
+          <button class="btn btn-secondary" id="acceptCancel" data-tip="やめて閉じます。受注確定にはしません。" type="button">やめる</button>
+          <button class="btn btn-primary" id="acceptSubmit" data-tip="見積もりを申し込み済みにして出荷の下書きを作り、状態が受注前なら受注確定にします。Chat に知らせが出て、チェックを入れていれば確認メールも送ります。" type="button">受注確定にする</button>
         </div>
       </div>
     </div>`;
@@ -689,7 +689,7 @@ function showAcceptResult(sum) {
         ${sum.partial ? "一部の事業所は確定できませんでした:<br>" : ""}
         ${sum.errors.map((m) => `・${esc(m)}`).join("<br>")}
       </div>` : ""}`;
-  footer.innerHTML = `<button class="btn btn-secondary" id="acceptClose" type="button">閉じる</button>`;
+  footer.innerHTML = `<button class="btn btn-secondary" id="acceptClose" data-tip="結果の表示を閉じます。何も変わりません。" type="button">閉じる</button>`;
   document.getElementById("acceptClose").addEventListener("click", closeAccept);
 }
 

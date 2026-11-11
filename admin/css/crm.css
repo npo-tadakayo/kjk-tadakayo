@@ -1220,3 +1220,41 @@ th.sortable .sort-ind { font-size: 10px; color: var(--color-primary); }
 .form-control.sa-diff-input { background: #fff7d9; border-color: #b7791f; }
 .sa-diff { font-size: 12px; color: #8a5300; background: #fff7d9; border-radius: 4px; padding: 4px 8px; margin: 4px 0 0; }
 @media (max-width: 600px) { .sa-table th { width: auto; } }
+
+/* ボタンの説明の吹き出し（2026-11-12・admin/js/tooltip.js。ボタンに data-tip="…" を付けると出る）
+   地の色 --color-ink（#2C2416）× 白文字 ＝ コントラスト比 約15:1（WCAG AA 4.5:1 以上） */
+.kjk-tip {
+  position: fixed;
+  z-index: 10002; /* モーダル（100）・練習モードの帯（10000）・練習の知らせ（10001）より上 */
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-ink);
+  color: #fff;
+  border-radius: var(--radius-md);
+  font-family: 'Inter', 'Noto Sans JP', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-align: left;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  box-shadow: 0 4px 14px rgba(44,36,22,.22);
+  pointer-events: auto; /* 吹き出しの上にマウスを移しても消えない（WCAG 1.4.13） */
+  animation: kjk-tip-in .12s ease-out;
+}
+.kjk-tip[hidden] { display: none; }
+.kjk-tip-arrow {
+  position: absolute;
+  width: 10px; height: 10px;
+  margin-left: -5px;
+  background: var(--color-ink);
+  transform: rotate(45deg);
+}
+.kjk-tip[data-placement="top"] .kjk-tip-arrow { bottom: -5px; }
+.kjk-tip[data-placement="bottom"] .kjk-tip-arrow { top: -5px; }
+@keyframes kjk-tip-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .kjk-tip { animation: none; } }
+/* 指で触る端末: 長押しで吹き出しを出すので、長押しで出る文字の選択・リンクのメニューを止める */
+@media (hover: none) {
+  [data-tip] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+}
