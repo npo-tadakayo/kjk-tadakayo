@@ -23,4 +23,15 @@ t("指摘9: 申込の画面のボタンは、スイッチのオン・オフに�
   assert.match(h, /<button type="button" class="modal-btn modal-btn-cancel" id="orderCancel">/);
 });
 
+t("指摘10: 入力前の案内は、横並びでは「左」、820px 以下（縦並び）では「上」のフォーム", () => {
+  assert.ok(!h.includes("        左のフォームに事業所さま情報を"), "「左」決め打ちの文言が残っていない");
+  assert.match(h, /<span class="lock-dir-wide">左<\/span><span class="lock-dir-narrow">上<\/span>のフォームに事業所さま情報をご入力いただき、/);
+  assert.match(rule(".lock-dir-narrow") || "", /display:\s*none/);
+  const m = /@media \(max-width: 820px\) \{([\s\S]*?)\n    \}/.exec(css);
+  assert.ok(m, "820px の切り替え（縦並び）がある");
+  assert.match(m[1], /\.app-body \{ flex-direction: column;/);
+  assert.match(m[1], /\.lock-dir-wide \{ display: none; \}/);
+  assert.match(m[1], /\.lock-dir-narrow \{ display: inline; \}/);
+});
+
 console.log(`OK test-mitsumori-layout: ${n} 件合格`);

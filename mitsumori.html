@@ -734,10 +734,14 @@
       .app-header-title { display: none; }
       .hdr-btn { padding: 8px 10px; font-size: 12px; gap: 4px; }
     }
+    /* 入力前の案内の「左／上のフォーム」: 2ペイン（横並び）は左、820px 以下（縦並び）はフォームが上になる（2026-11-13） */
+    .lock-dir-narrow { display: none; }
     @media (max-width: 820px) {
       .app-body { flex-direction: column; height: auto; }
       .form-panel { width: 100%; }
       .est-doc { width: 100%; }
+      .lock-dir-wide { display: none; }
+      .lock-dir-narrow { display: inline; }
     }
   </style>
 </head>
@@ -893,7 +897,7 @@
       <i class="ti ti-lock preview-lock-icon" aria-hidden="true"></i>
       <div class="preview-lock-title">必要事項のご入力をお願いします</div>
       <div class="preview-lock-body">
-        左のフォームに事業所さま情報をご入力いただき、<br>
+        <span class="lock-dir-wide">左</span><span class="lock-dir-narrow">上</span>のフォームに事業所さま情報をご入力いただき、<br>
         同意にチェックを入れると、お見積もりの内容がこちらに表示されます。<br>
         受け取り方（PDFのダウンロード／メール）は、表示後にお選びいただけます。
       </div>
