@@ -7,11 +7,12 @@
 #   bash scripts/test-all.sh --emu-only エミュレータのテストだけ
 #
 # 1段目: scripts/test-*.mjs のうちエミュレータが要らないものを node で1本ずつ。
-# 2段目: エミュレータが要る8本。
+# 2段目: エミュレータが要る9本。
 #   ・ルール3本（test-rules / test-rules-appconfig / test-rules-catchall）は、リポジトリの外の
 #     作業フォルダ（既定 ${TMPDIR:-/tmp}/kjk-emu-run。EMU_RUN_DIR で変更可）に
 #     @firebase/rules-unit-testing と firebase を入れ（入っていれば入れ直さない）、そこへコピーして動かす。
-#   ・残り5本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu / test-ship-cancel-emu〔2026-11-12〕）はリポジトリ直下で動かす。functions/node_modules が要る。
+#   ・残り6本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu / test-ship-cancel-emu〔2026-11-12〕）はリポジトリ直下で動かす。functions/node_modules が要る。
+#     test-ship-cancel-emu はルールを通すためにクライアント SDK も使う（上の作業フォルダの部品・EMU_RUN_DIR で渡す。2026-11-13）。
 #     無ければ失敗扱いにして `cd functions && npm ci` を案内する（勝手に入れない）。
 #     FUNCTIONS_NODE_MODULES に既存の node_modules のパスを渡すと、その間だけ symlink を張り、終わったら外す。
 #
@@ -187,7 +188,7 @@ if [ "$RUN_EMU" = 1 ]; then
       record emu "scripts/$t" "$out" $?
     done
 
-    # --- functions を使う5本（リポジトリ直下で） ---
+    # --- functions を使う6本（リポジトリ直下で） ---
     nm_ok=1
     if [ ! -e functions/node_modules ]; then
       if [ -n "${FUNCTIONS_NODE_MODULES:-}" ]; then
@@ -202,14 +203,20 @@ if [ "$RUN_EMU" = 1 ]; then
       fi
     fi
     [ -f firestore-debug.log ] || NEW_DEBUG_LOG="$REPO/firestore-debug.log"
-    for spec in "test-office-merge-emu.mjs demo-office-test" "test-warehouse-emu.mjs demo-warehouse-test" "test-order-consent-emu.mjs demo-order-consent-test" "test-order-consent-web-emu.mjs demo-order-consent-web-test" "test-trainer-emu.mjs demo-trainer-test"; do
+    # test-ship-cancel-emu はキャンセルの読み書きをクライアント SDK（ルールを通す）で行うので、上のルールの作業フォルダ（EMU_RUN_DIR）の部品も使う
+    # （2026-11-13 小さな指摘7。それまで一覧に入っておらず、test-all では動いていなかった）
+    for spec in "test-office-merge-emu.mjs demo-office-test" "test-warehouse-emu.mjs demo-warehouse-test" "test-order-consent-emu.mjs demo-order-consent-test" "test-order-consent-web-emu.mjs demo-order-consent-web-test" "test-trainer-emu.mjs demo-trainer-test" "test-ship-cancel-emu.mjs demo-ship-cancel-test"; do
       t="${spec% *}"; pid="${spec#* }"
       if [ "$nm_ok" = 0 ]; then
         record_fail_msg emu "scripts/$t" "functions/node_modules が無い。\`cd functions && npm ci\` を実行してから（または FUNCTIONS_NODE_MODULES に既存の node_modules のパスを渡す）"
         continue
       fi
+      if [ "$t" = test-ship-cancel-emu.mjs ] && [ "$prep_ok" = 0 ]; then
+        record_fail_msg emu "scripts/$t" "作業フォルダ（$EMU_RUN_DIR）の準備ができなかった（クライアント SDK が要る）"
+        continue
+      fi
       out="$TMP_OUT/$t.out"
-      emu_exec "$pid" --only firestore "node scripts/$t" > "$out" 2>&1 < /dev/null
+      EMU_RUN_DIR="$EMU_RUN_DIR" emu_exec "$pid" --only firestore "node scripts/$t" > "$out" 2>&1 < /dev/null
       record emu "scripts/$t" "$out" $?
     done
     # symlink はここで外す（trap でも外す）
