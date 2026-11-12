@@ -29,6 +29,9 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
 // 「記録のずれ」の判定（設計書 CRM改善_設計書_20261110 §3・2026-11-10）
 import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf, ymdJstOf } from "/js/record-gaps.js";
 import { planShipCancelRevert, revertWrites, holdActivity, holdMessage, cancelPreviewText } from "/js/ship-cancel-case.js"; // 点検9（出荷キャンセル後の案件・2026-11-12）
+// 点検9の続き（2026-11-13 次田さん「その都度、人が選ぶ」）: 認定事業者の受注から作った出荷をキャンセルしたときの受注の戻し先
+import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPartnerOrderShipment, validateOrderReturn,
+  planOrderOnShipCancel, orderReturnWrites, lastShipCancelNote, shipOrderReturnNote } from "/js/ship-cancel-order.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
@@ -2411,7 +2414,57 @@ function openCancelShipModal(s, opts){
   if(opts.reason && CANCEL_REASONS.includes(opts.reason)) reasonSel.value = opts.reason;
   document.getElementById("cancelNote").value = opts.note || "";
   document.getElementById("cancelShipError").style.display = "none";
+  resetOrderReturnChoice();
+  if(isPartnerOrderShipment(s)) previewOrderReturn(s);
   document.getElementById("cancelShipModal").classList.add("open");
+}
+// ===== 認定事業者の受注の戻し先（点検9の続き・2026-11-13「その都度、人が選ぶ」）=====
+// 画面を開いたときの判定（"ask" のときだけ選択肢を出す）。キャンセルのトランザクションの中で最新の値でやり直し、食い違えば止める
+let cancelOrderPlanKind = "none";
+function resetOrderReturnChoice(){
+  cancelOrderPlanKind = "none";
+  document.getElementById("cancelOrderReturnGroup").style.display = "none";
+  document.getElementById("cancelOrderReturnInfo").textContent = "";
+  document.getElementById("cancelOrderReturnChoices").innerHTML = "";
+}
+// 受注についての一言は、在庫・案件の文のあとに足す（上書きしない）
+function appendCancelNote(html){ document.getElementById("cancelShipStockNote").insertAdjacentHTML("beforeend", `<br><strong>受注:</strong> ${html}`); }
+async function previewOrderReturn(s){
+  // 読めるまでは「確かめ中」として扱い、キャンセルを通さない（選択肢が出る前に押されても受注を放置しない）
+  cancelOrderPlanKind = "loading";
+  let order = null;
+  try{
+    const cached = partnerOrdersCache.find(o=>o._id===s.partnerOrderId);
+    if(cached) order = cached;
+    else { const d = await getDoc(doc(db,"partnerOrders",s.partnerOrderId)); order = d.exists() ? { _id:d.id, ...d.data() } : null; }
+  }catch(e){
+    if(cancelTargetShip!==s) return;
+    cancelOrderPlanKind = "error";
+    appendCancelNote(`認定事業者の受注を読めませんでした（${esc(e.message||String(e))}）。画面を更新してください`);
+    return;
+  }
+  if(cancelTargetShip!==s) return;
+  const plan = planOrderOnShipCancel({ ship:s, order, shipments: shipments.filter(x=>x.partnerOrderId===s.partnerOrderId) });
+  cancelOrderPlanKind = plan.kind;
+  if(plan.kind==="missing"){
+    appendCancelNote("もとの認定事業者の受注が見つかりません（受注は変えません）");
+    return;
+  }
+  if(plan.kind==="others"){
+    appendCancelNote(`同じ受注にほかの出荷（${esc(plan.others.join("・"))}）があるため、受注の状態は変えません`);
+    return;
+  }
+  if(plan.kind!=="ask") return;
+  document.getElementById("cancelOrderReturnInfo").textContent =
+    `受注 ${order.soNumber||""}${order.partnerOrderNo?`（先方No ${order.partnerOrderNo}）`:""}・${order.partnerName||order.partnerEmail||""}／いまの状態: ${ORDER_STATUS_LABEL[order.status]||order.status||"—"}。この出荷をキャンセルしたあと、受注をどうするかを選んでください`;
+  document.getElementById("cancelOrderReturnChoices").innerHTML = ORDER_RETURN_CHOICES.map(c=>
+    `<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="radio" name="cancelOrderReturn" value="${esc(c.value)}" style="margin-top:3px">`
+    + `<span><strong>${esc(c.label)}</strong><span style="display:block;font-size:12px;color:var(--color-ink-muted)">${esc(c.hint)}</span></span></label>`).join("");
+  document.getElementById("cancelOrderReturnGroup").style.display = "";
+}
+function selectedOrderReturn(){
+  const r = document.querySelector('input[name="cancelOrderReturn"]:checked');
+  return r ? r.value : "";
 }
 // 点検9: この出荷で案件の出荷が全部キャンセルになるなら、案件がどうなるか（確認中に戻す／自動では戻さない）を画面に足す。
 // 表示だけ（実際の判定はキャンセルのトランザクションの中で最新の値でやり直す）。読めなければ何も足さない
@@ -2421,7 +2474,7 @@ async function previewCaseRevert(s, stockMsg){
     if(cancelTargetShip!==s || !cs.exists()) return;
     const plan = planShipCancelRevert({ kase: cs.data(), shipments: shipments.filter(x=>x.caseId===s.caseId), canceledId: s._id });
     const t = cancelPreviewText(plan, cs.data());
-    if(t) document.getElementById("cancelShipStockNote").innerHTML = stockMsg + `<br><strong>案件:</strong> ${esc(t)}`;
+    if(t) document.getElementById("cancelShipStockNote").insertAdjacentHTML("beforeend", `<br><strong>案件:</strong> ${esc(t)}`); // 受注の一言を消さないよう足す
   }catch(e){ console.warn("キャンセル後の案件の予告を出せませんでした", e); }
 }
 function closeCancelShipModal(){
@@ -2458,6 +2511,13 @@ async function doCancelShipment(){
   const reason = document.getElementById("cancelReason").value;
   const note = document.getElementById("cancelNote").value.trim();
   let usesStock = cancelShipUsesStock(s);
+  // 認定事業者の受注から作った出荷: 戻し先を選んでいなければ止める（受注を読んでいる途中・読めなかったときも止める）
+  const orderChoice = cancelOrderPlanKind==="ask" ? selectedOrderReturn() : "";
+  if(isPartnerOrderShipment(s)){
+    if(cancelOrderPlanKind==="loading"){ err.textContent = "認定事業者の受注を確かめています。少し待ってからもう一度押してください"; err.style.display = "block"; return; }
+    if(cancelOrderPlanKind==="error"){ err.textContent = "認定事業者の受注を読めませんでした。画面を更新してください"; err.style.display = "block"; return; }
+    if(cancelOrderPlanKind==="ask"){ const bad = validateOrderReturn(orderChoice); if(bad){ err.textContent = bad; err.style.display = "block"; return; } }
+  }
   const btn = document.getElementById("doCancelShipBtn"); btn.disabled = true;
   try{
     // 状態の確かめ・キャンセル・在庫の戻しを1つのトランザクションで行う
@@ -2476,7 +2536,14 @@ async function doCancelShipment(){
       sibIds = shs.docs.map(d=>d.id).filter(id=>id!==s._id);
       quoteIds = qs.docs.map(d=>d.id);
     }
+    // 同じ受注にひも付く出荷の一覧も先に読む（トランザクションの中では検索できない）
+    let poSibIds = [];
+    if(isPartnerOrderShipment(s)){
+      const ps = await getDocs(query(collection(db,"shipments"),where("partnerOrderId","==",s.partnerOrderId)));
+      poSibIds = ps.docs.map(d=>d.id).filter(id=>id!==s._id);
+    }
     let casePlan = { kind:"none", reasons:[] };
+    let orderText = "";
     await runTransaction(db, async (tx)=>{
       // ---- 読み取り（書き込みより前にすべて読む）----
       const snap = await tx.get(ref);
@@ -2496,13 +2563,35 @@ async function doCancelShipment(){
         for(const id of quoteIds){ const d = await tx.get(doc(db,"quotes",id)); if(d.exists()) quotes.push({ id:d.id, ...d.data() }); }
         casePlan = planShipCancelRevert({ kase, shipments:[{ _id:s._id, ...cur }, ...sibs], canceledId:s._id });
       }
+      // 認定事業者の受注（点検9の続き）: 最新の受注と同じ受注の出荷で判定し直す。画面を開いたときと違えば止める
+      let poRef = null, order = null, orderPlan = { kind:"none" };
+      if(isPartnerOrderShipment(cur)){
+        poRef = doc(db,"partnerOrders",cur.partnerOrderId);
+        const poSnap = await tx.get(poRef);
+        order = poSnap.exists() ? poSnap.data() : null;
+        const poSibs = [];
+        for(const id of poSibIds){ const d = await tx.get(doc(db,"shipments",id)); if(d.exists()) poSibs.push({ _id:d.id, ...d.data() }); }
+        orderPlan = planOrderOnShipCancel({ ship:{ _id:s._id, ...cur }, order, shipments: poSibs });
+        if(orderPlan.kind!==cancelOrderPlanKind) throw new Error(ORDER_RETURN_STALE_MSG);
+      }
       // ---- 書き込み ----
       usesStock = cancelShipUsesStock(cur);
+      const cancelTextForOrder = note ? `${reason}・${note}` : reason;
+      let orderW = null;
+      if(orderPlan.kind==="ask"){
+        orderW = orderReturnWrites({ order, ship:{ _id:s._id, ...cur }, choice: orderChoice, by: who,
+          now: serverTimestamp(), nowIso: new Date().toISOString(), cancelReason: cancelTextForOrder });
+      }
       tx.update(ref, {
         status: "canceled", statusBeforeCancel: shipStatusOf(cur),
         canceledAt: serverTimestamp(), canceledBy: who,
         cancelReason: reason, cancelNote: note, updatedAt: serverTimestamp(),
+        ...(orderW ? orderW.shipPatch : {}),
       });
+      if(orderW){
+        tx.update(poRef, { ...orderW.orderPatch, shipCancelLog: arrayUnion(orderW.logEntry) });
+        orderText = orderW.text;
+      }
       if(usesStock){
         const backTo = shipLocationOf(cur);
         for(const it of stockItems(cur.items)){
@@ -2529,7 +2618,7 @@ async function doCancelShipment(){
     const caseNote = casePlan.kind==="revert" ? "。案件を「確認中」に戻し、見積もりを「発行中」に戻しました（見積書を送り直して確認してください）"
       : casePlan.kind==="hold" ? `。${holdMessage(casePlan.reasons)}` : "";
     if(casePlan.kind==="hold") alert(`${s.soNumber} をキャンセルにしました。\n\n案件: ${holdMessage(casePlan.reasons)}`);
-    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）${caseNote}${dupNext&&dupNext.queue.length?`。続けて重複の残り ${dupNext.queue.length}件を確かめます`:""}`);
+    toast(`${s.soNumber} をキャンセルにしました（${usesStock?"在庫を戻しました":"在庫は動いていません"}）${caseNote}${orderText?`。${orderText}`:""}${dupNext&&dupNext.queue.length?`。続けて重複の残り ${dupNext.queue.length}件を確かめます`:""}`);
     openNextDupCancel(dupNext);
   }catch(e){ err.textContent = `キャンセルに失敗: ${e.message}`; err.style.display = "block"; }
   finally{ btn.disabled = false; }
@@ -3005,7 +3094,7 @@ function renderShipments(ships, dv){
           + editBtn + typeBtn);
     } else {
       // canceled: 記録として残すだけ。帳票リンク・修正系のボタンは出さず、理由を小さく表示する
-      lifeBtns = `<div style="font-size:12px;color:var(--color-ink-muted)">理由: ${esc(s.cancelReason||"-")}${s.cancelNote?`・${esc(s.cancelNote)}`:""}</div>`;
+      lifeBtns = `<div style="font-size:12px;color:var(--color-ink-muted)">理由: ${esc(s.cancelReason||"-")}${s.cancelNote?`・${esc(s.cancelNote)}`:""}${shipOrderReturnNote(s)?`<br>${esc(shipOrderReturnNote(s))}`:""}</div>`;
     }
     // 完了リスト（2026-11-12 送7）: 請求書を出す・入金の画面を開く・領収証を出す（今ある画面へのつなぎだけ。入金・消込の処理は変えない）
     if(stepFilter==="done" && step==="done"){
@@ -3838,7 +3927,7 @@ function renderPartnerOrders(orders){
       <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
       <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
       <td style="font-size:12px">${esc(sum)}</td>
-      <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select></td>
+      <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select>${lastShipCancelNote(o)?`<div style="font-size:12px;color:var(--color-ink-muted);margin-top:2px">${esc(lastShipCancelNote(o))}</div>`:""}</td>
       <td>${payCell}</td>
       <td>${shipBtn}</td>
     </tr>`;
