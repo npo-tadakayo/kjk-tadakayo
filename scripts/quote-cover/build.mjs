@@ -154,7 +154,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
     </div>
     <div class="issuer">
       <div class="nm">NPO法人タダカヨ</div>
-      〒143-0014 東京都大田区大森中2-1-20-1001<br>TEL 050-6872-9884　担当: ${esc(input.staff || "佐藤拡史")}<br>https://kjk.tadakayo.jp
+      〒143-0014 東京都大田区大森中2-1-20-1001<br>TEL 050-8894-9502　担当: ${esc(input.staff || "佐藤拡史")}<br>https://kjk.tadakayo.jp
     </div>
   </div>
 </section>
@@ -295,7 +295,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
         </tbody></table>
         <p class="note" style="margin-top:2mm">本資料のあとに、事業所ごとの見積書 ${n}通が続きます。</p>
       </div>
-      <div class="card"><h3 style="color:#333">お問い合わせ</h3><p style="font-size:10pt;line-height:1.8">NPO法人タダカヨ　介護情報基盤 伴走支援事業<br>担当: ${esc(input.staff || "佐藤拡史")}<br>TEL 050-6872-9884　／　kjk@tadakayo.jp<br>https://kjk.tadakayo.jp</p></div>
+      <div class="card"><h3 style="color:#333">お問い合わせ</h3><p style="font-size:10pt;line-height:1.8">NPO法人タダカヨ　介護情報基盤 伴走支援事業<br>担当: ${esc(input.staff || "佐藤拡史")}<br>TEL 050-8894-9502　／　kjk@tadakayo.jp<br>https://kjk.tadakayo.jp</p></div>
     </div>
   </div>
   ${footer(7)}

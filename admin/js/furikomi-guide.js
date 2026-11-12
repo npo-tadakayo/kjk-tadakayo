@@ -70,7 +70,7 @@ export function renderFurikomiGuideHtml(s, st) {
     <li><strong>ご依頼人名を変えられないとき</strong>（法人のネットバンキングなどで、登録名から変更できない場合）：お振込みのあと、日付・金額・番号を下のメールでお知らせください。</li>
   </ul>
 
-  <div class="foot">ご不明な点は ${esc(issuer)}（介護情報基盤伴走支援事業）へ　TEL 050-6872-9884　／　kjk-staff@tadakayo.jp</div>
+  <div class="foot">ご不明な点は ${esc(issuer)}（介護情報基盤伴走支援事業）へ　TEL 050-8894-9502　／　kjk-staff@tadakayo.jp</div>
 </div>`;
 }
 
