@@ -16,6 +16,9 @@
 //   E. 一部だけのキャンセル → 何も変えない
 //   F. 承諾書で受注した案件 → 取り直しの印（orderConsentStale・理由 ship_canceled）。新しい承諾書で受注確定すると印も理由も消える
 //   G. ルールが効いている: 閲覧のみ（viewer）の人はキャンセルを書けない（何も変わらない）
+//   H. 認定事業者の受注から作った出荷（2026-11-13「その都度、人が選ぶ」・admin/js/ship-cancel-order.js）:
+//      選んだ戻し先（受注確定／受付済／キャンセル）が受注に入り、記録（lastShipCancel・shipCancelLog・出荷の partnerOrderReturn）が残る。
+//      選ばないと何も変わらない／viewer は書けない／通常の出荷は受注に触れない／同じ受注にほかの生きた出荷があれば受注は変えない
 //
 // 実行（本番に繋がらない demo- プロジェクト。依存は functions/node_modules をそのまま使う）:
 //   cd <repo> && firebase emulators:exec --only firestore --project demo-ship-cancel-test "node scripts/test-ship-cancel-emu.mjs"
@@ -27,6 +30,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { planShipCancelRevert, revertWrites, holdActivity } from "../admin/js/ship-cancel-case.js";
 import { hasActiveOrder, statusChangeGuard } from "../admin/js/order-consent.js";
+import { isPartnerOrderShipment, validateOrderReturn, planOrderOnShipCancel, orderReturnWrites } from "../admin/js/ship-cancel-order.js";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) { console.error("FIRESTORE_EMULATOR_HOST がありません（emulators:exec で動かす）"); process.exit(2); }
 process.env.GCLOUD_PROJECT ||= "demo-ship-cancel-test";
@@ -270,6 +274,111 @@ check("viewer: 出荷・案件・見積もりは何も変わらない", (await g
   && (await get(cd("cG"))).status === 3 && (await get(qd("qG"))).status === "accepted");
 plan = await cancelLikeScreen(shipG.id);
 check("同じ出荷を職員（staff）なら戻せる", plan.kind === "revert" && (await get(cd("cG"))).status === 2);
+
+// ---------- H. 認定事業者の受注から作った出荷 ----------
+// 画面（supply.js doCancelShipment）と同じ手順: 戻し先の検証 → 同じ受注の出荷を先に読む → トランザクションで出荷・受注を読み直し → 判定 → 書き込み
+async function cancelPartnerLikeScreen(shipId, { choice = "", by = "職員 太郎", reason = "事業所の都合", as = STAFF, openKind = "ask" } = {}) {
+  const cdb = clientDb(as);
+  const { doc: cdoc, collection: ccol, query: cquery, where: cwhere, getDoc: cgetDoc, getDocs: cgetDocs, runTransaction: crun,
+    serverTimestamp: cnow, arrayUnion: cunion } = CF;
+  const shipRef = cdoc(cdb, "shipments", shipId);
+  const pre = (await cgetDoc(shipRef)).data();
+  if (isPartnerOrderShipment(pre) && openKind === "ask") { const bad = validateOrderReturn(choice); if (bad) throw new Error(bad); }
+  const poSibIds = isPartnerOrderShipment(pre)
+    ? (await cgetDocs(cquery(ccol(cdb, "shipments"), cwhere("partnerOrderId", "==", pre.partnerOrderId)))).docs.map((d) => d.id).filter((id) => id !== shipId)
+    : [];
+  let orderPlan = { kind: "none" };
+  await crun(cdb, async (tx) => {
+    const cur = (await tx.get(shipRef)).data();
+    let poRef = null, order = null;
+    if (isPartnerOrderShipment(cur)) {
+      poRef = cdoc(cdb, "partnerOrders", cur.partnerOrderId);
+      const ps = await tx.get(poRef);
+      order = ps.exists() ? ps.data() : null;
+      const sibs = [];
+      for (const id of poSibIds) { const d = await tx.get(cdoc(cdb, "shipments", id)); if (d.exists()) sibs.push({ _id: d.id, ...d.data() }); }
+      orderPlan = planOrderOnShipCancel({ ship: { _id: shipId, ...cur }, order, shipments: sibs });
+      if (orderPlan.kind !== openKind) throw new Error("stale");
+    }
+    const w = orderPlan.kind === "ask"
+      ? orderReturnWrites({ order, ship: { _id: shipId, ...cur }, choice, by, now: cnow(), nowIso: new Date().toISOString(), cancelReason: reason })
+      : null;
+    tx.update(shipRef, { status: "canceled", statusBeforeCancel: cur.status, canceledAt: cnow(), canceledBy: by,
+      cancelReason: reason, cancelNote: "", updatedAt: cnow(), ...(w ? w.shipPatch : {}) });
+    if (w) tx.update(poRef, { ...w.orderPatch, shipCancelLog: cunion(w.logEntry) });
+  });
+  return orderPlan;
+}
+const pod = (id) => db.collection("partnerOrders").doc(id);
+const sd = (id) => db.collection("shipments").doc(id);
+const poSeed = (id, status) => [pod(id), { soNumber: `SO-T-${id}`, partnerOrderNo: `P-${id}`, partnerEmail: "p@example.test", partnerName: "認定A",
+  status, items: [{ sku: "cir415a-01", qty: 1 }], createdAt: TS.now() }];
+const shipSeed = (id, poId, status, extra = {}) => [sd(id), { soNumber: `SH-${id}`, shipType: "dropship", partnerOrderId: poId, status,
+  items: [{ sku: "cir415a-01", name: "R", qty: 1, unitPrice: 1000 }], createdAt: TS.now(), ...extra }];
+
+section("H1. 依頼済の出荷（受注確定）をキャンセル → 「受注確定に戻す」");
+await seed([poSeed("po1", "confirmed"), shipSeed("sh1", "po1", "requested")]);
+plan = await cancelPartnerLikeScreen("sh1", { choice: "confirmed" });
+let po = await get(pod("po1")), sh = await get(sd("sh1"));
+check("判定は ask・出荷はキャンセル", plan.kind === "ask" && sh.status === "canceled" && sh.statusBeforeCancel === "requested");
+check("受注: 受注確定・最後のキャンセル（誰が・何を選んだか・サーバー時刻）", po.status === "confirmed" && po.lastShipCancel
+  && po.lastShipCancel.by === "職員 太郎" && po.lastShipCancel.to === "confirmed" && po.lastShipCancel.from === "confirmed"
+  && po.lastShipCancel.choiceLabel === "受注確定に戻す" && po.lastShipCancel.shipSoNumber === "SH-sh1" && po.lastShipCancel.at instanceof TS
+  && po.updatedAt instanceof TS, JSON.stringify(po.lastShipCancel));
+check("受注: 記録（shipCancelLog）に1行", Array.isArray(po.shipCancelLog) && po.shipCancelLog.length === 1 && po.shipCancelLog[0].to === "confirmed"
+  && po.shipCancelLog[0].by === "職員 太郎" && /^\d{4}-\d{2}-\d{2}T/.test(po.shipCancelLog[0].at) && po.shipCancelLog[0].cancelReason === "事業所の都合");
+check("出荷: partnerOrderReturn に戻し先", sh.partnerOrderReturn && sh.partnerOrderReturn.orderId === "po1" && sh.partnerOrderReturn.to === "confirmed"
+  && sh.partnerOrderReturn.orderSoNumber === "SO-T-po1" && sh.partnerOrderReturn.by === "職員 太郎");
+check("受注の発注内容・相手はそのまま", po.partnerEmail === "p@example.test" && po.items.length === 1 && po.soNumber === "SO-T-po1");
+
+section("H2. 発送済の出荷（受注 出荷済）をキャンセル → 「受付済に戻す」。2回目のキャンセルで記録が積み重なる");
+await seed([poSeed("po2", "shipped"), shipSeed("sh2", "po2", "shipped")]);
+plan = await cancelPartnerLikeScreen("sh2", { choice: "received" });
+po = await get(pod("po2"));
+check("受注: 出荷済 → 受付済", plan.kind === "ask" && po.status === "received" && po.lastShipCancel.from === "shipped" && po.lastShipCancel.to === "received");
+await seed([shipSeed("sh2b", "po2", "requested")]);
+await pod("po2").update({ status: "confirmed" });
+plan = await cancelPartnerLikeScreen("sh2b", { choice: "canceled", by: "職員 花子" });
+po = await get(pod("po2"));
+check("2回目: 受注もキャンセル・記録は2行（古い行も残る）", po.status === "canceled" && po.shipCancelLog.length === 2
+  && po.shipCancelLog[0].to === "received" && po.shipCancelLog[1].to === "canceled" && po.shipCancelLog[1].by === "職員 花子"
+  && po.lastShipCancel.by === "職員 花子", JSON.stringify(po.shipCancelLog));
+
+section("H3. 戻し先を選ばない → 何も変わらない");
+await seed([poSeed("po3", "shipped"), shipSeed("sh3", "po3", "shipped")]);
+let hErr = null;
+try { await cancelPartnerLikeScreen("sh3", { choice: "" }); } catch (e) { hErr = e; }
+check("選ばないと止まる", !!hErr && /選んでください/.test(hErr.message), String(hErr && hErr.message));
+check("出荷・受注はそのまま", (await get(sd("sh3"))).status === "shipped" && (await get(pod("po3"))).status === "shipped" && !(await get(pod("po3"))).lastShipCancel);
+
+section("H4. 閲覧のみ（viewer）→ 書けない");
+hErr = null;
+try { await cancelPartnerLikeScreen("sh3", { choice: "confirmed", as: VIEWER }); } catch (e) { hErr = e; }
+check("viewer: 拒否される（permission-denied）", !!hErr && /permission|PERMISSION_DENIED/i.test(String(hErr.code || hErr.message)), String(hErr && (hErr.code || hErr.message)));
+check("viewer: 出荷・受注は何も変わらない", (await get(sd("sh3"))).status === "shipped" && (await get(pod("po3"))).status === "shipped"
+  && !(await get(sd("sh3"))).partnerOrderReturn);
+
+section("H5. 通常の出荷（受注から作っていない）→ 受注に触れない");
+await seed([poSeed("po5", "shipped"), [sd("sh5"), { soNumber: "SH-sh5", shipType: "office", status: "requested", items: [], createdAt: TS.now() }]]);
+plan = await cancelPartnerLikeScreen("sh5", { openKind: "none" });
+check("判定は none・出荷はキャンセル・partnerOrderReturn なし", plan.kind === "none" && (await get(sd("sh5"))).status === "canceled"
+  && !("partnerOrderReturn" in (await get(sd("sh5")))));
+check("受注はそのまま", (await get(pod("po5"))).status === "shipped" && !(await get(pod("po5"))).lastShipCancel);
+
+section("H6. 同じ受注にほかの生きた出荷がある → 受注は変えない");
+await seed([poSeed("po6", "confirmed"), shipSeed("sh6a", "po6", "requested"), shipSeed("sh6b", "po6", "draft")]);
+plan = await cancelPartnerLikeScreen("sh6a", { openKind: "others" });
+check("判定は others・出荷はキャンセル・受注はそのまま", plan.kind === "others" && (await get(sd("sh6a"))).status === "canceled"
+  && (await get(pod("po6"))).status === "confirmed" && !(await get(pod("po6"))).lastShipCancel);
+
+section("H7. 画面を開いたあとで、同じ受注に生きた出荷が増えた → 止まる（何も変わらない）");
+await seed([poSeed("po7", "confirmed"), shipSeed("sh7", "po7", "requested")]);
+// 画面を開いたとき（ask）のあとに別の出荷ができた。同じ受注の出荷の一覧は先に読むので、ここでは一覧に入る前に作る
+await seed([shipSeed("sh7b", "po7", "draft")]);
+hErr = null;
+try { await cancelPartnerLikeScreen("sh7", { choice: "confirmed", openKind: "ask" }); } catch (e) { hErr = e; }
+check("食い違いで止まる", !!hErr && /stale/.test(hErr.message), String(hErr && hErr.message));
+check("出荷・受注はそのまま", (await get(sd("sh7"))).status === "requested" && !(await get(pod("po7"))).lastShipCancel);
 
 await testEnv.cleanup();
 console.log(results.join("\n"));
