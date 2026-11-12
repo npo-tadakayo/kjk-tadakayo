@@ -132,8 +132,63 @@
       + "このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。";
   }
 
+  /**
+   * 受け付けた事業所の一覧（まとめ申込の完了の表示。スイッチのオン・オフ共通）。2026-11-12 画面確認 低。
+   * 1行＝「・事業所名（案件#9101）」。事業所名は画面が持っている名前（nameOf(quoteId) が返す。見積もりの登録の応答の
+   * officeName ／ 入力欄の事業所名）。出荷番号（SO-…）は事業所には意味の無い内部の番号なので出さない。
+   * 名前が分からないときは「・案件#9101」だけ（従来の形から出荷番号を除いたもの）。
+   */
+  function doneListHtml(results, nameOf) {
+    return (results || []).filter(function (r) { return r && !r.error; }).map(function (r) {
+      var name = typeof nameOf === "function" ? String(nameOf(r.quoteId) || "").trim() : "";
+      var no = r.caseNumber != null ? "案件#" + r.caseNumber : "";
+      if (name) return "・" + esc(name) + (no ? "（" + esc(no) + "）" : "");
+      return no ? "・" + esc(no) : "";
+    }).filter(Boolean).join("<br>");
+  }
+
+  var CONTACT = "お電話またはメールでご連絡ください"; // ページの他のエラーと同じ書き方（新しい連絡先は書かない）
+
+  /**
+   * 発注の送信が断られたときに事業所の画面に出す文（スイッチがオンの道の応答の code で出し分ける。2026-11-12 画面確認 低）。
+   * サーバーの文は職員の画面と共通の言い回し（「最新の版の承諾書をいただいてください」など）を含むので、ここで事業所向けに置き換える。
+   * 置き換えないもの（そのままで事業所向けの文）は "" を返す＝呼ぶ側はサーバーの message をそのまま出す。
+   * @param {{code?:string, message?:string, multi?:boolean, nameOfEstNo?:function}} p
+   *   multi: まとめ発注（2事業所以上）か。nameOfEstNo: 見積番号 → 事業所名（サーバーの文の末尾「（見積番号）」から引く）
+   */
+  function errorText(p) {
+    var o = p || {};
+    var code = String(o.code || "");
+    var m = /（([^（）]+)）\s*$/.exec(String(o.message || ""));
+    var label = m ? m[1] : "";
+    var name = label && typeof o.nameOfEstNo === "function" ? String(o.nameOfEstNo(label) || "").trim() : "";
+    var who = name ? "「" + name + "」" : ""; // 事業所名に（）が入ることがあるので「」で囲む
+    if (code === "already_accepted") {
+      return o.multi
+        ? "すでにお申し込み済みの事業所" + who + "が含まれているため、まとめての発注を受け付けられませんでした。"
+          + "お手数ですが、その事業所を外してお見積もりを作り直すか、" + CONTACT + "。"
+        : "このお見積もりは、すでにお申し込み済みです。内容を変えたい場合は、お手数ですが、" + CONTACT + "。";
+    }
+    if (code === "old_version" || code === "not_issued") {
+      return o.multi
+        ? "新しいお見積書が発行されている事業所" + who + "が含まれているため、まとめての発注を受け付けられませんでした。"
+          + "お手数ですが、ページを読み込み直してお見積もりを作り直すか、" + CONTACT + "。"
+        : "新しいお見積書が発行されているため、このお見積もりでは発注を受け付けられませんでした。"
+          + "お手数ですが、ページを読み込み直してお見積もりを作り直すか、" + CONTACT + "。";
+    }
+    if (code === "not_group" || code === "group_mismatch" || code === "duplicate_case" || code === "duplicate_quote") {
+      return "まとめての発注を受け付けられませんでした。お手数ですが、ページを読み込み直してお見積もりを作り直すか、" + CONTACT + "。";
+    }
+    if (code === "order_by_consent_off") {
+      // サーバーの入口で返す事業所向けの文と同じ（トランザクションの中で切れたときは職員向けの文で返るため、ここでそろえる）
+      return "設定が変わりました。お手数ですが、ページを読み込み直してからもう一度お試しください";
+    }
+    return "";
+  }
+
   root.OrderConsentPage = {
     PRODUCT_NAMES: PRODUCT_NAMES, TEXT: TEXT, isValidDocument: isValidDocument, itemsLines: itemsLines,
     quotesHtml: quotesHtml, documentHtml: documentHtml, consentPayload: consentPayload, safeConsentUrl: safeConsentUrl, doneHtml: doneHtml,
+    doneListHtml: doneListHtml, errorText: errorText,
   };
 })(typeof window !== "undefined" ? window : globalThis);

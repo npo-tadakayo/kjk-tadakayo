@@ -1028,7 +1028,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
 <script src="js/split-city.js"></script>
-<script src="js/order-consent-page.js?v=20261114"></script>
+<script src="js/order-consent-page.js?v=20261115"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -2070,8 +2070,19 @@
       if (consentDoc) body.consent = OrderConsentPage.consentPayload(consentDoc);
       const res = await fetch(ACCEPT_QUOTE_URL, { method: 'POST', headers, body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
+      // 画面が持っている事業所名（見積もりの登録の応答の officeName ／ 入力欄の事業所名）を、送った見積もりの quoteId・見積番号から引く
+      const officeNameBy = (key) => {
+        for (const o of offices) {
+          const q = officeQuoteInfo[o.seq];
+          if (q && (q.quoteId === key || q.estNo === key)) return q.officeName || o.officeName || '';
+        }
+        return '';
+      };
       if (!res.ok || (data.status !== 'ok' && data.status !== 'already' && data.status !== 'partial')) {
-        show(data.message || 'お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
+        // スイッチがオンの道の断り（code 付き）のうち、職員向けの言い回しのものは事業所向けの文に置き換える（2026-11-12 画面確認 低）
+        const friendly = (data.code && window.OrderConsentPage)
+          ? OrderConsentPage.errorText({ code: data.code, message: data.message, multi: offices.length > 1, nameOfEstNo: officeNameBy }) : '';
+        show(friendly || data.message || 'お申し込みの送信に失敗しました。お手数ですが、お電話またはメールでご連絡ください。');
         return;
       }
       // 一部の事業所だけ受け付けられなかった（partial）: 受け付けた分は表示し、失敗した事業所名を明示する
@@ -2086,8 +2097,7 @@
         const okList = (data.results || []).filter((r) => !r.error);
         done.innerHTML = OrderConsentPage.doneHtml({
           label: offices.length <= 1 ? `お見積書 ${estNo}` : `事業所 ${okList.length}件`,
-          listHtml: offices.length <= 1 ? '' : okList.map((r) =>
-            `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`).join('<br>'),
+          listHtml: offices.length <= 1 ? '' : OrderConsentPage.doneListHtml(okList, officeNameBy),
           consentUrl: data.consentUrl, email: val('contactEmail'), mailed: data.mailed, already: data.status === 'already',
         });
       } else if (offices.length <= 1) {
@@ -2095,9 +2105,8 @@
           + `確認のメールを ${esc(val('contactEmail'))} 宛にお送りしました。<br>`
           + `このあと担当スタッフから、カードリーダーの発送と伴走支援の日程についてご連絡します。`;
       } else {
-        const list = (data.results || []).filter((r) => !r.error).map((r) =>
-          `・${r.caseNumber != null ? esc('案件#' + r.caseNumber) : ''}${r.shipmentNo ? esc('（出荷 ' + r.shipmentNo + '）') : ''}`
-        ).join('<br>');
+        // 受け付けた事業所の一覧は「・事業所名（案件#…）」。出荷番号は事業所に意味が無いので出さない（2026-11-12 画面確認 低）
+        const list = OrderConsentPage.doneListHtml(data.results, officeNameBy);
         const okCount = (data.results || []).filter((r) => !r.error).length;
         done.innerHTML = `<b>お申し込みを受け付けました。</b>（事業所 ${okCount}件${failedResults.length ? `／${failedResults.length}件は受け付けられませんでした` : ''}）<br>`
           + (list ? list + '<br>' : '')

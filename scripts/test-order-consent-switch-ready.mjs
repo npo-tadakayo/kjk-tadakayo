@@ -189,7 +189,55 @@ t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、�
   assert.ok(off.length > 1000 && !/mailed/.test(off), "オフの道（従来の申込）の応答に mailed を足していない");
   const h = read("mitsumori.html");
   assert.match(h, /consentUrl: data\.consentUrl, email: val\('contactEmail'\), mailed: data\.mailed,/);
-  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261114"><\/script>/);
+  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261115"><\/script>/);
+});
+
+// ===== ⑥ まとめ発注の完了の表示・断られたときの文（2026-11-12 画面確認 低×3）=====
+t("見積もりページ: 受け付けた事業所の一覧は「・事業所名（案件#…）」・出荷番号を出さない", () => {
+  const names = { Q1: "あおぞら<事業所>", Q2: "ひだまり苑" };
+  const res = [{ quoteId: "Q1", caseNumber: 9101, shipmentNo: "SO-1" }, { quoteId: "Q2", caseNumber: 9102, shipmentNo: "SO-2" },
+    { quoteId: "Q3", error: "x" }, { quoteId: "Q4", caseNumber: 9104, shipmentNo: "SO-4" }];
+  const h = P.doneListHtml(res, (id) => names[id]);
+  assert.equal(h, "・あおぞら&lt;事業所&gt;（案件#9101）<br>・ひだまり苑（案件#9102）<br>・案件#9104");
+  assert.ok(!h.includes("SO-") && !h.includes("出荷"));
+  assert.equal(P.doneListHtml(undefined, null), "");
+  assert.equal(P.doneListHtml([{ quoteId: "Q1" }], (id) => names[id]), "・あおぞら&lt;事業所&gt;");
+  const m = read("mitsumori.html");
+  assert.ok(!m.includes("'（出荷 '"), "完了の表示に出荷番号を出す行が残っていない");
+  assert.equal(m.split("OrderConsentPage.doneListHtml(").length - 1, 2, "オン・オフの両方のまとめ申込の完了で使う");
+  // オフの道の他の文言は変えていない
+  assert.ok(m.includes("お申し込みを受け付けました。</b>（事業所 ${okCount}件"));
+  assert.ok(m.includes("受け付けられなかった事業所: ${failedResults.map((r) => esc(officeNameOfQuote(r.quoteId))).join('、')}"));
+});
+t("見積もりページ: 断られたときの文（職員向けの言い回しを事業所向けに置き換える）", () => {
+  const nameOf = (k) => ({ "TKY-2": "ひだまり苑" })[k] || "";
+  const staffy = /いただいてください|受注確定|承諾書は1件ずつ|受け取ってください|案件/;
+  const a = P.errorText({ code: "already_accepted", message: "この見積もりはすでに受注確定（お申し込み済み）です（TKY-2）", multi: true, nameOfEstNo: nameOf });
+  assert.equal(a, "すでにお申し込み済みの事業所「ひだまり苑」が含まれているため、まとめての発注を受け付けられませんでした。お手数ですが、その事業所を外してお見積もりを作り直すか、お電話またはメールでご連絡ください。");
+  const a0 = P.errorText({ code: "already_accepted", message: "この見積もりはすでに受注確定（お申し込み済み）です（TKY-9）", multi: true, nameOfEstNo: nameOf });
+  assert.ok(a0.startsWith("すでにお申し込み済みの事業所が含まれているため"), "名前が引けなければ「」ごと省く");
+  const a1 = P.errorText({ code: "already_accepted", message: "この見積もりはすでに受注確定（お申し込み済み）です（TKY-2）", multi: false, nameOfEstNo: nameOf });
+  assert.ok(!a1.includes("まとめて") && !a1.includes("外して") && a1.includes("すでにお申し込み済み"), "1事業所では「まとめて」「外して」と書かない");
+  const v = P.errorText({ code: "old_version", message: "新しい版の見積もりがあります。最新の版の承諾書をいただいてください（TKY-2）", multi: true, nameOfEstNo: nameOf });
+  assert.ok(v.includes("「ひだまり苑」") && v.includes("まとめての発注"));
+  const v1 = P.errorText({ code: "old_version", message: "新しい版の見積もりがあります。最新の版の承諾書をいただいてください（TKY-2）", multi: false, nameOfEstNo: nameOf });
+  assert.ok(!v1.includes("まとめて"));
+  const all = [a, a0, a1, v, v1, ...["not_issued", "not_group", "group_mismatch", "duplicate_case", "duplicate_quote", "order_by_consent_off"]
+    .flatMap((c) => [true, false].map((multi) => P.errorText({ code: c, message: "x（TKY-2）", multi, nameOfEstNo: nameOf })))];
+  all.forEach((s) => { assert.ok(s, "空でない"); assert.ok(!staffy.test(s), s); assert.ok(!/@|\d{2,4}-\d{2,4}-\d{3,4}/.test(s), "新しい連絡先を書かない: " + s); });
+  // 事業所向けの文のまま出すもの（置き換えない）・code が無いもの（スイッチがオフの道）は "" ＝サーバーの文をそのまま
+  for (const c of ["consent_version_mismatch", "consent_required", "no_signed_name", "expired", "failed-precondition", "invalid_quotes", "", undefined]) {
+    assert.equal(P.errorText({ code: c, message: "そのままの文（TKY-2）", multi: true, nameOfEstNo: nameOf }), "", String(c));
+  }
+  const m = read("mitsumori.html");
+  assert.match(m, /const friendly = \(data\.code && window\.OrderConsentPage\)\n\s+\? OrderConsentPage\.errorText\(\{ code: data\.code, message: data\.message, multi: offices\.length > 1, nameOfEstNo: officeNameBy \}\) : '';\n\s+show\(friendly \|\| data\.message \|\| 'お申し込みの送信に失敗しました。/);
+});
+t("サーバーの断りの code（置き換える側の印）が、functions にいまもある", () => {
+  const r = read("functions/accept-rules.js"), ix = read("functions/index.js");
+  for (const c of ["already_accepted", "old_version", "not_issued", "not_group", "group_mismatch", "duplicate_case", "duplicate_quote"]) assert.ok(r.includes(`ng("${c}"`) || ix.includes(`"${c}"`), c);
+  assert.match(r, /ng\("old_version", `新しい版の見積もりがあります。最新の版の承諾書をいただいてください（\$\{label\}）`\)/);
+  assert.match(r, /ng\("already_accepted", `この見積もりはすでに受注確定（お申し込み済み）です（\$\{label\}）`\)/);
+  assert.match(ix, /res\.status\(code\)\.json\(\{ status: "error", code: \(e\.details && e\.details\.code\) \|\| e\.code, message: e\.message \}\);/);
 });
 
 console.log(`OK test-order-consent-switch-ready: ${n} 件合格`);
