@@ -17,7 +17,7 @@ import { stepOf, finalConfirmOn, requestMissing, requestMissingText, validateAcc
 import { validatePatch, resolveKeep, buildAliases, checkMerge, pickRestorable, canRestoreTo } from "/js/office-merge.js";
 import { TRAINER_PRACTICE_STUBS } from "/js/practice-stubs-trainer.js"; // トレーナー認定の代役（2026-11-12・別ファイル）
 // 承諾書のサイン＝発注（2026-11-12）。判定は本番（functions/accept-rules.js）の写し、条文は v1.2（functions/consent-document.js と同じ）
-import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise,
+import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise, reviseConsentStale,
   ORDER_RECEIVED_VIA, channelOfReceivedVia, cleanSignedName } from "/js/order-consent-rules.js";
 import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document.js";
 import { statusChangePatch } from "/js/case-progress.js"; // 進み具合の帯（状態を変えたら2項目を書く）
@@ -470,7 +470,7 @@ function stubAcceptWrite(tx, { q, qRef, kase, caseRef, dl, P, u, name, channel, 
   }
   if (stp.reopenedFrom) Object.assign(cu, { reopenedFrom: stp.reopenedFrom, reopenedAt: now });
   if (!(kase && kase.orderedAt)) cu.orderedAt = Timestamp.fromMillis(jstMidnightMs(receivedDate));
-  if (consent) Object.assign(cu, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false });
+  if (consent) Object.assign(cu, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false, orderConsentStaleReason: deleteField() });
   tx.update(caseRef, cu);
   const re = reopenLabel(stp.reopenedFrom);
   const tail = `出荷 ${soNumber} の下書きを作成\n` + (stp.status != null ? "" : `案件の状態は据え置き（${kase && kase.status}）\n`)
@@ -522,7 +522,7 @@ async function practiceReconsent(quoteId, consent) {
     rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";
     tx.set(cRef, rec);
     tx.update(qRef, { consentToken: token, consentRetakenAt: now });
-    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, updatedAt: now });
+    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, orderConsentStaleReason: deleteField(), updatedAt: now });
     tx.set(doc(collection(db(), "activities")), {
       caseId: q.caseId, type: "memo", occurredAt: now, userId: u.uid || null, userName: u.email,
       subject: `承諾書を取り直しました（${q.estNo || "見積"} 第${Number(q.version) || "—"}版）`,
@@ -765,7 +765,7 @@ export const PRACTICE_STUBS = {
       }
     }
     // 承諾書のサイン＝発注（本番の reviseQuote と同じ・2026-11-12）: 発注の承諾書がある案件で内容が変われば取り直しの印
-    let consentStale = null;
+    let consentStale = null, consentClearReason = false;
     const kSnap = await getDoc(doc(db(), "cases", base.caseId));
     const kaseR = kSnap.exists() ? kSnap.data() : null;
     if (kaseR && kaseR.orderConsentToken) {
@@ -775,7 +775,8 @@ export const PRACTICE_STUBS = {
         const qs = cs.exists() && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
         entry = qs.find((e) => e && e.caseId === base.caseId) || null;
       } catch (_) {}
-      consentStale = orderConsentStaleAfterRevise(entry, { items, amounts });
+      const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items, amounts })); // 本番と同じ（小さな指摘4）
+      consentStale = rs.stale; consentClearReason = rs.clearReason;
     }
     const u = me();
     const now = serverTimestamp();
@@ -807,6 +808,7 @@ export const PRACTICE_STUBS = {
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
       ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
+      ...(consentClearReason ? { orderConsentStaleReason: deleteField() } : {}),
     });
     if (shipmentId && shipStatus === "draft") {
       b.update(doc(db(), "shipments", shipmentId), {
@@ -823,7 +825,9 @@ export const PRACTICE_STUBS = {
       body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
         + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
         + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
-        + (consentStale === true ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
+        + (consentStale !== true ? "" : consentClearReason
+          ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
+          : "\n⚠️ 出荷をキャンセルしたため前の承諾書の発注は取り消しになっています。新しい版で承諾書の取り直しが要ります。"),
       attachmentUrls: [],
     });
     await b.commit();

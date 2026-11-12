@@ -208,6 +208,21 @@ function orderConsentStaleAfterRevise(signedEntry, next) {
 }
 
 /**
+ * 見積もりを直したときに案件へ書く「承諾書の取り直しの印」（2026-11-13 小さな指摘4）。
+ * contentStale は orderConsentStaleAfterRevise の結果（焼き込んだ内容と変わったか）。
+ * ・出荷を全部キャンセルして取り直しの印が立っている案件（orderConsentStaleReason "ship_canceled"）は、
+ *   前の承諾書の発注が取り消しになっているので、内容が同じ改版でも印を下ろさない（理由もそのまま＝文言を変えない）
+ * ・それ以外は contentStale をそのまま書き、理由（orderConsentStaleReason）は消す
+ *   （残すと、あとで改版で立てた印に「出荷をキャンセルしたため」の文言が出てしまう）
+ * @returns {{stale:boolean, clearReason:boolean}}
+ */
+function reviseConsentStale(kase, contentStale) {
+  const k = kase || {};
+  if (k.orderConsentStale === true && k.orderConsentStaleReason === "ship_canceled") return { stale: true, clearReason: false };
+  return { stale: !!contentStale, clearReason: true };
+}
+
+/**
  * Web の発注（見積もりページで承諾書に同意する・第2段）の入力の確認。acceptQuote がスイッチがオンのときだけ使う。
  * consent は {agreed:true, version:"1.2"}。画面に出した条文の版が、いまサーバーが焼き込む版（documentVersion）と違えば拒否する
  * （見せた文面と記録する文面が違う事故を防ぐ。ページを読み込み直してもらう）。文言は事業所に見せるもの。
@@ -252,5 +267,5 @@ function checkOrderReconsent({ quote, siblings, kase, signedName, receivedDate, 
 }
 
 export {
-  ORDER_RECEIVED_VIA, channelOfReceivedVia, orderByConsentOn, checkOrderConsent, orderConsentQuoteEntry, orderConsentTotal, buildOrderConsentRecord, orderConsentStaleAfterRevise, checkOrderReconsent, checkWebOrderConsentInput, cleanSignedName, isValidYmd, jstYmdOf,
+  ORDER_RECEIVED_VIA, channelOfReceivedVia, orderByConsentOn, checkOrderConsent, orderConsentQuoteEntry, orderConsentTotal, buildOrderConsentRecord, orderConsentStaleAfterRevise, reviseConsentStale, checkOrderReconsent, checkWebOrderConsentInput, cleanSignedName, isValidYmd, jstYmdOf,
 };

@@ -2,6 +2,11 @@
 // 画面（supply.js doCancelShipment）が書く中身は admin/js/ship-cancel-case.js の純関数で決まるので、ここでは同じ関数で
 // キャンセルを書き（読み取り→判定→書き込みを1つのトランザクションで・画面と同じ順番）、そのあと既存の関数
 // （staffAcceptQuote・reviseQuote）がその状態を受け付けるかを .run() で直接呼んで確かめる。
+// キャンセルの読み書きは、画面と同じくクライアント SDK（職員としてログインした状態）で行い、Firestore のルール
+// （firestore.rules）を通す（2026-11-13 小さな指摘7。以前は Admin SDK で書いていてルールを通っていなかった）。
+// クライアント SDK は、ルールのテストと同じ作業フォルダ（EMU_RUN_DIR。既定 ${TMPDIR:-/tmp}/kjk-emu-run）の
+// @firebase/rules-unit-testing・firebase を使う（リポジトリには入れない。bash scripts/test-all.sh が用意する）。
+// 下ごしらえ（案件・見積もり・入金の記録を置く）と、関数（staffAcceptQuote・reviseQuote）は今までどおり Admin SDK。
 //
 // 確かめること
 //   A. 戻したあと: 同じ見積もりで受注確定をやり直せる（新しい下書き・案件は 3・受注日が入る）
@@ -9,7 +14,8 @@
 //   C. 比べ: 戻さない（見積もりが承諾済みのまま）と、受注確定のやり直しも見積もりの修正も止まる＝「発行中に戻す」を選んだ理由
 //   D. 入金の記録がある → 案件・見積もりは変えず、保留の対応記録だけ。入金の記録はそのまま
 //   E. 一部だけのキャンセル → 何も変えない
-//   F. 承諾書で受注した案件 → 取り直しの印（orderConsentStale・理由 ship_canceled）。新しい承諾書で受注確定すると印が消える
+//   F. 承諾書で受注した案件 → 取り直しの印（orderConsentStale・理由 ship_canceled）。新しい承諾書で受注確定すると印も理由も消える
+//   G. ルールが効いている: 閲覧のみ（viewer）の人はキャンセルを書けない（何も変わらない）
 //
 // 実行（本番に繋がらない demo- プロジェクト。依存は functions/node_modules をそのまま使う）:
 //   cd <repo> && firebase emulators:exec --only firestore --project demo-ship-cancel-test "node scripts/test-ship-cancel-emu.mjs"
@@ -17,6 +23,7 @@
 // 終了コード: 全部合格 0、1件でも不合格 1。
 import { createRequire } from "node:module";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { planShipCancelRevert, revertWrites, holdActivity } from "../admin/js/ship-cancel-case.js";
 import { hasActiveOrder, statusChangeGuard } from "../admin/js/order-consent.js";
@@ -43,6 +50,25 @@ const db = admin.firestore();
 const TS = admin.firestore.Timestamp;
 const FV = admin.firestore.FieldValue;
 
+// ---- クライアント SDK（ルールを通す）。ルールのテストと同じ作業フォルダの部品を使う ----
+const EMU_RUN_DIR = process.env.EMU_RUN_DIR || path.join(process.env.TMPDIR || "/tmp", "kjk-emu-run");
+let RUT, CF;
+try {
+  const reqRun = createRequire(path.join(EMU_RUN_DIR, "package.json"));
+  RUT = reqRun("@firebase/rules-unit-testing");
+  CF = reqRun("firebase/firestore");
+} catch (e) {
+  console.error(`クライアント SDK が見つからない（${EMU_RUN_DIR} に @firebase/rules-unit-testing と firebase が要る。`
+    + "bash scripts/test-all.sh で用意されるか、そのフォルダで npm i @firebase/rules-unit-testing firebase）:", e.message);
+  process.exit(2);
+}
+const [EMU_HOST, EMU_PORT] = process.env.FIRESTORE_EMULATOR_HOST.split(":");
+const testEnv = await RUT.initializeTestEnvironment({
+  projectId: process.env.GCLOUD_PROJECT,
+  firestore: { rules: readFileSync(path.join(REPO, "firestore.rules"), "utf8"), host: EMU_HOST, port: Number(EMU_PORT) },
+});
+const clientDb = (email) => testEnv.authenticatedContext("uid-" + email, { email, email_verified: true }).firestore();
+
 let pass = 0, fail = 0;
 const results = [];
 function check(label, cond, detail = "") {
@@ -52,6 +78,7 @@ function check(label, cond, detail = "") {
 function section(t) { results.push(`\n## ${t}`); console.error(`... ${t}`); }
 
 const STAFF = "staff@tadakayo.jp";
+const VIEWER = "viewer@tadakayo.jp";
 async function call(name, email, data) {
   try {
     const r = await fns[name].run({ auth: { uid: "uid-" + email, token: { email, name: email } }, data, rawRequest: {} });
@@ -81,33 +108,37 @@ async function seed(items) { const b = db.batch(); for (const [ref, d] of items)
 const accept = (quoteId, extra = {}) => call("staffAcceptQuote", STAFF, {
   quoteId, acceptedName: "山田 花子", channel: "phone", receivedDate: TODAY, payMethod: "after", sendMail: false, ...extra });
 
-// 画面（supply.js doCancelShipment）と同じ手順: 一覧を先に読み → トランザクションで読み直し → 判定 → 書き込み
-async function cancelLikeScreen(shipId, { revert = true, by = "職員 太郎", reason = "事業所の都合" } = {}) {
-  const shipRef = db.collection("shipments").doc(shipId);
-  const pre = await get(shipRef);
-  const sibIds = (await db.collection("shipments").where("caseId", "==", pre.caseId).get()).docs.map((d) => d.id).filter((id) => id !== shipId);
-  const quoteIds = (await db.collection("quotes").where("caseId", "==", pre.caseId).get()).docs.map((d) => d.id);
+// 画面（supply.js doCancelShipment）と同じ手順: 一覧を先に読み → トランザクションで読み直し → 判定 → 書き込み。
+// 読み書きはクライアント SDK（as の人としてログイン）で行い、ルールを通す
+async function cancelLikeScreen(shipId, { revert = true, by = "職員 太郎", reason = "事業所の都合", as = STAFF } = {}) {
+  const cdb = clientDb(as);
+  const { doc: cdoc, collection: ccol, query: cquery, where: cwhere, getDoc: cgetDoc, getDocs: cgetDocs, runTransaction: crun,
+    serverTimestamp: cnow } = CF;
+  const shipRef = cdoc(cdb, "shipments", shipId);
+  const pre = (await cgetDoc(shipRef)).data();
+  const sibIds = (await cgetDocs(cquery(ccol(cdb, "shipments"), cwhere("caseId", "==", pre.caseId)))).docs.map((d) => d.id).filter((id) => id !== shipId);
+  const quoteIds = (await cgetDocs(cquery(ccol(cdb, "quotes"), cwhere("caseId", "==", pre.caseId)))).docs.map((d) => d.id);
   let plan = { kind: "none", reasons: [] };
-  await db.runTransaction(async (tx) => {
+  await crun(cdb, async (tx) => {
     const cur = (await tx.get(shipRef)).data();
-    const caseRef = cd(pre.caseId);
+    const caseRef = cdoc(cdb, "cases", pre.caseId);
     const cSnap = await tx.get(caseRef);
-    const kase = cSnap.exists ? cSnap.data() : null;
+    const kase = cSnap.exists() ? cSnap.data() : null;
     const sibs = [], quotes = [];
-    for (const id of sibIds) { const d = await tx.get(db.collection("shipments").doc(id)); if (d.exists) sibs.push({ _id: d.id, ...d.data() }); }
-    for (const id of quoteIds) { const d = await tx.get(qd(id)); if (d.exists) quotes.push({ id: d.id, ...d.data() }); }
+    for (const id of sibIds) { const d = await tx.get(cdoc(cdb, "shipments", id)); if (d.exists()) sibs.push({ _id: d.id, ...d.data() }); }
+    for (const id of quoteIds) { const d = await tx.get(cdoc(cdb, "quotes", id)); if (d.exists()) quotes.push({ id: d.id, ...d.data() }); }
     plan = revert ? planShipCancelRevert({ kase, shipments: [{ _id: shipId, ...cur }, ...sibs], canceledId: shipId }) : { kind: "none", reasons: [] };
-    tx.update(shipRef, { status: "canceled", statusBeforeCancel: cur.status, canceledAt: FV.serverTimestamp(), canceledBy: by,
-      cancelReason: reason, cancelNote: "", updatedAt: FV.serverTimestamp() });
-    const actBase = { caseId: pre.caseId, type: "memo", occurredAt: FV.serverTimestamp(), userId: "uid-x", userName: by, attachmentUrls: [] };
+    tx.update(shipRef, { status: "canceled", statusBeforeCancel: cur.status, canceledAt: cnow(), canceledBy: by,
+      cancelReason: reason, cancelNote: "", updatedAt: cnow() });
+    const actBase = { caseId: pre.caseId, type: "memo", occurredAt: cnow(), userId: "uid-x", userName: by, attachmentUrls: [] };
     if (plan.kind === "revert") {
-      const w = revertWrites({ kase, quotes, ship: { _id: shipId, ...cur }, by, now: FV.serverTimestamp(), cancelReason: reason });
+      const w = revertWrites({ kase, quotes, ship: { _id: shipId, ...cur }, by, now: cnow(), cancelReason: reason });
       tx.update(caseRef, w.casePatch);
-      for (const qp of w.quotePatches) tx.update(qd(qp.id), qp.patch);
-      tx.set(db.collection("activities").doc(), { ...actBase, ...w.activity });
+      for (const qp of w.quotePatches) tx.update(cdoc(cdb, "quotes", qp.id), qp.patch);
+      tx.set(cdoc(ccol(cdb, "activities")), { ...actBase, ...w.activity });
     } else if (plan.kind === "hold") {
-      tx.set(db.collection("activities").doc(), { ...actBase, ...holdActivity({ ship: { _id: shipId, ...cur }, by, reasons: plan.reasons, cancelReason: reason }) });
-      tx.update(caseRef, { updatedAt: FV.serverTimestamp() });
+      tx.set(cdoc(ccol(cdb, "activities")), { ...actBase, ...holdActivity({ ship: { _id: shipId, ...cur }, by, reasons: plan.reasons, cancelReason: reason }) });
+      tx.update(caseRef, { updatedAt: cnow() });
     }
   });
   return plan;
@@ -115,6 +146,7 @@ async function cancelLikeScreen(shipId, { revert = true, by = "職員 太郎", r
 
 await seed([
   [db.collection("users").doc(STAFF), { active: true, role: "staff", name: "職員" }],
+  [db.collection("users").doc(VIEWER), { active: true, role: "viewer", name: "閲覧のみ" }],
   [db.collection("_counters").doc("shipments"), { value: 100 }],
 ]);
 await setSwitch(false);
@@ -137,6 +169,7 @@ check("案件: 受注日・出荷のひも付けを外し、前の値を記録�
   && kA.shipCancelRevert && kA.shipCancelRevert.prevOrderedAt instanceof TS && kA.shipCancelRevert.prevShipmentId === ship1.id
   && kA.shipCancelRevert.fromStatus === 5 && kA.shipCancelRevert.soNumber === ship1.soNumber && kA.shipCancelRevert.by === "職員 太郎");
 check("案件: 承諾書の無い案件には承諾書の印を立てない", !("orderConsentStale" in kA));
+check("案件: 申込の経路（orderedVia）を外し、前の値を記録に残す（小さな指摘5）", kA.orderedVia === null && kA.shipCancelRevert.prevOrderedVia === "staff");
 check("見積もり: 発行中・出荷のひも付けなし・前の申込は prevAccept に", qA.status === "issued" && qA.shipmentId === null && qA.acceptedAt === null
   && qA.prevAccept && qA.prevAccept.shipmentId === ship1.id && qA.prevAccept.acceptedBy === "山田 花子" && qA.revertReason === "ship_canceled");
 const actA = await actsOf("cA");
@@ -220,10 +253,25 @@ r = await call("staffAcceptQuote", STAFF, { quoteId: "qF", payMethod: "after", s
 kF = await get(cd("cF"));
 check("新しい承諾書で受注確定 → 新しいトークン・印が消える・案件3", r.ok && kF.orderConsentToken && kF.orderConsentToken !== tok1
   && kF.orderConsentStale === false && kF.status === 3, JSON.stringify(r).slice(0, 300));
+check("印を下ろしたら理由（orderConsentStaleReason）も消える（小さな指摘4）", !("orderConsentStaleReason" in kF));
 check("取り直しで受注確定したあとは通常どおり（有効な受注として数える）", hasActiveOrder(kF)
   && statusChangeGuard({ from: 4, to: 3, orderByConsent: true, isAdmin: false, caseData: { ...kF, status: 4 } }).kind === "ok");
 await setSwitch(false);
 
+// ---------- G. ルールが効いていること ----------
+section("G. 閲覧のみ（viewer）の人はキャンセルを書けない（ルールを通している確かめ）");
+await seed([[cd("cG"), { status: 2, caseNumber: 307, officeName: "事業所G" }], [qd("qG"), quote("qG", "cG", { caseNumber: 307 })]]);
+r = await accept("qG");
+const shipG = (await shipsOf("cG"))[0];
+let gErr = null;
+try { await cancelLikeScreen(shipG.id, { as: VIEWER }); } catch (e) { gErr = e; }
+check("viewer: 拒否される（permission-denied）", !!gErr && /permission|PERMISSION_DENIED/i.test(String(gErr.code || gErr.message)), String(gErr && (gErr.code || gErr.message)));
+check("viewer: 出荷・案件・見積もりは何も変わらない", (await get(db.collection("shipments").doc(shipG.id))).status === "draft"
+  && (await get(cd("cG"))).status === 3 && (await get(qd("qG"))).status === "accepted");
+plan = await cancelLikeScreen(shipG.id);
+check("同じ出荷を職員（staff）なら戻せる", plan.kind === "revert" && (await get(cd("cG"))).status === 2);
+
+await testEnv.cleanup();
 console.log(results.join("\n"));
 console.log(`\n合計: ${pass}/${pass + fail} 合格`);
 process.exit(fail ? 1 : 0);

@@ -284,11 +284,13 @@ function orderConsentMailProblemText(kind, list, { paper = false } = {}) {
 /**
  * 紙の道（staffAcceptQuote・スイッチがオン）で、受注確認のメールが出ていない理由。出ていれば（またはスイッチがオフなら）""。
  * not_sent＝「確認メールを送る」を外した／no_address＝宛先なし／failed＝送信に失敗（2026-11-12 スイッチ前の点検）
+ * 宛先が無いかを先に見る（2026-11-13 小さな指摘8）: 宛先が無いと画面の「確認メールを送る」は外れた（押せない）まま届くので、
+ * 先に sendMail を見ると「外して受注確定にした」と、職員が外したかのような理由になっていた。
  */
 function orderConsentMailProblemKind({ orderConsent, sendMail, to, mailed } = {}) {
   if (!orderConsent || mailed === true) return "";
-  if (!sendMail) return "not_sent";
   if (!to) return "no_address";
+  if (!sendMail) return "not_sent";
   return "failed";
 }
 

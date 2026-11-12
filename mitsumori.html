@@ -220,6 +220,8 @@
     /* 申込の画面: エラーの文はボタンの帯の中に置き、ボタンの上に1行まるごと使って出す（帯ごと下に貼り付くので隠れない） */
     #orderModal .order-actions { flex-wrap: wrap; }
     #orderModal .order-actions #orderError { flex: 0 0 100%; }
+    /* 申込の画面のボタンは、スイッチ（承諾書で発注）のオン・オフに関わらず高さ 44px 以上（2026-11-13。オフのときだけ 41px だった） */
+    #orderModal .modal-btn { min-height: 44px; }
     .modal-close-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
     .modal-close-btn {
       background: none; border: none; cursor: pointer;
@@ -297,11 +299,12 @@
     .order-done {
       background: #E8F3EC; border: 1px solid #a5d6a7; color: #1b5e20;
       border-radius: 8px; padding: 14px 16px; font-size: 13px; line-height: 1.8;
+      /* 390 幅で長い半角英数字（見積番号・メールアドレス・承諾書のアドレス）が枠からはみ出していた → 枠の中で折り返す（2026-11-13） */
+      overflow-wrap: anywhere; word-break: normal; min-width: 0;
     }
     /* 承諾書のサイン＝発注 第2段（2026-11-12）: スイッチがオンのときだけ #orderModal に .consent-mode が付く。
        オフのときはここの指定はどれも効かない（申込の画面は今のまま） */
     #orderModal.consent-mode .modal-box { width: 680px !important; }
-    #orderModal.consent-mode .modal-btn { min-height: 44px; }
     #orderModal.consent-mode .modal-desc { font-size: 13px; color: var(--text); }
     .oc-head { font-size: 13px; font-weight: 700; margin: 2px 0 8px; color: var(--text); }
     .oc-quote { background: #faf7f2; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
@@ -731,10 +734,14 @@
       .app-header-title { display: none; }
       .hdr-btn { padding: 8px 10px; font-size: 12px; gap: 4px; }
     }
+    /* 入力前の案内の「左／上のフォーム」: 2ペイン（横並び）は左、820px 以下（縦並び）はフォームが上になる（2026-11-13） */
+    .lock-dir-narrow { display: none; }
     @media (max-width: 820px) {
       .app-body { flex-direction: column; height: auto; }
       .form-panel { width: 100%; }
       .est-doc { width: 100%; }
+      .lock-dir-wide { display: none; }
+      .lock-dir-narrow { display: inline; }
     }
   </style>
 </head>
@@ -890,7 +897,7 @@
       <i class="ti ti-lock preview-lock-icon" aria-hidden="true"></i>
       <div class="preview-lock-title">必要事項のご入力をお願いします</div>
       <div class="preview-lock-body">
-        左のフォームに事業所さま情報をご入力いただき、<br>
+        <span class="lock-dir-wide">左</span><span class="lock-dir-narrow">上</span>のフォームに事業所さま情報をご入力いただき、<br>
         同意にチェックを入れると、お見積もりの内容がこちらに表示されます。<br>
         受け取り方（PDFのダウンロード／メール）は、表示後にお選びいただけます。
       </div>

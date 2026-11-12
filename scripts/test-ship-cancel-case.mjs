@@ -90,7 +90,7 @@ t("キャンセルの画面の予告", () => {
 // ===== 書き込みの中身 =====
 const NOW = { __ts: true };
 t("戻すときの案件・見積もり・対応記録", () => {
-  const kase = { status: 5, orderedAt: { ts: 1 }, shipmentId: "a", orderConsentToken: "tok" };
+  const kase = { status: 5, orderedAt: { ts: 1 }, shipmentId: "a", orderConsentToken: "tok", orderedVia: "web" };
   const quotes = [
     { id: "q2", status: "accepted", estNo: "EST-1", version: 2, acceptedAt: { ts: 2 }, acceptedBy: "山田", acceptedVia: "staff", shipmentId: "a", shipmentNo: "SH-a", consentToken: "tok" },
     { id: "q1", status: "superseded", estNo: "EST-1", version: 1 },
@@ -102,10 +102,11 @@ t("戻すときの案件・見積もり・対応記録", () => {
   assert.equal(c.statusChangedAt, NOW);
   assert.equal(c.orderedAt, null);
   assert.equal(c.shipmentId, null);
+  assert.equal(c.orderedVia, null, "申込の経路を外す（「Web申込済」の絞り込みに出さない・小さな指摘5）");
   assert.equal(c.orderConsentStale, true);
   assert.equal(c.orderConsentStaleReason, "ship_canceled");
   assert.deepEqual(c.shipCancelRevert, { at: NOW, by: "鈴木", soNumber: "SH-a", shipId: "a", fromStatus: 5,
-    prevOrderedAt: { ts: 1 }, prevShipmentId: "a", quoteIds: ["q2"] });
+    prevOrderedAt: { ts: 1 }, prevShipmentId: "a", prevOrderedVia: "web", quoteIds: ["q2"] });
   assert.equal(w.quotePatches.length, 1, "申し込み済みの版だけ戻す（superseded は触らない）");
   const qp = w.quotePatches[0];
   assert.equal(qp.id, "q2");
@@ -124,6 +125,19 @@ t("承諾書の無い案件は承諾書の印を立てない・受注日が無�
   assert.equal(w.quotePatches.length, 0);
   assert.doesNotMatch(w.activity.body, /受注日|承諾書/);
   assert.match(w.activity.body, /申し込み済みの見積もりはありません/);
+});
+t("戻した案件は「Web申込済」の絞り込みに出ない（cases.js quoteMatch に casePatch を当てて確かめる・小さな指摘5）", () => {
+  const src = read("admin/js/cases.js");
+  const fn = src.slice(src.indexOf("function quoteMatch(c, selected) {"), src.indexOf("// ご希望（inquiryIntent）"));
+  const quoteMatch = new Function(`${fn}\nreturn quoteMatch;`)();
+  const before = { status: 3, latestQuoteId: "q2", orderedAt: { ts: 1 }, orderedVia: "web", shipmentId: "a" };
+  assert.equal(quoteMatch(before, "ordered_web"), true);
+  const after = { ...before, ...revertWrites({ kase: before, quotes: [], ship: S("a", "draft"), by: "x", now: NOW }).casePatch };
+  assert.equal(quoteMatch(after, "ordered_web"), false, "Web申込済に出ない");
+  assert.equal(quoteMatch(after, "issued"), true, "見積もり発行済（未申込）に出る");
+  assert.equal(after.shipCancelRevert.prevOrderedVia, "web");
+  // 申込の経路が無い案件（手で状態を進めたもの）は null のまま
+  assert.equal(revertWrites({ kase: { status: 3 }, quotes: [], ship: S("a", "draft"), by: "x", now: NOW }).casePatch.shipCancelRevert.prevOrderedVia, null);
 });
 t("保留の対応記録", () => {
   const a = holdActivity({ ship: S("a", "invoiced"), by: "鈴木", reasons: ["invoice", "shipped"], cancelReason: "誤登録" });

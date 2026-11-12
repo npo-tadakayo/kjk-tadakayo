@@ -17,7 +17,7 @@ import { markInvoiced } from "/js/invoice-mark.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
 import { billsOffice, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM, feeLabelForSave,
-  shipTypeChangeFeeNote, invoiceFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
+  shipTypeChangeFeeNote, invoiceFeeConfirmText, qtyChangeFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
 import { PREFECTURES } from "/js/area.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
@@ -1421,8 +1421,12 @@ function shipModalBillsOffice(){
                                  partnerEmail: document.getElementById("shipType").value==="dropship" ? (document.getElementById("shipPartner").value||"") : "" };
   return billsOffice(basis);
 }
+// 出荷の修正で台数を変えたとき、送料ありの出荷が確認なしで0円になるのを防ぐ（2026-11-13）。
+// 答えは画面を開いている間だけ覚える（"zero"＝0円にする／"keep"＝今の送料のまま）。openShip で null に戻す
+let shipQtyFeeAnswer = null;
 // 配送方法に応じて送料・名目を自動入力（手入力は維持）。事業所向けは送料0円（2026-11-12）
-function recalcShipFee(){
+// fromQty=true は台数の入力から呼ばれたとき（配送方法・サイズ・地域・出荷種別を選び直したときは、選んだこと自体を答えとみなす）
+function recalcShipFee(fromQty){
   updateShipOriginHint();
   const method=document.getElementById('shipMethod').value;
   const feeEl=document.getElementById('shipFee'), labelEl=document.getElementById('shipFeeLabel');
@@ -1436,6 +1440,13 @@ function recalcShipFee(){
     packs: letterpackCount(shipTotalQty()), letterpackFee: letterpackFee(), // レターパックプラス1通に6台（2026-11-12 送4。以前は3台）
     yupackSize: size, yupackRegion: d.regions[ri]||"", yupackFee: Number((d.rows[size]||YUPACK_ROWS_DEF[size]||[])[ri])||0 });
   if(!a) return; // 「指定しない」＝手入力のまま。注意の表示もそのまま残す
+  if(fromQty===true){
+    const ask=qtyChangeFeeConfirmText({ editing: !!editingShip, currentFee: feeEl.value, nextFee: a.fee });
+    if(ask){
+      if(shipQtyFeeAnswer===null) shipQtyFeeAnswer = confirm(ask) ? "zero" : "keep";
+      if(shipQtyFeeAnswer==="keep"){ updateShipTotal(); return; } // 送料・名目はそのまま
+    }
+  }
   feeEl.value=a.fee; labelEl.value=a.label;
   if(method==='none') document.getElementById('yupackWrap').style.display='none';
   updateShipTotal();
@@ -1489,7 +1500,7 @@ function initShipFeeControls(){
   document.getElementById('shipFeeLabel').value="";
   document.getElementById('yupackWrap').style.display="none";
   const w=document.getElementById('shipFeeWarn'); if(w){ w.style.display="none"; w.innerHTML=""; }
-  document.querySelectorAll('#shipItems .qty-input').forEach(i=>i.addEventListener('input',recalcShipFee));
+  document.querySelectorAll('#shipItems .qty-input').forEach(i=>i.addEventListener('input',()=>recalcShipFee(true)));
 }
 
 // ===== 出荷モーダル =====
@@ -1818,6 +1829,7 @@ function updateShipTotal(){
 
 function openShip(existing){
   editingShip = existing || null;
+  shipQtyFeeAnswer = null; // 台数変更で送料を0円にするかの答えは、開くたびに聞き直す
   prefillCaseId = null;   // 案件から開いた場合は prefillShipFromCase が開いた後に入れ直す
   const s = editingShip;
   itemRows("shipItems");

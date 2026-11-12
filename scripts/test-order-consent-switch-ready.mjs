@@ -80,6 +80,14 @@ t("受注確認のメールが出ていない理由（紙の道・スイッチ�
   assert.equal(k({ orderConsent: true, sendMail: false, to: "a@b.test", mailed: false }), "not_sent");
   assert.equal(k({ orderConsent: true, sendMail: true, to: "", mailed: false }), "no_address");
   assert.equal(k({ orderConsent: true, sendMail: true, to: "a@b.test", mailed: false }), "failed");
+  // 宛先が無いと画面の「確認メールを送る」は押せない（外れたまま）。理由は「宛先が無い」にする（2026-11-13 小さな指摘8）
+  assert.equal(k({ orderConsent: true, sendMail: false, to: "", mailed: false }), "no_address");
+  assert.equal(k({ orderConsent: true, sendMail: false, to: null, mailed: false }), "no_address");
+  assert.match(F.orderConsentMailProblemText(k({ orderConsent: true, sendMail: false, to: "", mailed: false }), [{ caseNumber: 9, estNo: "E" }], { paper: true }),
+    /^⚠️ 宛先のメールアドレスが無いため、受注確認のメールを送っていません（案件 #9（E））。署名済みの承諾書による発注は受注確定にしています。/);
+  // 画面: 宛先が無いときはチェックボックスが押せない（外れたまま届く）ことを確かめる
+  const qa = read("admin/js/quote-admin.js");
+  assert.match(qa, /<input type="checkbox" id="acMail" \$\{hasEmail \? "checked" : "disabled"\}> \$\{esc\(PAPER_MAIL_LABEL\)\}/);
   assert.equal(k(), "");
 });
 t("Chat の文: 紙の道は「署名済みの承諾書による発注は受注確定」・送らない指定も知らせる・個人名を書かない", () => {
@@ -178,7 +186,8 @@ t("見積もりページ（2026-11-12 画面確認）: エラーの文はボタ�
   assert.ok(m, "#orderError が .modal-actions（下に貼り付く帯）の中で、ボタンの前にある");
   assert.equal((h.match(/id="orderError"/g) || []).length, 1);
   assert.match(h, /#orderModal \.order-actions \{ flex-wrap: wrap; \}/);
-  assert.match(h, /#orderModal\.consent-mode \.modal-btn \{ min-height: 44px; \}/);
+  // 44px はスイッチのオン・オフに関わらず（2026-11-13 小さな指摘9。以前はオンのときだけ）
+  assert.match(h, /#orderModal \.modal-btn \{ min-height: 44px; \}/);
 });
 t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、ページがそれを渡す。オフの道の応答は変えない", () => {
   const src = read("functions/index.js");

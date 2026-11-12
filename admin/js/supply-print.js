@@ -11,7 +11,7 @@ import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issu
 // 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
 import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
 import { markInvoiced } from "/js/invoice-mark.js";
-import { invoiceFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
+import { invoiceFeeConfirmText, invoiceFeeNoticeText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 // 助成金の A・B・X の振り分け（正本・2026-11-12）。領収証の初期明細・区分ごとの丸め・手順PDFの A・B はここを通す
 import { receiptRowsFromShipment, receiptShippingWarning, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
@@ -195,6 +195,11 @@ let docInvoiceShip = null;
 function confirmInvoiceShipFee(){
   const ask = invoiceFeeConfirmText(docInvoiceShip);
   return !ask || confirm(ask);
+}
+// Ctrl+P（⌘P）か。印刷ボタンと同じ確認を通すため、ブラウザの印刷を止めて自前の印刷に回す（2026-11-13）。
+// ブラウザのメニュー（ファイル → 印刷）からの印刷は止められないので、画面上の注意（invoiceFeeNoticeText）で知らせる
+function isPrintShortcut(e){
+  return !!e && !!(e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && String(e.key || "").toLowerCase() === "p";
 }
 // 発行するとき、担当営業が空なら知らせる（書面の「担当」欄が空のまま出るため）
 function confirmContactFilled(what){
@@ -897,11 +902,18 @@ async function afterInvoiceMailed(d, st, dates, { pdfBase64, filename }){
 onAuthStateChanged(auth, async (user)=>{
   if(!user || !user.email?.endsWith("@tadakayo.jp")){ location.href="/index.html"; return; }
   if(!(await gateRole(db,user))) return;
-  document.getElementById("printBtn").addEventListener("click",()=>{
+  const startPrint=()=>{
     if(!confirmContactFilled("この書面")) return;
     if(type==="invoice" && !confirmInvoiceShipFee()) return;
     try{ document.activeElement&&document.activeElement.blur(); }catch(_){}
     window.print();
+  };
+  document.getElementById("printBtn").addEventListener("click",startPrint);
+  // Ctrl+P（⌘P）でも印刷ボタンと同じ確認を出す（2026-11-13）。読み込みが終わる前は何もしない（ブラウザの印刷も止める）
+  document.addEventListener("keydown",(e)=>{
+    if(!isPrintShortcut(e)) return;
+    e.preventDefault();
+    if(document.getElementById("body").style.display!=="none") startPrint();
   });
   // 「供給管理へ」の戻り先を、この帳票を開いた元タブにする（一覧へ戻す）
   const backTab = { po:"orders", invoice:"shipments", receipt:"shipments", refund:"shipments", ship:"shipments", letterpack:"shipments", plabel:"partners" }[type];
@@ -963,6 +975,10 @@ onAuthStateChanged(auth, async (user)=>{
       // 書面の「担当」は案件の担当営業を出す（請求書・領収証のみ）
       docNeedsContact = (type==="invoice" || type==="receipt");
       docInvoiceShip = type==="invoice" ? d : null;
+      // 送料を請求しない決まりの出荷に送料が入っていたら、画面の上に注意を出す（印刷には出ない・2026-11-13）
+      const feeNote = document.getElementById("feeNotice");
+      const feeNoteText = invoiceFeeNoticeText(docInvoiceShip);
+      if(feeNote && feeNoteText){ feeNote.textContent = feeNoteText; feeNote.style.display = "block"; }
       const ci = docNeedsContact ? await caseInfoOf(d) : { rep: "", serviceType: "" };
       docContactName = ci.rep;
       docServiceType = ci.serviceType;

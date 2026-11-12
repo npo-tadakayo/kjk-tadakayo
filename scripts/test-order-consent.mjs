@@ -345,6 +345,40 @@ t("reviseQuote: 発注の承諾書がある案件だけ orderConsentStale を書
   assert.match(b, /if \(kaseR && kaseR\.orderConsentToken\) \{/);
   assert.match(b, /\.\.\.\(consentStale == null \? \{\} : \{ orderConsentStale: consentStale \}\)/);
 });
+t("reviseConsentStale: 出荷キャンセルの印は内容が同じ改版でも下ろさない・それ以外は理由を消す（小さな指摘4）。写しも同じ", () => {
+  const cases = [
+    [{ orderConsentStale: true, orderConsentStaleReason: "ship_canceled" }, false, { stale: true, clearReason: false }],
+    [{ orderConsentStale: true, orderConsentStaleReason: "ship_canceled" }, true, { stale: true, clearReason: false }],
+    [{ orderConsentStale: false, orderConsentStaleReason: "ship_canceled" }, false, { stale: false, clearReason: true }], // 取り直し済みの名残り
+    [{ orderConsentStale: false, orderConsentStaleReason: "ship_canceled" }, true, { stale: true, clearReason: true }],  // ← 以前は文言が誤った
+    [{ orderConsentStale: true }, false, { stale: false, clearReason: true }],
+    [{}, true, { stale: true, clearReason: true }],
+    [null, false, { stale: false, clearReason: true }],
+  ];
+  for (const [k, c, want] of cases) {
+    assert.deepEqual(R.reviseConsentStale(k, c), want, JSON.stringify([k, c]));
+    assert.deepEqual(E.reviseConsentStale(k, c), want, "練習用の写しも同じ");
+  }
+  // 改版で立てた印の文言は「見積もりを直した」側になる（出荷キャンセルの文言にならない）
+  const k = { orderConsentStale: false, orderConsentStaleReason: "ship_canceled" };
+  const r = R.reviseConsentStale(k, true);
+  const after = { ...k, orderConsentStale: r.stale };
+  if (r.clearReason) delete after.orderConsentStaleReason;
+  assert.equal(G.orderConsentNoticeOf(after).text, G.ORDER_CONSENT_STALE_TEXT);
+});
+t("印を下ろす・改版で書くときは理由（orderConsentStaleReason）も消す（Functions・練習モード）", () => {
+  const ix = read("functions/index.js");
+  assert.match(ix, /orderConsentToken: consent\.token, orderConsentAt: now, orderConsentStale: false,\n    orderConsentStaleReason: admin\.firestore\.FieldValue\.delete\(\) \}\);/);
+  assert.match(ix, /tx\.update\(caseRef, \{ orderConsentToken: token, orderConsentAt: now, orderConsentStale: false,\n      orderConsentStaleReason: admin\.firestore\.FieldValue\.delete\(\), updatedAt: now \}\);/);
+  const b = fnBody("reviseQuote");
+  assert.match(b, /const rs = reviseConsentStale\(kaseR, orderConsentStaleAfterRevise\(entry, \{ items, amounts \}\)\);/);
+  assert.match(b, /\.\.\.\(consentClearReason \? \{ orderConsentStaleReason: admin\.firestore\.FieldValue\.delete\(\) \} : \{\}\),/);
+  const ps = read("admin/js/practice-stubs.js");
+  assert.match(ps, /orderConsentToken: consent\.token, orderConsentAt: now, orderConsentStale: false, orderConsentStaleReason: deleteField\(\) \}/);
+  assert.match(ps, /orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, orderConsentStaleReason: deleteField\(\), updatedAt: now \}/);
+  assert.match(ps, /const rs = reviseConsentStale\(kaseR, orderConsentStaleAfterRevise\(entry, \{ items, amounts \}\)\);/);
+  assert.match(ps, /\.\.\.\(consentClearReason \? \{ orderConsentStaleReason: deleteField\(\) \} : \{\}\),/);
+});
 t("練習モードの代役: 練習DBの設定で同じ道（承諾書の記録と受注確定を1つの処理で）", () => {
   const ps = read("admin/js/practice-stubs.js");
   assert.match(ps, /async function practiceOrderOn\(\) \{\n\s+try \{ const s = await getDoc\(doc\(db\(\), "appConfig", "settings"\)\)/);
