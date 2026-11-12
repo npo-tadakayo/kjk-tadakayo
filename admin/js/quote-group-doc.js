@@ -221,7 +221,7 @@ export function renderQuoteGroupDocHtml(data) {
           <div class="qdoc-issuer-name">NPO法人タダカヨ</div>
           <div style="font-size:9pt;color:var(--color-ink-muted);line-height:1.9">
             〒143-0014　東京都大田区大森中2-1-20-1001<br>
-            TEL: 050-6872-9884　／　担当: ${esc(issuerStaff)}
+            TEL: 050-8894-9502　／　担当: ${esc(issuerStaff)}
           </div>
         </div>
         <img src="/images/seal-tadakayo.png" alt="タダカヨの角印" class="qdoc-hanko"

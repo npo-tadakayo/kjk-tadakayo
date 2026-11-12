@@ -24,7 +24,7 @@ const SENDER_DEFAULT = {
   name: "NPO法人タダカヨ　介護情報基盤伴走支援事業",
   postal: "",
   address: "東京都大田区大森中二丁目1番20-1001号",
-  phone: "050-6872-9884",
+  phone: "050-8894-9502",
 };
 // 出荷元の保管場所に「宛名ラベルのご依頼主」（locations の senderName・senderPhone・senderPostal・senderAddress）が
 // 入っていれば、それを最優先にする（2026-11-01 次田さん決定。滋賀から出すのにご依頼主が東京・大森になっていた）。

@@ -332,7 +332,7 @@ check("status なしの出荷も追跡番号を直せる", r.ok && (await get(sh
 r = await call("warehouseShip", WH2, { shipmentId: "legacy", shipDate: TODAY });
 check("status なしの出荷は発送済にできない（すでに発送済）", !r.ok && r.code === "failed-precondition");
 r = await call("warehouseList", WH2, { locationId: "L2" });
-check("差出人: 設定が無ければ印刷ページと同じ既定", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "NPO法人タダカヨ　介護情報基盤伴走支援事業", postalCode: "", address: "東京都大田区大森中二丁目1番20-1001号", phone: "050-6872-9884" }), JSON.stringify(r.r && r.r.sender));
+check("差出人: 設定が無ければ印刷ページと同じ既定", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "NPO法人タダカヨ　介護情報基盤伴走支援事業", postalCode: "", address: "東京都大田区大森中二丁目1番20-1001号", phone: "050-8894-9502" }), JSON.stringify(r.r && r.r.sender));
 await db.collection("appConfig").doc("settings").update({ senders: [{ name: "東京センター", postal: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }, { name: "二件目" }] });
 r = await call("warehouseList", WH2, { locationId: "L2" });
 check("差出人: 設定の senders の1件目", r.ok && JSON.stringify(r.r.sender) === JSON.stringify({ name: "東京センター", postalCode: "100-0001", address: "千代田区1-1", phone: "03-1111-2222" }), JSON.stringify(r.r && r.r.sender));

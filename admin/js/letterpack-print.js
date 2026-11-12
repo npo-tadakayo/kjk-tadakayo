@@ -26,7 +26,7 @@ const SENDER_DEFAULT = {
   name: "NPO法人タダカヨ　介護情報基盤伴走支援事業",
   postal: "",
   address: "東京都大田区大森中二丁目1番20-1001号",
-  phone: "050-6872-9884",
+  phone: "050-8894-9502",
 };
 
 function sendersOf(st){

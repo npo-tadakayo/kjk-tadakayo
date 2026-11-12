@@ -28,7 +28,7 @@ function head(n, sec) {
   return `<div class="sg-bar"><span class="sg-bar-t">介護情報基盤 助成金の申請手順</span><span class="sg-bar-s">${esc(sec)}</span><span class="sg-bar-n">${n} / ${TOTAL}</span></div>`;
 }
 function foot() {
-  return `<div class="sg-pfoot">分からないところは NPO法人タダカヨ（介護情報基盤伴走支援事業）へ　TEL 050-6872-9884 ／ kjk-staff@tadakayo.jp</div>`;
+  return `<div class="sg-pfoot">分からないところは NPO法人タダカヨ（介護情報基盤伴走支援事業）へ　TEL 050-8894-9502 ／ kjk-staff@tadakayo.jp</div>`;
 }
 // 入力する値の吹き出し
 function val(label, v) { return `<div class="sg-val"><div class="k">${label}</div><div class="v">${v}</div></div>`; }
@@ -209,7 +209,7 @@ export function renderSubsidyGuideHtml(g) {
       <li><b>対象外のもの</b>　パソコン・タブレット・スマートフォン、中古品・リース品は対象外です</li>
       <li><b>予算</b>　予算に達すると、期間内でも受付が終わることがあります。お早めの申請をおすすめします</li>
     </ul>
-    <div class="sg-help">申請の入力で迷ったら、タダカヨがお電話で一緒に進めます。<br>NPO法人タダカヨ（介護情報基盤伴走支援事業）　TEL 050-6872-9884 ／ kjk-staff@tadakayo.jp</div>
+    <div class="sg-help">申請の入力で迷ったら、タダカヨがお電話で一緒に進めます。<br>NPO法人タダカヨ（介護情報基盤伴走支援事業）　TEL 050-8894-9502 ／ kjk-staff@tadakayo.jp</div>
     <div class="sg-src">手順は ${SRC}（令和8年7月版）をもとにしています。書類の見本の画像は同手引きからの引用です。最新の要件は介護情報基盤ポータルのお知らせで確認してください。</div>
   </section>`;
 
