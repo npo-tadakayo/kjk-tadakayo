@@ -112,10 +112,14 @@ export function revertWrites({ kase, quotes, ship, by, now, cancelReason = "", o
     status: REVERT_TO_STATUS, statusChangedAt: now, statusChangedTo: REVERT_TO_STATUS, // 進み具合の帯（case-progress.js statusChangePatch と同じ2項目）
     orderedAt: null,      // 「見積もり発行済（未申込）」の絞り込みに戻す。前の受注日は shipCancelRevert に残す
     shipmentId: null,     // キャンセル済みの出荷を指したままにしない（次の申込で新しい下書きを作る）
+    // 申込の経路も外す。残すと案件一覧の「Web申込済」の絞り込み（cases.js quoteMatch）に出続けるため（2026-11-13 小さな指摘5）。
+    // 前の値は shipCancelRevert.prevOrderedVia に残す。次に申し込まれたら Functions が "web"／"staff" を書き直す
+    orderedVia: null,
     updatedAt: now,
     shipCancelRevert: {
       at: now, by: by || "", soNumber: s.soNumber || "", shipId: s._id || s.id || "",
       fromStatus, prevOrderedAt: k.orderedAt || null, prevShipmentId: k.shipmentId || null,
+      prevOrderedVia: k.orderedVia || null,
       quoteIds: accepted.map((q) => q.id),
     },
   };
