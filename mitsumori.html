@@ -220,6 +220,8 @@
     /* 申込の画面: エラーの文はボタンの帯の中に置き、ボタンの上に1行まるごと使って出す（帯ごと下に貼り付くので隠れない） */
     #orderModal .order-actions { flex-wrap: wrap; }
     #orderModal .order-actions #orderError { flex: 0 0 100%; }
+    /* 申込の画面のボタンは、スイッチ（承諾書で発注）のオン・オフに関わらず高さ 44px 以上（2026-11-13。オフのときだけ 41px だった） */
+    #orderModal .modal-btn { min-height: 44px; }
     .modal-close-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
     .modal-close-btn {
       background: none; border: none; cursor: pointer;
@@ -303,7 +305,6 @@
     /* 承諾書のサイン＝発注 第2段（2026-11-12）: スイッチがオンのときだけ #orderModal に .consent-mode が付く。
        オフのときはここの指定はどれも効かない（申込の画面は今のまま） */
     #orderModal.consent-mode .modal-box { width: 680px !important; }
-    #orderModal.consent-mode .modal-btn { min-height: 44px; }
     #orderModal.consent-mode .modal-desc { font-size: 13px; color: var(--text); }
     .oc-head { font-size: 13px; font-weight: 700; margin: 2px 0 8px; color: var(--text); }
     .oc-quote { background: #faf7f2; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }

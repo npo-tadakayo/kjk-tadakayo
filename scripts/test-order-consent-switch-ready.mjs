@@ -178,7 +178,8 @@ t("見積もりページ（2026-11-12 画面確認）: エラーの文はボタ�
   assert.ok(m, "#orderError が .modal-actions（下に貼り付く帯）の中で、ボタンの前にある");
   assert.equal((h.match(/id="orderError"/g) || []).length, 1);
   assert.match(h, /#orderModal \.order-actions \{ flex-wrap: wrap; \}/);
-  assert.match(h, /#orderModal\.consent-mode \.modal-btn \{ min-height: 44px; \}/);
+  // 44px はスイッチのオン・オフに関わらず（2026-11-13 小さな指摘9。以前はオンのときだけ）
+  assert.match(h, /#orderModal \.modal-btn \{ min-height: 44px; \}/);
 });
 t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、ページがそれを渡す。オフの道の応答は変えない", () => {
   const src = read("functions/index.js");
