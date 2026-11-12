@@ -119,3 +119,20 @@ export function invoiceFeeConfirmText(s) {
   return `事業所向けの出荷では送料を請求しない決まりです。送料 ${yen(t.shipIncl)}（税込・税抜 ${yen(t.shipExcl)}）を請求しますか？`
     + `\n（請求しないなら「キャンセル」を押し、出荷を修正して送料を0円にしてください）`;
 }
+
+/**
+ * 出荷の修正で台数を変えて、配送方法から送料を入れ直すときの確認の文。出さないときは null（2026-11-13）。
+ * 既に送料が入っている（0円より大きい）出荷で、入れ直すと送料が 0 円になるときだけ確かめる
+ * （＝事業所向けの決まりで 0 円になる場合。以前は確認なしで 0 円になっていた）。
+ * 新規登録・送料0円の出荷・入れ直しても送料が残る（認定事業者向けの通数の増減など）ときは出さない。
+ * @param {object} p
+ * @param {boolean} p.editing    既存の出荷の修正か
+ * @param {number}  p.currentFee いま送料欄に入っている送料（税抜）
+ * @param {number}  p.nextFee    入れ直したときの送料（税抜。autoShipFee の fee）
+ */
+export function qtyChangeFeeConfirmText({ editing, currentFee, nextFee }) {
+  const cur = Number(currentFee) || 0, next = Number(nextFee) || 0;
+  if (!editing || !(cur > 0) || next !== 0) return null;
+  return `台数を変えたので送料を入れ直します。\n事業所向けの出荷では送料を請求しない決まりのため、送料 ${yen(cur)}（税抜）が 0 円になります。0 円にしますか？`
+    + `\n（「キャンセル」を押すと、送料は ${yen(cur)} のまま残します。このあと台数を変えても、この画面を閉じるまでは聞きません）`;
+}

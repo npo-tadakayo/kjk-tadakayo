@@ -12,10 +12,11 @@
 //   ⑨ 出荷種別を変えるときの案内（事業所向けへ＝送料あり／認定事業者向けへ＝送料0円・レビュー中-4）
 //   ⑩ 請求済にする・請求書を出すときの確認（レビュー中-1）
 //   ⑪ 確認の配線を、判定の関数を通して動かして確かめる（レビュー低-1）
+//   ⑫ 出荷の修正で台数を変えて送料が 0 円になるときは確かめる（2026-11-13）
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { billsOffice, taxExclOf, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM,
-  feeLabelForSave, shipTypeChangeFeeNote, invoiceFeeConfirmText } from "../admin/js/ship-fee-rules.js";
+  feeLabelForSave, shipTypeChangeFeeNote, invoiceFeeConfirmText, qtyChangeFeeConfirmText } from "../admin/js/ship-fee-rules.js";
 import { priceIsTaxIncluded, invoiceTotals, renderInvoiceHtml } from "../admin/js/invoice-doc.js";
 import { receiptRowsFromShipment } from "../admin/js/subsidy-amounts.js";
 
@@ -234,6 +235,46 @@ t("⑪ 確認の配線を判定の関数で動かす（新規・修正・請求�
   assert.match(change({ ...OFFICE, shippingFee: 0, shippingMethod: "letterpack" }, "dropship", "p@example.jp"), /送料が0円です。認定事業者向けは送料を請求する運用です/);
   assert.match(change({ ...DROP, shippingFee: 545, shippingMethod: "letterpack" }, "direct", ""), /事業所向けの出荷では送料を請求しない決まりです/);
   assert.doesNotMatch(change({ ...DROP, shippingFee: 545, shippingMethod: "letterpack" }, "dropship", "p@example.jp"), /送料/);
+});
+
+t("⑫ 台数を変えて送料が0円になるときの確認（判定）", () => {
+  // 修正中・送料あり・入れ直すと0円 → 聞く
+  const a = qtyChangeFeeConfirmText({ editing: true, currentFee: 745, nextFee: 0 });
+  assert.ok(a && a.includes("¥745") && a.includes("0 円にしますか"));
+  assert.equal(qtyChangeFeeConfirmText({ editing: true, currentFee: "745", nextFee: 0 }) !== null, true); // 入力欄の文字列でも
+  // 新規登録・送料0円・入れ直しても送料が残る（認定事業者の通数の増減）→ 聞かない
+  assert.equal(qtyChangeFeeConfirmText({ editing: false, currentFee: 745, nextFee: 0 }), null);
+  assert.equal(qtyChangeFeeConfirmText({ editing: true, currentFee: 0, nextFee: 0 }), null);
+  assert.equal(qtyChangeFeeConfirmText({ editing: true, currentFee: "", nextFee: 0 }), null);
+  assert.equal(qtyChangeFeeConfirmText({ editing: true, currentFee: 545, nextFee: 1091 }), null);
+});
+
+t("⑫ 台数を変えて送料が0円になるときの確認（supply.js の配線）", () => {
+  const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
+  // 台数の入力からは fromQty=true で呼ぶ。配送方法などの change は event が渡るので true にならない
+  assert.match(sup, /qty-input'\)\.forEach\(i=>i\.addEventListener\('input',\(\)=>recalcShipFee\(true\)\)\)/);
+  assert.match(sup, /function recalcShipFee\(fromQty\)\{/);
+  assert.match(sup, /if\(fromQty===true\)\{/);
+  // 開くたびに答えを消す
+  assert.match(sup, /editingShip = existing \|\| null;\n  shipQtyFeeAnswer = null;/);
+  // 配線を動かす: 「キャンセル」なら送料・名目はそのまま、2回目は聞かない／「OK」なら0円
+  const body = extract(sup, "  if(fromQty===true){", "  feeEl.value=a.fee; labelEl.value=a.label;");
+  const sim = (answer, times) => {
+    const feeEl = { value: "745" }, labelEl = { value: "送料（レターパック 1通）" };
+    const st = { shipQtyFeeAnswer: null };
+    let asked = 0;
+    const once = new Function("fromQty", "a", "feeEl", "labelEl", "editingShip", "st", "confirm", "qtyChangeFeeConfirmText", "updateShipTotal",
+      body.replace(/shipQtyFeeAnswer/g, "st.shipQtyFeeAnswer") + "\n  feeEl.value=a.fee; labelEl.value=a.label; return \"入れ直した\";");
+    let ret;
+    for (let i = 0; i < times; i++)
+      ret = once(true, { fee: 0, label: "レターパック 1通（送料は当法人負担）" }, feeEl, labelEl, { _id: "x" }, st,
+        () => { asked++; return answer; }, qtyChangeFeeConfirmText, () => {});
+    return { ret, asked, fee: feeEl.value, label: labelEl.value };
+  };
+  let r = sim(false, 3);
+  assert.equal(r.asked, 1); assert.equal(r.fee, "745"); assert.equal(r.label, "送料（レターパック 1通）"); assert.equal(r.ret, undefined);
+  r = sim(true, 1);
+  assert.equal(r.asked, 1); assert.equal(r.fee, 0); assert.equal(r.ret, "入れ直した");
 });
 
 console.log(`OK: test-ship-fee ${n} 件合格`);
