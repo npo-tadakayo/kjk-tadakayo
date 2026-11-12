@@ -13,10 +13,11 @@
 //   ⑩ 請求済にする・請求書を出すときの確認（レビュー中-1）
 //   ⑪ 確認の配線を、判定の関数を通して動かして確かめる（レビュー低-1）
 //   ⑫ 出荷の修正で台数を変えて送料が 0 円になるときは確かめる（2026-11-13）
+//   ⑬ 請求書の印刷: Ctrl+P（⌘P）でも同じ確認・メニューからの印刷向けに画面の注意（2026-11-13）
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { billsOffice, taxExclOf, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM,
-  feeLabelForSave, shipTypeChangeFeeNote, invoiceFeeConfirmText, qtyChangeFeeConfirmText } from "../admin/js/ship-fee-rules.js";
+  feeLabelForSave, shipTypeChangeFeeNote, invoiceFeeConfirmText, qtyChangeFeeConfirmText, invoiceFeeNoticeText } from "../admin/js/ship-fee-rules.js";
 import { priceIsTaxIncluded, invoiceTotals, renderInvoiceHtml } from "../admin/js/invoice-doc.js";
 import { receiptRowsFromShipment } from "../admin/js/subsidy-amounts.js";
 
@@ -275,6 +276,33 @@ t("⑫ 台数を変えて送料が0円になるときの確認（supply.js の�
   assert.equal(r.asked, 1); assert.equal(r.fee, "745"); assert.equal(r.label, "送料（レターパック 1通）"); assert.equal(r.ret, undefined);
   r = sim(true, 1);
   assert.equal(r.asked, 1); assert.equal(r.fee, 0); assert.equal(r.ret, "入れ直した");
+});
+
+t("⑬ 請求書の印刷: Ctrl+P でも同じ確認・画面の注意", () => {
+  const prt = readFileSync(new URL("../admin/js/supply-print.js", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../admin/supply-print.html", import.meta.url), "utf8");
+  const items = [{ sku: "x", qty: 1, unitPrice: 1000 }];
+  // 注意の文は確認と同じ条件
+  for (const s of [{ ...OFFICE, items, shippingFee: 600, status: "shipped" }, { ...OFFICE, items, shippingFee: 600, status: "invoiced" },
+    { ...OFFICE, items, shippingFee: 0, status: "shipped" }, { ...DROP, items, shippingFee: 545, status: "shipped" }, null]) {
+    assert.equal(invoiceFeeNoticeText(s) === null, invoiceFeeConfirmText(s) === null);
+  }
+  const note = invoiceFeeNoticeText({ ...OFFICE, items, shippingFee: 600, status: "shipped" });
+  assert.ok(note.includes("¥660") && note.includes("Ctrl+P") && note.includes("メニューから印刷したときは確認が出ません"));
+  // Ctrl+P の判定
+  const isP = new Function(`${extract(prt, "function isPrintShortcut(e){", "\n}")}\n}\nreturn isPrintShortcut;`)();
+  assert.equal(isP({ ctrlKey: true, key: "p" }), true);
+  assert.equal(isP({ metaKey: true, key: "P" }), true);
+  assert.equal(isP({ ctrlKey: true, shiftKey: true, key: "p" }), false); // Ctrl+Shift+P はブラウザの別機能
+  assert.equal(isP({ key: "p" }), false);
+  assert.equal(isP({ ctrlKey: true, key: "s" }), false);
+  // 配線: ボタンと Ctrl+P は同じ startPrint を通す・ブラウザの印刷は止める
+  assert.match(prt, /document\.getElementById\("printBtn"\)\.addEventListener\("click",startPrint\);/);
+  assert.match(prt, /if\(!isPrintShortcut\(e\)\) return;\n    e\.preventDefault\(\);\n    if\(document\.getElementById\("body"\)\.style\.display!=="none"\) startPrint\(\);/);
+  assert.match(prt, /const feeNoteText = invoiceFeeNoticeText\(docInvoiceShip\);/);
+  // 注意は印刷に出ない
+  assert.match(html, /<div class="fee-notice" id="feeNotice" role="note"><\/div>/);
+  assert.match(html, /@media print\{\.toolbar\{display:none;\}\.fee-notice\{display:none !important;\}/);
 });
 
 console.log(`OK: test-ship-fee ${n} 件合格`);

@@ -136,3 +136,15 @@ export function qtyChangeFeeConfirmText({ editing, currentFee, nextFee }) {
   return `台数を変えたので送料を入れ直します。\n事業所向けの出荷では送料を請求しない決まりのため、送料 ${yen(cur)}（税抜）が 0 円になります。0 円にしますか？`
     + `\n（「キャンセル」を押すと、送料は ${yen(cur)} のまま残します。このあと台数を変えても、この画面を閉じるまでは聞きません）`;
 }
+
+/**
+ * 請求書の印刷画面の上に出す注意（画面だけ・印刷には出ない）。出さないときは null（2026-11-13）。
+ * 印刷ボタンと Ctrl+P（⌘P）では invoiceFeeConfirmText の確認が出るが、ブラウザのメニューからの印刷は
+ * 止められないので、確認と同じ条件のときは画面に常に出しておく。
+ */
+export function invoiceFeeNoticeText(s) {
+  if (!invoiceFeeConfirmText(s)) return null;
+  const t = invoiceTotals(s);
+  return `この請求書には送料 ${yen(t.shipIncl)}（税込・税抜 ${yen(t.shipExcl)}）が入っています。事業所向けの出荷では送料を請求しない決まりです。`
+    + `「印刷 / PDF保存」ボタンと Ctrl+P（⌘P）では確認が出ますが、ブラウザのメニューから印刷したときは確認が出ません。`;
+}
