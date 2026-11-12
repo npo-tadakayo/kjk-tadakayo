@@ -17,7 +17,7 @@ const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジッ
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
 // 承諾書のサイン＝発注（2026-11-12）の判定（純粋関数）と、承諾書の条文の正本
-const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise, orderByConsentOn,
+const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderConsentStaleAfterRevise, reviseConsentStale, orderByConsentOn,
   ORDER_RECEIVED_VIA, channelOfReceivedVia, checkWebOrderConsentInput, orderConsentQuoteEntry, cleanSignedName } = require("./accept-rules");
 const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
@@ -1376,7 +1376,9 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
     if (!kase.orderedAt) caseUpdate.orderedAt = now;
     caseUpdate.orderedVia = kase.orderedVia || "web";
   }
-  if (consent) Object.assign(caseUpdate, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false });
+  // 取り直しの印を下ろすときは理由も消す（残すと、あとで立てた印の文言が「出荷をキャンセルしたため」になる・2026-11-13 小さな指摘4）
+  if (consent) Object.assign(caseUpdate, { orderConsentToken: consent.token, orderConsentAt: now, orderConsentStale: false,
+    orderConsentStaleReason: admin.firestore.FieldValue.delete() });
   tx.update(caseRef, caseUpdate);
 
   const shipLine = out.reused
@@ -1544,7 +1546,8 @@ async function reconsentTransaction({ quoteId, consent, actor }) {
     rec.signed.signedAt = now; rec.createdAt = now; rec.createdVia = "staffAcceptQuote（取り直し）";
     tx.create(db.collection("consentRequests").doc(token), rec);
     tx.update(qRef, { consentToken: token, consentRetakenAt: now });
-    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false, updatedAt: now });
+    tx.update(caseRef, { orderConsentToken: token, orderConsentAt: now, orderConsentStale: false,
+      orderConsentStaleReason: admin.firestore.FieldValue.delete(), updatedAt: now }); // 理由も消す（小さな指摘4）
     tx.set(db.collection("activities").doc(), {
       caseId: q.caseId, type: "memo", occurredAt: now, userId: actor.uid || null, userName: actor.email,
       subject: Flow.orderReconsentSubject(q.estNo, q.version),
@@ -2042,7 +2045,7 @@ exports.reviseQuote = onCall(
     // 承諾書のサイン＝発注（2026-11-12・発3）: 発注の承諾書がある案件（cases.orderConsentToken）で見積もりを直したら、
     // 承諾書に焼き込んだ内容（品目・台数・合計）と比べ、違えば cases.orderConsentStale:true（承諾書の取り直しが要る）。
     // 出荷は止めない（第1段）。承諾書の無い案件（設定オフのときはすべて）は何も足さない（従来どおり）。
-    let consentStale = null;
+    let consentStale = null, consentClearReason = false;
     const caseSnapR = await db.collection("cases").doc(base.caseId).get();
     const kaseR = caseSnapR.exists ? caseSnapR.data() : null;
     if (kaseR && kaseR.orderConsentToken) {
@@ -2052,7 +2055,9 @@ exports.reviseQuote = onCall(
         const qs = cs.exists && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
         entry = qs.find((e) => e && e.caseId === base.caseId) || null;
       } catch (e) { console.warn("reviseQuote: consent read failed", e.message); }
-      consentStale = orderConsentStaleAfterRevise(entry, { items, amounts });
+      // 出荷キャンセルで立てた印は、内容が同じ改版でも下ろさない。それ以外は理由を消す（reviseConsentStale・小さな指摘4）
+      const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items, amounts }));
+      consentStale = rs.stale; consentClearReason = rs.clearReason;
     }
 
     const batch = db.batch();
@@ -2082,6 +2087,7 @@ exports.reviseQuote = onCall(
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
       ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
+      ...(consentClearReason ? { orderConsentStaleReason: admin.firestore.FieldValue.delete() } : {}),
     });
     // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）
     if (shipmentId && shipStatus === "draft") {
@@ -2101,7 +2107,9 @@ exports.reviseQuote = onCall(
       body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
         + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
         + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
-        + (consentStale === true ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
+        + (consentStale !== true ? "" : consentClearReason
+          ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
+          : "\n⚠️ 出荷をキャンセルしたため前の承諾書の発注は取り消しになっています。新しい版で承諾書の取り直しが要ります。"),
       attachmentUrls: [],
     });
     await batch.commit();
