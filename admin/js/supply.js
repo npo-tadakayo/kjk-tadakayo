@@ -16,6 +16,8 @@ import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOne
 import { markInvoiced } from "/js/invoice-mark.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
+import { billsOffice, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM, feeLabelForSave,
+  shipTypeChangeFeeNote, invoiceFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
 import { PREFECTURES } from "/js/area.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
@@ -1174,13 +1176,17 @@ async function requestDraftShipment(s){
     if(missing.length){ alert(`${requestMissingText(missing)}。\n「送付先・数量を直す」で入れてから、もう一度依頼してください。`); return; }
   }
   const its = usesStock ? stockItems(s.items) : [];
-  // 持ち出し（送料0円・郵送なし）を取り消して発送で依頼し直すときは、送料を0円のまま請求しないよう
-  // レターパックの送料（受注から出荷を作るときと同じ計算: 6台で1通・2026-11-12）に戻す。必ず確認を出す（Codex 指摘2回目）。
+  // 持ち出し（送料0円・郵送なし）を取り消して発送で依頼し直すときは、配送方法をレターパック（6台で1通・2026-11-12）に戻す。必ず確認を出す（Codex 指摘2回目）。
+  //   ・事業所へ請求する出荷＝ 送料は請求しない決まり（2026-11-12）。0円のまま、名目だけレターパックにする（ship-fee-rules.js）
+  //   ・認定事業者へ請求する出荷＝ 今までどおりレターパックの送料（受注から出荷を作るときと同じ計算）に戻す
   // ゆうパックなど別の送り方なら、依頼のあと「送付先・数量を直す」で直してもらう
   const backToShip = ans.deliveryMode==="ship" && isPickup(s) && !isLocked(s);
   const lpPacks = letterpackCount(stockItems(s.items).reduce((a,i)=>a+(Number(i.qty)||0),0)); // 1通に6台（2026-11-12 送4）
-  const lpPatch = { shippingMethod:"letterpack", shippingFee: taxExcl(lpPacks*letterpackFee()), shippingLabel:`送料（レターパック ${lpPacks}通）` };
-  if(backToShip && !confirm(`持ち出しから発送に変えました。送料を確認してください。\n送料を「${lpPatch.shippingLabel}」${yen(lpPatch.shippingFee)}（税抜）にして依頼します。\nゆうパックなど別の送り方のときは、依頼のあと「送付先・数量を直す」で直してください。`)) return;
+  const lpOffice = billsOffice(s);
+  const lpBack = returnToShipFee({ office: lpOffice, packs: lpPacks, letterpackFee: letterpackFee() });
+  const lpPatch = lpBack.patch;
+  if(backToShip && !confirm(lpOffice ? lpBack.confirmText
+    : `持ち出しから発送に変えました。送料を確認してください。\n送料を「${lpPatch.shippingLabel}」${yen(lpPatch.shippingFee)}（税抜）にして依頼します。\nゆうパックなど別の送り方のときは、依頼のあと「送付先・数量を直す」で直してください。`)) return;
   const ref = doc(db,"shipments",s._id);
   let feeZeroed = false, feeRestored = false;
   try{
@@ -1217,7 +1223,7 @@ async function requestDraftShipment(s){
   }catch(e){ alert(`出荷の依頼に失敗しました: ${e.message}`); return; }
   const head = `${s.soNumber} の${ans.deliveryMode==="pickup"?"持ち出し":"出荷"}を依頼しました（在庫は${ans.deliveryMode==="pickup"?"受け渡し済":"発送済"}にしたときに引き落とします）`
     + (feeZeroed ? "。持ち出しのため送料を0円にしました（郵送なし）" : "")
-    + (feeRestored ? `。持ち出しから発送に変えたため、送料を「${lpPatch.shippingLabel}」にしました` : "");
+    + (feeRestored ? `。${lpBack.doneText}` : "");
   toast(`${head}。出荷指示を投稿しています...`);
   toast(`${head}。${await postShipNotice(s._id)}`);
 }
@@ -1409,26 +1415,30 @@ function updateShipLpNotice(){
   el.textContent=msg; el.style.display=msg?"block":"none";
 }
 
-// 配送方法に応じて送料・名目を自動入力（手入力は維持）
+// 出荷モーダルの出荷が「事業所へ請求する出荷」か。修正中はその出荷、新規は画面の出荷種別から見る（updateShipTotal の税基準と同じ）
+function shipModalBillsOffice(){
+  const basis = editingShip || { shipType: document.getElementById("shipType").value,
+                                 partnerEmail: document.getElementById("shipType").value==="dropship" ? (document.getElementById("shipPartner").value||"") : "" };
+  return billsOffice(basis);
+}
+// 配送方法に応じて送料・名目を自動入力（手入力は維持）。事業所向けは送料0円（2026-11-12）
 function recalcShipFee(){
   updateShipOriginHint();
   const method=document.getElementById('shipMethod').value;
   const feeEl=document.getElementById('shipFee'), labelEl=document.getElementById('shipFeeLabel');
   document.getElementById('yupackWrap').style.display = method==='yupack' ? '' : 'none';
-  // 料金表（レターパック・ゆうパック）は税込の実費 → 送料欄は税抜なので換算して入れる
-  if(method==='letterpack'){
-    const packs=letterpackCount(shipTotalQty()); // レターパックプラス1通に6台（2026-11-12 送4。以前は3台）
-    feeEl.value=taxExcl(packs*letterpackFee()); labelEl.value=`送料（レターパック ${packs}通）`;
-  } else if(method==='none'){
-    // 郵送しない（手渡し・持参・現地設置）。送料は 0 円で、出庫の記録だけ残す
-    feeEl.value=0; labelEl.value='郵送なし（手渡し・持参）';
-    document.getElementById('yupackWrap').style.display='none';
-  } else if(method==='yupack'){
-    const d=yupackData(); const size=document.getElementById('shipYuSize').value;
-    const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
-    const arr=d.rows[size]||YUPACK_ROWS_DEF[size]||[];
-    feeEl.value=taxExcl(Number(arr[ri])||0); labelEl.value=`送料（ゆうパック ${size}サイズ・${d.regions[ri]||""}）`;
-  } else return; // 「指定しない」＝手入力のまま。注意の表示もそのまま残す
+  // 料金表（レターパック・ゆうパック）は税込の実費 → 送料欄は税抜なので換算して入れる（認定事業者向けだけ）。
+  // 事業所向けは送料を請求しない決まり（2026-11-12）＝ 0円のまま、名目に配送方法と「当法人負担」を入れる（ship-fee-rules.js）。
+  // 郵送しない（手渡し・持参・現地設置）は送料 0 円で、出庫の記録だけ残す
+  const d=yupackData(); const size=document.getElementById('shipYuSize').value;
+  const ri=parseInt(document.getElementById('shipYuRegion').value,10)||0;
+  const a=autoShipFee({ office: shipModalBillsOffice(), method,
+    packs: letterpackCount(shipTotalQty()), letterpackFee: letterpackFee(), // レターパックプラス1通に6台（2026-11-12 送4。以前は3台）
+    yupackSize: size, yupackRegion: d.regions[ri]||"", yupackFee: Number((d.rows[size]||YUPACK_ROWS_DEF[size]||[])[ri])||0 });
+  if(!a) return; // 「指定しない」＝手入力のまま。注意の表示もそのまま残す
+  feeEl.value=a.fee; labelEl.value=a.label;
+  if(method==='none') document.getElementById('yupackWrap').style.display='none';
+  updateShipTotal();
   // 自動入力した値は必ず税抜なので、税込の入力に対する注意は消す
   const w=document.getElementById('shipFeeWarn'); if(w){ w.style.display="none"; w.innerHTML=""; }
 }
@@ -2019,7 +2029,10 @@ async function saveShip(){
   // 物の出荷が無いときは、送るものが無いので送料も0円（郵送なし）・レターパックも無し
   const shippingMethod=(pickup||noGoods) ? "none" : (document.getElementById("shipMethod").value||"manual");
   const shippingFee=(pickup||noGoods) ? 0 : (Number(document.getElementById("shipFee").value)||0);
-  const shippingLabel=noGoods ? "" : pickup ? "郵送なし（手渡し・持参）" : (document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":""));
+  // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
+  const shippingLabel=noGoods ? "" : pickup ? "郵送なし（手渡し・持参）"
+    : feeLabelForSave({ office: billsOffice({ shipType, partnerEmail }), fee: shippingFee,
+        label: document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"") });
   const letterPackType=(pickup||noGoods) ? "" : ((document.getElementById("shipLetterPack")||{}).value||"");
   // 押した人・日付・出荷元・種類を確認してから登録する（2026-10-19）
   const lpText = LETTERPACK_TYPE_LABEL[letterPackType] || "未選択";
@@ -2042,6 +2055,9 @@ async function saveShip(){
       requestedBy: currentUser.displayName||currentUser.email, status: "requested" });
     if(missing.length){ alert(requestMissingText(missing)); return; }
   }
+  // 事業所向けの出荷に送料を入れて保存するときは確かめる（送料を請求しない決まり・止めはしない・2026-11-12）
+  if(needsOfficeFeeConfirm({ office: billsOffice({ shipType, partnerEmail }), fee: shippingFee })
+    && !confirm(`${OFFICE_FEE_CONFIRM}\n送料: ${yen(shippingFee)}（税抜）「${shippingLabel}」\n請求しない場合は「キャンセル」を押し、送料を0円にしてから保存してください。`)) return;
   if(!confirm(msg)) return;
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true; shipSaving=true;
   let newShipId="", soNumber="";
@@ -2175,6 +2191,11 @@ async function saveShipEdit(){
         ||((Number(document.getElementById("shipFee").value)||0)>0?"送料":""),
       ...subsidyPatch(),
     });
+    // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
+    patch.shippingLabel = feeLabelForSave({ office: billsOffice(s0), fee: patch.shippingFee, label: patch.shippingLabel });
+    // 事業所向けの出荷に送料を入れて保存するときは確かめる（送料を請求しない決まり・止めはしない・2026-11-12）
+    if(needsOfficeFeeConfirm({ office: billsOffice(s0), fee: patch.shippingFee })
+      && !confirm(`${OFFICE_FEE_CONFIRM}\n送料: ${yen(patch.shippingFee)}（税抜）「${patch.shippingLabel}」\n請求しない場合は「キャンセル」を押し、送料を0円にしてから保存してください。`)) return;
   }
 
   const btn=document.getElementById("saveShipBtn"); btn.disabled=true; shipSaving=true;
@@ -3145,9 +3166,13 @@ async function doChangeShipType(){
   const partner=activePartners.find(p=>p._id===partnerId)||{};
   const items=repricedShipItems(s,newType,document.getElementById("stcReprice").checked);
   const before=shipTotalIncl(s), after=shipTotalIncl({...s, items});
+  const stcFeeNote = shipTypeChangeFeeNote({ from: s, to: { shipType:newType, partnerEmail:partnerId } });
   const msg=`出荷 ${s.soNumber} の種別を\n  ${SHIP_TYPE_LABEL[s.shipType==="dropship"?"dropship":"direct"]}\n→ ${SHIP_TYPE_LABEL[newType]}\n`
     + `に変更します。請求先は「${newType==="dropship"?(partner.partnerName||partnerId):(s.company||s.officeName||"")}」になります。\n`
-    + `請求額（税込）: ${yen(before)} → ${yen(after)}\n在庫は変動しません。よろしいですか？`;
+    + `請求額（税込）: ${yen(before)} → ${yen(after)}\n在庫は変動しません。`
+    // 請求先が変わると送料の扱いも変わる（事業所向け＝請求しない／認定事業者向け＝請求する・2026-11-12）。金額はここでは変えず、案内だけ添える
+    + (stcFeeNote ? `\n\n${stcFeeNote}` : "")
+    + `\nよろしいですか？`;
   if(!confirm(msg)) return;
   const btn=document.getElementById("doStcBtn"); btn.disabled=true;
   try{
@@ -3682,6 +3707,9 @@ async function doInvoiceReport(){
       && !confirm(`請求書の発行日（${issueYmd}）が出荷日（${s.shipDate}）より前です。このまま請求済にしますか？`)) return;
     // 入力欄を変えたのに描き直しが走っていない場合に備えて、PDF の描画材料もこの日付にそろえる
     if(invReportCtx && invReportCtx.id===s._id) invReportCtx.invoicedAt = issueYmd;
+    // 事業所向けで送料が入っていたら確かめる（送料を請求しない決まり・止めはしない・2026-11-12 レビュー中-1）
+    const feeAsk = invoiceFeeConfirmText(s);
+    if(feeAsk && !confirm(feeAsk)) return;
   }
   const btn = document.getElementById("doInvReportBtn"); const orig = btn.innerHTML;
   btn.disabled = true;
@@ -4185,6 +4213,8 @@ onAuthStateChanged(auth, async (user)=>{
       document.getElementById("shipSubsidyBody").style.display="none";
       document.getElementById("shipManualOn").checked=false;   // 任意の金額の伴走支援費も直接請求する出荷だけ
     }
+    // 送料は請求先で変わる（事業所向けは請求しない・2026-11-12）。配送方法を選んでいれば入れ直す（手入力のときは触らない）
+    if(document.getElementById("shipMethod").value) recalcShipFee();
     updateShipTotal();
   });
   // 伴走支援費を任意の金額で入れる行（自動のチェックがONの間は無効。manual-support-fee.js の exclusion）

@@ -209,7 +209,11 @@ t("supply.js・Functions・練習の代役が同じ既定の場所の決め方�
 t("持ち出しの依頼は送料を「郵送なし」と同じ 0 円にする（Codex 指摘2）", () => {
   const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
   const rf = sup.slice(sup.indexOf("function recalcShipFee"), sup.indexOf("function taxInclusiveShipFees"));
-  assert.match(rf, /method==='none'\)\{[\s\S]*?feeEl\.value=0; labelEl\.value='郵送なし（手渡し・持参）'/);
+  // 「郵送なし」の値は ship-fee-rules.js の autoShipFee が決める（2026-11-12 事業所向けの送料の決まりで移した）
+  assert.match(rf, /const a=autoShipFee\(\{ office: shipModalBillsOffice\(\), method,/);
+  assert.match(rf, /feeEl\.value=a\.fee; labelEl\.value=a\.label;/);
+  const fr = readFileSync(new URL("../admin/js/ship-fee-rules.js", import.meta.url), "utf8");
+  assert.match(fr, /if \(method === "none"\) return \{ fee: 0, label: "郵送なし（手渡し・持参）" \};/);
   const rq = sup.slice(sup.indexOf("async function requestDraftShipment"), sup.indexOf("// 依頼済(requested) → 発送済"));
   // 送料の区分（shippingMethod）も金額と一緒にだけ変える。請求書の後は区分も金額も触らない（2026-11-01 レビュー指摘）
   assert.match(rq, /ans\.deliveryMode==="pickup" && !isLocked\(cur\)\s*\? \{ shippingMethod:"none", shippingFee:0, shippingLabel:"郵送なし（手渡し・持参）" \}/);
@@ -244,8 +248,10 @@ t("持ち出し → 発送で依頼し直すと送料をレターパックに戻
   const sup = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
   const rq = sup.slice(sup.indexOf("async function requestDraftShipment"), sup.indexOf("// 依頼済(requested) → 発送済"));
   assert.match(rq, /const backToShip = ans\.deliveryMode==="ship" && isPickup\(s\) && !isLocked\(s\)/);
-  assert.match(rq, /shippingMethod:"letterpack", shippingFee: taxExcl\(lpPacks\*letterpackFee\(\)\), shippingLabel:`送料（レターパック \$\{lpPacks\}通）`/);
-  assert.match(rq, /if\(backToShip && !confirm\(`持ち出しから発送に変えました。送料を確認してください。/);
+  // 送料は ship-fee-rules.js の returnToShipFee で決める（事業所向け＝0円のまま・認定事業者向け＝レターパックの送料・2026-11-12）
+  assert.match(rq, /const lpBack = returnToShipFee\(\{ office: lpOffice, packs: lpPacks, letterpackFee: letterpackFee\(\) \}\);/);
+  assert.match(rq, /const lpPatch = lpBack\.patch;/);
+  assert.match(rq, /if\(backToShip && !confirm\(lpOffice \? lpBack\.confirmText\s*: `持ち出しから発送に変えました。送料を確認してください。/);
   assert.match(rq, /const restore = backToShip && isPickup\(cur\) && !isLocked\(cur\) \? lpPatch : \{\}/);
   assert.match(rq, /deliveryMode:"ship", \.\.\.letterPackPatch\(ans\.letterPackType\), \.\.\.restore/);
   // 受注から出荷を作るときと同じ計算（3台で1通・税抜）

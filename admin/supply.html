@@ -85,7 +85,7 @@
 
       <!-- 出荷・請求・入金 -->
       <div class="tab-content" id="tab-shipments">
-        <p class="page-intro">発送 → 請求 → 入金 → 領収証 の順に進めます。各行の赤いボタンが、次にやることです。ほかの操作は行の「その他」にあります。</p>
+        <p class="page-intro">発送 → 請求 → 入金 → 領収証 の順に進めます。各行の赤いボタンが、次にやることです。ほかの操作は行の「その他」にあります。<br><strong>事業所向けの出荷は送料を請求しません</strong>（タダカヨの負担）。送料が請求書に載るのは認定事業者向けだけです。</p>
         <div class="page-header" style="margin-bottom:12px">
           <span style="font-size:13px;color:var(--color-ink-muted)">認定事業者への卸と、事業所への直接販売の両方をここで扱います</span>
           <button class="btn btn-primary" id="newShipBtn" type="button"><i class="ti ti-plus" aria-hidden="true"></i>新規出荷</button>
@@ -319,8 +319,8 @@
         </div>
         <!-- 送料（配送方法から自動計算・手修正可）。直送=レターパック / まとめ=ゆうパック(滋賀発) -->
         <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px;margin-top:4px">
-          <label class="form-label" for="shipMethod">配送方法（送料を自動計算）</label>
-          <select class="form-control" id="shipMethod">
+          <label class="form-label" for="shipMethod">配送方法（認定事業者向けは送料を自動計算）</label>
+          <select class="form-control" id="shipMethod" data-tip="事業所向けの出荷は送料を請求しません（選んでも送料は0円のまま・名目だけ入ります）。認定事業者向けは料金表の送料（税抜）が入ります">
             <option value="">指定しない / 送料を手入力</option>
             <option value="letterpack">レターパック（事業所へ送る・6台ごとに1通）</option>
             <option value="yupack" id="shipYupackOpt">ゆうパック（まとめ）</option>
@@ -341,7 +341,7 @@
             <input class="form-control" id="shipFeeLabel" type="text" placeholder="送料（レターパック 1通）"></div>
           <div class="form-group"><label class="form-label" for="shipFee">送料（円・税抜）</label>
             <input class="form-control" id="shipFee" type="number" min="0" placeholder="0">
-            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"><strong>税抜で入力してください</strong>（レターパックなど税込の実費は、上の配送方法を選べば自動で税抜に換算されます）。請求書には税抜のまま明細に載り、消費税は最後にまとめて計算されます。</p></div>
+            <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px"><strong>事業所向けの出荷は送料を請求しません</strong>（0円のまま。手で入れると保存の前に確認が出ます）。認定事業者向けは<strong>税抜で入力してください</strong>（レターパックなど税込の実費は、上の配送方法を選べば自動で税抜に換算されます）。請求書には税抜のまま明細に載り、消費税は最後にまとめて計算されます。0円の送料は請求書・領収証に行が出ません。</p></div>
         </div>
         <div id="shipFeeWarn" class="callout" style="display:none;font-size:12px;margin:0 0 12px;padding:10px 12px;border-left:3px solid #c87a1f;background:var(--color-bg-subtle,#faf7f2)"></div>
         <div id="shipStockWarn" style="font-size:12px;color:var(--color-danger);display:none"></div>
