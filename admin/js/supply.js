@@ -16,7 +16,8 @@ import { renderInvoiceHtml, INVOICE_STYLE, invoiceNoOf, offscreenClone, buildOne
 import { markInvoiced } from "/js/invoice-mark.js";
 import { SHIPPING_FEES, unitPriceFor, partnerTierIndex, LETTERPACK_FEE_DEF, YUPACK_SIZES_DEF, YUPACK_REGIONS_DEF, YUPACK_ROWS_DEF } from "/js/supply-pricing.js";
 import { parseOrderFile } from "/js/partner-order-import.js";
-import { billsOffice, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
+import { billsOffice, autoShipFee, returnToShipFee, needsOfficeFeeConfirm, OFFICE_FEE_CONFIRM, feeLabelForSave,
+  shipTypeChangeFeeNote, invoiceFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { connectionLabel, itemConnection, itemLine, findProduct } from "/js/product-label.js";
 import { PREFECTURES } from "/js/area.js";
 import { matchAssignee, fillAssigneeSelect, bindPrefSelect } from "/js/assignee-filter.js";
@@ -2028,7 +2029,10 @@ async function saveShip(){
   // 物の出荷が無いときは、送るものが無いので送料も0円（郵送なし）・レターパックも無し
   const shippingMethod=(pickup||noGoods) ? "none" : (document.getElementById("shipMethod").value||"manual");
   const shippingFee=(pickup||noGoods) ? 0 : (Number(document.getElementById("shipFee").value)||0);
-  const shippingLabel=noGoods ? "" : pickup ? "郵送なし（手渡し・持参）" : (document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":""));
+  // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
+  const shippingLabel=noGoods ? "" : pickup ? "郵送なし（手渡し・持参）"
+    : feeLabelForSave({ office: billsOffice({ shipType, partnerEmail }), fee: shippingFee,
+        label: document.getElementById("shipFeeLabel").value.trim()||(shippingFee>0?"送料":"") });
   const letterPackType=(pickup||noGoods) ? "" : ((document.getElementById("shipLetterPack")||{}).value||"");
   // 押した人・日付・出荷元・種類を確認してから登録する（2026-10-19）
   const lpText = LETTERPACK_TYPE_LABEL[letterPackType] || "未選択";
@@ -2187,6 +2191,8 @@ async function saveShipEdit(){
         ||((Number(document.getElementById("shipFee").value)||0)>0?"送料":""),
       ...subsidyPatch(),
     });
+    // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
+    patch.shippingLabel = feeLabelForSave({ office: billsOffice(s0), fee: patch.shippingFee, label: patch.shippingLabel });
     // 事業所向けの出荷に送料を入れて保存するときは確かめる（送料を請求しない決まり・止めはしない・2026-11-12）
     if(needsOfficeFeeConfirm({ office: billsOffice(s0), fee: patch.shippingFee })
       && !confirm(`${OFFICE_FEE_CONFIRM}\n送料: ${yen(patch.shippingFee)}（税抜）「${patch.shippingLabel}」\n請求しない場合は「キャンセル」を押し、送料を0円にしてから保存してください。`)) return;
@@ -3160,12 +3166,12 @@ async function doChangeShipType(){
   const partner=activePartners.find(p=>p._id===partnerId)||{};
   const items=repricedShipItems(s,newType,document.getElementById("stcReprice").checked);
   const before=shipTotalIncl(s), after=shipTotalIncl({...s, items});
+  const stcFeeNote = shipTypeChangeFeeNote({ from: s, to: { shipType:newType, partnerEmail:partnerId } });
   const msg=`出荷 ${s.soNumber} の種別を\n  ${SHIP_TYPE_LABEL[s.shipType==="dropship"?"dropship":"direct"]}\n→ ${SHIP_TYPE_LABEL[newType]}\n`
     + `に変更します。請求先は「${newType==="dropship"?(partner.partnerName||partnerId):(s.company||s.officeName||"")}」になります。\n`
     + `請求額（税込）: ${yen(before)} → ${yen(after)}\n在庫は変動しません。`
-    // 事業所向けに変えるときに送料が残っていたら知らせる（事業所向けは送料を請求しない決まり・2026-11-12。金額はここでは変えない）
-    + (billsOffice({ shipType:newType, partnerEmail:partnerId }) && (Number(s.shippingFee)||0)>0
-      ? `\n\n送料 ${yen(Number(s.shippingFee)||0)}（税抜）が残っています。事業所向けの出荷では送料を請求しない決まりです。請求しない場合は、変更のあと「送付先・数量を直す」で送料を0円にしてください。` : "")
+    // 請求先が変わると送料の扱いも変わる（事業所向け＝請求しない／認定事業者向け＝請求する・2026-11-12）。金額はここでは変えず、案内だけ添える
+    + (stcFeeNote ? `\n\n${stcFeeNote}` : "")
     + `\nよろしいですか？`;
   if(!confirm(msg)) return;
   const btn=document.getElementById("doStcBtn"); btn.disabled=true;
@@ -3701,6 +3707,9 @@ async function doInvoiceReport(){
       && !confirm(`請求書の発行日（${issueYmd}）が出荷日（${s.shipDate}）より前です。このまま請求済にしますか？`)) return;
     // 入力欄を変えたのに描き直しが走っていない場合に備えて、PDF の描画材料もこの日付にそろえる
     if(invReportCtx && invReportCtx.id===s._id) invReportCtx.invoicedAt = issueYmd;
+    // 事業所向けで送料が入っていたら確かめる（送料を請求しない決まり・止めはしない・2026-11-12 レビュー中-1）
+    const feeAsk = invoiceFeeConfirmText(s);
+    if(feeAsk && !confirm(feeAsk)) return;
   }
   const btn = document.getElementById("doInvReportBtn"); const orig = btn.innerHTML;
   btn.disabled = true;

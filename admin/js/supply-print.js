@@ -11,6 +11,7 @@ import { renderInvoiceHtml, invoiceNoOf, invoiceTotals, priceIsTaxIncluded, issu
 // 請求書をメールで送ったあとの「請求済にする」（2026-11-10）。出荷の画面の「請求済にする」と同じ規則・同じ書き込み
 import { askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf, printInvoiceShipOf } from "/js/supply-rules.js";
 import { markInvoiced } from "/js/invoice-mark.js";
+import { invoiceFeeConfirmText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
 // 助成金の A・B・X の振り分け（正本・2026-11-12）。領収証の初期明細・区分ごとの丸め・手順PDFの A・B はここを通す
 import { receiptRowsFromShipment, receiptShippingWarning, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
@@ -187,6 +188,13 @@ async function caseInfoOf(s){
     const c = cs.exists() ? cs.data() : {};
     return { rep: c.assignedUserName || "", serviceType: typeof c.serviceType === "string" ? c.serviceType.trim() : "" };
   }catch(_){ return { rep: "", serviceType: "" }; }
+}
+// 請求書を出す（印刷/PDF・メール）ときの送料の確認（2026-11-12 レビュー中-1）。
+// 事業所向けで送料が入っていて、まだ金額を直せる出荷だけ確かめる（ship-fee-rules.js の invoiceFeeConfirmText）。止めはしない
+let docInvoiceShip = null;
+function confirmInvoiceShipFee(){
+  const ask = invoiceFeeConfirmText(docInvoiceShip);
+  return !ask || confirm(ask);
 }
 // 発行するとき、担当営業が空なら知らせる（書面の「担当」欄が空のまま出るため）
 function confirmContactFilled(what){
@@ -707,6 +715,7 @@ function setupMailDoc(kind, d, st, userEmail){
 
   document.getElementById("mailDocSend").onclick = async (e)=>{
     if(!confirmContactFilled(`この${MAIL_DOC_LABEL[kind]}`)) return;
+    if(kind==="invoice" && !confirmInvoiceShipFee()) return;
     const to = normalizeEmail(document.getElementById("mailDocTo").value);
     const cc = normalizeEmail(document.getElementById("mailDocCc").value);
     const subject = document.getElementById("mailDocSubject").value.trim();
@@ -890,6 +899,7 @@ onAuthStateChanged(auth, async (user)=>{
   if(!(await gateRole(db,user))) return;
   document.getElementById("printBtn").addEventListener("click",()=>{
     if(!confirmContactFilled("この書面")) return;
+    if(type==="invoice" && !confirmInvoiceShipFee()) return;
     try{ document.activeElement&&document.activeElement.blur(); }catch(_){}
     window.print();
   });
@@ -952,6 +962,7 @@ onAuthStateChanged(auth, async (user)=>{
       }
       // 書面の「担当」は案件の担当営業を出す（請求書・領収証のみ）
       docNeedsContact = (type==="invoice" || type==="receipt");
+      docInvoiceShip = type==="invoice" ? d : null;
       const ci = docNeedsContact ? await caseInfoOf(d) : { rep: "", serviceType: "" };
       docContactName = ci.rep;
       docServiceType = ci.serviceType;

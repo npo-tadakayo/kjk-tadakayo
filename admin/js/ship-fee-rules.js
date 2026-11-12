@@ -10,7 +10,8 @@
 //
 // ※ 倉庫の「発送済にする」で選ぶ配送の種別（レターパックプラス6台で1通・7台以上はゆうパック）は、
 //    荷物をどう送るかの話で、ここ（請求の送料）とは別。ここでは扱わない。
-import { priceIsTaxIncluded } from "./invoice-doc.js";
+import { priceIsTaxIncluded, invoiceTotals } from "./invoice-doc.js";
+import { isLocked } from "./ship-flow.js";
 
 /** 事業所へ請求する出荷か（＝認定事業者に請求する出荷ではない）。請求書の判定と同じ */
 export function billsOffice(s) { return priceIsTaxIncluded(s); }
@@ -74,4 +75,47 @@ export function returnToShipFee({ office, packs, letterpackFee }) {
  */
 export function needsOfficeFeeConfirm({ office, fee, savesMoney = true }) {
   return !!office && !!savesMoney && (Number(fee) || 0) > 0;
+}
+
+function yen(n) { const v = Number(n || 0); return (v < 0 ? "−" : "") + "¥" + Math.abs(v).toLocaleString("ja-JP"); }
+const OFFICE_FEE_SUFFIX = `（${OFFICE_FEE_NOTE}）`;
+
+/**
+ * 保存する送料の名目。事業所向けで送料が 0 円より大きいまま保存するときは、「（送料は当法人負担）」を外して
+ * 「送料（レターパック 1通）」の形に直す（請求書に「…当法人負担 ¥660」と印字されないように・2026-11-12 レビュー中-2）。
+ * 「当法人負担」の名目を使うのは送料が 0 円のときだけ。それ以外（認定事業者向け・0円・手で書いた名目）はそのまま。
+ */
+export function feeLabelForSave({ office, fee, label }) {
+  const l = String(label || "").trim();
+  if (!office || !((Number(fee) || 0) > 0) || !l.endsWith(OFFICE_FEE_SUFFIX)) return l;
+  const base = l.slice(0, -OFFICE_FEE_SUFFIX.length).trim();
+  return base ? `送料（${base}）` : "送料";
+}
+
+/**
+ * 出荷種別（請求先）を変えるときに確認の文へ添える一言（金額は自動では変えない）。
+ *   ・事業所向けへ変える × 送料あり ＝ 送料を請求しない決まりの案内（2026-11-12）
+ *   ・認定事業者向けへ変える × 送料0円 × 郵送する出荷 ＝ 送料を入れる案内（2026-11-12 レビュー中-4）
+ * どちらでもなければ ""。
+ */
+export function shipTypeChangeFeeNote({ from, to }) {
+  const fee = Number(from && from.shippingFee) || 0;
+  const wasOffice = billsOffice(from || {}), nowOffice = billsOffice(to || {});
+  if (nowOffice && !wasOffice && fee > 0)
+    return `送料 ${yen(fee)}（税抜）が残っています。事業所向けの出荷では送料を請求しない決まりです。請求しない場合は、変更のあと「送付先・数量を直す」で送料を0円にしてください。`;
+  if (!nowOffice && wasOffice && fee === 0 && (from && from.shippingMethod) !== "none")
+    return "送料が0円です。認定事業者向けは送料を請求する運用です。変更のあと「送付先・数量を直す」で送料を入れてください。";
+  return "";
+}
+
+/**
+ * 請求済にする・請求書を出す（印刷/PDF・メール）ときの確認の文。出さないときは null（2026-11-12 レビュー中-1）。
+ * 事業所向けで送料が 0 円より大きく、まだ金額を直せる（請求済・入金済・キャンセルでない）出荷だけ。止めはしない。
+ */
+export function invoiceFeeConfirmText(s) {
+  if (!s || !billsOffice(s) || isLocked(s)) return null;
+  const t = invoiceTotals(s);
+  if (!(t.shipExcl > 0)) return null;
+  return `事業所向けの出荷では送料を請求しない決まりです。送料 ${yen(t.shipIncl)}（税込・税抜 ${yen(t.shipExcl)}）を請求しますか？`
+    + `\n（請求しないなら「キャンセル」を押し、出荷を修正して送料を0円にしてください）`;
 }
