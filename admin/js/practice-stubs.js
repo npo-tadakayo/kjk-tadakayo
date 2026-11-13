@@ -21,6 +21,9 @@ import { orderByConsentOn, checkOrderConsent, checkOrderReconsent, buildOrderCon
   ORDER_RECEIVED_VIA, channelOfReceivedVia, cleanSignedName } from "/js/order-consent-rules.js";
 import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document.js";
 import { statusChangePatch } from "/js/case-progress.js"; // 進み具合の帯（状態を変えたら2項目を書く）
+// 伴走支援費の PM 値引き（2026-11-13）。判定は本番（functions/pm-discount.mjs）と同じ正本
+import * as PM from "/js/pm-discount.js";
+import { getProdFirestore } from "/js/fs.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
 function me() {
@@ -75,6 +78,18 @@ async function activity(caseId, type, subject, body, attachmentUrls) {
 }
 
 function fail(msg) { const e = new Error(msg); e.code = "failed-precondition"; return e; }
+
+// 本物の requireStaff(request, {allow:"admin"}) と同じ: ロールは本番の users で決まる（練習DBには users が無い）
+async function practiceAdmin() {
+  const u = me();
+  let user = null;
+  try { const snap = await getDoc(doc(getProdFirestore(getApp()), "users", u.email)); user = snap.exists() ? snap.data() : null; }
+  catch (_) { user = null; }
+  if (!user || user.active !== true || user.role !== "admin") {
+    const e = new Error("この操作は管理者だけができます"); e.code = "permission-denied"; throw e;
+  }
+  return { ...u, name: user.name || u.name };
+}
 
 // ===== 事業所の編集・統合（updateOffice / mergeOffices / unmergeOffice）の共通部品 =====
 // 本物は functions/index.js の同名の Callable。本番側を変えたらここも合わせる。
@@ -224,6 +239,10 @@ function shipmentItemsFromQuote(P, q) {
   }
   const discount = Number(q.amounts?.discount) || 0;
   if (discount > 0) items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });
+  // 伴走支援費の PM 値引き（本番と同じ・2026-11-13）。記録（q.pmDiscount）の無い値引きの行は作らない（レビュー低-3）
+  const pmDiscount = Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount && Number(q.pmDiscount.amount) === Number(q.amounts.pmDiscount)
+    ? Number(q.amounts.pmDiscount) : 0;
+  if (pmDiscount > 0) items.push(PM.pmDiscountRow(pmDiscount));
   return items;
 }
 
@@ -449,6 +468,7 @@ function stubAcceptWrite(tx, { q, qRef, kase, caseRef, dl, P, u, name, channel, 
     caseNumber: q.caseNumber || null, quoteId: q.id, estNo: q.estNo || "",
     company: dl.company, officeName: dl.officeName, postal: dl.postalCode, address: dl.address,
     contactName: dl.contactName, phone: dl.phone, items: shipmentItemsFromQuote(P, q),
+    ...(Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount && Number(q.pmDiscount.amount) === Number(q.amounts.pmDiscount) ? { pmDiscount: q.pmDiscount } : {}),
     subsidyCategory: q.plan || null, subsidyQty: subsidyQtyFromItems(q.items, P.SKU.BT),
     preferredDate: preferredDate || "", payMethod: payKey, orderNote: memo,
     shippingMethod: "manual", shippingFee: 0, shippingLabel: "", shipDate: todayJst(),
@@ -752,10 +772,11 @@ export const PRACTICE_STUBS = {
     const planKey = ["houmon", "kyojyu", "other"].includes(plan) ? plan : base.plan;
     const { P, calc, items, amounts, cardReaders } = await quoteCalc(planKey, d);
 
-    let shipmentId = base.shipmentId || null, shipStatus = null;
+    let shipmentId = base.shipmentId || null, shipStatus = null, shipPm = 0;
     if (shipmentId) {
       const sh = await getDoc(doc(db(), "shipments", shipmentId));
       shipStatus = sh.exists() ? (sh.data().status || null) : null;
+      shipPm = sh.exists() ? PM.pmAmountOfItems(sh.data().items) : 0; // 下書きの出荷に入っている値引き（本番の quoteVersionContext と同じ）
       // 依頼済（requested）も止める（本番の reviseQuote と同じ・2026-10-21 出荷の二段階化）
       if (sh.exists() && shipStatus === "requested") {
         throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧の行の「その他」→「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。倉庫への取り消しの連絡もお願いします。`);
@@ -778,6 +799,10 @@ export const PRACTICE_STUBS = {
       const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items, amounts })); // 本番と同じ（小さな指摘4）
       consentStale = rs.stale; consentClearReason = rs.clearReason;
     }
+    // 伴走支援費の PM 値引きは、台数・区分を変えた版には引き継がない（本番と同じ・2026-11-13）
+    // 下書きの出荷の値引きからも取る（本番と同じ・2026-11-13 レビュー低-5）
+    const prevPm = Math.max(Number(base.amounts?.pmDiscount) || 0, shipmentId && shipStatus === "draft" ? shipPm : 0);
+    const pmNote = prevPm > 0 ? `\n${PM.pmRemovedByReviseText(prevPm)}` : "";
     const u = me();
     const now = serverTimestamp();
     const estNo = base.estNo;
@@ -814,6 +839,7 @@ export const PRACTICE_STUBS = {
       b.update(doc(db(), "shipments", shipmentId), {
         items: shipmentItemsFromQuote(P, { items, amounts }), quoteId: quoteRef.id, estNo,
         subsidyCategory: planKey || null, subsidyQty: subsidyQtyFromItems(items, P.SKU.BT),
+        pmDiscount: deleteField(),
         updatedAt: now, updatedBy: u.email,
       });
     }
@@ -825,6 +851,7 @@ export const PRACTICE_STUBS = {
       body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
         + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
         + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+        + pmNote
         + (consentStale !== true ? "" : consentClearReason
           ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
           : "\n⚠️ 出荷をキャンセルしたため前の承諾書の発注は取り消しになっています。新しい版で承諾書の取り直しが要ります。"),
@@ -840,6 +867,166 @@ export const PRACTICE_STUBS = {
     showPracticeNotice(mailed ? `見積もりを改版しました。変更のメールは送っていません（宛先 ${base.contactEmail}）` : "見積もりを改版しました（練習用のデータです）");
     return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft"),
       ...(consentStale == null ? {} : { orderConsentStale: consentStale }) };
+  },
+
+  // 伴走支援費の PM 値引き（functions/index.js の setQuoteDiscount と同じ記録・2026-11-13）。管理者だけ。メールは送らない
+  async setQuoteDiscount(d) {
+    const u = await practiceAdmin();
+    const { quoteId, amount, reason, remove } = d;
+    if (!quoteId) throw fail("quoteId は必須です");
+    const baseSnap = await getDoc(doc(db(), "quotes", String(quoteId)));
+    if (!baseSnap.exists()) throw fail("見積もりが見つかりません");
+    const base = { id: baseSnap.id, ...baseSnap.data() };
+    if (!["issued", "accepted"].includes(base.status)) throw fail("この見積もりは旧版か期限切れのため、値引きを入れられません（最新の版で入れてください）");
+    const P = await loadPricing();
+    const q0 = { bt: 0, usb: 0, btx: 0, usbx: 0 };
+    for (const it of (base.items || [])) {
+      if (it.sku === P.SKU.BT) { q0.bt += Number(it.subsidyQty) || 0; q0.btx += Number(it.extraQty) || 0; }
+      else { q0.usb += Number(it.subsidyQty) || 0; q0.usbx += Number(it.extraQty) || 0; }
+    }
+    const calc = P.computeAmounts(base.plan, q0.bt, q0.usb, q0.btx, q0.usbx);
+    const prevPm = Number(base.amounts?.pmDiscount) || 0;
+    if (calc.totalIncl - prevPm !== Number(base.amounts?.totalIncl) || calc.discount !== Number(base.amounts?.discount || 0)) {
+      throw fail("この見積もりの金額が今の料金の計算と合いません（料金改定前の見積もりなど）。先に「内容を変更する」で新しい版にしてから入れてください");
+    }
+    const baseAmounts = {
+      readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount,
+      subsidyPartTotal: calc.subsidyPartTotal, extraPartTotal: calc.extraPartTotal,
+      totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay,
+    };
+    const standardFee = PM.standardFeeOfAmounts(baseAmounts);
+    const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
+    if (!v.ok) throw fail(v.errors.join("\n"));
+    if (remove === true && !prevPm) throw fail("この見積もりには値引きが入っていません");
+    if (remove !== true && v.amount === prevPm) throw fail("値引きの額が今と同じです（変わりません）");
+    const newPm = remove === true ? 0 : v.amount;
+    const amounts = PM.applyToAmounts(baseAmounts, newPm);
+    const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: u.email, byName: u.name }) : null;
+    let shipmentId = base.shipmentId || null, shipStatus = null, shipPm = 0;
+    if (shipmentId) {
+      const sh = await getDoc(doc(db(), "shipments", shipmentId));
+      shipStatus = sh.exists() ? (sh.data().status || null) : null;
+      shipPm = sh.exists() ? PM.pmAmountOfItems(sh.data().items) : 0;
+      if (sh.exists() && shipStatus !== "draft") {
+        throw fail(`この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。値引きは見積もりではなく、供給管理の出荷の「値引きを入れる」から入れてください（請求済の前まで）。`);
+      }
+    }
+    let consentStale = null, consentClearReason = false;
+    const kSnap = await getDoc(doc(db(), "cases", base.caseId));
+    const kaseR = kSnap.exists() ? kSnap.data() : null;
+    if (kaseR && kaseR.orderConsentToken) {
+      let entry = null;
+      try {
+        const cs = await getDoc(doc(db(), "consentRequests", String(kaseR.orderConsentToken)));
+        const qs = cs.exists() && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
+        entry = qs.find((e) => e && e.caseId === base.caseId) || null;
+      } catch (_) {}
+      const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items: base.items || [], amounts }));
+      consentStale = rs.stale; consentClearReason = rs.clearReason;
+    }
+    const now = serverTimestamp();
+    const version = (Number(base.version) || 1) + 1;
+    const quoteRef = doc(collection(db(), "quotes"));
+    const b = writeBatch(db());
+    const sib = await getDocs(query(collection(db(), "quotes"), where("caseId", "==", base.caseId)));
+    for (const x of sib.docs) {
+      const st = x.data().status;
+      if (st === "issued" || st === "accepted") b.update(x.ref, { status: "superseded", supersededAt: now });
+    }
+    const pmField = rec ? { pmDiscount: { ...rec, at: now } } : {};
+    b.set(quoteRef, {
+      caseId: base.caseId, officeId: base.officeId || null, caseNumber: base.caseNumber || null,
+      estNo: base.estNo, version, plan: base.plan, planLabel: calc.plan.label, items: base.items || [], amounts,
+      status: base.status === "accepted" ? "accepted" : "issued",
+      supersedes: base.id, reason: (newPm ? `伴走支援費の値引き: ${v.reason}` : `伴走支援費の値引きを外す: ${v.reason}`).slice(0, 500),
+      validUntil: daysFromNow(30), createdVia: "staff", createdBy: u.email, createdAt: now,
+      contactEmail: base.contactEmail || "", contactName: base.contactName || "",
+      officeName: base.officeName || "", corpName: base.corpName || "",
+      accessToken: newToken(), pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
+      shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
+      payMethod: base.payMethod || null, delivery: base.delivery || null,
+      acceptedAt: base.acceptedAt || null, acceptedBy: base.acceptedBy || null,
+      ...pmField,
+    });
+    b.update(doc(db(), "cases", base.caseId), {
+      latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
+      subsidyPlan: calc.plan.label, subsidyCategory: base.plan,
+      expectedSubsidyAmount: amounts.grantAmt, totalAmount: amounts.totalIncl,
+      specialDiscount: calc.discount, selfPay: amounts.selfPay,
+      ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
+      ...(consentClearReason ? { orderConsentStaleReason: deleteField() } : {}),
+    });
+    if (shipmentId && shipStatus === "draft") {
+      b.update(doc(db(), "shipments", shipmentId), {
+        items: shipmentItemsFromQuote(P, { items: base.items || [], amounts, pmDiscount: rec }), quoteId: quoteRef.id, estNo: base.estNo,
+        subsidyCategory: base.plan || null, subsidyQty: subsidyQtyFromItems(base.items || [], P.SKU.BT),
+        pmDiscount: deleteField(), ...pmField,
+        updatedAt: now, updatedBy: u.email,
+      });
+    }
+    const prevForText = shipmentId && shipStatus === "draft" && shipPm > 0 ? shipPm : prevPm; // 本番と同じ（レビュー低-4）
+    const txt = PM.pmActivityText({ target: `見積もり ${base.estNo} v${version}`, prevAmount: prevForText, rec, reason: v.reason, byName: u.name });
+    b.set(doc(collection(db(), "activities")), {
+      caseId: base.caseId, type: "memo", occurredAt: now, userId: u.uid, userName: u.email,
+      subject: txt.subject,
+      body: txt.body + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+        + (consentStale !== true ? "" : "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"),
+      attachmentUrls: [],
+    });
+    await b.commit();
+    showPracticeNotice(newPm ? `伴走支援費の値引き（−¥${fmtNum(newPm)}）を入れた版を作りました（練習用のデータです）` : "値引きを外した版を作りました（練習用のデータです）");
+    return { ok: true, quoteId: quoteRef.id, version, totalIncl: amounts.totalIncl, pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor),
+      mailed: false, shipmentUpdated: !!(shipmentId && shipStatus === "draft"), ...(consentStale == null ? {} : { orderConsentStale: consentStale }) };
+  },
+
+  // 出荷に伴走支援費の PM 値引きを入れる（functions/index.js の setShipmentDiscount と同じ記録・2026-11-13）。管理者だけ
+  async setShipmentDiscount(d) {
+    const u = await practiceAdmin();
+    const { shipmentId, amount, reason, remove } = d;
+    if (!shipmentId) throw fail("shipmentId は必須です");
+    const ref = doc(db(), "shipments", String(shipmentId));
+    return runTransaction(db(), async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw fail("出荷が見つかりません");
+      const s = snap.data();
+      const st = s.status || "shipped";
+      if (["invoiced", "paid", "canceled"].includes(st)) throw fail(`この出荷（${s.soNumber || ""}）は「${st}」のため、値引きを入れられません（請求書を出す前まで）`);
+      if (!PM.pmApplicableShipment(s)) throw fail("値引きは事業所向け（税込）の出荷だけに入れられます（認定事業者向けの卸には入れません）");
+      if (PM.shipmentPmBlockedByQuote(s)) throw fail(PM.MSG_USE_QUOTE); // 本番と同じ（レビュー中-1）
+      const caseRef = s.caseId ? doc(db(), "cases", String(s.caseId)) : null; // 承諾書の取り直しの印（レビュー中-3）
+      const kase = caseRef ? ((await tx.get(caseRef)).data() || null) : null;
+      const items = Array.isArray(s.items) ? s.items : [];
+      const prevPm = PM.pmAmountOfItems(items);
+      const standardFee = PM.standardFeeOf(items);
+      const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
+      if (!v.ok) throw fail(v.errors.join("\n"));
+      if (remove === true && !prevPm) throw fail("この出荷には値引きが入っていません");
+      if (remove !== true && v.amount === prevPm) throw fail("値引きの額が今と同じです（変わりません）");
+      const newPm = remove === true ? 0 : v.amount;
+      const nextItems = PM.withoutPmRows(items).concat(newPm ? [PM.pmDiscountRow(newPm)] : []);
+      const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: u.email, byName: u.name }) : null;
+      const chk = PM.checkPmRows(nextItems, rec);
+      if (!chk.ok) throw fail(chk.errors.join("\n"));
+      const now = serverTimestamp();
+      tx.update(ref, { items: nextItems, pmDiscount: rec ? { ...rec, at: now } : deleteField(), updatedAt: now, updatedBy: u.email });
+      let consentStale = false;
+      if (kase && kase.orderConsentToken) {
+        const rs = reviseConsentStale(kase, true);
+        consentStale = rs.stale;
+        tx.update(caseRef, { orderConsentStale: rs.stale, updatedAt: now, ...(rs.clearReason ? { orderConsentStaleReason: deleteField() } : {}) });
+      }
+      if (s.caseId) {
+        const txt = PM.pmActivityText({ target: `出荷 ${s.soNumber || ""}`, prevAmount: prevPm, rec, reason: v.reason, byName: u.name });
+        tx.set(doc(collection(db(), "activities")), {
+          caseId: s.caseId, type: "memo", occurredAt: now, userId: u.uid, userName: u.email,
+          subject: txt.subject,
+          body: txt.body + (consentStale ? "\n⚠️ 承諾書に署名いただいた金額と変わったため、承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
+          attachmentUrls: [],
+        });
+      }
+      showPracticeNotice(newPm ? `出荷に伴走支援費の値引き（−¥${fmtNum(newPm)}）を入れました（練習用のデータです）` : "出荷の値引きを外しました（練習用のデータです）");
+      return { ok: true, shipmentId, soNumber: s.soNumber || "", pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor), standardFee };
+    });
   },
 
   // 電話・メール・FAX で受けた申込を受注確定にする（functions/index.js の staffAcceptQuote と同じ記録・2026-10-21）。

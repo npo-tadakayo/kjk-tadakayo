@@ -35,10 +35,12 @@ import { orderConsentNoticeOf } from "/js/record-gaps.js"; // 承諾書の取り
 import { RECEIVED_VIA_OPTIONS, buildPaperConsentPayload, buildOrderConsentPrintHtml, orderConsentLine,
   PAPER_MAIL_LABEL, PAPER_MAIL_NOTE, orderConfirmFollowupText } from "/js/order-consent.js";
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
+// 伴走支援費の PM 値引き（2026-11-13・管理者だけ。判定の正本は pm-discount.js、書き込みはサーバーの setQuoteDiscount）
+import { standardFeeOfAmounts, validatePmDiscount, FLOOR, MAX_REASON, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-let ctx = null;         // { db, caseId, getCase, toast, userName, functions, orderByConsent?: () => boolean, onSettingsChanged?: () => void }
+let ctx = null;         // { db, caseId, getCase, toast, userName, functions, orderByConsent?: () => boolean, onSettingsChanged?: () => void, isAdmin?: () => boolean }
 let orderConsentRec = null; // この案件の発注の承諾書（cases.orderConsentToken が指す consentRequests。無ければ null）
 let quotes = [];        // この案件の quotes（version 降順）
 let products = [];      // products コレクション全件（一度だけ取得。キャッシュ）
@@ -121,6 +123,25 @@ function reviseBtn(q, isLatest) {
   return `<button class="btn btn-secondary" data-revise-id="${esc(q._id)}" data-tip="台数・機種を変える画面を開きます。保存すると新しい版になり、前の版は記録として残ります。">
     <i class="ti ti-edit" aria-hidden="true"></i> 内容を変更する
   </button>`;
+}
+
+// 伴走支援費の PM 値引き（2026-11-13）。管理者（myRole.role === "admin"）だけ・最新の生きている版だけに出す
+function isAdminNow() { return !!(ctx && typeof ctx.isAdmin === "function" && ctx.isAdmin()); }
+function pmDiscountBtn(q, isLatest) {
+  if (!isLatest || !isAdminNow()) return "";
+  if (q.status !== "issued" && q.status !== "accepted") return "";
+  const has = Number(q.amounts?.pmDiscount) > 0;
+  return `<button class="btn btn-secondary" data-pm-discount-id="${esc(q._id)}" data-tip="接続サポート等経費（伴走支援費）から値引きします（管理者だけ）。保存すると新しい版になり、前の版は記録として残ります。出荷の下書きも作り直します。">
+    <i class="ti ti-discount" aria-hidden="true"></i> ${has ? "値引きを直す" : "値引きを入れる"}
+  </button>`;
+}
+function pmDiscountLine(q) {
+  const pm = Number(q.amounts?.pmDiscount) || 0;
+  if (!pm) return "";
+  const r = q.pmDiscount || {};
+  const warn = r.belowFloor ? ` <span style="color:#8a5a1f">⚠ 報酬の下限 ${yen(FLOOR)} を下回る値引き</span>` : "";
+  return `<div style="font-size:12.5px;margin-bottom:8px;color:#c02828">${esc(PM_DISCOUNT_NAME)} −${yen(pm)}`
+    + `<span style="color:var(--color-ink-muted)">（標準 ${yen(r.standardFee)} → ${yen(r.feeAfter)}${r.byName ? `・判断: ${esc(r.byName)}` : ""}${r.reason ? `・理由: ${esc(r.reason)}` : ""}）</span>${warn}</div>`;
 }
 
 // 事業所へ送付する操作。PDFが無いと送りようがないので、無いときは「見積書を表示」へ誘導する
@@ -206,6 +227,7 @@ function rowHtml(q, isLatest) {
         <span>自己負担 <strong>${yen(q.amounts?.selfPay)}</strong></span>
         <span style="color:var(--color-ink-muted)">有効期限 ${esc(ymdJst(q.validUntil)) || "—"}</span>
       </div>
+      ${pmDiscountLine(q)}
       ${mailNotesLine(q)}
       <div style="margin-bottom:10px">${createdMetaLine(q)}</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
@@ -213,6 +235,7 @@ function rowHtml(q, isLatest) {
         ${pdfCell(q)}
         ${resendBtn(q)}
         ${reviseBtn(q, isLatest)}
+        ${pmDiscountBtn(q, isLatest)}
         ${acceptBtn(q, isLatest)}
       </div>
     </div>`;
@@ -330,6 +353,9 @@ function wire() {
   host.querySelectorAll("[data-revise-id]").forEach((btn) => {
     btn.addEventListener("click", () => openRevise(btn.getAttribute("data-revise-id")));
   });
+  host.querySelectorAll("[data-pm-discount-id]").forEach((btn) => {
+    btn.addEventListener("click", () => openPmDiscount(btn.getAttribute("data-pm-discount-id")));
+  });
   host.querySelectorAll("[data-accept-id]").forEach((btn) => {
     btn.addEventListener("click", () => openAccept(btn.getAttribute("data-accept-id")));
   });
@@ -401,6 +427,8 @@ function openRevise(quoteId) {
             支援の調整で台数や機種が変わったときに使います。前の版は記録として残ります。
             出荷の下書きがあれば、同じ内容に作り直します。<b>変更後の金額は事業所へメールでお知らせします。</b>
           </p>
+          ${Number(q.amounts?.pmDiscount) > 0 ? `<p role="status" style="font-size:12.5px;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:8px 10px;margin:0;line-height:1.7">
+            この版には伴走支援費の値引き（−${yen(q.amounts.pmDiscount)}）が入っています。台数・区分を変えると<b>値引きは外れます</b>（標準額が変わるため）。必要なら、変更のあとで管理者が入れ直してください。</p>` : ""}
           <div>
             <label class="form-label" for="rvPlan">プラン</label>
             <select class="form-control" id="rvPlan">
@@ -492,6 +520,113 @@ async function submitRevise() {
   } catch (e) {
     show(e.message || String(e));
     btn.disabled = false; btn.textContent = "この内容で変更する";
+  }
+}
+
+// ---- 伴走支援費の PM 値引き（2026-11-13・管理者だけ）----
+// 金額の判定は pm-discount.js（サーバーの setQuoteDiscount も同じ判定）。値引き後が報酬の下限を下回るときは、
+// 「報酬を下回ることを承知で入れる」のチェックが入るまで送れない（サーバーは止めずに belowFloor を記録する）
+let pmEditing = null;
+function openPmDiscount(quoteId) {
+  const q = quotes.find((x) => x._id === quoteId);
+  if (!q || !isAdminNow()) return;
+  pmEditing = q;
+  const a = q.amounts || {};
+  const std = standardFeeOfAmounts(a);
+  const cur = Number(a.pmDiscount) || 0;
+  const host = document.getElementById("reviseModalHost");
+  host.innerHTML = `
+    <div class="modal-overlay open" id="pmModal">
+      <div class="modal" style="width:min(520px,95vw)">
+        <div class="modal-header">
+          <h3 style="font-size:15px;margin:0">伴走支援費の値引き（${esc(q.estNo)} v${esc(q.version)} → v${Number(q.version) + 1}）</h3>
+        </div>
+        <div class="modal-body" style="display:grid;gap:12px">
+          <p style="font-size:12.5px;color:var(--color-ink-muted);line-height:1.8;margin:0">
+            接続サポート等経費（伴走支援費）の標準額は <b>${yen(std)}</b> です（上限 − 機器代）。標準額は変えずに、値引きを別の行で引きます。
+            保存すると新しい版になり、前の版は記録として残ります。出荷の下書きがあれば作り直します。管理者だけが入れられます。
+          </p>
+          <div>
+            <label class="form-label" for="pmAmount">値引きの額（税込・円）</label>
+            <input class="form-control" id="pmAmount" inputmode="numeric" value="${cur || ""}" placeholder="例: 5500">
+          </div>
+          <div id="pmPreview" style="font-size:13px"></div>
+          <div>
+            <label class="form-label" for="pmReason">理由<span style="color:var(--color-primary)">必須</span></label>
+            <textarea class="form-control" id="pmReason" rows="3" maxlength="${MAX_REASON}" placeholder="例: 同一法人で3事業所まとめての導入のため（11/19 PM 判断）"></textarea>
+          </div>
+          <label id="pmAckWrap" style="display:none;align-items:center;gap:8px;font-size:13px;min-height:44px;color:#8a5a1f">
+            <input type="checkbox" id="pmAck"> 報酬の下限（${yen(FLOOR)}）を下回ることを承知で入れる
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px">
+            <input type="checkbox" id="pmMail"> 変更後の金額を事業所へメールで知らせる
+          </label>
+          <p id="pmError" role="alert" style="display:none;color:var(--color-primary);font-size:12.5px;margin:0;line-height:1.7;white-space:pre-wrap"></p>
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+          ${cur ? `<button class="btn btn-secondary" id="pmRemove" data-tip="値引きを外した新しい版を作ります（理由が要ります）。" style="margin-right:auto">値引きを外す</button>` : ""}
+          <button class="btn btn-secondary" id="pmCancel" data-tip="やめて閉じます。見積もりは変わりません。">やめる</button>
+          <button class="btn btn-primary" id="pmSubmit" data-tip="値引きを入れた新しい版の見積もりを作ります。前の版は旧版として残ります。">この額で値引きする</button>
+        </div>
+      </div>
+    </div>`;
+  const upd = () => pmPreview(std);
+  document.getElementById("pmAmount").addEventListener("input", upd);
+  document.getElementById("pmReason").addEventListener("input", upd);
+  document.getElementById("pmAck").addEventListener("change", upd);
+  document.getElementById("pmCancel").addEventListener("click", closePmDiscount);
+  document.getElementById("pmSubmit").addEventListener("click", () => submitPmDiscount(false));
+  document.getElementById("pmRemove")?.addEventListener("click", () => submitPmDiscount(true));
+  document.getElementById("pmModal").addEventListener("click", (e) => { if (e.target.id === "pmModal") closePmDiscount(); });
+  upd();
+}
+function pmPreview(std) {
+  const raw = String(document.getElementById("pmAmount").value || "").replace(/[,，円¥￥\s]/g, "")
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+  const v = validatePmDiscount({ amount: raw === "" ? NaN : Number(raw), reason: document.getElementById("pmReason").value, standardFee: std });
+  const amtOk = !v.errors.some((m) => /値引きの額|超えて/.test(m));
+  document.getElementById("pmPreview").innerHTML = amtOk
+    ? `伴走支援費: 標準 ${yen(v.standardFee)} → <b>${yen(v.feeAfter)}</b>`
+      + (v.belowFloor ? `<div style="color:#8a5a1f;margin-top:4px">⚠ 値引き後の伴走支援費が、報酬の下限 ${yen(FLOOR)} を下回ります。</div>` : "")
+    : "";
+  document.getElementById("pmAckWrap").style.display = amtOk && v.belowFloor ? "flex" : "none";
+  const ackNeeded = amtOk && v.belowFloor && !document.getElementById("pmAck").checked;
+  document.getElementById("pmSubmit").disabled = !v.ok || ackNeeded;
+  return { v, ackNeeded };
+}
+function closePmDiscount() {
+  const host = document.getElementById("reviseModalHost");
+  if (host) host.innerHTML = "";
+  pmEditing = null;
+}
+async function submitPmDiscount(remove) {
+  const q = pmEditing; if (!q) return;
+  const err = document.getElementById("pmError");
+  const show = (m) => { err.textContent = m; err.style.display = "block"; };
+  const reason = (document.getElementById("pmReason").value || "").trim();
+  if (!reason) { show("理由を入れてください（値引きを外すときも要ります）"); return; }
+  const std = standardFeeOfAmounts(q.amounts || {});
+  let amount = 0;
+  if (!remove) {
+    const { v, ackNeeded } = pmPreview(std);
+    if (!v.ok) { show(v.errors.join("\n")); return; }
+    if (ackNeeded) { show(`報酬の下限（${yen(FLOOR)}）を下回ります。承知のうえで入れるときはチェックを入れてください`); return; }
+    amount = v.amount;
+  } else if (!confirm(`伴走支援費の値引き（−${yen(q.amounts?.pmDiscount)}）を外した新しい版を作ります。よろしいですか？`)) return;
+  const btns = ["pmSubmit", "pmRemove", "pmCancel"].map((id) => document.getElementById(id)).filter(Boolean);
+  btns.forEach((b) => { b.disabled = true; });
+  try {
+    const fn = httpsCallable(ctx.functions, "setQuoteDiscount");
+    const r = await fn(remove ? { quoteId: q._id, remove: true, reason, sendMail: document.getElementById("pmMail").checked }
+      : { quoteId: q._id, amount, reason, sendMail: document.getElementById("pmMail").checked });
+    const d = r.data || {};
+    closePmDiscount();
+    ctx.toast(`見積もりを v${d.version} にしました（${remove ? "値引きを外しました" : `伴走支援費から −${yen(d.pmDiscount)}`}）`
+      + (d.shipmentUpdated ? "。出荷の下書きも更新" : "") + (d.mailed ? "。事業所へメールを送りました" : ""));
+  } catch (e) {
+    show(e.message || String(e));
+    btns.forEach((b) => { b.disabled = false; });
+    pmPreview(std);
   }
 }
 

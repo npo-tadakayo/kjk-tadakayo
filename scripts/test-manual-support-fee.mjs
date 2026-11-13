@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   SUPPORT_FEE_SKU, DEFAULT_MANUAL_NAME, MSG, parseYen, yenText, supportFeeRows, hasAutoSupportFee, hasManualSupportFee,
   readerCostOf, exclusion, manualLimit, limitText, validateManual, buildManualItem, manualFormFromItems,
-  checkSupportFeeRows, manualActivityText,
+  checkSupportFeeRows, manualActivityText, belowStandardCheck,
 } from "../admin/js/manual-support-fee.js";
 import Pricing from "../admin/js/estimate-pricing.js";
 
@@ -160,6 +160,27 @@ t(() => {
   assert.equal(a.subject, "伴走支援費を任意の金額で設定（¥30,200）");
   assert.match(a.body, /先方が購入したカードリーダー費用: ¥11,800/); assert.match(a.body, /メモ: 差し引いた額/);
   assert.equal(manualActivityText(it, { removed: true }).subject, "任意の伴走支援費を外した");
+});
+
+// ===== 標準額（入力できる上限）より下げるのは管理者だけ・理由（メモ）必須（2026-11-13） =====
+t(() => {
+  const base = { planLimit: 64000, priorBuyerReaderCost: 11800, readerCost: 0 };   // 標準額 52,200
+  assert.equal(belowStandardCheck({ ...base, amount: 52200, isAdmin: false }).ok, true);           // 標準額ちょうどは誰でも
+  assert.equal(belowStandardCheck({ ...base, amount: 52200, isAdmin: false }).below, false);
+  const ed = belowStandardCheck({ ...base, amount: 40000, isAdmin: false, memo: "理由" });
+  assert.equal(ed.ok, false); assert.match(ed.errors[0], /管理者だけ/); assert.equal(ed.standard, 52200);
+  const adNo = belowStandardCheck({ ...base, amount: 40000, isAdmin: true, memo: " " });
+  assert.equal(adNo.ok, false); assert.match(adNo.errors[0], /メモに理由/);
+  assert.equal(belowStandardCheck({ ...base, amount: 40000, isAdmin: true, memo: "PM判断 11/19" }).ok, true);
+  // 前から入っている額のまま（住所だけ直すなど）は問わない
+  assert.equal(belowStandardCheck({ ...base, amount: 40000, isAdmin: false, unchanged: true }).ok, true);
+  // 区分未選択（上限が決まらない）・金額が読めないときは、この判定では止めない（validateManual が止める）
+  assert.equal(belowStandardCheck({ amount: 1, planLimit: null, isAdmin: false }).ok, true);
+  assert.equal(belowStandardCheck({ ...base, amount: "abc", isAdmin: false }).ok, true);
+  // 画面がこの判定を使っている
+  const js = readFileSync(new URL("../admin/js/supply.js", import.meta.url), "utf8");
+  assert.match(js, /const b = belowStandardCheck\(\{ \.\.\.f, isAdmin: isAdminUser, memo: document\.getElementById\("shipManualMemo"\)\.value, unchanged \}\);/);
+  assert.match(js, /isAdminUser = myRole\.role==="admin";/);
 });
 
 // ===== 結線: 画面（supply.js・supply.html）とつながっていること =====

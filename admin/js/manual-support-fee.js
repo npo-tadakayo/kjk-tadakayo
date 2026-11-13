@@ -164,6 +164,26 @@ export function checkSupportFeeRows(items, { planLimit, readerSkus } = {}) {
   return { ok: errors.length === 0, errors };
 }
 
+// ===== 標準額より下げる（値引き）は管理者だけ・理由（メモ）必須（2026-11-13） =====
+// 任意の行の「入力できる上限」（助成区分の上限 − 先方購入費 − この出荷のカードリーダー代）が、伴走支援費の標準額。
+// それより低い額は値引きと同じなので、管理者だけが入れられ、理由（メモ）が要る（editor が好きな額に下げられる抜け道をふさぐ）。
+// ⚠️ 任意の行は画面（supply.js）が Firestore に直接書く。サーバー側にこの判定を通る書き込みの道は無い（限界・ENGINEERING_NOTES §C15）。
+// unchanged … 修正で開いた出荷の保存済みの行と金額・先方購入費が同じ（前から入っている額をそのまま保存する）なら問わない
+export function belowStandardCheck({ amount, priorBuyerReaderCost, planLimit, readerCost, isAdmin, memo, unchanged } = {}) {
+  const amt = parseYen(amount);
+  const lim = manualLimit({ planLimit, priorBuyerReaderCost, readerCost });
+  const below = lim.known && !Number.isNaN(amt) && amt >= 1 && amt < lim.limit;
+  const errors = [];
+  if (below && !unchanged) {
+    if (!isAdmin) {
+      errors.push(`標準額（${yenText(lim.limit)}）より下げられるのは管理者だけです。標準額で入れるか、値引きは管理者に依頼してください`);
+    } else if (!String(memo ?? "").trim()) {
+      errors.push(`標準額（${yenText(lim.limit)}）より下げるときは、メモに理由を書いてください（値引きの判断の記録になります）`);
+    }
+  }
+  return { ok: errors.length === 0, errors, below, standard: lim.known ? lim.limit : null };
+}
+
 // 活動（案件の対応記録）の件名・本文。2026-11-09 次田さん決定の文言
 export function manualActivityText(item, { removed } = {}) {
   if (removed) return { subject: "任意の伴走支援費を外した", body: "" };

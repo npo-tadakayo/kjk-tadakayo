@@ -323,4 +323,13 @@ t("Functions: 新しいファイル・認可・状態の確認・index.js の結
   assert.match(read("admin/js/supply-print.js"), /type==="letterpack" && d\.packType==="yupack"/);
   n++; console.log("  ok レビュー #76 の直し（静的検査・宛名）");
 }
+{
+  const { pmDiscountRow } = await import("../admin/js/pm-discount.js");
+  const reader = { sku: "cir315a-02", name: "CIR315A", qty: 3, unitPrice: 6500 };
+  const fee = { sku: "support-fee", qty: 1, unitPrice: 50000, nonStock: true };
+  t("伴走支援費の PM 値引きの行は台数（readerQty）に入らない・受付に戻す判定にも出ない（2026-11-13）", () => {
+    assert.equal(S.readerQty([reader, fee, pmDiscountRow(5500)]), 3);
+    assert.equal(S.readerQty([reader, fee]), S.readerQty([reader, fee, pmDiscountRow(1)]));
+  });
+}
 console.log(`OK test-ship-steps: ${n} 件 合格`);

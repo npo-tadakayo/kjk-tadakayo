@@ -3,6 +3,15 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-13 伴走支援費の PM 値引き（ブランチ `feat/pm-discount`・**未 push・未デプロイ**）
+
+- **何か**: 接続サポート等経費（伴走支援費）に、管理者の判断で値引きを入れられるようにした。標準額（`computeAmounts`）は変えず、値引きは別の行（sku "discount"・`pm:true`）であとから引く。理由必須・誰がいつを記録・値引き後が ¥15,000 を下回るときは画面で承知のチェック（サーバーは止めず `belowFloor`）。詳細は ENGINEERING_NOTES.md §C15
+- **入れる場所**: 案件詳細の見積もりカード「値引きを入れる」（新しい版を作る・下書きの出荷も作り直す）／供給管理の出荷の修正モーダルの値引きの欄（請求済の前まで）。どちらも管理者だけ
+- **出すもの（PM の決定後）**: Functions `setQuoteDiscount`・`setShipmentDiscount`（新規）＋動きが変わる `reviseQuote`・`staffAcceptQuote`・`acceptQuote`・`sendQuotePdf`・`resendQuoteMail`・`saveQuotePdf`（`--only "functions:a,functions:b,…"` で名指し）→ hosting **admin のみ**。firestore.rules・公開ページ（lp）・estimate-pricing.js は変えていない
+- **限界**: ルールは変えていないので、ブラウザの開発ツールから出荷の明細を直接書くことは止められない／公開ページ（見積もりページ・承諾書のページ）は値引きの行を出さない（合計は値引き後）／出荷だけに入れた値引きは案件の合計に反映しない
+- テスト: `test-pm-discount.mjs`（16）・`test-pm-discount-emu.mjs`（エミュレータ）ほか既存7本に追記。`bash scripts/test-all.sh` で確認。**画面は未目視**
+- 福音会様3件（#473・#88・#474）は PM の決定（11/19 の週）までそのまま保留
+
 ## 2026-11-13 夕方のまとめ（PR #88〜#92 本番反映済み・main `8a763f5`）
 
 | PR | 中身 | 本番に出したもの |

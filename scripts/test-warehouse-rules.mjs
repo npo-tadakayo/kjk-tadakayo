@@ -475,4 +475,18 @@ t("projectForWarehouse: 一覧タブの新項目（確認済み・備考）", ()
   for (const k of ["total", "warehouseConfirmedByEmail", "caseId", "invoiceNo"]) assert.ok(!keys.includes(k), k);
 });
 
+// 伴走支援費の PM 値引きの行（sku discount・pm:true）は倉庫に出ない・在庫の不足にも数えない（2026-11-13）
+{
+  const { pmDiscountRow } = await import("../admin/js/pm-discount.js");
+  const reader = { sku: "cir415a-01", name: "CIR415A", qty: 2, unitPrice: 14500 };
+  const fee = { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 55000, nonStock: true };
+  const s = { id: "s1", soNumber: "SH-1", status: "requested", items: [reader, fee, pmDiscountRow(5500)] };
+  const w = W.projectForWarehouse(s);
+  assert.deepEqual(w.items, [{ sku: "cir415a-01", name: "CIR415A", qty: 2 }]);
+  assert.ok(!JSON.stringify(w).includes("値引き"), "倉庫に値引きが見えている");
+  // 商品マスタに "discount" があっても nonStock なので在庫の不足に数えない
+  assert.deepEqual(W.stockShortage(s.items, { "cir415a-01": { stockByLocation: { L: 5 } }, discount: { stockByLocation: {} } }, "L"), []);
+  n++;
+}
+
 console.log(`OK: test-warehouse-rules ${n} 件`);

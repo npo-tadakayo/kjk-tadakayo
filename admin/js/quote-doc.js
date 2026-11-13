@@ -12,6 +12,7 @@
 
 import { doc, getDoc, collection, getDocs } from "/js/fs.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
+import { PM_DISCOUNT_NAME } from "/js/pm-discount.js"; // 伴走支援費の PM 値引きの行の名前（2026-11-13）
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }
@@ -82,7 +83,10 @@ function detailedQuoteRows(q, products) {
   }
   const c = EP.computeAmounts(q.plan, bt, usb, btx, usbx);
   const a = q.amounts || {};
-  if (c.totalIncl !== Number(a.totalIncl) || c.selfPay !== Number(a.selfPay) || c.discount !== Number(a.discount || 0)) return null;
+  // 伴走支援費の PM 値引き（2026-11-13）は computeAmounts に入らない別の項目。保存値は値引き後なので、値引きを足し戻して照合する
+  // （そうしないと値引きを入れた見積もりは必ず簡易の形になる）。自己負担は値引きで変わらない
+  const pm = Number(a.pmDiscount) || 0;
+  if (c.totalIncl - pm !== Number(a.totalIncl) || c.selfPay !== Number(a.selfPay) || c.discount !== Number(a.discount || 0)) return null;
   const btName = productDisplayName(EP.SKU.BT, products); // 中で esc 済み
   const usbName = productDisplayName(usbSku || EP.SKU.USB_A, products);
   const r = [];
@@ -93,6 +97,7 @@ function detailedQuoteRows(q, products) {
   if (c.subsidyTotal > 0) r.push(row(`伴走支援費<span class="qdoc-badge-free">申請手続きの支援を含む</span>`,
     "初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談", "1式", yen(c.accFeeIncl), yen(c.accFeeIncl)));
   if (c.discount > 0) r.push(row(`<strong>金額調整</strong>`, "合計を助成金の上限ぴったりに収めるための調整", "1式", `−${yen(c.discount)}`, `−${yen(c.discount)}`, "color:#c02828"));
+  if (pm > 0) r.push(row(`<strong>${esc(PM_DISCOUNT_NAME)}</strong>`, "", "1式", `−${yen(pm)}`, `−${yen(pm)}`, "color:#c02828"));
   if (btx > 0) r.push(row(btName, `補助対象外 ${btx}台（自己負担で追加）`, `${btx}台`, yen(EP.BT_PRICE), yen(c.btExtraSubtotal), "background:#fff8e1"));
   if (usbx > 0) r.push(row(usbName, `補助対象外 ${usbx}台（自己負担で追加）`, `${usbx}台`, yen(EP.USB_PRICE), yen(c.usbExtraSubtotal), "background:#fff8e1"));
   return r.join("");
@@ -155,6 +160,9 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
     ? `<div class="qdoc-total-row sub" style="color:#b27800"><span>補助対象外（自己負担）合計</span><span>${yen(a.extraPartTotal)}</span></div>` : "";
   const discountRow = Number(a.discount) > 0
     ? `<div class="qdoc-total-row sub" style="color:#c02828"><span>金額調整</span><span>−${yen(a.discount)}</span></div>` : "";
+  // 伴走支援費の PM 値引き（2026-11-13）。合計欄にも1行出す（明細の形でも簡易の形でも）
+  const pmRow = Number(a.pmDiscount) > 0
+    ? `<div class="qdoc-total-row sub" style="color:#c02828"><span>${esc(PM_DISCOUNT_NAME)}</span><span>−${yen(a.pmDiscount)}</span></div>` : "";
 
   const planLabel = q.planLabel || PLAN_LABELS[q.plan] || q.plan || "";
   const validUntilDate = q.validUntil?.toDate ? q.validUntil.toDate() : (q.validUntil ? new Date(q.validUntil) : null);
@@ -222,6 +230,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
           ${detailRows ? "" : `<div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>
           <div class="qdoc-total-row sub"><span>伴走支援費（税込）</span><span>${yen(a.accompanyFee)}</span></div>
           ${discountRow}`}
+          ${pmRow}
           ${extraRow}
           <div class="qdoc-total-row grand"><span>合計（税込）</span><span>${yen(a.totalIncl)}</span></div>
           <div class="qdoc-total-row sub-grant"><span>介護情報基盤助成金（${esc(planLabel)}）</span><span>−${yen(a.grantAmt)}</span></div>

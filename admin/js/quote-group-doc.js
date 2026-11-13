@@ -19,6 +19,7 @@
 //   el.innerHTML = renderQuoteGroupDocHtml(data);
 
 import { doc, getDoc, collection, getDocs, query, where } from "/js/fs.js";
+import { PM_DISCOUNT_NAME } from "/js/pm-discount.js"; // 伴走支援費の PM 値引きの行の名前（2026-11-13）
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }
@@ -113,7 +114,7 @@ export async function loadQuoteGroupData(db, groupId) {
 
 // ---- 合計（quotes.amounts を足すだけ） ----
 export function sumGroupAmounts(rows) {
-  const keys = ["readers", "accompanyFee", "discount", "extraPartTotal", "totalIncl", "grantAmt", "selfPay"];
+  const keys = ["readers", "accompanyFee", "discount", "pmDiscount", "extraPartTotal", "totalIncl", "grantAmt", "selfPay"];
   const t = Object.fromEntries(keys.map((k) => [k, 0]));
   let units = 0, extraUnits = 0;
   for (const { quote: q } of rows) {
@@ -189,6 +190,7 @@ export function renderQuoteGroupDocHtml(data) {
 
   const zeroBadge = T.selfPay === 0 ? `<span class="qdoc-badge-zero">自己負担 ¥0</span>` : "";
   const discountRow = T.discount > 0 ? `<div class="qdoc-total-row sub" style="color:#c02828"><span>金額調整（合計）</span><span>−${yen(T.discount)}</span></div>` : "";
+  const pmRow = T.pmDiscount > 0 ? `<div class="qdoc-total-row sub" style="color:#c02828"><span>${esc(PM_DISCOUNT_NAME)}（合計）</span><span>−${yen(T.pmDiscount)}</span></div>` : ""; // 2026-11-13
   const extraRow = T.extraPartTotal > 0 ? `<div class="qdoc-total-row sub" style="color:#b27800"><span>補助対象外（自己負担）合計</span><span>${yen(T.extraPartTotal)}</span></div>` : "";
   const plansUsed = [...new Set(rows.map((r) => r.quote.plan))].map((p) => PLAN_LABELS[p] || p).join("／");
 
@@ -253,6 +255,7 @@ export function renderQuoteGroupDocHtml(data) {
           <div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(T.readers)}</span></div>
           <div class="qdoc-total-row sub"><span>伴走支援費（税込）</span><span>${yen(T.accompanyFee)}</span></div>
           ${discountRow}
+          ${pmRow}
           ${extraRow}
           <div class="qdoc-total-row grand"><span>合計（税込）</span><span>${yen(T.totalIncl)}</span></div>
           <div class="qdoc-total-row sub-grant"><span>介護情報基盤助成金（合計）</span><span>−${yen(T.grantAmt)}</span></div>

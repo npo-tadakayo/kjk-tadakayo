@@ -408,4 +408,18 @@ t("練習DBへ写す設定に orderByConsent を入れない（本番のスイ�
   assert.ok(!/orderByConsent/.test(allow));
 });
 
+t("伴走支援費の PM 値引き（2026-11-13）: 承諾書に焼き込む・値下げでも取り直しの印が立つ。写しも同じ", () => {
+  const q = { id: "q1", caseId: "c1", items: [{ sku: "cir415a-01", subsidyQty: 3, extraQty: 0 }],
+    amounts: { readers: 43500, accompanyFee: 50000, discount: 29500, totalIncl: 58500, grantAmt: 58500, selfPay: 0, pmDiscount: 5500 } };
+  const e = R.orderConsentQuoteEntry(q);
+  assert.equal(e.amounts.pmDiscount, 5500);
+  assert.deepStrictEqual(plain(E.orderConsentQuoteEntry(q)), plain(e));
+  // 値引きの無い見積もりは今までと同じ形（pmDiscount の項目を持たない）
+  assert.ok(!("pmDiscount" in R.orderConsentQuoteEntry({ ...q, amounts: { ...q.amounts, pmDiscount: 0 } }).amounts));
+  // 署名した内容（値引き前 64,000）→ 値引きした版（58,500）は取り直しが要る
+  const signed = R.orderConsentQuoteEntry({ ...q, amounts: { ...q.amounts, totalIncl: 64000, grantAmt: 64000, pmDiscount: 0 } });
+  assert.equal(R.orderConsentStaleAfterRevise(signed, { items: q.items, amounts: q.amounts }), true);
+  assert.equal(E.orderConsentStaleAfterRevise(signed, { items: q.items, amounts: q.amounts }), true);
+});
+
 console.log(`OK test-order-consent: ${n} 件合格`);

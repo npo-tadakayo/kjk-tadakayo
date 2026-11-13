@@ -191,6 +191,8 @@ function orderConsentQuoteEntry(q) {
     amounts: {
       readers: num(a.readers), accompanyFee: num(a.accompanyFee), discount: num(a.discount),
       totalIncl: num(a.totalIncl), grantAmt: num(a.grantAmt), selfPay: num(a.selfPay),
+      // 伴走支援費の PM 値引き（2026-11-13）。入っているときだけ焼き込む（無い見積もりの記録の形は今までと同じ）
+      ...(num(a.pmDiscount) > 0 ? { pmDiscount: num(a.pmDiscount) } : {}),
     },
   };
 }
