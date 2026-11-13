@@ -18,6 +18,7 @@ t("指摘1: 完了表示の枠は長い半角英数字を枠の中で折り返�
 
 t("指摘9: 申込の画面のボタンは、スイッチのオン・オフに関わらず 44px 以上", () => {
   assert.match(rule("#orderModal .modal-btn") || "", /min-height:\s*44px/);
+  assert.match(rule(".modal-btn") || "", /min-height:\s*44px/, "共通の .modal-btn にも 44px（2026-11-13・どの画面の .modal-btn でも 41px にならない）");
   assert.equal(rule("#orderModal.consent-mode .modal-btn"), null, "オンのときだけの指定は残さない");
   assert.match(h, /<button type="button" class="modal-btn modal-btn-ok" id="orderSubmit">/);
   assert.match(h, /<button type="button" class="modal-btn modal-btn-cancel" id="orderCancel">/);

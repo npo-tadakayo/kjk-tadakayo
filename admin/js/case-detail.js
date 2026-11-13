@@ -32,8 +32,8 @@ import { initQuoteCard } from "/js/quote-admin.js";
 import { invoiceTotals } from "/js/invoice-doc.js";
 // 申請タブ「申請で入れる値」（2026-11-12）。A・B・X の振り分けは領収証と同じ正本を通す
 import { caseSubsidyAmounts, subsidyCountsFromShipment, subsidyCountsFromQuote, inputMismatches, sourceText } from "/js/subsidy-amounts.js";
-import { shipStepBadgeHtml } from "/js/case-ship-step.js"; // 出荷の段のバッジ（表示だけ・2026-11-13）
-import { finalConfirmOn } from "/js/ship-steps-rules.js";
+import { shipStepBadgeHtml, shipWaitLabel } from "/js/case-ship-step.js"; // 出荷の段のバッジ（表示だけ・2026-11-13）
+import { finalConfirmOn, stepOf } from "/js/ship-steps-rules.js";
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone, isPickup, mailedPendingNotes } from "/js/ship-flow.js";
 // 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
 import { completionWarnings } from "/js/case-complete-check.js";
@@ -875,7 +875,11 @@ function shipNextAction(s) {
   if (st === "requested") {
     // 倉庫から差し戻されているときは「待ち」ではなく、直して再送する案内（押す操作は供給管理の行で行う）
     if (s.warehouseIssue) return { label: "倉庫から差し戻し：直して再送してください", icon: "alert-triangle", url: soUrl, external: false, waiting: true, issue: true };
-    return { label: isPickup(s) ? "倉庫の受け渡し待ち" : "倉庫の発送待ち", icon: "truck-delivery", url: soUrl, external: false, waiting: true };
+    // 段（受付・入荷待ち・確認待ち・発送準備）に合わせた文言（バッジ shipStepBadgeHtml と食い違わない・2026-11-13）
+    // 確認待ち・発送不可の段は、倉庫ではなく依頼した人が動く（needsAction）
+    const stepOpts = { finalConfirm: finalConfirmOn(appSettings) };
+    const stp = stepOf(s, stepOpts);
+    return { label: shipWaitLabel(s, stepOpts), icon: "truck-delivery", url: soUrl, external: false, waiting: true, needsAction: stp === "confirm" || stp === "ng" };
   }
   // 「請求書を出す」の飛び先は screen-rules.js の invoicePromptUrl が正本（出荷の画面の「請求済にする」へ・2026-11-10 そろえた）
   if (st === "shipped") return { label: "請求書を出す", icon: "file-invoice", url: invoicePromptUrl({ notInvoiced: [s] }), external: false };
@@ -896,6 +900,9 @@ function shipNextActionHtml(s) {
   if (a.waiting) {
     if (a.issue) {
       return `<span class="ship-next-msg" style="color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${a.label}。 <a href="${a.url}">出荷の行を開く</a></span>`;
+    }
+    if (a.needsAction) {
+      return `<span class="ship-next-msg" style="font-weight:600"><i class="ti ti-hand-click" aria-hidden="true"></i> ${a.label}。 <a href="${a.url}">出荷の行を開く</a></span>`;
     }
     return `<span class="ship-next-msg"><i class="ti ti-truck-delivery" aria-hidden="true"></i> ${a.label}です（${isPickup(s) ? "受け渡し" : "発送済"}は倉庫の担当が押します）。 <a href="${a.url}">出荷の行を開く</a></span>`;
   }

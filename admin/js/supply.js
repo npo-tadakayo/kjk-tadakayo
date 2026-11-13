@@ -30,6 +30,7 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
 import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf, ymdJstOf } from "/js/record-gaps.js";
 import { planShipCancelRevert, revertWrites, holdActivity, holdMessage, cancelPreviewText } from "/js/ship-cancel-case.js"; // 点検9（出荷キャンセル後の案件・2026-11-12）
 // 点検9の続き（2026-11-13 次田さん「その都度、人が選ぶ」）: 認定事業者の受注から作った出荷をキャンセルしたときの受注の戻し先
+import { canShipFromOrder, orderOnShipDone } from "/js/order-ship-rules.js"; // 受注と出荷のつなぎの判定（2026-11-13）
 import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPartnerOrderShipment, validateOrderReturn,
   planOrderOnShipCancel, orderReturnWrites, lastShipCancelNote, shipOrderReturnNote } from "/js/ship-cancel-order.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
@@ -1289,7 +1290,10 @@ async function shipWithStock(s, action){
         tx.set(doc(collection(db,"inventoryMovements")), movement(sku, -need[sku], "shipment", s.soNumber, locId));
         moved++;
       }
-      if(po && po.exists()) tx.update(po.ref, { status:"shipped", updatedAt: serverTimestamp() });
+      // 受注の状態を見て、「出荷済」にしてよいときだけ書く（キャンセル済みなら止める・2026-11-13）
+      const poPlan = orderOnShipDone(po && po.exists() ? po.data() : null);
+      if(poPlan.action==="block") throw new Error(poPlan.reason);
+      if(poPlan.action==="set") tx.update(po.ref, { status:"shipped", updatedAt: serverTimestamp() });
     });
   }catch(e){ alert(`${doneWord}にできませんでした: ${e.message}`); return; }
   const head = `${s.soNumber} を${doneWord}にしました${moved ? "（在庫から引き落としました）" : ""}`;
@@ -3902,6 +3906,9 @@ function renderPartnerOrders(orders){
       ? `<span style="font-size:12px;color:${rel.some(s=>s.status==="draft"||s.status==="requested")?"var(--color-ink-muted)":"var(--color-success)"}">出荷 ${esc(relLabel)}</span>`
       : o.status==="shipped"
       ? `<span style="font-size:12px;color:var(--color-success)">出荷済</span>`
+      // キャンセル済みの受注は出荷にできない（ボタンを出さない・2026-11-13）
+      : o.status==="canceled"
+      ? `<span style="font-size:12px;color:var(--color-ink-muted)">キャンセル済み</span>`
       : `<button class="btn btn-primary po-ship" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-truck-delivery"></i>出荷へ</button>`;
     const relRemain=rel.reduce((a,s)=>a+payRemain(s),0);
     const relOverdue=rel.some(s=>isUnpaid(s)&&overdueDays(s)>0);
@@ -4021,6 +4028,7 @@ async function runImport(){
 //   ・同じ受注にひも付く生きた出荷（キャンセル以外）があれば、新しく作らない
 async function shipFromOrder(o){
   const sh=o.shipping||{};
+  { const can=canShipFromOrder(o); if(!can.ok){ alert(can.reason); return; } } // キャンセル済み・出荷済の受注は出荷にしない（2026-11-13）
   const items=(o.items||[]).map(it=>{
     const p=products.find(x=>x.id===it.sku)||{};
     return { sku:it.sku, name:it.name||p.name||it.sku, qty:Number(it.qty)||0, unitPrice:partnerPriceFor(p, Number(it.qty)||0) };
