@@ -237,6 +237,19 @@ check("無効にした人も名簿から取り消せる", r.ok && !(await roster
 r = await call("trainerRecordTalk", T2, { userId: LEGACY, date: "2026-11-01", kind: "study", venue: "社内勉強会" });
 check("無効の人は（名簿に関係なく）操作できない", !r.ok && r.code === "permission-denied");
 
+section("取り消しの人数は動ける人だけで数える（レビュー中1・2026-11-13）");
+const keepRoster = await roster();
+const GONE2 = "gone2@tadakayo.jp";
+await cfg.doc("supportTrainers").set({ ids: [CAND, GONE2, OFF] }, { merge: true }); // A 有効・B 削除・C 無効
+r = await call("trainerRevoke", ADMIN, { userId: CAND, reason: "x" });
+check("名簿 [A有効, B削除, C無効] で A は取り消せない（動ける最後の1人）", !r.ok && /最後の1人のトレーナー/.test(r.msg), JSON.stringify(r));
+check("名簿は変わらない", JSON.stringify(await roster()) === JSON.stringify([CAND, GONE2, OFF]));
+r = await call("trainerRevoke", ADMIN, { userId: GONE2, reason: "退職" });
+check("B（削除）は取り消せる", r.ok && JSON.stringify(await roster()) === JSON.stringify([CAND, OFF]), JSON.stringify(r));
+r = await call("trainerRevoke", ADMIN, { userId: OFF, reason: "無効" });
+check("C（無効）も取り消せる", r.ok && JSON.stringify(await roster()) === JSON.stringify([CAND]), JSON.stringify(r));
+await cfg.doc("supportTrainers").set({ ids: keepRoster }, { merge: true });
+
 section("書き込みは appConfig の下だけ");
 check("案件の件数は変わらない", (await db.collection("cases").get()).size === casesBefore);
 const cl1 = (await db.collection("supportChecklists").doc("c1").get()).data();

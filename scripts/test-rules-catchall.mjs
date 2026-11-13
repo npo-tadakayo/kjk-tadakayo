@@ -30,6 +30,7 @@ const NOREG = "noreg@tadakayo.jp", PARTNER = "partner@example.jp";
 const WH = "wh@tadakayo.jp"; // 2026-10-24 倉庫（role=warehouse）
 // 2026-11-13 トレーナー: 初期4名（氏名で照合・全角空白入り）・名簿の文書で入る人・初期4名と同じ氏名の閲覧のみ・無効
 const TR_INIT = "hachisuka@tadakayo.jp", TR_NEW = "trnew@tadakayo.jp", TR_VIEW = "trview@tadakayo.jp", TR_OFF = "troff@tadakayo.jp";
+const TR_HALF = "fujita@tadakayo.jp", TR_NBSP = "ishida2@tadakayo.jp"; // 半角空白・NBSP 入りの氏名（レビュー低1・低3）
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, "users", ADMIN), { role: "admin", active: true, name: "管理" });
@@ -41,6 +42,8 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "users", TR_NEW), { role: "staff", active: true, name: "新トレーナー" });
   await setDoc(doc(db, "users", TR_VIEW), { role: "viewer", active: true, name: "藤田 博之" });
   await setDoc(doc(db, "users", TR_OFF), { role: "staff", active: false, name: "石田祐樹" });
+  await setDoc(doc(db, "users", TR_HALF), { role: "staff", active: true, name: "藤田 博之" });
+  await setDoc(doc(db, "users", TR_NBSP), { role: "staff", active: true, name: "次田\u00a0芳尚" });
   await setDoc(doc(db, "partners", PARTNER), { active: true });
   await setDoc(doc(db, "leadTokens", "tok1"), { a: 1 });
   await setDoc(doc(db, "supportBadges", "b1"), { a: 1 });
@@ -80,6 +83,8 @@ await t("未認証でも leadTokens を get できる（従来どおり）", () 
 console.log("supportBadges / supportEvaluations（名簿の文書なし＝初期4名を氏名で照合）");
 const badge = (by) => ({ userId: "x@tadakayo.jp", grantedById: by, basis: "discretion", reason: "テスト" });
 await t("初期トレーナー（氏名・全角空白入り）はバッジを追加できる", () => yes(addDoc(collection(as(TR_INIT), "supportBadges"), badge(TR_INIT))));
+await t("半角空白入りの氏名（藤田 博之）の初期トレーナーはバッジを追加・評価を保存できる", async () => { await yes(addDoc(collection(as(TR_HALF), "supportBadges"), badge(TR_HALF))); await yes(setDoc(doc(as(TR_HALF), "supportEvaluations", "e6"), { a: 1 })); });
+await t("NBSP 入りの氏名の初期トレーナーも通る（画面の \\s と同じ）", () => yes(addDoc(collection(as(TR_NBSP), "supportBadges"), badge(TR_NBSP))));
 await t("初期トレーナーでも、付与者を他人にしたバッジは追加できない", () => no(addDoc(collection(as(TR_INIT), "supportBadges"), badge(STAFF))));
 await t("初期トレーナーでも、付与者の欄が無いバッジは追加できない", () => no(addDoc(collection(as(TR_INIT), "supportBadges"), { userId: "x@tadakayo.jp" })));
 await t("トレーナーでない staff はバッジを追加できない（2026-11-13〜）", () => no(addDoc(collection(as(STAFF), "supportBadges"), badge(STAFF))));

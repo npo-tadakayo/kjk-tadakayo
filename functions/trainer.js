@@ -215,7 +215,7 @@ exports.trainerRevoke = onCall(OPTS, async (request) => {
     const actor = actorOf(me, users, rosterIds, tr);
     target = tr.revokeTargetOf(users, rosterIds, uid, events);
     const inRoster = !!target && tr.isTrainerId(target.id, users, rosterIds);
-    const r = tr.buildRevoke(data, { actor, target, inRoster, rosterSize: tr.trainerIds(users, rosterIds).length, now });
+    const r = tr.buildRevoke(data, { actor, target, inRoster, ...tr.revokeCounts(users, rosterIds, target && target.id), now });
     if (r.error) fail(r);
     tx.set(cref, { ...r.cert, createdAt: FieldValue.serverTimestamp() });
     tx.set(ref.roster(), { ids: tr.rosterAfter(users, rosterIds, r.cert), updatedAt: FieldValue.serverTimestamp(), updatedBy: me.email }, { merge: true });

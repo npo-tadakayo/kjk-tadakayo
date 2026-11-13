@@ -254,6 +254,8 @@ export function judge(stats, criteria) {
 // admin/js/support-evaluation.js の INITIAL_TRAINER_NAMES・trainerIds と同じ（test-trainer-rules.mjs で照合）。
 // 名簿の文書が無いあいだは、初期4名を users の氏名で照合する（ト4）。
 export const INITIAL_TRAINER_NAMES = ["蜂須賀大策", "藤田博之", "次田芳尚", "石田祐樹"];
+// ⚠️ firestore.rules の isSupportTrainer() も同じ空白を消す（JS の \s と同じ集合を書き並べている・2026-11-13 レビュー低1）。
+//    ここを変えたらルールも変える（scripts/test-trainer-rules.mjs で照合）
 const squash = (s) => String(s || "").replace(/[\s　]/g, "");
 export function trainerIds(users, rosterIds) {
   if (Array.isArray(rosterIds) && rosterIds.length) return rosterIds.slice();
@@ -303,6 +305,12 @@ export function revokeTargetOf(users, rosterIds, userId, events) {
   if (!rid) return null;
   const named = certEventsOf(rid, events).find((e) => str(e.userName) && low(e.userName) !== id);
   return { id: rid, name: named ? str(named.userName) : rid, active: false, role: null, missing: true };
+}
+/** 取り消しの人数の判定に渡す値（buildRevoke の rosterSize・rosterTotal・targetStale） */
+export function revokeCounts(users, rosterIds, targetId) {
+  const all = trainerIds(users, rosterIds), stale = staleRosterEntries(users, rosterIds);
+  const id = low(targetId);
+  return { rosterSize: all.length - stale.length, rosterTotal: all.length, targetStale: !!id && stale.some((x) => low(x.id) === id) };
 }
 
 // ---------- 合格・取り消しの記録（appConfig/trainerProgram/certs/{id}） ----------
@@ -379,7 +387,10 @@ export function buildCertify(input, ctx) {
 
 /**
  * 取り消しを組み立てる（管理者だけ・理由必須・最後の1人は取り消せない）。
- *   ctx: { actor, target, inRoster, rosterSize, now }
+ *   ctx: { actor, target, inRoster, rosterSize, rosterTotal?, targetStale?, now }
+ *     rosterSize … 名簿にいて、利用者一覧で有効に動ける人の数（動けない人は数えない・2026-11-13 レビュー中1）
+ *     rosterTotal … 名簿の全員の数（動けない人も含む）。targetStale … 取り消す人が動けない人か
+ *     （revokeCounts で作る。動ける人を取り消して動ける人が0になる／名簿が空になる＝初期4名の照合に戻る、を止める）
  */
 export function buildRevoke(input, ctx) {
   const a = ctx.actor || {}, t = ctx.target;
@@ -387,7 +398,10 @@ export function buildRevoke(input, ctx) {
   if (!t) return { error: "取り消す人を選んでください。" };
   if (low(t.id) === low(a.id)) return { error: "自分自身のトレーナー合格は取り消せません。別の管理者に依頼してください。" };
   if (!ctx.inRoster) return { error: "この人はいまトレーナーではありません。" };
-  if ((Number(ctx.rosterSize) || 0) <= 1) return { error: "最後の1人のトレーナーは取り消せません（トレーナーがいなくなると評価・バッジの付与ができなくなります）。" };
+  if (ctx.targetStale) {
+    const total = ctx.rosterTotal != null ? Number(ctx.rosterTotal) || 0 : Number(ctx.rosterSize) || 0;
+    if (total <= 1) return { error: "名簿の最後の1人は取り消せません（名簿が空になると、初期のトレーナー4名を氏名で照合する決め方に戻ります）。" };
+  } else if ((Number(ctx.rosterSize) || 0) <= 1) return { error: "最後の1人のトレーナーは取り消せません（トレーナーがいなくなると評価・バッジの付与ができなくなります）。" };
   const reason = str(input && input.reason);
   if (!reason) return { error: "取り消す理由を書いてください。" };
   if (reason.length > REASON_MAX) return { error: `理由は ${REASON_MAX}字以内で書いてください。` };

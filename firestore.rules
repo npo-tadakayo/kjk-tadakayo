@@ -135,6 +135,8 @@ service cloud.firestore {
     // 画面（admin/js/support-evaluation.js の trainerIds）と同じ決め方:
     //   ・appConfig/supportTrainers.ids（メールの配列）が1人以上いれば、そこに自分のメールがあるか
     //   ・名簿の文書が無い（または空）あいだは、初期トレーナー4名を users の氏名（空白・全角空白を除く）で照合する
+    // 氏名の空白は、画面の squash（JS の \s と全角空白）と同じ集合を消す（RE2 の \s は ASCII の空白だけなので、
+    // NBSP などを書き並べる。2026-11-13 レビュー低1。ルールだけが拒否に倒れないように）
     // 名簿の書き込みは Functions の trainerCertify・trainerRevoke（と管理者）だけ（appConfig は管理者だけが書ける）。
     function rosterPath() {
       return /databases/$(database)/documents/appConfig/supportTrainers;
@@ -150,7 +152,7 @@ service cloud.firestore {
           ? (request.auth.token.email in get(rosterPath()).data.ids
              || request.auth.token.email.lower() in get(rosterPath()).data.ids)
           : (userData().get('name', '') is string
-             && userData().get('name', '').replace('[\\s　]', '') in ['蜂須賀大策', '藤田博之', '次田芳尚', '石田祐樹'])
+             && userData().get('name', '').replace('[\\s\\x{000b}\\x{00a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]', '') in ['蜂須賀大策', '藤田博之', '次田芳尚', '石田祐樹'])
       );
     }
 

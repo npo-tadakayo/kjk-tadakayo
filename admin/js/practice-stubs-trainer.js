@@ -159,7 +159,7 @@ export const TRAINER_PRACTICE_STUBS = {
       const rs = await tx.get(cfg("supportTrainers"));
       const ids = rs.exists() && Array.isArray(rs.data().ids) ? rs.data().ids : null;
       const target = T.revokeTargetOf(users, ids, uid, events);
-      const r = T.buildRevoke(data, { actor: actorOf(me, users, ids), target, inRoster: !!target && T.isTrainerId(target.id, users, ids), rosterSize: T.trainerIds(users, ids).length, now });
+      const r = T.buildRevoke(data, { actor: actorOf(me, users, ids), target, inRoster: !!target && T.isTrainerId(target.id, users, ids), ...T.revokeCounts(users, ids, target && target.id), now });
       if (r.error) fail(r);
       tx.set(cref, { ...r.cert, createdAt: serverTimestamp() });
       tx.set(cfg("supportTrainers"), { ids: T.rosterAfter(users, ids, r.cert), updatedAt: serverTimestamp(), updatedBy: me.email }, { merge: true });
