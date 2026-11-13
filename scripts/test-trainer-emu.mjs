@@ -206,6 +206,37 @@ check("取り消された人は登壇の記録を登録できない", !r.ok && /
 r = await call("trainerCertify", T1, { userId: CAND, kind: "normal" });
 check("取り消したあと、条件を満たしていれば合格にし直せる", r.ok && (await roster()).includes(CAND), JSON.stringify(r));
 
+section("利用者一覧から消えた・無効の人を名簿から取り消す（#74 レビュー L9・2026-11-13）");
+const GONE = "gone@tadakayo.jp";
+await db.collection("users").doc(GONE).set({ active: true, role: "staff", name: "退職 予定" });
+r = await call("trainerCertify", ADMIN, { userId: GONE, kind: "discretion", reason: "テスト" });
+check("（準備）特別裁量で名簿に入れる", r.ok && (await roster()).includes(GONE), JSON.stringify(r));
+await db.collection("users").doc(GONE).delete();
+let usersNow = (await db.collection("users").get()).docs.map((d) => ({ _id: d.id, ...d.data() }));
+check("名簿に残っている動けない人として拾える", T.staleRosterEntries(usersNow, await roster()).some((x) => x.id === GONE && x.why === "missing"));
+r = await call("trainerRevoke", T1, { userId: GONE, reason: "退職" });
+check("トレーナーは取り消せない（管理者だけ）", !r.ok && r.code === "permission-denied");
+r = await call("trainerRevoke", ADMIN, { userId: GONE, reason: "" });
+check("理由が必須", !r.ok && r.code === "failed-precondition" && /理由/.test(r.msg), JSON.stringify(r));
+const before = (await roster()).length;
+r = await call("trainerRevoke", ADMIN, { userId: GONE.toUpperCase(), reason: "退職のため" });
+rs = await roster(); cs = await certs();
+const gRev = cs.find((c) => c.userId === GONE && c.type === "revoke");
+check("利用者一覧にいない人も、管理者は理由を書いて名簿から取り消せる", r.ok && !rs.includes(GONE) && rs.length === before - 1, JSON.stringify({ r, rs }));
+check("取り消しの記録の名前は合格の記録から（メールの大文字小文字は名簿のまま）", gRev && gRev.userName === "退職 予定" && gRev.reason === "退職のため" && gRev.byId === ADMIN, JSON.stringify(gRev));
+check("合格の記録は消えない", cs.some((c) => c.userId === GONE && c.type === "certify"));
+r = await call("trainerRevoke", ADMIN, { userId: GONE, reason: "二度目" });
+check("名簿にも利用者一覧にもいない人は取り消せない", !r.ok && /選んで/.test(r.msg), JSON.stringify(r));
+r = await call("trainerRevoke", ADMIN, { userId: "a/b", reason: "x" });
+check("おかしな ID は取り消せない", !r.ok && r.code === "failed-precondition");
+await db.collection("users").doc(T2).update({ active: false });
+usersNow = (await db.collection("users").get()).docs.map((d) => ({ _id: d.id, ...d.data() }));
+check("無効にした人も拾える", T.staleRosterEntries(usersNow, await roster()).some((x) => x.id === T2 && x.why === "inactive"));
+r = await call("trainerRevoke", ADMIN, { userId: T2, reason: "無効にしたため" });
+check("無効にした人も名簿から取り消せる", r.ok && !(await roster()).includes(T2), JSON.stringify(r));
+r = await call("trainerRecordTalk", T2, { userId: LEGACY, date: "2026-11-01", kind: "study", venue: "社内勉強会" });
+check("無効の人は（名簿に関係なく）操作できない", !r.ok && r.code === "permission-denied");
+
 section("書き込みは appConfig の下だけ");
 check("案件の件数は変わらない", (await db.collection("cases").get()).size === casesBefore);
 const cl1 = (await db.collection("supportChecklists").doc("c1").get()).data();

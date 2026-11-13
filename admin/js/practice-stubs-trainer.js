@@ -149,12 +149,16 @@ export const TRAINER_PRACTICE_STUBS = {
   async trainerRevoke(data) {
     const users = await loadUsers();
     const me = await member("admin", users);
-    const target = targetOf(users, data.userId);
+    // 本物と同じ: 利用者一覧から消えた人も、名簿にいれば取り消せる（名前は合格の記録から・2026-11-13 #74 L9）
+    const uid = String(data.userId || "").trim();
+    const events = !uid || targetOf(users, uid) || uid.includes("/") ? []
+      : (await getDocs(query(sub("certs"), where("userId", "in", [...new Set([uid, uid.toLowerCase()])])))).docs.map((d) => d.data());
     const now = Date.now();
     const cref = doc(sub("certs"));
     await runTransaction(db(), async (tx) => {
       const rs = await tx.get(cfg("supportTrainers"));
       const ids = rs.exists() && Array.isArray(rs.data().ids) ? rs.data().ids : null;
+      const target = T.revokeTargetOf(users, ids, uid, events);
       const r = T.buildRevoke(data, { actor: actorOf(me, users, ids), target, inRoster: !!target && T.isTrainerId(target.id, users, ids), rosterSize: T.trainerIds(users, ids).length, now });
       if (r.error) fail(r);
       tx.set(cref, { ...r.cert, createdAt: serverTimestamp() });

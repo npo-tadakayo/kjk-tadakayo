@@ -270,6 +270,41 @@ export function isCandidateUser(u) {
   return r === "" || r === "staff" || r === "admin";
 }
 
+// ---------- 名簿にいるが、トレーナーとして動けない人（#74 レビュー L9・2026-11-13） ----------
+// 利用者一覧（users）から消えた（削除）・無効にした・ロールを対象外（閲覧のみ・練習生・倉庫）に変えた人は、
+// 名簿に残っていても評価・付与はできない（requireMember と firestore.rules で止まる）が、メンバーの表には出ないので、
+// 表とは別に並べて、管理者が取り消せるようにする。自動では外さない（取り消しは管理者の判断・理由と記録を残す）。
+export const STALE_LABEL = {
+  missing: "利用者一覧にいない（削除）",
+  inactive: "無効",
+  role: "ロールがトレーナーの対象外（閲覧のみ・練習生・倉庫）",
+};
+/** [{ id, name, why: "missing"|"inactive"|"role" }]。名簿の文書が無いあいだは初期4名の照合結果から見る */
+export function staleRosterEntries(users, rosterIds) {
+  const list = users || [];
+  const out = [];
+  for (const id of trainerIds(list, rosterIds)) {
+    const u = list.find((x) => low(x._id) === low(id));
+    const why = !u ? "missing" : u.active === false ? "inactive" : !isCandidateUser(u) ? "role" : "";
+    if (why) out.push({ id, name: u ? (u.name || u._id) : "", why });
+  }
+  return out;
+}
+/**
+ * 取り消しの対象を引く。users にいればその人。いなければ（削除された人）名簿にいるメールを対象にし、
+ * 名前は合格の記録（events）から引く（無ければメール）。名簿にもいなければ null。
+ */
+export function revokeTargetOf(users, rosterIds, userId, events) {
+  const id = low(userId);
+  if (!id) return null;
+  const u = (users || []).find((x) => low(x._id) === id);
+  if (u) return { id: u._id, name: u.name || u._id, active: u.active, role: u.role };
+  const rid = trainerIds(users, rosterIds).find((x) => low(x) === id);
+  if (!rid) return null;
+  const named = certEventsOf(rid, events).find((e) => str(e.userName) && low(e.userName) !== id);
+  return { id: rid, name: named ? str(named.userName) : rid, active: false, role: null, missing: true };
+}
+
 // ---------- 合格・取り消しの記録（appConfig/trainerProgram/certs/{id}） ----------
 const toMs = (v) => {
   if (v == null || v === "") return null;

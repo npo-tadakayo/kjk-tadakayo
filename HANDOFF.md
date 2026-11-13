@@ -3,6 +3,14 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 2026-11-13 トレーナー名簿の取り消し（#74 L9）とバッジ・評価のサーバー側の確認（ブランチ `fix/trainer-roster-badge`・未マージ・本番未反映）
+
+- **D（名簿から取り消せない）**: `/badges` のトレーナー条件の表の下に「名簿に残っている、トレーナーとして動けない人」（利用者一覧にいない＝削除／無効／ロールが閲覧のみ・練習生・倉庫）を出し、管理者に「名簿から取り消す」（理由必須）を出す。`trainerRevoke` は利用者一覧にいない人も名簿にいれば取り消せる（名前は合格の記録から）。**自動では外さない**。合格・評価・バッジの記録は消さず「取り消し」を足す。最後の1人は従来どおり取り消せない（空にすると初期4名の照合に戻るため）
+- **E（サーバーで名簿を見ていない）**: `firestore.rules` の `supportBadges` の追加と `supportEvaluations` の作成・上書きを `isSupportTrainer()` に（名簿の文書があればそのメール、無い／空なら初期4名を氏名で照合＝画面と同じ）。バッジの `grantedById` は自分のメールだけ。既存の記録・読み取り・管理者の訂正削除は変えない
+- **デプロイが要るもの**: Functions `trainerRevoke` のみ（名指し）→ `firestore.rules`（(default) だけ。practice は変えていない）→ hosting admin（`badges.html`・`js/trainer-badges.js`・`js/trainer-rules.js`・`js/practice-stubs-trainer.js`）
+- ⚠️ ルールを出したあとは、名簿にいない管理者は評価の保存・バッジの付与ができない（画面も前からそう）。本番の名簿の文書がまだ無ければ初期4名の氏名で照合する
+- テスト: `test-trainer-rules.mjs`（+4）・`test-trainer-emu.mjs`（+12）・`test-rules-catchall.mjs`（バッジ・評価の節を差し替え +19）。`bash scripts/test-all.sh` 普通 55/55・エミュレータ 9/9 合格
+
 ## 🚀 2026-11-12 午前〜午後の本番反映の記録（PR #84〜#86・main 2bcfa23）
 
 | PR | 中身 | 本番に出したもの |

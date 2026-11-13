@@ -115,6 +115,19 @@ function renderTable() {
     : "合格（認定）は、トレーナーか管理者が行います。";
 }
 
+// 名簿にいるが、利用者一覧から消えた・無効・ロール変更の人（#74 レビュー L9）。取り消しは管理者だけ（サーバーでも確かめる）
+function renderStale() {
+  const stale = T.staleRosterEntries(users, rosterIds);
+  $("tcStale").style.display = stale.length ? "block" : "none";
+  const adm = isAdmin();
+  $("tcStaleBody").innerHTML = stale.map((x) => {
+    const name = x.name || T.revokeTargetOf(users, rosterIds, x.id, certs)?.name || x.id;
+    const self = String(x.id).toLowerCase() === me.email.toLowerCase();
+    const btn = adm && !self ? `<button type="button" class="btn btn-secondary" data-act="revokeStale" data-id="${esc(x.id)}" style="min-height:40px" data-tip="この人をトレーナー名簿から外します（管理者だけ・理由必須）。これまでの合格・評価・バッジの記録は消えず、「取り消し」の記録が足されます。"><i class="ti ti-certificate-off" aria-hidden="true"></i>名簿から取り消す</button>` : "";
+    return `<tr><td><strong>${esc(name)}</strong><div style="font-size:12px;color:var(--color-ink-muted)">${esc(x.id)}</div></td><td style="font-size:12px">${esc(T.STALE_LABEL[x.why] || "")}</td><td style="white-space:nowrap">${btn}</td></tr>`;
+  }).join("");
+}
+
 function renderTalks() {
   const adm = isAdmin();
   const rows = talks.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)) || (b.recordedAt || 0) - (a.recordedAt || 0));
@@ -154,6 +167,7 @@ function render() {
   if (!started) return;
   renderCriteria();
   renderTable();
+  renderStale();
   renderTalks();
   renderCerts();
 }
@@ -192,11 +206,14 @@ function certifyDialog(id, kind) {
     },
   });
 }
-function revokeDialog(id) {
-  const u = users.find((x) => x._id === id);
+function revokeDialog(id, stale = false) {
+  const t = T.revokeTargetOf(users, rosterIds, id, certs);
+  const nm = t ? t.name : id;
   openDialog({
-    title: `${u ? u.name || id : id}さんのトレーナー合格を取り消します`,
-    body: "<p style=\"margin:0\">トレーナー名簿から外れ、評価シートの保存とバッジの付与ができなくなります。これまでの記録は消えず、「取り消し」の記録が足されます。</p>",
+    title: `${nm}さんのトレーナー合格を取り消します`,
+    body: stale
+      ? "<p style=\"margin:0\">利用者一覧から消えた・無効・ロール変更の人を、トレーナー名簿から外します。これまでの合格・評価シート・バッジの記録は消えず、「取り消し」の記録が足されます。</p>"
+      : "<p style=\"margin:0\">トレーナー名簿から外れ、評価シートの保存とバッジの付与ができなくなります。これまでの記録は消えず、「取り消し」の記録が足されます。</p>",
     okLabel: '<i class="ti ti-certificate-off" aria-hidden="true"></i>取り消す',
     reasonLabel: "取り消す理由（必須）",
     reasonRequired: true,
@@ -274,6 +291,7 @@ function wire() {
     if (b.dataset.act === "certify") certifyDialog(id, "normal");
     else if (b.dataset.act === "discretion") certifyDialog(id, "discretion");
     else if (b.dataset.act === "revoke") revokeDialog(id);
+    else if (b.dataset.act === "revokeStale") revokeDialog(id, true);
     else if (b.dataset.act === "voidTalk") voidTalkDialog(id);
   });
 }

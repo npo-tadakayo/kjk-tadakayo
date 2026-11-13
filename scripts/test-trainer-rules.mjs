@@ -257,6 +257,73 @@ t("認定の出どころ（ト4）: 名簿にいて合格の記録が無けれ�
   assert.deepEqual(T.certEventsOf("a@x", ev).map((e) => e.type), ["revoke", "certify"]);
 });
 
+t("名簿に残っている、動けない人（#74 L9・2026-11-13）: 削除・無効・ロール変更を拾う", () => {
+  const users = [
+    { _id: "h@x", name: "蜂須賀 大策", active: true, role: "staff" },
+    { _id: "off@x", name: "無効", active: false, role: "staff" },
+    { _id: "v@x", name: "閲覧", active: true, role: "viewer" },
+    { _id: "tr@x", name: "練習", active: true, role: "trainee" },
+    { _id: "ok@x", name: "有効", active: true, role: "admin" },
+    { _id: "leg@x", name: "未設定", active: true },
+  ];
+  const ids = ["h@x", "Gone@x", "off@x", "v@x", "TR@x", "ok@x", "leg@x"];
+  assert.deepEqual(T.staleRosterEntries(users, ids), [
+    { id: "Gone@x", name: "", why: "missing" },
+    { id: "off@x", name: "無効", why: "inactive" },
+    { id: "v@x", name: "閲覧", why: "role" },
+    { id: "TR@x", name: "練習", why: "role" },
+  ]);
+  assert.deepEqual(T.staleRosterEntries(users, null), [], "名簿の文書が無い＝初期4名の照合（有効の蜂須賀さんだけ）");
+  assert.deepEqual(T.staleRosterEntries([{ _id: "f@x", name: "藤田博之", active: false }], null), [{ id: "f@x", name: "藤田博之", why: "inactive" }], "初期4名の照合でも無効は拾う");
+  assert.deepEqual(T.staleRosterEntries(users, ["h@x", "ok@x"]), []);
+  for (const k of ["missing", "inactive", "role"]) assert.ok(T.STALE_LABEL[k]);
+});
+
+t("取り消しの対象（#74 L9）: 利用者一覧にいない人は名簿から引き、名前は合格の記録から", () => {
+  const users = [{ _id: "a@x", name: "在籍", active: false, role: "staff" }];
+  const ev = [
+    { userId: "gone@x", type: "certify", kind: "normal", userName: "退職 太郎", at: 1000 },
+    { userId: "gone@x", type: "certify", kind: "normal", userName: "gone@x", at: 500 },
+  ];
+  assert.deepEqual(T.revokeTargetOf(users, ["a@x", "gone@x"], "A@x", ev), { id: "a@x", name: "在籍", active: false, role: "staff" });
+  assert.deepEqual(T.revokeTargetOf(users, ["a@x", "gone@x"], "Gone@x", ev), { id: "gone@x", name: "退職 太郎", active: false, role: null, missing: true });
+  assert.equal(T.revokeTargetOf(users, ["a@x", "gone@x"], "gone@x", []).name, "gone@x", "記録が無ければメール");
+  assert.equal(T.revokeTargetOf(users, ["a@x"], "gone@x", ev), null, "名簿にもいなければ null");
+  assert.equal(T.revokeTargetOf(users, null, "gone@x", ev), null, "名簿の文書が無いあいだは users にいない人は対象外");
+  assert.equal(T.revokeTargetOf(users, ["a@x"], "", ev), null);
+  // 取り消しの判定にそのまま渡せる（管理者・理由必須・最後の1人は不可は変わらない）
+  const ADMIN = { id: "adm@x", name: "管理", isAdmin: true, isTrainer: false };
+  const tgt = T.revokeTargetOf(users, ["a@x", "gone@x"], "gone@x", ev);
+  const r = T.buildRevoke({ reason: "退職のため" }, { actor: ADMIN, target: tgt, inRoster: T.isTrainerId(tgt.id, users, ["a@x", "gone@x"]), rosterSize: 2, now: NOW });
+  assert.deepEqual({ type: r.cert.type, userId: r.cert.userId, userName: r.cert.userName }, { type: "revoke", userId: "gone@x", userName: "退職 太郎" });
+  assert.deepEqual(T.rosterAfter(users, ["a@x", "gone@x"], r.cert), ["a@x"]);
+  assert.match(T.buildRevoke({ reason: "x" }, { actor: ADMIN, target: tgt, inRoster: true, rosterSize: 1, now: NOW }).error, /最後の1人/);
+});
+
+t("firestore.rules（E・2026-11-13）: バッジの追加・評価の保存はトレーナー名簿の人だけ。初期4名は画面と同じ", () => {
+  const rules = read("firestore.rules");
+  const badges = rules.slice(rules.indexOf("match /supportBadges/{id}"), rules.indexOf("match /supportEvaluations/{id}"));
+  assert.match(badges, /allow create: if isSupportTrainer\(\)\s*&& request\.resource\.data\.get\('grantedById', ''\) == request\.auth\.token\.email;/);
+  const evals = rules.slice(rules.indexOf("match /supportEvaluations/{id}"), rules.indexOf("match /appConfig/{docId}"));
+  assert.match(evals, /allow create, update: if isSupportTrainer\(\);/);
+  const names = rules.match(/\.replace\('\[\\\\s　\]', ''\) in \[([^\]]+)\]/);
+  assert.ok(names, "初期4名の照合が見つからない");
+  assert.deepEqual(names[1].split(",").map((x) => x.trim().replace(/'/g, "")), T.INITIAL_TRAINER_NAMES);
+  assert.deepEqual(SE.INITIAL_TRAINER_NAMES, T.INITIAL_TRAINER_NAMES);
+  // catch-all からは引き続き外す（ここで書けてしまうと上の制限が素通りになる）
+  assert.match(rules, /!\(coll in \[[^\]]*"supportBadges", "supportEvaluations"/);
+});
+
+t("画面（D）: 名簿に残っている人の欄と「名簿から取り消す」（管理者だけ）・代役も同じ引き方", () => {
+  const js = read("admin/js/trainer-badges.js"), html = read("admin/badges.html");
+  assert.match(html, /id="tcStale"/); assert.match(html, /id="tcStaleBody"/);
+  assert.match(js, /T\.staleRosterEntries\(users, rosterIds\)/);
+  assert.match(js, /adm && !self \? `<button type="button" class="btn btn-secondary" data-act="revokeStale"/);
+  assert.match(js, /b\.dataset\.act === "revokeStale"\) revokeDialog\(id, true\)/);
+  assert.match(read("functions/trainer.js"), /tr\.revokeTargetOf\(users, rosterIds, uid, events\)/);
+  assert.match(read("admin/js/practice-stubs-trainer.js"), /T\.revokeTargetOf\(users, ids, uid, events\)/);
+});
+
 t("Functions のコピーが正本と同じ（バイト単位）", () => {
   assert.equal(read("functions/trainer-rules.mjs"), read("admin/js/trainer-rules.js"));
   assert.match(read("scripts/check-shared-sync.sh"), /trainer-rules\.js functions\/trainer-rules\.mjs/);
