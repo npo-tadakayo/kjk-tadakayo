@@ -24,3 +24,18 @@ export function shipStepBadgeHtml(s, opts = {}) {
   const step = stepOf(s, { finalConfirm: opts.finalConfirm });
   return `<span class="badge badge-${STEP_BADGE[step] || 2}" data-tip="${esc(STEP_TIPS[step] || "")}">${esc(STEP_LABEL[step] || "")}</span>`;
 }
+
+// 案件詳細の「次にやること」に出す、依頼済の出荷の待ちの文言（2026-11-13）。
+// 段（stepOf）に合わせる。以前は依頼済をすべて「倉庫の発送待ち」と出しており、受付待ち・確認待ちの段と食い違っていた。
+// 倉庫からの差し戻し（warehouseIssue）は呼び出し側で先に別の案内を出す。ここは差し戻しの無い依頼済だけ。
+export function shipWaitLabel(s, opts = {}) {
+  const pickup = !!s && s.deliveryMode === "pickup" && s.fulfillment !== "direct";
+  const step = stepOf(s, { finalConfirm: opts.finalConfirm });
+  switch (step) {
+    case "accept": return "倉庫の受付待ち";
+    case "wait": return "在庫の入荷待ち";
+    case "ng": return "発送不可：倉庫を選び直すか、直して依頼し直してください";
+    case "confirm": return "最終確認をしてください（OK・変更・キャンセル）";
+    default: return pickup ? "倉庫で受け渡しの準備中" : "倉庫で発送の準備中"; // prepare（持ち出し・直送・印の無い既存の依頼済もここ）
+  }
+}
