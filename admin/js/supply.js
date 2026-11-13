@@ -36,6 +36,7 @@ import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPar
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
+import { STEP_TIPS } from "/js/case-ship-step.js"; // 段の吹き出し（案件詳細の出荷タブと同じ言い方・2026-11-13）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
 import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
@@ -2832,18 +2833,6 @@ let dupOnly = false;      // サマリーの「⚠ 下書きの重複」を押�
 let lastDupView = null;   // 最後に描いた重複の情報（「こちらを残す」で使う）
 let stepFilter = "";      // 発送の5段の絞り込み（""＝すべて・2026-11-12）。?step= で開いたときはその段から
 try{ const q0=new URLSearchParams(location.search).get("step"); if(q0 && STEP_LABEL[q0]) stepFilter=q0; }catch(_){ /* 読めなければ「すべて」 */ }
-// 段のチップの説明（吹き出し）。倉庫の画面と同じ言い方
-const STEP_TIPS = {
-  "": "すべての出荷を出します",
-  draft: "まだ依頼していない出荷です。「出荷を依頼する」で倉庫へ依頼します",
-  accept: "倉庫が在庫と照らして「発送可・入荷待ち・発送不可」を選ぶのを待っている依頼です",
-  confirm: "倉庫で発送できると返事があった依頼です。依頼した人が最終確認（OK・変更・キャンセル）をします",
-  wait: "発送はできるが、在庫の入荷を待っている依頼です（依頼は出したまま）",
-  ng: "倉庫で発送できなかった依頼です。倉庫を選び直すか、入力を直して依頼し直します",
-  prepare: "倉庫が宛名印刷・梱包・発送をする依頼です。納品希望日の早い順に並びます",
-  done: "発送済・受け渡し済の出荷です。請求書・入金・領収証の画面へここから進めます",
-  canceled: "キャンセルした出荷です（理由と日時）",
-};
 function renderStepBar(list){
   const bar=document.getElementById("shipStepBar"); if(!bar) return;
   const c=stepCounts(list, { finalConfirm: finalConfirmNow() });

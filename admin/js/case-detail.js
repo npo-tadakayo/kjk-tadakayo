@@ -32,6 +32,8 @@ import { initQuoteCard } from "/js/quote-admin.js";
 import { invoiceTotals } from "/js/invoice-doc.js";
 // 申請タブ「申請で入れる値」（2026-11-12）。A・B・X の振り分けは領収証と同じ正本を通す
 import { caseSubsidyAmounts, subsidyCountsFromShipment, subsidyCountsFromQuote, inputMismatches, sourceText } from "/js/subsidy-amounts.js";
+import { shipStepBadgeHtml } from "/js/case-ship-step.js"; // 出荷の段のバッジ（表示だけ・2026-11-13）
+import { finalConfirmOn } from "/js/ship-steps-rules.js";
 import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, shipStepsDone, isPickup, mailedPendingNotes } from "/js/ship-flow.js";
 // 完了(13)の警告・出荷の重複の判定（波1の部品と、画面用の判定 screen-rules.js）
 import { completionWarnings } from "/js/case-complete-check.js";
@@ -942,6 +944,7 @@ function shipCardHtml(s) {
       <div class="ship-card-head">
         <span class="ship-no">${escHtml(s.soNumber || "—")}</span>
         <span class="badge badge-${SHIP_STATUS_BADGE_NO[st] || 7}">${SHIP_STATUS_JA[st] || st}</span>
+        ${shipStepBadgeHtml(s, { finalConfirm: finalConfirmOn(appSettings), esc: escHtml })}
         <span class="ship-origin"><i class="ti ti-map-pin" aria-hidden="true"></i> ${escHtml(s.originLocationName || "—")}</span>
         <span class="ship-amount">${yen(totals.payable)}（税込）</span>
       </div>
