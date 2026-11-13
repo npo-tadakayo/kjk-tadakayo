@@ -1150,7 +1150,10 @@ function shipmentItemsFromQuote(q) {
     items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });
   }
   // 伴走支援費の PM 値引き（2026-11-13）。金額調整の行の下に1行（sku "discount"・pm:true）。行の名前は pm-discount.mjs の定数
-  const pmDiscount = Number(q.amounts?.pmDiscount) || 0;
+  // 値引きの記録（q.pmDiscount: 誰が・理由）が無い見積もりからは、記録の無い値引きの行を作らない（2026-11-13 レビュー低-3。
+  // 呼び出し側 acceptTxWrite が「記録が無いため値引きは引き継がれません」を対応記録に残す）
+  const pmDiscount = Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount && Number(q.pmDiscount.amount) === Number(q.amounts.pmDiscount)
+    ? Number(q.amounts.pmDiscount) : 0;
   if (pmDiscount > 0) {
     if (!_pmMod) throw new Error("shipmentItemsFromQuote: pm-discount.mjs が読み込まれていません（呼び出し側で await loadPm()）");
     items.push(_pmMod.pmDiscountRow(pmDiscount));
@@ -1319,8 +1322,15 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
     q, delivery: d, shipItems: shipmentItemsFromQuote(q), btSku: Pricing.SKU.BT, preferredDate, payKey, note,
   });
   // 伴走支援費の PM 値引き（2026-11-13）: 見積もりの値引きの記録を出荷にも同じ形で持たせる（出荷の修正で行と記録を照合するため）
-  const pmMeta = Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount ? q.pmDiscount : null;
+  const pmMeta = Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount && Number(q.pmDiscount.amount) === Number(q.amounts.pmDiscount) ? q.pmDiscount : null;
   if (pmMeta) orderFields.pmDiscount = pmMeta;
+  // 値引きを黙って消さない（2026-11-13 レビュー中-1・低-3）: ①使い直す出荷に値引きの行があり、見積もりに値引きが無い
+  // ②見積もりの金額に値引きがあるのに記録（誰が・理由）が無い → どちらも対応記録に残す（書き込みは下の活動と同じ tx）
+  const pmNotes = [];
+  const reusePm = plan.reuse ? (plan.reuse.items || []).filter((i) => i && i.sku === "discount" && i.pm === true)
+    .reduce((a, i) => a + Math.max(0, -(Number(i.unitPrice) || 0)), 0) : 0;
+  if (reusePm > 0 && !pmMeta) pmNotes.push(`出荷 ${plan.reuse.soNumber || ""} に入っていた伴走支援費の値引き（¥${fmtNum(reusePm)}）は、お申し込みの見積もり（${q.estNo || ""} 第${q.version || "—"}版）に値引きが無いため外れました。必要なら管理者が見積もりカードから入れ直してください`);
+  if (Number(q.amounts?.pmDiscount) > 0 && !pmMeta) pmNotes.push(`見積もり ${q.estNo || ""} 第${q.version || "—"}版の伴走支援費の値引き（¥${fmtNum(q.amounts.pmDiscount)}）は、値引きの記録（判断した人・理由）が無いため出荷に引き継がれません`);
   let shipId;
   if (plan.reuse) {
     shipId = plan.reuse.id;
@@ -1396,6 +1406,12 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
     orderConsentStaleReason: admin.firestore.FieldValue.delete() });
   tx.update(caseRef, caseUpdate);
 
+  if (pmNotes.length) {
+    tx.set(db.collection("activities").doc(), {
+      caseId: q.caseId, type: "memo", occurredAt: now, userId: staff ? (who.uid || null) : null, userName: staff ? who.email : "system",
+      subject: `伴走支援費の値引きが出荷に引き継がれませんでした（出荷 ${out.soNumber}）`, body: pmNotes.join("\n"), attachmentUrls: [],
+    });
+  }
   const shipLine = out.reused
     ? `既存の出荷 ${out.soNumber}（${out.reusedStatus === "requested" ? "依頼済み" : "下書き"}）を新しい内容に更新（新しい下書きは作っていません）`
     : `出荷 ${out.soNumber} の下書きを作成${out.duplicateWarning ? `（⚠️ 発送済みの出荷 ${out.existingNos.join("・")} があります。重複の確認を）` : ""}`;
@@ -2075,10 +2091,12 @@ function quoteAmountsOf(calc) {
 }
 // 出荷の状態を確認（下書きなら作り直す・確定後は触らない）し、承諾書の取り直しの印を決める。
 // items・amounts は新しい版のもの（承諾書に焼き込んだ内容と比べる）
-async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = null } = {}) {
+// tx を渡すとトランザクションの中で読む（setQuoteDiscount・2026-11-13 レビュー中-2）。渡さなければ今までどおり（reviseQuote）
+async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = null, tx = null } = {}) {
+  const read = (ref) => (tx ? tx.get(ref) : ref.get());
   let shipmentId = base.shipmentId || null, shipStatus = null, shipPm = 0;
   if (shipmentId) {
-    const sh = await db.collection("shipments").doc(shipmentId).get();
+    const sh = await read(db.collection("shipments").doc(shipmentId));
     shipStatus = sh.exists ? (sh.data().status || null) : null;
     // 下書きの出荷に入っている値引きの行（作り直すと消える）。記録に残すために額を控える
     shipPm = sh.exists ? (sh.data().items || []).filter((i) => i && i.sku === "discount" && i.pm === true)
@@ -2099,12 +2117,12 @@ async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = n
   // 出荷は止めない（第1段）。承諾書の無い案件（設定オフのときはすべて）は何も足さない（従来どおり）。
   // 値引き（2026-11-13）で合計が下がった版も「違う」になる＝取り直しの印が立つ（値下げでも立てる）
   let consentStale = null, consentClearReason = false;
-  const caseSnapR = await db.collection("cases").doc(base.caseId).get();
+  const caseSnapR = await read(db.collection("cases").doc(base.caseId));
   const kaseR = caseSnapR.exists ? caseSnapR.data() : null;
   if (kaseR && kaseR.orderConsentToken) {
     let entry = null;
     try {
-      const cs = await db.collection("consentRequests").doc(String(kaseR.orderConsentToken)).get();
+      const cs = await read(db.collection("consentRequests").doc(String(kaseR.orderConsentToken)));
       const qs = cs.exists && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
       entry = qs.find((e) => e && e.caseId === base.caseId) || null;
     } catch (e) { console.warn("quoteVersionContext: consent read failed", e.message); }
@@ -2116,16 +2134,18 @@ async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = n
 }
 // 新しい版を書く（前の版は superseded・案件の金額・下書きの出荷の作り直し・対応記録）。1つの batch で書く。
 // quoteExtra … 新しい版に足す項目（値引きの記録など）。activity(version) … 対応記録の {subject, body}
-async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardReaders, reason, email, uid, vc, quoteExtra = {}, shipExtra = {}, activity }) {
+// tx を渡すと、兄弟の版の読み取りと書き込みをそのトランザクションで行い、commit はしない（呼び出し側のトランザクションが確定する）
+async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardReaders, reason, email, uid, vc, quoteExtra = {}, shipExtra = {}, activity, tx = null }) {
   const { shipmentId, shipStatus, consentStale, consentClearReason } = vc;
   const now = admin.firestore.FieldValue.serverTimestamp();
   const estNo = base.estNo; // 番号は引き継ぎ、版だけ上げる
   const version = (Number(base.version) || 1) + 1;
   const accessToken = newToken();
   const quoteRef = db.collection("quotes").doc();
-  const batch = db.batch();
-  // 同じ案件の生きている版はすべて superseded に
-  const sibSnap = await db.collection("quotes").where("caseId", "==", base.caseId).get();
+  // 同じ案件の生きている版はすべて superseded に（読み取りは書き込みより前）
+  const sibQuery = db.collection("quotes").where("caseId", "==", base.caseId);
+  const sibSnap = tx ? await tx.get(sibQuery) : await sibQuery.get();
+  const batch = tx || db.batch();
   for (const d of sibSnap.docs) {
     const st = d.data().status;
     if (st === "issued" || st === "accepted") batch.update(d.ref, { status: "superseded", supersededAt: now });
@@ -2156,7 +2176,7 @@ async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardRead
   // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）。値引きの行は amounts.pmDiscount から出る（shipmentItemsFromQuote）
   if (shipmentId && shipStatus === "draft") {
     batch.update(db.collection("shipments").doc(shipmentId), {
-      items: shipmentItemsFromQuote({ items, amounts }),
+      items: shipmentItemsFromQuote({ items, amounts, pmDiscount: quoteExtra.pmDiscount || null }),
       quoteId: quoteRef.id, estNo,
       // 伴走支援費ブロックの復元に使う補助区分・台数も新しい版に合わせる（2026-10-21 レビュー指摘 2）
       subsidyCategory: planKey || null, subsidyQty: Flow.subsidyQtyFromItems(items, Pricing.SKU.BT),
@@ -2170,7 +2190,7 @@ async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardRead
     caseId: base.caseId, type: "memo", occurredAt: now, userId: uid, userName: email,
     subject: act.subject, body: act.body, attachmentUrls: [],
   });
-  await batch.commit();
+  if (!tx) await batch.commit();
   return { quoteRef, version, estNo };
 }
 // 変更後の見積もりのお知らせメール（reviseQuote・setQuoteDiscount）。送れたら true
@@ -2214,52 +2234,62 @@ exports.setQuoteDiscount = onCall(
     const PM = await loadPm();
     const { quoteId, amount, reason, remove, sendMail } = request.data || {};
     if (!quoteId || typeof quoteId !== "string") throw new HttpsError("invalid-argument", "quoteId は必須です");
-    const baseSnap = await db.collection("quotes").doc(quoteId).get();
-    if (!baseSnap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
-    const base = { id: baseSnap.id, ...baseSnap.data() };
-    if (!["issued", "accepted"].includes(base.status)) {
-      throw new HttpsError("failed-precondition", "この見積もりは旧版か期限切れのため、値引きを入れられません（最新の版で入れてください）");
-    }
-    // 値引き前の金額は料金の正本（computeAmounts）で出し直す。保存値と合わない古い見積もりには入れない（安全側）
-    const sub = { bt: 0, usb: 0, btx: 0, usbx: 0 };
-    for (const it of (base.items || [])) {
-      if (it.sku === Pricing.SKU.BT) { sub.bt += Number(it.subsidyQty) || 0; sub.btx += Number(it.extraQty) || 0; }
-      else { sub.usb += Number(it.subsidyQty) || 0; sub.usbx += Number(it.extraQty) || 0; }
-    }
-    const calc = Pricing.computeAmounts(base.plan, sub.bt, sub.usb, sub.btx, sub.usbx);
-    const prevPm = Number(base.amounts?.pmDiscount) || 0;
-    if (calc.totalIncl - prevPm !== Number(base.amounts?.totalIncl) || calc.discount !== Number(base.amounts?.discount || 0)) {
-      throw new HttpsError("failed-precondition", "この見積もりの金額が今の料金の計算と合いません（料金改定前の見積もりなど）。先に「内容を変更する」で新しい版にしてから入れてください");
-    }
-    const baseAmounts = quoteAmountsOf(calc);
-    const standardFee = PM.standardFeeOfAmounts(baseAmounts);
-    const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
-    if (!v.ok) throw new HttpsError("invalid-argument", v.errors.join("\n"));
-    if (remove === true && !prevPm) throw new HttpsError("failed-precondition", "この見積もりには値引きが入っていません");
-    if (remove !== true && v.amount === prevPm) throw new HttpsError("failed-precondition", "値引きの額が今と同じです（変わりません）");
-    const newPm = remove === true ? 0 : v.amount;
-    const amounts = PM.applyToAmounts(baseAmounts, newPm);
-    const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: me.email, byName: me.name }) : null;
-    const now = admin.firestore.FieldValue.serverTimestamp();
+    // 見積もり・出荷・案件・兄弟の版の読み取りと書き込みを1つのトランザクションで行う（2026-11-13 レビュー中-2）。
+    // 中で「見積もりが issued/accepted のまま」「出荷が draft のまま」を確かめ直す（同時に改版・依頼されたら止める）
+    let res = null;
+    await db.runTransaction(async (tx) => {
+      const baseSnap = await tx.get(db.collection("quotes").doc(quoteId));
+      if (!baseSnap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
+      const base = { id: baseSnap.id, ...baseSnap.data() };
+      if (!["issued", "accepted"].includes(base.status)) {
+        throw new HttpsError("failed-precondition", "この見積もりは旧版か期限切れのため、値引きを入れられません（最新の版で入れてください）");
+      }
+      // 値引き前の金額は料金の正本（computeAmounts）で出し直す。保存値と合わない古い見積もりには入れない（安全側）
+      const sub = { bt: 0, usb: 0, btx: 0, usbx: 0 };
+      for (const it of (base.items || [])) {
+        if (it.sku === Pricing.SKU.BT) { sub.bt += Number(it.subsidyQty) || 0; sub.btx += Number(it.extraQty) || 0; }
+        else { sub.usb += Number(it.subsidyQty) || 0; sub.usbx += Number(it.extraQty) || 0; }
+      }
+      const calc = Pricing.computeAmounts(base.plan, sub.bt, sub.usb, sub.btx, sub.usbx);
+      const prevPm = Number(base.amounts?.pmDiscount) || 0;
+      if (calc.totalIncl - prevPm !== Number(base.amounts?.totalIncl) || calc.discount !== Number(base.amounts?.discount || 0)) {
+        throw new HttpsError("failed-precondition", "この見積もりの金額が今の料金の計算と合いません（料金改定前の見積もりなど）。先に「内容を変更する」で新しい版にしてから入れてください");
+      }
+      const baseAmounts = quoteAmountsOf(calc);
+      const standardFee = PM.standardFeeOfAmounts(baseAmounts);
+      const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
+      if (!v.ok) throw new HttpsError("invalid-argument", v.errors.join("\n"));
+      if (remove === true && !prevPm) throw new HttpsError("failed-precondition", "この見積もりには値引きが入っていません");
+      if (remove !== true && v.amount === prevPm) throw new HttpsError("failed-precondition", "値引きの額が今と同じです（変わりません）");
+      const newPm = remove === true ? 0 : v.amount;
+      const amounts = PM.applyToAmounts(baseAmounts, newPm);
+      const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: me.email, byName: me.name }) : null;
+      const now = admin.firestore.FieldValue.serverTimestamp();
 
-    const vc = await quoteVersionContext(base, { items: base.items || [], amounts }, {
-      shipLockedMsg: (soNo, st) => `この見積もりの出荷（${soNo}）はすでに「${st}」です。値引きは見積もりではなく、供給管理の出荷の「値引きを入れる」から入れてください（請求済の前まで）。`,
+      const vc = await quoteVersionContext(base, { items: base.items || [], amounts }, {
+        tx,
+        shipLockedMsg: (soNo, st) => `この見積もりの出荷（${soNo}）はすでに「${st}」です。値引きは見積もりではなく、供給管理の出荷の「値引きを入れる」から入れてください（請求済の前まで）。`,
+      });
+      // 下書きの出荷にすでに値引きがあれば、それを「前の額」にする（2026-11-13 レビュー低-4）
+      const prevForText = vc.shipmentId && vc.shipStatus === "draft" && vc.shipPm > 0 ? vc.shipPm : prevPm;
+      const target = `${base.estNo} v${(Number(base.version) || 1) + 1}`;
+      const txt = PM.pmActivityText({ target: `見積もり ${target}`, prevAmount: prevForText, rec, reason: v.reason, byName: me.name });
+      const w = await writeQuoteVersion({
+        base, planKey: base.plan, calc, items: base.items || [], amounts, cardReaders: null,
+        reason: newPm ? `伴走支援費の値引き: ${v.reason}` : `伴走支援費の値引きを外す: ${v.reason}`,
+        email: me.email, uid: request.auth.uid, vc, tx,
+        quoteExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
+        shipExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
+        activity: () => ({
+          subject: txt.subject,
+          body: txt.body
+            + (vc.shipmentId && vc.shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+            + (vc.consentStale !== true ? "" : "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"),
+        }),
+      });
+      res = { base, amounts, rec, newPm, vc, ...w };
     });
-    const target = `${base.estNo} v${(Number(base.version) || 1) + 1}`;
-    const txt = PM.pmActivityText({ target: `見積もり ${target}`, prevAmount: prevPm, rec, reason: v.reason, byName: me.name });
-    const { quoteRef, version, estNo } = await writeQuoteVersion({
-      base, planKey: base.plan, calc, items: base.items || [], amounts, cardReaders: null,
-      reason: newPm ? `伴走支援費の値引き: ${v.reason}` : `伴走支援費の値引きを外す: ${v.reason}`,
-      email: me.email, uid: request.auth.uid, vc,
-      quoteExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
-      shipExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
-      activity: () => ({
-        subject: txt.subject,
-        body: txt.body
-          + (vc.shipmentId && vc.shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
-          + (vc.consentStale !== true ? "" : "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"),
-      }),
-    });
+    const { base, amounts, rec, newPm, vc, quoteRef, version, estNo } = res;
     const mailed = await mailRevisedQuote({ base, estNo, version, amounts, sendMail: sendMail === true, request, email: me.email,
       lead: newPm ? "接続サポート等経費（伴走支援費）を値引きしたお見積もりに変更しました。" : "お見積もりの内容を変更しました。" });
     return { ok: true, quoteId: quoteRef.id, version, totalIncl: amounts.totalIncl, pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor),
@@ -2269,6 +2299,7 @@ exports.setQuoteDiscount = onCall(
 );
 
 // 出荷に入れる（見積もりの無い手作りの出荷や、下書きより先に進んだ出荷用）。請求済の前まで（invoiced・paid・canceled は不可＝supply.js の shipIsLocked と同じ）。
+// 見積もりのある下書き・依頼済の出荷は拒否して見積もりカードへ案内する（申込・改版で明細が作り直されて消えるため・2026-11-13 レビュー中-1）。
 // data: { shipmentId, amount, reason, remove?:true }。行と記録はトランザクションの中で書く（更新の取り合いで二重に引かない）
 exports.setShipmentDiscount = onCall(
   { region: "asia-northeast1", timeoutSeconds: 60, memory: "256MiB", serviceAccount: SA_MAIL },
@@ -2288,6 +2319,10 @@ exports.setShipmentDiscount = onCall(
         throw new HttpsError("failed-precondition", `この出荷（${s.soNumber || ""}）は「${st}」のため、値引きを入れられません（請求書を出す前まで）`);
       }
       if (!PM.pmApplicableShipment(s)) throw new HttpsError("failed-precondition", "値引きは事業所向け（税込）の出荷だけに入れられます（認定事業者向けの卸には入れません）");
+      if (PM.shipmentPmBlockedByQuote(s)) throw new HttpsError("failed-precondition", PM.MSG_USE_QUOTE, { code: "use_quote_discount" });
+      // 承諾書の取り直しの印（2026-11-13 レビュー中-3）。読み取りは書き込みより前
+      const caseRef = s.caseId ? db.collection("cases").doc(String(s.caseId)) : null;
+      const kase = caseRef ? ((await tx.get(caseRef)).data() || null) : null;
       const items = Array.isArray(s.items) ? s.items : [];
       const prevPm = PM.pmAmountOfItems(items);
       const standardFee = PM.standardFeeOf(items);
@@ -2303,14 +2338,25 @@ exports.setShipmentDiscount = onCall(
       if (!chk.ok) throw new HttpsError("failed-precondition", chk.errors.join("\n"));
       const now = admin.firestore.FieldValue.serverTimestamp();
       tx.update(ref, { items: nextItems, pmDiscount: rec ? { ...rec, at: now } : admin.firestore.FieldValue.delete(), updatedAt: now, updatedBy: me.email });
+      // 発注の承諾書がある案件は、署名した金額と変わるので取り直しの印を立てる（値下げでも・出荷キャンセルの理由はそのまま）
+      let consentStale = false;
+      if (kase && kase.orderConsentToken) {
+        const rs = reviseConsentStale(kase, true);
+        consentStale = rs.stale;
+        tx.update(caseRef, { orderConsentStale: rs.stale, updatedAt: now,
+          ...(rs.clearReason ? { orderConsentStaleReason: admin.firestore.FieldValue.delete() } : {}) });
+      }
       if (s.caseId) {
         const txt = PM.pmActivityText({ target: `出荷 ${s.soNumber || ""}`, prevAmount: prevPm, rec, reason: v.reason, byName: me.name });
         tx.set(db.collection("activities").doc(), {
           caseId: s.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: me.email,
-          subject: txt.subject, body: txt.body, attachmentUrls: [],
+          subject: txt.subject,
+          body: txt.body + (consentStale ? "\n⚠️ 承諾書に署名いただいた金額と変わったため、承諾書の取り直しが要ります（出荷は止めていません）。" : ""),
+          attachmentUrls: [],
         });
       }
-      out = { ok: true, shipmentId, soNumber: s.soNumber || "", pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor), standardFee };
+      out = { ok: true, shipmentId, soNumber: s.soNumber || "", pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor), standardFee,
+        ...(kase && kase.orderConsentToken ? { orderConsentStale: consentStale } : {}) };
     });
     return out;
   }

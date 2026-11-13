@@ -59,14 +59,17 @@ export function standardFeeOfAmounts(a) {
 // 戻り値 { ok, errors[], amount, reason, standardFee, feeAfter, belowFloor }
 export function validatePmDiscount({ amount, reason, standardFee, remove = false } = {}) {
   const errors = [];
-  const rs = String(reason ?? "").trim();
+  // 理由は文字列だけ（数値・配列などは「無い」とみなす）
+  const rs = typeof reason === "string" ? reason.trim() : "";
   if (!rs) errors.push("値引きの理由を入れてください（あとから経緯を追えるようにするためです）");
   else if (rs.length > MAX_REASON) errors.push(`理由は${MAX_REASON}文字以内にしてください`);
   const std = Number(standardFee);
   if (!Number.isFinite(std) || std <= 0) errors.push("伴走支援費（標準額）が無いため、値引きを入れられません");
   let amt = 0;
   if (!remove) {
-    amt = typeof amount === "string" && /^\s*\d+\s*$/.test(amount) ? Number(amount) : Number(amount);
+    // 受け付けるのは number 型か、数字だけの文字列（"5500"）だけ。true・"1e3"・"0x10"・[5500] などは拒否
+    amt = typeof amount === "number" ? amount
+      : (typeof amount === "string" && /^\d+$/.test(amount.trim()) ? Number(amount.trim()) : NaN);
     if (!Number.isInteger(amt) || amt < 1) { errors.push("値引きの額は1円以上の整数（税込）で入れてください"); amt = 0; }
     else if (Number.isFinite(std) && amt > std) {
       errors.push(`値引きが伴走支援費の標準額（${yenText(std)}）を超えています。値引き後の伴走支援費はマイナスにできません`);
@@ -130,6 +133,27 @@ export function checkPmRows(items, pmMeta) {
     if (after < 0) errors.push(`値引き後の伴走支援費がマイナスになります（標準額 ${yenText(standardFeeOf(items))}・値引き ${yenText(pmAmountOfItems(items))}）。先に値引きを外すか額を直してください`);
   }
   return { ok: errors.length === 0, errors };
+}
+
+// 出荷の修正で標準額（B の合計）が変わったとき、値引きの記録（standardFee・feeAfter・belowFloor）を出し直す（2026-11-13 レビュー低-2）。
+// 値引きの行が無ければ null。戻り値 { changed, record, feeAfter, belowFloor, negative }（negative は値引き後がマイナス＝保存を止める）
+export function recalcPmRecord(meta, items) {
+  const amt = pmAmountOfItems(items);
+  if (!amt) return null;
+  const std = standardFeeOf(items);
+  const feeAfter = std - amt;
+  const belowFloor = floorCheck(feeAfter).belowFloor;
+  const m = meta || {};
+  const changed = num(m.standardFee) !== std || num(m.feeAfter) !== feeAfter || !!m.belowFloor !== belowFloor;
+  return { changed, record: { ...m, standardFee: std, feeAfter, belowFloor }, feeAfter, belowFloor, negative: feeAfter < 0 };
+}
+
+// 出荷に値引きを入れてよいか。見積もりのある下書き・依頼済の出荷は、申込や改版で見積もりから明細を作り直すので
+// 出荷に入れた値引きが上書きされる。見積もりカードの値引き（setQuoteDiscount）へ案内する（2026-11-13 レビュー中-1）
+export const MSG_USE_QUOTE = "この出荷は見積もりから作った下書き・依頼済の出荷です。値引きは案件の見積もりカードの「値引きを入れる」から入れてください（見積もりと出荷の両方がそろいます。出荷に入れると、申込や見積もりの変更で作り直したときに消えるため）";
+export function shipmentPmBlockedByQuote(s) {
+  const st = (s && s.status) || "shipped";
+  return !!(s && s.quoteId) && (st === "draft" || st === "requested");
 }
 
 // 出荷に値引きを入れられるか（事業所向け＝税込の出荷だけ）

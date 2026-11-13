@@ -8,12 +8,16 @@
 //   D. 受注確定（staffAcceptQuote）で作る出荷に値引きの行と記録が入る
 //   E. 台数を変える改版（reviseQuote）で値引きは外れ、活動に残る
 //   F. 出荷に値引き: 請求済は拒否・認定事業者向けは拒否・入れ直しは置き換え（1行）・外す
+//   G〜L（独立レビューの直し・2026-11-13）: 見積もりのある下書き・依頼済の出荷は拒否（中-1）／Web の申込で使い直す出荷の値引きは
+//     黙って消さず記録（中-1）／記録の無い値引きは行を作らず記録（低-3）／承諾書の取り直しの印（中-3）／同時の値引きは1つだけ通る（中-2）／
+//     下書きの出荷の前の値引きを「前の額」に（低-4）
 //
 // 実行: firebase emulators:exec --only firestore --project demo-pm-discount-test "node scripts/test-pm-discount-emu.mjs"
 //   （bash scripts/test-all.sh の2段目でも動く）
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { EventEmitter } from "node:events";
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) { console.error("FIRESTORE_EMULATOR_HOST がありません（emulators:exec で動かす）"); process.exit(2); }
 process.env.GCLOUD_PROJECT ||= "demo-pm-discount-test";
@@ -191,6 +195,118 @@ check("値引きの無い出荷を外すのは拒否", !r.ok);
 const actsF = (await actsOf("cF")).map((a) => a.subject);
 check("活動: 入れた・変えた・外した の3件", actsF.filter((s) => /伴走支援費/.test(s)).length === 3
   && actsF.some((s) => s.startsWith("伴走支援費を値引き（¥4,500")) && actsF.some((s) => /値引きを変更（¥4,500 → ¥6,000/.test(s)) && actsF.some((s) => /値引きを外した（¥6,000）/.test(s)), JSON.stringify(actsF));
+
+// HTTP の関数（acceptQuote）を直接呼ぶ（要求・応答の代役。test-order-consent-web-emu.mjs と同じ）
+function http(name, body) {
+  return new Promise((resolve, reject) => {
+    const headers = { "content-type": "application/json", "user-agent": "TestUA", origin: "https://kjk.tadakayo.jp" };
+    const req = { method: "POST", body, headers, url: "/", originalUrl: "/", path: "/",
+      get: (h) => headers[String(h).toLowerCase()], header: (h) => headers[String(h).toLowerCase()] };
+    const done = (o) => { resolve({ status: res.statusCode, body: o }); res.headersSent = true; res.emit("finish"); };
+    const res = Object.assign(new EventEmitter(), {
+      statusCode: 200, _h: {}, headersSent: false,
+      setHeader(k, v) { this._h[String(k).toLowerCase()] = v; }, getHeader(k) { return this._h[String(k).toLowerCase()]; },
+      removeHeader(k) { delete this._h[String(k).toLowerCase()]; }, set(k, v) { this.setHeader(k, v); return this; }, vary() { return this; },
+      status(c) { this.statusCode = c; return this; }, json(o) { done(o); return this; }, send(o) { done(o); return this; }, end(o) { done(o ?? null); return this; },
+    });
+    Promise.resolve(fns[name](req, res)).catch(reject);
+  });
+}
+const DELIVERY = { company: "法人", officeName: "事業所H", postalCode: "100-0001", address: "東京都千代田区1-1", contactName: "受取", phone: "03-0000-0000" };
+
+// ---------- G ----------
+section("G. 見積もりのある下書き・依頼済の出荷には出荷で入れない（中-1）");
+await seed([
+  [cd("cG"), { status: 3, caseNumber: 307 }],
+  [sd("sGd"), { soNumber: "SH-PM-Gd", status: "draft", shipType: "direct", caseId: "cG", quoteId: "qX", items: baseItems }],
+  [sd("sGr"), { soNumber: "SH-PM-Gr", status: "requested", shipType: "direct", caseId: "cG", quoteId: "qX", items: baseItems }],
+  [sd("sGs"), { soNumber: "SH-PM-Gs", status: "shipped", shipType: "direct", caseId: "cG", quoteId: "qX", items: baseItems }],
+]);
+for (const id of ["sGd", "sGr"]) {
+  r = await call("setShipmentDiscount", ADMIN, { shipmentId: id, amount: 1000, reason: "x" });
+  check(`${id}: 拒否して見積もりカードへ案内`, !r.ok && r.code === "failed-precondition" && r.msg === PM.MSG_USE_QUOTE, JSON.stringify(r));
+  check(`${id}: 何も書かない`, !(await get(sd(id))).items.some((i) => i.pm));
+}
+r = await call("setShipmentDiscount", ADMIN, { shipmentId: "sGs", amount: 1000, reason: "発送済なので出荷で" });
+check("見積もりのある出荷でも発送済なら出荷に入れられる", r.ok);
+
+// ---------- H ----------
+section("H. Web の申込で使い直す出荷の値引きは黙って消さない（中-1）");
+await db.collection("appConfig").doc("settings").set({ orderByConsent: false }, { merge: true });
+await seed([
+  [cd("cH"), { status: 2, caseNumber: 308, officeName: "事業所H", shipmentId: "sH" }],
+  [qd("qH"), quote("cH", { accessToken: "tok-qH" })],
+  [sd("sH"), { soNumber: "SH-PM-H", status: "draft", shipType: "direct", caseId: "cH", items: baseItems }], // 見積もりの無い手作りの下書き
+]);
+r = await call("setShipmentDiscount", ADMIN, { shipmentId: "sH", amount: 2000, reason: "手作りの出荷で値引き" });
+check("見積もりの無い下書きには入れられる", r.ok);
+r = await http("acceptQuote", { quoteId: "qH", quoteToken: "tok-qH", agreedName: "申込 太郎", agreedPolicy: true, payMethod: "after", delivery: DELIVERY });
+check("Web の申込が通る", r.status === 200 && r.body.status === "ok", JSON.stringify(r).slice(0, 300));
+const sH = await get(sd("sH"));
+check("使い直した出荷は見積もりの明細（値引きの行と記録は外れる）", !sH.items.some((i) => i.pm) && !sH.pmDiscount && sH.quoteId === "qH", JSON.stringify(sH.items));
+const actH = (await actsOf("cH")).find((a) => /値引きが出荷に引き継がれませんでした/.test(a.subject));
+check("対応記録に「外れました」と額", actH && /¥2,000/.test(actH.body) && /外れました/.test(actH.body), JSON.stringify(actH));
+
+// ---------- I ----------
+section("I. 記録の無い値引きは出荷に行を作らない（低-3）");
+const amtsI = PM.applyToAmounts(AMOUNTS, 4000);
+await seed([[cd("cI"), { status: 2, caseNumber: 309 }], [qd("qI"), quote("cI", { amounts: amtsI })]]); // pmDiscount の記録なし
+r = await call("staffAcceptQuote", STAFF, { quoteId: "qI", acceptedName: "山田", channel: "phone", receivedDate: TODAY, payMethod: "after", sendMail: false });
+check("受注確定できる", r.ok && r.r.ok, JSON.stringify(r).slice(0, 300));
+const shipI = (await db.collection("shipments").where("caseId", "==", "cI").get()).docs.map((d) => d.data())[0];
+check("値引きの行も記録も無い", shipI && !shipI.items.some((i) => i.pm) && !shipI.pmDiscount);
+const actI = (await actsOf("cI")).find((a) => /値引きが出荷に引き継がれませんでした/.test(a.subject));
+check("対応記録に「記録が無いため引き継がれません」", actI && /記録（判断した人・理由）が無いため出荷に引き継がれません/.test(actI.body), JSON.stringify(actI));
+
+// ---------- J ----------
+section("J. 承諾書のある案件の出荷に値引き → 取り直しの印（中-3）");
+await seed([
+  [cd("cJ"), { status: 5, caseNumber: 310, orderConsentToken: "tokJ", orderConsentStale: false }],
+  [sd("sJ"), { soNumber: "SH-PM-J", status: "shipped", shipType: "direct", caseId: "cJ", items: baseItems }],
+  [cd("cJ2"), { status: 5, caseNumber: 311, orderConsentToken: "tokJ2", orderConsentStale: true, orderConsentStaleReason: "ship_canceled" }],
+  [sd("sJ2"), { soNumber: "SH-PM-J2", status: "shipped", shipType: "direct", caseId: "cJ2", items: baseItems }],
+  [cd("cJ3"), { status: 5, caseNumber: 312 }],
+  [sd("sJ3"), { soNumber: "SH-PM-J3", status: "shipped", shipType: "direct", caseId: "cJ3", items: baseItems }],
+]);
+r = await call("setShipmentDiscount", ADMIN, { shipmentId: "sJ", amount: 3000, reason: "x" });
+const kJ = await get(cd("cJ"));
+check("印が立つ", r.ok && r.r.orderConsentStale === true && kJ.orderConsentStale === true, JSON.stringify(kJ));
+check("活動に取り直しの案内", (await actsOf("cJ")).some((a) => /承諾書の取り直しが要ります/.test(a.body)));
+r = await call("setShipmentDiscount", ADMIN, { shipmentId: "sJ2", amount: 3000, reason: "x" });
+const kJ2 = await get(cd("cJ2"));
+check("出荷キャンセルの理由はそのまま", r.ok && kJ2.orderConsentStale === true && kJ2.orderConsentStaleReason === "ship_canceled");
+r = await call("setShipmentDiscount", ADMIN, { shipmentId: "sJ3", amount: 3000, reason: "x" });
+const kJ3 = await get(cd("cJ3"));
+check("承諾書の無い案件には印を足さない", r.ok && !("orderConsentStale" in kJ3) && !("orderConsentStale" in r.r));
+
+// ---------- K ----------
+section("K. 同時の値引きは1つだけ通る（トランザクション・中-2）");
+await seed([[cd("cK"), { status: 2, caseNumber: 313 }], [qd("qK"), quote("cK")]]);
+const [k1, k2] = await Promise.all([
+  call("setQuoteDiscount", ADMIN, { quoteId: "qK", amount: 1000, reason: "1つめ" }),
+  call("setQuoteDiscount", ADMIN, { quoteId: "qK", amount: 2000, reason: "2つめ" }),
+]);
+const qsK = await quotesOf("cK");
+check("片方だけ通る", [k1, k2].filter((x) => x.ok).length === 1, JSON.stringify([k1, k2]).slice(0, 300));
+check("版は2つ（v1 superseded・v2 だけ生きている）", qsK.length === 2 && qsK.filter((q) => q.status === "issued").length === 1 && qsK.find((q) => q.version === 1).status === "superseded");
+const failedK = [k1, k2].find((x) => !x.ok);
+check("負けた方は旧版の理由で止まる", failedK && /旧版/.test(failedK.msg), JSON.stringify(failedK));
+
+// ---------- L ----------
+section("L. 下書きの出荷の前の値引きを「前の額」に（低-4）");
+await seed([
+  [cd("cL"), { status: 3, caseNumber: 314 }],
+  [qd("qL"), quote("cL", { status: "accepted", shipmentId: "sL", shipmentNo: "SH-PM-L" })],
+  [sd("sL"), { soNumber: "SH-PM-L", status: "draft", shipType: "direct", caseId: "cL", quoteId: "qL",
+    items: [{ sku: Pricing.SKU.BT, qty: 3, unitPrice: 14500 }, { sku: "support-fee", qty: 1, unitPrice: 50000, nonStock: true }, { sku: "discount", name: "金額調整", qty: 1, unitPrice: -29500, nonStock: true }, PM.pmDiscountRow(2000)],
+    pmDiscount: { amount: 2000, reason: "前からの値引き" } }],
+]);
+r = await call("setQuoteDiscount", ADMIN, { quoteId: "qL", amount: 3000, reason: "見積もりで入れ直す" });
+check("通る", r.ok, JSON.stringify(r).slice(0, 200));
+const actL = (await actsOf("cL")).find((a) => /伴走支援費/.test(a.subject));
+check("活動の件名は「¥2,000 → ¥3,000」の変更", actL && actL.subject.includes("値引きを変更（¥2,000 → ¥3,000"), JSON.stringify(actL));
+const sL = await get(sd("sL"));
+check("出荷の値引きの行は1つ（¥3,000）", sL.items.filter((i) => i.pm).length === 1 && sL.items.find((i) => i.pm).unitPrice === -3000 && sL.pmDiscount.amount === 3000);
 
 console.log(results.join("\n"));
 console.log(`\ntest-pm-discount-emu: 合計 ${pass + fail} 件中 ${pass} 件合格・${fail} 件不合格`);

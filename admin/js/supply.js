@@ -36,7 +36,8 @@ import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPar
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows, belowStandardCheck } from "/js/manual-support-fee.js";
 // 伴走支援費の PM 値引き（2026-11-13）。判定の正本は pm-discount.js。値引きを入れる・外すのはサーバー（setShipmentDiscount・管理者だけ）
-import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems,
+import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems, recalcPmRecord,
+  shipmentPmBlockedByQuote, MSG_USE_QUOTE as PM_MSG_USE_QUOTE,
   FLOOR as PM_FLOOR, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { STEP_TIPS } from "/js/case-ship-step.js"; // 段の吹き出し（案件詳細の出荷タブと同じ言い方・2026-11-13）
@@ -1801,10 +1802,13 @@ function updatePmBox(){
       + `<span style="color:var(--color-ink-muted)">（標準 ${yen(r.standardFee ?? std)} → ${yen(r.feeAfter ?? (std-cur))}${r.byName?`・判断: ${esc(r.byName)}`:""}${r.reason?`・理由: ${esc(r.reason)}`:""}）</span>`
       + (r.belowFloor ? ` <span style="color:#8a5a1f">⚠ 報酬の下限 ${yen(PM_FLOOR)} を下回る値引き</span>` : "")
     : `<span style="color:var(--color-ink-muted)">値引きはありません（伴走支援費の標準額 ${yen(std)}）</span>`;
-  const can = isAdminUser && !shipIsLocked(s) && std>0;
+  // 見積もりのある下書き・依頼済の出荷は、出荷に入れず見積もりカードで入れる（サーバーの setShipmentDiscount も拒否する・レビュー中-1）
+  const byQuote = shipmentPmBlockedByQuote(s);
+  const can = isAdminUser && !shipIsLocked(s) && std>0 && !byQuote;
   document.getElementById("shipPmForm").style.display = can ? "" : "none";
-  document.getElementById("shipPmNote").style.display = (!isAdminUser || std<=0 || shipIsLocked(s)) ? "" : "none";
+  document.getElementById("shipPmNote").style.display = can ? "none" : "";
   document.getElementById("shipPmNote").textContent = shipIsLocked(s) ? "請求済のため、値引きは変えられません。"
+    : byQuote ? PM_MSG_USE_QUOTE
     : std<=0 ? "この出荷には伴走支援費の行が無いため、値引きは入れられません。"
     : "値引きを入れられるのは管理者だけです。";
   document.getElementById("shipPmAmount").value = cur || "";
@@ -2298,6 +2302,16 @@ async function saveShipEdit(){
         ||((Number(document.getElementById("shipFee").value)||0)>0?"送料":""),
       ...subsidyPatch(),
     });
+    // 値引きの行がある出荷で標準額（伴走支援費の合計）が変わったら、値引きの記録を出し直す（2026-11-13 レビュー低-2）。
+    // 値引き後がマイナスなら止める（pmSaveError でも止まる）。報酬の下限を割るなら承知の確認を取る
+    {
+      const pr = recalcPmRecord(s0.pmDiscount||null, items);
+      if(pr && pr.changed){
+        if(pr.negative){ alert(`値引き後の伴走支援費がマイナスになります（${yen(pr.feeAfter)}）。先に値引きを外すか、管理者に額を直してもらってください`); return; }
+        if(pr.belowFloor && !confirm(`伴走支援費の標準額が変わり、値引き後の伴走支援費が ${yen(pr.feeAfter)} になります。報酬の下限（${yen(PM_FLOOR)}）を下回りますが、承知のうえで保存しますか？`)) return;
+        patch.pmDiscount = { ...pr.record, recalculatedBy: currentUser.email||"", recalculatedAt: serverTimestamp() };
+      }
+    }
     // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
     patch.shippingLabel = feeLabelForSave({ office: billsOffice(s0), fee: patch.shippingFee, label: patch.shippingLabel });
     // 事業所向けの出荷に送料を入れて保存するときは確かめる（送料を請求しない決まり・止めはしない・2026-11-12）

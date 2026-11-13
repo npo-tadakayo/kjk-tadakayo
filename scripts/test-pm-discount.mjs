@@ -26,9 +26,9 @@ t("functions 側のコピーとバイト単位で同じ・check-shared-sync.sh �
 t("exports（firebase を読まない純粋関数だけ）", () => {
   assert.deepEqual(Object.keys(PM).sort(), [
     "FLOOR", "MAX_REASON", "PM_DISCOUNT_NAME", "PM_DISCOUNT_SKU", "applyToAmounts", "buildPmRecord", "checkPmRows", "floorCheck",
-    "isPmRow", "pmActivityText", "pmAmountOfItems", "pmApplicableShipment", "pmDiscountRow", "pmRemovedByReviseText", "pmRows",
-    "standardFeeOf", "standardFeeOfAmounts", "validatePmDiscount", "withoutPmRows", "yenText",
-  ]);
+    "MSG_USE_QUOTE", "isPmRow", "pmActivityText", "pmAmountOfItems", "pmApplicableShipment", "pmDiscountRow", "pmRemovedByReviseText", "pmRows",
+    "recalcPmRecord", "shipmentPmBlockedByQuote", "standardFeeOf", "standardFeeOfAmounts", "validatePmDiscount", "withoutPmRows", "yenText",
+  ].sort());
   assert.ok(!/^import /m.test(read("admin/js/pm-discount.js")));
   assert.equal(PM.PM_DISCOUNT_NAME, "接続サポート等経費（伴走支援費）の値引き");
   assert.equal(PM.PM_DISCOUNT_SKU, "discount");
@@ -152,6 +152,34 @@ t("活動の文言: 入れた・変えた・外した・下限を下回る⚠・
   assert.match(PM.pmRemovedByReviseText(5500), /伴走支援費の値引き（¥5,500）は外れました/);
 });
 
+t("型の検査（レビュー低-1）: 額は number か数字だけの文字列・理由は文字列だけ", () => {
+  for (const ok of [5500, "5500", " 5500 "]) assert.equal(PM.validatePmDiscount({ amount: ok, reason: "x", standardFee: 20500 }).ok, true, JSON.stringify(ok));
+  for (const bad of [true, false, "1e3", "0x10", [5500], { v: 1 }, "5,500", "5500円", "-5", 5500.5, Infinity]) {
+    assert.equal(PM.validatePmDiscount({ amount: bad, reason: "x", standardFee: 20500 }).ok, false, JSON.stringify(bad));
+  }
+  for (const bad of [5, ["理由"], { r: "理由" }, true, null]) assert.equal(PM.validatePmDiscount({ amount: 100, reason: bad, standardFee: 20500 }).ok, false);
+});
+t("見積もりのある下書き・依頼済の出荷は出荷に入れない（レビュー中-1）", () => {
+  assert.equal(PM.shipmentPmBlockedByQuote({ quoteId: "q", status: "draft" }), true);
+  assert.equal(PM.shipmentPmBlockedByQuote({ quoteId: "q", status: "requested" }), true);
+  assert.equal(PM.shipmentPmBlockedByQuote({ quoteId: "q", status: "shipped" }), false);
+  assert.equal(PM.shipmentPmBlockedByQuote({ quoteId: "q" }), false);           // 状態なし＝発送済
+  assert.equal(PM.shipmentPmBlockedByQuote({ status: "draft" }), false);        // 見積もりの無い手作りの出荷
+  assert.match(PM.MSG_USE_QUOTE, /見積もりカードの「値引きを入れる」/);
+});
+t("標準額が変わったときの記録の出し直し（レビュー低-2）", () => {
+  const items = [reader(3), fee(50000), adj(29500), PM.pmDiscountRow(5500)];
+  const meta = PM.buildPmRecord({ amount: 5500, reason: "x", standardFee: 20500, byEmail: "a@tadakayo.jp" });
+  assert.equal(PM.recalcPmRecord(meta, items).changed, false);
+  assert.equal(PM.recalcPmRecord(meta, [reader(3), fee(50000), adj(29500)]), null);           // 値引きの行が無い
+  // 標準額が 20,500 → 15,500 に下がった（金額調整が増えた）: 値引き後 10,000＝下限を下回る
+  const r = PM.recalcPmRecord(meta, [reader(3), fee(50000), adj(34500), PM.pmDiscountRow(5500)]);
+  assert.equal(r.changed, true); assert.equal(r.feeAfter, 10000); assert.equal(r.belowFloor, true); assert.equal(r.negative, false);
+  assert.equal(r.record.standardFee, 15500); assert.equal(r.record.reason, "x"); assert.equal(r.record.byEmail, "a@tadakayo.jp");
+  // マイナスになる
+  assert.equal(PM.recalcPmRecord(meta, [reader(3), fee(3000), PM.pmDiscountRow(5500)]).negative, true);
+});
+
 // ===== ③ 結線 =====
 t("見積もりカード: 管理者だけ・setQuoteDiscount・下限の確認・改版で外れる案内", () => {
   const qa = read("admin/js/quote-admin.js");
@@ -168,8 +196,14 @@ t("出荷の画面: 値引きの行を引き継ぐ・保存前に照合・管理
   assert.equal((js.match(/const pe=pmSaveError\(items\); if\(pe\)\{ alert\(pe\); return; \}/g) || []).length, 2, "新規・修正の両方の保存で照合していない");
   assert.match(js, /checkPmRows\(items, editingShip \? \(editingShip\.pmDiscount\|\|null\) : null\)/);
   assert.match(js, /httpsCallable\(functions, "setShipmentDiscount"\)/);
-  assert.match(js, /const can = isAdminUser && !shipIsLocked\(s\) && std>0;/);
   assert.match(js, /document\.getElementById\("shipPmSave"\)\.disabled = !v\.ok \|\| ackNeeded;/);
+  // 見積もりのある下書き・依頼済は値引きの欄を出さず案内（中-1）／標準額が変わったら記録を出し直す（低-2）
+  assert.match(js, /const can = isAdminUser && !shipIsLocked\(s\) && std>0 && !byQuote;/);
+  assert.match(js, /: byQuote \? PM_MSG_USE_QUOTE/);
+  assert.match(js, /const pr = recalcPmRecord\(s0\.pmDiscount\|\|null, items\);/);
+  assert.match(js, /if\(pr\.negative\)\{ alert\(/);
+  assert.match(js, /if\(pr\.belowFloor && !confirm\(/);
+  assert.match(js, /patch\.pmDiscount = \{ \.\.\.pr\.record, recalculatedBy:/);
   for (const id of ["shipPmBox", "shipPmLine", "shipPmForm", "shipPmAmount", "shipPmReason", "shipPmAck", "shipPmAckWrap", "shipPmSave", "shipPmRemove", "shipPmPreview", "shipPmNote", "shipPmAckText"]) {
     assert.ok(html.includes(`id="${id}"`), `supply.html に ${id} が無い`);
   }
@@ -190,6 +224,12 @@ t("練習モードの代役: 新しい Callable 2本・管理者だけ・本番�
   assert.match(ps, /import \* as PM from "\/js\/pm-discount\.js";/);
   assert.match(ps, /if \(pmDiscount > 0\) items\.push\(PM\.pmDiscountRow\(pmDiscount\)\);/);
   assert.match(ps, /user\.role !== "admin"/);
+  // 本番と同じ直し（中-1・中-3・低-3・低-4・低-5）
+  assert.match(ps, /if \(PM\.shipmentPmBlockedByQuote\(s\)\) throw fail\(PM\.MSG_USE_QUOTE\);/);
+  assert.match(ps, /const rs = reviseConsentStale\(kase, true\);/);
+  assert.match(ps, /const pmDiscount = Number\(q\.amounts\?\.pmDiscount\) > 0 && q\.pmDiscount && Number\(q\.pmDiscount\.amount\) === Number\(q\.amounts\.pmDiscount\)/);
+  assert.match(ps, /const prevForText = shipmentId && shipStatus === "draft" && shipPm > 0 \? shipPm : prevPm;/);
+  assert.match(ps, /const prevPm = Math\.max\(Number\(base\.amounts\?\.pmDiscount\) \|\| 0, shipmentId && shipStatus === "draft" \? shipPm : 0\);/);
 });
 t("estimate-pricing.js（3か所）と公開ページは変えていない（値引きは別の項目）", () => {
   for (const p of ["functions/estimate-pricing.js", "js/estimate-pricing.js", "admin/js/estimate-pricing.js"]) assert.ok(!/pmDiscount|pm-discount/.test(read(p)), p);

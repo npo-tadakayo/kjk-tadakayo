@@ -933,6 +933,12 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 - 書類: 見積書（quote-doc.js）は明細の「金額調整」の下と合計欄に1行。保存値との照合は `c.totalIncl − pmDiscount === a.totalIncl`（直さないと値引きした見積もりは必ず簡易の形になる）。合計見積書（quote-group-doc.js）は `pmDiscount` も足す。案内メール（quoteMailText・acceptMailText・変更のお知らせ）に「うち値引き −¥X」。請求書 `invoiceTotals` は明細の足し算なので直していない。領収証・手順書は discount 行が B に入るので自動で下がる（テストで確認）
 - 任意の金額の伴走支援費（manual-support-fee.js）: 標準額（上限−先方購入費−この出荷の機器代）より下げるのは管理者だけ・メモに理由（`belowStandardCheck`）。前から入っている額のまま保存するときは問わない。**任意の行は画面が Firestore に直接書くので、サーバー側の確かめは無い（限界）**
 
-**限界**: ①firestore.rules は変えていないので、編集者がブラウザの開発ツールから出荷の明細に値引きの行や安い任意の行を直接書くことは止められない（画面とサーバーの Callable だけが正しい道）②公開ページ（見積もりページ・承諾書のページ）は値引きの行を出さない（合計は値引き後、「うち伴走支援費」は標準額のまま）③出荷だけに入れた値引きは案件の `totalAmount` に反映しない ④練習モードの代役は管理者かどうかを本番の users で確かめる
+**独立レビューの直し（2026-11-13・同じブランチの2本目のコミット）**
+- 中-1: 見積もりのある下書き・依頼済の出荷（`shipmentPmBlockedByQuote`）は `setShipmentDiscount` で拒否し、見積もりカードの値引きへ案内（`MSG_USE_QUOTE`・画面も同じ文言）。申込（Web・承諾書）で既存の出荷を使い直すとき、出荷にあった値引きの行が見積もりに無ければ外れたことを対応記録に残す（`acceptTxWrite` の `pmNotes`）
+- 中-2: `setQuoteDiscount` は見積もり・出荷・案件・承諾書・兄弟の版の読み取りと書き込みを1つの `runTransaction` に（`quoteVersionContext`・`writeQuoteVersion` に `tx` を渡せるようにした。reviseQuote は今までどおり batch）。中で「issued/accepted のまま」「出荷が draft のまま」を確かめ直す。同時に2つ押しても1つだけ通る（エミュレータで確認）
+- 中-3: `setShipmentDiscount` は承諾書のある案件で `orderConsentStale:true`（`reviseConsentStale(kase, true)`＝出荷キャンセルの理由はそのまま）をトランザクションの中で立てる
+- 低-1: 額は number か数字だけの文字列、理由は文字列だけを受け付ける ／ 低-2: 出荷の修正で標準額が変わったら記録を出し直す（`recalcPmRecord`。マイナスは保存を止める・下限割れは確認）／ 低-3: 記録（`q.pmDiscount`、額が一致するもの）の無い値引きからは行を作らず、対応記録に残す ／ 低-4: 下書きの出荷に前からある値引きを活動の「前の額」に ／ 低-5: 練習モードの reviseQuote も下書きの出荷の値引きを見る
+
+**限界**: ①firestore.rules は変えていないので、編集者がブラウザの開発ツールから出荷の明細に値引きの行や安い任意の行を直接書くことは止められない（画面とサーバーの Callable だけが正しい道）②公開ページ（見積もりページ・承諾書のページ）は値引きの行を出さない（合計は値引き後、「うち伴走支援費」は標準額のまま）③出荷だけに入れた値引きは案件の `totalAmount` に反映しない（承諾書のある案件は取り直しの印は立つ）④練習モードの代役は管理者かどうかを本番の users で確かめる ⑤出荷の修正で標準額が変わったときの記録の出し直しは画面（editor でも書ける）で行う。誰が出し直したかは `recalculatedBy` に残す
 
 **テスト**: `scripts/test-pm-discount.mjs`（16件: 判定・写し・結線）／`test-subsidy-amounts.mjs`（+2: B に入り A＋B が下がる・乱数1,000件で領収証の明細合計＝`invoiceTotals().total`）／`test-functions-wiring.mjs`（新 Callable が allow:"admin"・SA_MAIL・`shipmentItemsFromQuote` が値引きの行を出す）／`test-ship-flow`・`test-warehouse-rules`・`test-ship-steps`（値引きの行が台数・倉庫・在庫に出ない）／`test-order-consent`（焼き込み・取り直しの印）／`test-manual-support-fee`（標準額より下げるのは管理者だけ）

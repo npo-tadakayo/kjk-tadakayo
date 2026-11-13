@@ -516,13 +516,36 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   const items = Pricing.buildItems({ btQty: 3, usbQty: 0, btExtra: 0, usbExtra: 0 });
   const plain = f({ items, amounts: base });
   assert.equal(plain.filter((i) => i.pm).length, 0);
-  const withPm = f({ items, amounts: PMm.applyToAmounts(base, 5500) });
+  // 記録（誰が・理由）の無い値引きからは行を作らない（レビュー低-3）
+  assert.equal(f({ items, amounts: PMm.applyToAmounts(base, 5500) }).filter((i) => i.pm).length, 0);
+  assert.equal(f({ items, amounts: PMm.applyToAmounts(base, 5500), pmDiscount: { amount: 3000 } }).filter((i) => i.pm).length, 0); // 額が合わない記録も
+  const withPm = f({ items, amounts: PMm.applyToAmounts(base, 5500), pmDiscount: { amount: 5500 } });
   assert.deepEqual(withPm.slice(0, -1), plain);
   assert.deepEqual(withPm[withPm.length - 1], { sku: "discount", pm: true, name: PMm.PM_DISCOUNT_NAME, qty: 1, unitPrice: -5500, nonStock: true });
   // 出荷の明細の合計＝見積もりの値引き後の合計
   assert.equal(withPm.reduce((a, i) => a + i.qty * i.unitPrice, 0), PMm.applyToAmounts(base, 5500).totalIncl);
   // 読み込まずに呼んだら黙って行を落とさず止める
-  assert.throws(() => sifq(Pricing, {}, {}, null)({ items, amounts: { ...base, pmDiscount: 1 } }), /pm-discount\.mjs が読み込まれていません/);
+  assert.throws(() => sifq(Pricing, {}, {}, null)({ items, amounts: { ...base, pmDiscount: 1 }, pmDiscount: { amount: 1 } }), /pm-discount\.mjs が読み込まれていません/);
+  // 見積もりの値引き（setQuoteDiscount）は1つのトランザクションで読み書きし、中で状態を確かめ直す（レビュー中-2）
+  assert.match(qb, /await db\.runTransaction\(async \(tx\) => \{/);
+  assert.match(qb, /const baseSnap = await tx\.get\(db\.collection\("quotes"\)\.doc\(quoteId\)\);/);
+  assert.match(qb, /if \(!\["issued", "accepted"\]\.includes\(base\.status\)\)/);
+  assert.match(qb, /await quoteVersionContext\(base, \{ items: base\.items \|\| \[\], amounts \}, \{\n\s+tx,/);
+  assert.match(qb, /email: me\.email, uid: request\.auth\.uid, vc, tx,/);
+  assert.equal((qb.match(/db\.runTransaction/g) || []).length, 1);
+  assert.match(qb, /const prevForText = vc\.shipmentId && vc\.shipStatus === "draft" && vc\.shipPm > 0 \? vc\.shipPm : prevPm;/); // 低-4
+  // writeQuoteVersion は tx のときは読み取りも tx・commit しない（reviseQuote は今までどおり batch）
+  assert.match(src, /const sibSnap = tx \? await tx\.get\(sibQuery\) : await sibQuery\.get\(\);/);
+  assert.match(src, /if \(!tx\) await batch\.commit\(\);/);
+  assert.ok(!/tx,/.test(rb.slice(0, rb.indexOf("// ===== 見積もりの版を作る共通部分"))), "reviseQuote が tx を渡している");
+  // 出荷の値引き: 見積もりのある下書き・依頼済は拒否（中-1）・承諾書の取り直しの印（中-3）
+  assert.match(sb, /if \(PM\.shipmentPmBlockedByQuote\(s\)\) throw new HttpsError\("failed-precondition", PM\.MSG_USE_QUOTE/);
+  assert.match(sb, /const rs = reviseConsentStale\(kase, true\);/);
+  assert.ok(sb.indexOf("await tx.get(caseRef)") < sb.indexOf("tx.update(ref,"), "案件の読み取りが書き込みの後");
+  // 受注で既存の出荷を使い直すとき・記録の無い値引き: 黙って消さず対応記録に残す（中-1・低-3）
+  assert.match(src, /if \(reusePm > 0 && !pmMeta\) pmNotes\.push\(/);
+  assert.match(src, /if \(Number\(q\.amounts\?\.pmDiscount\) > 0 && !pmMeta\) pmNotes\.push\(/);
+  assert.match(src, /subject: `伴走支援費の値引きが出荷に引き継がれませんでした（出荷 \$\{out\.soNumber\}）`/);
   // 申込（Web・承諾書）の道は先に読み込む／出荷にも値引きの記録を持たせる
   for (const head of ["async function acceptQuoteTransaction(", "async function acceptOrderByConsentTransaction("]) {
     const b = src.slice(src.indexOf(head), src.indexOf("\n}\n", src.indexOf(head)));
