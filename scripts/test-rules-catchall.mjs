@@ -4,6 +4,8 @@
 //   ・登録スタッフは users を書けない（他人も自分も・role の書き換えも）。管理者は書ける。本人は onboarding だけ
 //   ・leadTokens は誰も書けない（Functions だけ）。get は従来どおり誰でも
 //   ・supportBadges は追加だけ（訂正・削除は管理者）。supportEvaluations は削除が管理者だけ
+//   ・2026-11-13: バッジの追加・評価の作成と上書きは、トレーナー名簿の人だけ（名簿の文書が無いあいだは初期4名を氏名で照合）。
+//     バッジの付与者（grantedById）は自分のメールだけ
 //   ・それ以外の業務データ（案件・出荷・商品・認定事業者・発注の取り込み・見積・承諾書）は従来どおり書ける
 //   ・閲覧のみ（viewer）・未登録は従来どおり
 //
@@ -26,6 +28,9 @@ const env = await initializeTestEnvironment({
 const ADMIN = "admin@tadakayo.jp", STAFF = "staff@tadakayo.jp", VIEWER = "viewer@tadakayo.jp", OTHER = "other@tadakayo.jp";
 const NOREG = "noreg@tadakayo.jp", PARTNER = "partner@example.jp";
 const WH = "wh@tadakayo.jp"; // 2026-10-24 倉庫（role=warehouse）
+// 2026-11-13 トレーナー: 初期4名（氏名で照合・全角空白入り）・名簿の文書で入る人・初期4名と同じ氏名の閲覧のみ・無効
+const TR_INIT = "hachisuka@tadakayo.jp", TR_NEW = "trnew@tadakayo.jp", TR_VIEW = "trview@tadakayo.jp", TR_OFF = "troff@tadakayo.jp";
+const TR_HALF = "fujita@tadakayo.jp", TR_NBSP = "ishida2@tadakayo.jp"; // 半角空白・NBSP 入りの氏名（レビュー低1・低3）
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   await setDoc(doc(db, "users", ADMIN), { role: "admin", active: true, name: "管理" });
@@ -33,6 +38,12 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "users", VIEWER), { role: "viewer", active: true, name: "閲覧" });
   await setDoc(doc(db, "users", OTHER), { role: "staff", active: true, name: "ほか" });
   await setDoc(doc(db, "users", WH), { role: "warehouse", active: true, name: "倉庫", locationIds: ["L1"] });
+  await setDoc(doc(db, "users", TR_INIT), { role: "staff", active: true, name: "蜂須賀　大策" });
+  await setDoc(doc(db, "users", TR_NEW), { role: "staff", active: true, name: "新トレーナー" });
+  await setDoc(doc(db, "users", TR_VIEW), { role: "viewer", active: true, name: "藤田 博之" });
+  await setDoc(doc(db, "users", TR_OFF), { role: "staff", active: false, name: "石田祐樹" });
+  await setDoc(doc(db, "users", TR_HALF), { role: "staff", active: true, name: "藤田 博之" });
+  await setDoc(doc(db, "users", TR_NBSP), { role: "staff", active: true, name: "次田\u00a0芳尚" });
   await setDoc(doc(db, "partners", PARTNER), { active: true });
   await setDoc(doc(db, "leadTokens", "tok1"), { a: 1 });
   await setDoc(doc(db, "supportBadges", "b1"), { a: 1 });
@@ -69,13 +80,41 @@ await t("staff は leadTokens を書けない（Functions だけ）", () => no(s
 await t("staff は leadTokens を書き換えられない", () => no(updateDoc(doc(as(STAFF), "leadTokens", "tok1"), { a: 2 })));
 await t("未認証でも leadTokens を get できる（従来どおり）", () => yes(getDoc(doc(anon(), "leadTokens", "tok1"))));
 
-console.log("supportBadges / supportEvaluations");
-await t("staff はバッジを追加できる（従来どおり）", () => yes(addDoc(collection(as(STAFF), "supportBadges"), { a: 1 })));
+console.log("supportBadges / supportEvaluations（名簿の文書なし＝初期4名を氏名で照合）");
+const badge = (by) => ({ userId: "x@tadakayo.jp", grantedById: by, basis: "discretion", reason: "テスト" });
+await t("初期トレーナー（氏名・全角空白入り）はバッジを追加できる", () => yes(addDoc(collection(as(TR_INIT), "supportBadges"), badge(TR_INIT))));
+await t("半角空白入りの氏名（藤田 博之）の初期トレーナーはバッジを追加・評価を保存できる", async () => { await yes(addDoc(collection(as(TR_HALF), "supportBadges"), badge(TR_HALF))); await yes(setDoc(doc(as(TR_HALF), "supportEvaluations", "e6"), { a: 1 })); });
+await t("NBSP 入りの氏名の初期トレーナーも通る（画面の \\s と同じ）", () => yes(addDoc(collection(as(TR_NBSP), "supportBadges"), badge(TR_NBSP))));
+await t("初期トレーナーでも、付与者を他人にしたバッジは追加できない", () => no(addDoc(collection(as(TR_INIT), "supportBadges"), badge(STAFF))));
+await t("初期トレーナーでも、付与者の欄が無いバッジは追加できない", () => no(addDoc(collection(as(TR_INIT), "supportBadges"), { userId: "x@tadakayo.jp" })));
+await t("トレーナーでない staff はバッジを追加できない（2026-11-13〜）", () => no(addDoc(collection(as(STAFF), "supportBadges"), badge(STAFF))));
+await t("管理者でもトレーナーでなければバッジを追加できない（画面と同じ）", () => no(addDoc(collection(as(ADMIN), "supportBadges"), badge(ADMIN))));
+await t("初期4名と同じ氏名でも閲覧のみはバッジを追加できない", () => no(addDoc(collection(as(TR_VIEW), "supportBadges"), badge(TR_VIEW))));
+await t("初期4名と同じ氏名でも無効の人はバッジを追加できない", () => no(addDoc(collection(as(TR_OFF), "supportBadges"), badge(TR_OFF))));
 await t("staff はバッジを訂正できない", () => no(updateDoc(doc(as(STAFF), "supportBadges", "b1"), { a: 2 })));
+await t("トレーナーもバッジを訂正できない", () => no(updateDoc(doc(as(TR_INIT), "supportBadges", "b1"), { a: 2 })));
 await t("staff はバッジを消せない", () => no(deleteDoc(doc(as(STAFF), "supportBadges", "b1"))));
 await t("admin はバッジを訂正・削除できる", async () => { await yes(updateDoc(doc(as(ADMIN), "supportBadges", "b1"), { a: 3 })); await yes(deleteDoc(doc(as(ADMIN), "supportBadges", "b1"))); });
-await t("staff は評価を作成・上書きできる（従来どおり）", async () => { await yes(setDoc(doc(as(STAFF), "supportEvaluations", "e2"), { a: 1 })); await yes(setDoc(doc(as(STAFF), "supportEvaluations", "e1"), { a: 2 })); });
+await t("初期トレーナーは評価を作成・上書きできる", async () => { await yes(setDoc(doc(as(TR_INIT), "supportEvaluations", "e2"), { a: 1 })); await yes(setDoc(doc(as(TR_INIT), "supportEvaluations", "e1"), { a: 2 })); });
+await t("トレーナーでない staff は評価を作成・上書きできない（2026-11-13〜）", async () => { await no(setDoc(doc(as(STAFF), "supportEvaluations", "e3"), { a: 1 })); await no(setDoc(doc(as(STAFF), "supportEvaluations", "e1"), { a: 9 })); });
+await t("staff は評価を読める（従来どおり）", () => yes(getDoc(doc(as(STAFF), "supportEvaluations", "e1"))));
+await t("staff はバッジを読める（従来どおり）", () => yes(getDocs(collection(as(STAFF), "supportBadges"))));
 await t("staff は評価を消せない", () => no(deleteDoc(doc(as(STAFF), "supportEvaluations", "e1"))));
+await t("トレーナーも評価を消せない", () => no(deleteDoc(doc(as(TR_INIT), "supportEvaluations", "e1"))));
+
+console.log("supportBadges / supportEvaluations（名簿の文書あり）");
+await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "appConfig", "supportTrainers"), { ids: [TR_NEW, "Mixed@tadakayo.jp".toLowerCase(), "gone@tadakayo.jp"] }));
+await t("名簿の人はバッジを追加できる", () => yes(addDoc(collection(as(TR_NEW), "supportBadges"), badge(TR_NEW))));
+await t("名簿の人は評価を作成・上書きできる", async () => { await yes(setDoc(doc(as(TR_NEW), "supportEvaluations", "e4"), { a: 1 })); await yes(setDoc(doc(as(TR_NEW), "supportEvaluations", "e2"), { a: 2 })); });
+await t("名簿から外れた初期トレーナーはバッジを追加できない（名簿の文書が優先）", () => no(addDoc(collection(as(TR_INIT), "supportBadges"), badge(TR_INIT))));
+await t("名簿から外れた初期トレーナーは評価を書けない", () => no(setDoc(doc(as(TR_INIT), "supportEvaluations", "e2"), { a: 3 })));
+await t("名簿にいても利用者一覧にいない人は書けない", () => no(addDoc(collection(as("gone@tadakayo.jp"), "supportBadges"), badge("gone@tadakayo.jp"))));
+await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "users", "Mixed@tadakayo.jp"), { role: "staff", active: true, name: "大小" }));
+await t("メールの大文字小文字が違っても名簿の人は評価を書ける", () => yes(setDoc(doc(as("Mixed@tadakayo.jp"), "supportEvaluations", "e5"), { a: 1 })));
+await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "users", TR_NEW), { role: "staff", active: false, name: "新トレーナー" }));
+await t("名簿にいても無効にした人は書けない", () => no(addDoc(collection(as(TR_NEW), "supportBadges"), badge(TR_NEW))));
+await env.withSecurityRulesDisabled((ctx) => setDoc(doc(ctx.firestore(), "appConfig", "supportTrainers"), { ids: [] }));
+await t("名簿の文書が空なら初期4名の照合に戻る（画面と同じ）", () => yes(addDoc(collection(as(TR_INIT), "supportBadges"), badge(TR_INIT))));
 await t("admin は評価を消せる", () => yes(deleteDoc(doc(as(ADMIN), "supportEvaluations", "e1"))));
 
 console.log("それ以外の業務データ（従来どおり）");

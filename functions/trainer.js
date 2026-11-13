@@ -6,6 +6,7 @@
 //   trainerCourseSubmit … トレーナーコースの「動画を見た」（action:"watched"）と確認テストの採点（action:"quiz"）。本人だけ
 //   trainerCertify      … トレーナー合格。通常＝トレーナーか管理者（条件を満たす人だけ）／特別裁量＝管理者だけ・理由必須。自分は不可
 //   trainerRevoke       … 合格の取り消し。管理者だけ・理由必須。名簿から外し、記録は消さず「取り消し」を足す
+//                         利用者一覧から消えた（削除）・無効・ロール変更の人も、名簿にいれば取り消せる（2026-11-13 #74 L9）
 //
 // 置き場（firestore.rules は変えない）:
 //   appConfig/trainerCriteria・appConfig/supportTrainers（名簿）・appConfig/trainerProgram/{talks|certs|course}/{id}
@@ -201,19 +202,25 @@ exports.trainerRevoke = onCall(OPTS, async (request) => {
   const tr = await loadRules();
   const data = request.data || {};
   const users = await loadUsers();
-  const target = targetOf(users, data.userId);
+  // 利用者一覧から消えた人（削除）も、名簿にいれば取り消せる（#74 レビュー L9・2026-11-13）。名前は合格の記録から引く
+  const uid = String(data.userId || "").trim();
+  const inUsers = !!targetOf(users, uid);
+  const events = !uid || inUsers || uid.includes("/") ? []
+    : (await ref.certs().where("userId", "in", [...new Set([uid, uid.toLowerCase()])]).get()).docs.map((d) => d.data());
   const now = Date.now();
   const cref = ref.certs().doc();
+  let target = null;
   const out = await fdb().runTransaction(async (tx) => {
     const rosterIds = await loadRosterIds(tx);
     const actor = actorOf(me, users, rosterIds, tr);
+    target = tr.revokeTargetOf(users, rosterIds, uid, events);
     const inRoster = !!target && tr.isTrainerId(target.id, users, rosterIds);
-    const r = tr.buildRevoke(data, { actor, target, inRoster, rosterSize: tr.trainerIds(users, rosterIds).length, now });
+    const r = tr.buildRevoke(data, { actor, target, inRoster, ...tr.revokeCounts(users, rosterIds, target && target.id), now });
     if (r.error) fail(r);
     tx.set(cref, { ...r.cert, createdAt: FieldValue.serverTimestamp() });
     tx.set(ref.roster(), { ids: tr.rosterAfter(users, rosterIds, r.cert), updatedAt: FieldValue.serverTimestamp(), updatedBy: me.email }, { merge: true });
     return r.cert;
   });
-  console.log("trainerRevoke", me.email, "→", out.userId);
+  console.log("trainerRevoke", me.email, "→", out.userId, target && target.missing ? "(利用者一覧にいない人)" : "");
   return { ok: true, id: cref.id };
 });

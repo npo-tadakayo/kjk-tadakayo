@@ -91,6 +91,13 @@
               <tbody id="tcBody"></tbody></table>
             </div>
             <p id="tcNote" style="font-size:12px;color:var(--color-ink-muted);margin:8px 12px 12px;line-height:1.7"></p>
+            <!-- 名簿にいるが、利用者一覧から消えた・無効・ロール変更の人（2026-11-13 #74 レビュー L9）。いる時だけ出す -->
+            <div id="tcStale" style="display:none;margin:0 12px 12px;padding:10px 12px;border:1px solid var(--color-line);border-radius:8px;background:var(--color-warning-soft, #fff7e0)">
+              <div style="font-weight:600;font-size:13px">名簿に残っている、トレーナーとして動けない人</div>
+              <p style="font-size:12px;color:var(--color-ink-muted);margin:4px 0 8px;line-height:1.7">利用者一覧から消えた（削除）・無効にした・ロールを変えた人です。評価の保存とバッジの付与はもうできませんが、名簿には残っています。名簿から外すときは、管理者が「名簿から取り消す」を押してください（自動では外しません。取り消しの記録が残ります）。</p>
+              <div class="table-wrap"><table><thead><tr><th>名簿の人</th><th>状態</th><th><span class="ls-sr" style="position:absolute;left:-9999px">操作</span></th></tr></thead>
+              <tbody id="tcStaleBody"></tbody></table></div>
+            </div>
           </div>
 
           <div class="card" style="margin-bottom:var(--space-4)">

@@ -131,18 +131,45 @@ service cloud.firestore {
       allow write: if isEditor();
     }
 
+    // トレーナー名簿にいるか（2026-11-13 #74 の残り: それまで「付与・評価はトレーナーだけ」は画面だけの制限だった）。
+    // 画面（admin/js/support-evaluation.js の trainerIds）と同じ決め方:
+    //   ・appConfig/supportTrainers.ids（メールの配列）が1人以上いれば、そこに自分のメールがあるか
+    //   ・名簿の文書が無い（または空）あいだは、初期トレーナー4名を users の氏名（空白・全角空白を除く）で照合する
+    // 氏名の空白は、画面の squash（JS の \s と全角空白）と同じ集合を消す（RE2 の \s は ASCII の空白だけなので、
+    // NBSP などを書き並べる。2026-11-13 レビュー低1。ルールだけが拒否に倒れないように）
+    // 名簿の書き込みは Functions の trainerCertify・trainerRevoke（と管理者）だけ（appConfig は管理者だけが書ける）。
+    function rosterPath() {
+      return /databases/$(database)/documents/appConfig/supportTrainers;
+    }
+    function hasRoster() {
+      return exists(rosterPath())
+        && get(rosterPath()).data.get('ids', []) is list
+        && get(rosterPath()).data.get('ids', []).size() > 0;
+    }
+    function isSupportTrainer() {
+      return isEditor() && (
+        hasRoster()
+          ? (request.auth.token.email in get(rosterPath()).data.ids
+             || request.auth.token.email.lower() in get(rosterPath()).data.ids)
+          : (userData().get('name', '') is string
+             && userData().get('name', '').replace('[\\s\\x{000b}\\x{00a0}\\x{1680}\\x{2000}-\\x{200a}\\x{2028}\\x{2029}\\x{202f}\\x{205f}\\x{3000}\\x{feff}]', '') in ['蜂須賀大策', '藤田博之', '次田芳尚', '石田祐樹'])
+      );
+    }
+
     // 伴走支援者バッジの付与履歴・トレーニング評価（2026-10-18）。
-    // 履歴なので、登録スタッフは追加（create）だけ。訂正・削除は管理者のみ。
-    // 「付与はトレーナーのみ」は画面側の制限（名簿は users の氏名照合のためルールでは見ない）。
+    // 履歴なので、追加（create）だけ。訂正・削除は管理者のみ。
+    // 2026-11-13: 追加できるのはトレーナー名簿の人だけ（上の isSupportTrainer）。付与者の欄（grantedById）は自分のメールに限る。
+    //   すでにある記録はそのまま（読み取り・管理者の訂正・削除は変えない）。
     match /supportBadges/{id} {
       allow read: if isRegistered();
-      allow create: if isEditor();
+      allow create: if isSupportTrainer()
+        && request.resource.data.get('grantedById', '') == request.auth.token.email;
       allow update, delete: if isAdmin();
     }
-    // 評価は同じ案件・日付・受講者のIDで上書き保存するため、create/update は登録スタッフ、削除は管理者のみ
+    // 評価は同じ案件・日付・受講者のIDで上書き保存するため、create/update はトレーナー名簿の人（2026-11-13〜。それまで登録スタッフ）、削除は管理者のみ
     match /supportEvaluations/{id} {
       allow read: if isRegistered();
-      allow create, update: if isEditor();
+      allow create, update: if isSupportTrainer();
       allow delete: if isAdmin();
     }
 
