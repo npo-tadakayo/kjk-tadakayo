@@ -7,11 +7,11 @@
 #   bash scripts/test-all.sh --emu-only エミュレータのテストだけ
 #
 # 1段目: scripts/test-*.mjs のうちエミュレータが要らないものを node で1本ずつ。
-# 2段目: エミュレータが要る9本。
+# 2段目: エミュレータが要る10本（2026-11-13 test-pm-discount-emu を足した）。
 #   ・ルール3本（test-rules / test-rules-appconfig / test-rules-catchall）は、リポジトリの外の
 #     作業フォルダ（既定 ${TMPDIR:-/tmp}/kjk-emu-run。EMU_RUN_DIR で変更可）に
 #     @firebase/rules-unit-testing と firebase を入れ（入っていれば入れ直さない）、そこへコピーして動かす。
-#   ・残り6本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu / test-ship-cancel-emu〔2026-11-12〕）はリポジトリ直下で動かす。functions/node_modules が要る。
+#   ・残り7本（test-office-merge-emu / test-warehouse-emu / test-order-consent-emu・test-order-consent-web-emu〔2026-11-12〕/ test-trainer-emu / test-ship-cancel-emu〔2026-11-12〕/ test-pm-discount-emu〔2026-11-13〕）はリポジトリ直下で動かす。functions/node_modules が要る。
 #     test-ship-cancel-emu はルールを通すためにクライアント SDK も使う（上の作業フォルダの部品・EMU_RUN_DIR で渡す。2026-11-13）。
 #     無ければ失敗扱いにして `cd functions && npm ci` を案内する（勝手に入れない）。
 #     FUNCTIONS_NODE_MODULES に既存の node_modules のパスを渡すと、その間だけ symlink を張り、終わったら外す。
@@ -41,7 +41,7 @@ if [ "$RUN_NORMAL" = 0 ] && [ "$RUN_EMU" = 0 ]; then
   echo "--no-emu と --emu-only は同時に指定できません" >&2; exit 2
 fi
 
-EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs test-ship-cancel-emu.mjs)
+EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs test-ship-cancel-emu.mjs test-pm-discount-emu.mjs)
 
 TMP_OUT="$(mktemp -d "${TMPDIR:-/tmp}/kjk-test-all.XXXXXX")"
 LINKED_NM=""          # このスクリプトが張った functions/node_modules の symlink
@@ -205,7 +205,7 @@ if [ "$RUN_EMU" = 1 ]; then
     [ -f firestore-debug.log ] || NEW_DEBUG_LOG="$REPO/firestore-debug.log"
     # test-ship-cancel-emu はキャンセルの読み書きをクライアント SDK（ルールを通す）で行うので、上のルールの作業フォルダ（EMU_RUN_DIR）の部品も使う
     # （2026-11-13 小さな指摘7。それまで一覧に入っておらず、test-all では動いていなかった）
-    for spec in "test-office-merge-emu.mjs demo-office-test" "test-warehouse-emu.mjs demo-warehouse-test" "test-order-consent-emu.mjs demo-order-consent-test" "test-order-consent-web-emu.mjs demo-order-consent-web-test" "test-trainer-emu.mjs demo-trainer-test" "test-ship-cancel-emu.mjs demo-ship-cancel-test"; do
+    for spec in "test-office-merge-emu.mjs demo-office-test" "test-warehouse-emu.mjs demo-warehouse-test" "test-order-consent-emu.mjs demo-order-consent-test" "test-order-consent-web-emu.mjs demo-order-consent-web-test" "test-trainer-emu.mjs demo-trainer-test" "test-ship-cancel-emu.mjs demo-ship-cancel-test" "test-pm-discount-emu.mjs demo-pm-discount-test"; do
       t="${spec% *}"; pid="${spec#* }"
       if [ "$nm_ok" = 0 ]; then
         record_fail_msg emu "scripts/$t" "functions/node_modules が無い。\`cd functions && npm ci\` を実行してから（または FUNCTIONS_NODE_MODULES に既存の node_modules のパスを渡す）"

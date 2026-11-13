@@ -34,7 +34,10 @@ import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPar
   planOrderOnShipCancel, orderReturnWrites, lastShipCancelNote, shipOrderReturnNote } from "/js/ship-cancel-order.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
-  buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows } from "/js/manual-support-fee.js";
+  buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows, belowStandardCheck } from "/js/manual-support-fee.js";
+// 伴走支援費の PM 値引き（2026-11-13）。判定の正本は pm-discount.js。値引きを入れる・外すのはサーバー（setShipmentDiscount・管理者だけ）
+import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems,
+  FLOOR as PM_FLOOR, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { STEP_TIPS } from "/js/case-ship-step.js"; // 段の吹き出し（案件詳細の出荷タブと同じ言い方・2026-11-13）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
@@ -65,6 +68,7 @@ let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
 let partnerOrdersCache = []; // 受注一覧（出荷の更新時に再描画するため保持）
+let isAdminUser = false;     // 管理者（myRole.role==="admin"）。伴走支援費の値引き・標準額より下げる任意の金額に使う（2026-11-13）
 let viewerMode = false;      // 閲覧のみ（viewer）。applyViewerMode が文言で拾えないボタンを自前で止めるため
 let shipDeepLinkTried = false; // ?so= の該当行スクロールは最初の描画で1回だけ試す（onSnapshotで何度も再描画されるため）
 function ordererList(){
@@ -1621,13 +1625,16 @@ function manualPlanLimit(){
 }
 // 画面の入力欄の値を検査にかける（上限に引くカードリーダー代は、いま商品欄に入っているもの）
 function manualValidation(){
-  return validateManual({
-    amount: document.getElementById("shipManualAmount").value,
-    name: document.getElementById("shipManualName").value,
+  const f={ amount: document.getElementById("shipManualAmount").value,
     priorBuyerReaderCost: document.getElementById("shipManualPrior").value,
-    planLimit: manualPlanLimit(),
-    readerCost: readerCostOf(shipProductItems(), readerSkus()),
-  });
+    planLimit: manualPlanLimit(), readerCost: readerCostOf(shipProductItems(), readerSkus()) };
+  const v = validateManual({ ...f, name: document.getElementById("shipManualName").value });
+  // 標準額（入力できる上限）より下げるのは管理者だけ・理由（メモ）必須（2026-11-13）。前から入っている額のままなら問わない
+  const old = editingShip ? manualFormFromItems(editingShip.items) : null;
+  const unchanged = !!old && Number(old.amount)===parseYen(f.amount) && String(old.priorBuyerReaderCost)===String(f.priorBuyerReaderCost).trim();
+  const b = belowStandardCheck({ ...f, isAdmin: isAdminUser, memo: document.getElementById("shipManualMemo").value, unchanged });
+  if(!b.ok){ v.errors.push(...b.errors); v.ok=false; }
+  return v;
 }
 // 合計の表示・保存に使う任意行の明細（金額・品名が読めないとき・チェックOFFのときは空）。
 // 修正で開いた出荷に同じ内容の行があれば、入れた人・日時は元のものを保つ（住所だけ直した保存で上書きしない）
@@ -1777,6 +1784,77 @@ async function inferSubsidyFromLinks(s){
   updateShipTotal();
 }
 
+// ===== 伴走支援費の PM 値引き（2026-11-13・設計 ENGINEERING_NOTES.md §C15）=====
+// 修正で開いた事業所向けの出荷（請求済の前まで）に、管理者だけ「値引きを入れる」を出す。保存済みの明細に対して
+// サーバー（setShipmentDiscount）が行と記録を書く。この画面の「修正を保存」とは別の操作（押したら出荷の画面を閉じる）
+function pmShipStandard(){ return editingShip ? standardFeeOf(editingShip.items) : 0; }
+function updatePmBox(){
+  const box=document.getElementById("shipPmBox"); if(!box) return;
+  const s=editingShip;
+  const show = !!s && pmApplicableShipment(s);
+  box.style.display = show ? "" : "none";
+  if(!show) return;
+  const cur = pmAmountOfItems(s.items), r = s.pmDiscount || {};
+  const std = pmShipStandard();
+  document.getElementById("shipPmLine").innerHTML = cur
+    ? `<span style="color:#c02828">${esc(PM_DISCOUNT_NAME)} −${yen(cur)}</span>`
+      + `<span style="color:var(--color-ink-muted)">（標準 ${yen(r.standardFee ?? std)} → ${yen(r.feeAfter ?? (std-cur))}${r.byName?`・判断: ${esc(r.byName)}`:""}${r.reason?`・理由: ${esc(r.reason)}`:""}）</span>`
+      + (r.belowFloor ? ` <span style="color:#8a5a1f">⚠ 報酬の下限 ${yen(PM_FLOOR)} を下回る値引き</span>` : "")
+    : `<span style="color:var(--color-ink-muted)">値引きはありません（伴走支援費の標準額 ${yen(std)}）</span>`;
+  const can = isAdminUser && !shipIsLocked(s) && std>0;
+  document.getElementById("shipPmForm").style.display = can ? "" : "none";
+  document.getElementById("shipPmNote").style.display = (!isAdminUser || std<=0 || shipIsLocked(s)) ? "" : "none";
+  document.getElementById("shipPmNote").textContent = shipIsLocked(s) ? "請求済のため、値引きは変えられません。"
+    : std<=0 ? "この出荷には伴走支援費の行が無いため、値引きは入れられません。"
+    : "値引きを入れられるのは管理者だけです。";
+  document.getElementById("shipPmAmount").value = cur || "";
+  document.getElementById("shipPmReason").value = "";
+  document.getElementById("shipPmAck").checked = false;
+  document.getElementById("shipPmAckText").textContent = `報酬の下限（${yen(PM_FLOOR)}）を下回ることを承知で入れる`;
+  document.getElementById("shipPmRemove").style.display = cur ? "" : "none";
+  pmShipPreview();
+}
+function pmShipPreview(){
+  const raw=String(document.getElementById("shipPmAmount").value||"").replace(/[,，円¥￥\s]/g,"")
+    .replace(/[０-９]/g,(c)=>String.fromCharCode(c.charCodeAt(0)-0xfee0));
+  const v=validatePmDiscount({ amount: raw===""?NaN:Number(raw), reason: document.getElementById("shipPmReason").value, standardFee: pmShipStandard() });
+  const amtOk=!v.errors.some(m=>/値引きの額|超えて/.test(m));
+  document.getElementById("shipPmPreview").innerHTML = amtOk
+    ? `伴走支援費: 標準 ${yen(v.standardFee)} → <b>${yen(v.feeAfter)}</b>`
+      + (v.belowFloor ? `<div style="color:#8a5a1f">⚠ 値引き後の伴走支援費が、報酬の下限 ${yen(PM_FLOOR)} を下回ります。</div>` : "")
+    : "";
+  document.getElementById("shipPmAckWrap").style.display = amtOk && v.belowFloor ? "flex" : "none";
+  const ackNeeded = amtOk && v.belowFloor && !document.getElementById("shipPmAck").checked;
+  document.getElementById("shipPmSave").disabled = !v.ok || ackNeeded;
+  return { v, ackNeeded };
+}
+async function savePmDiscount(remove){
+  const s=editingShip; if(!s || !isAdminUser) return;
+  const reason=document.getElementById("shipPmReason").value.trim();
+  if(!reason){ alert("理由を入れてください（値引きを外すときも要ります）"); return; }
+  let amount=0;
+  if(!remove){
+    const { v, ackNeeded }=pmShipPreview();
+    if(!v.ok){ alert(v.errors.join("\n")); return; }
+    if(ackNeeded){ alert(`報酬の下限（${yen(PM_FLOOR)}）を下回ります。承知のうえで入れるときはチェックを入れてください`); return; }
+    amount=v.amount;
+  }
+  const head = remove ? `出荷 ${s.soNumber||""} の伴走支援費の値引き（−${yen(pmAmountOfItems(s.items))}）を外します。`
+    : `出荷 ${s.soNumber||""} に伴走支援費の値引き −${yen(amount)} を入れます（保存済みの明細に対して入れます）。`;
+  if(!confirm(`${head}\nこの画面で直しかけた内容（数量・送付先など）は保存されません。先に「修正を保存」してから入れてください。\nよろしいですか？`)) return;
+  const btns=["shipPmSave","shipPmRemove"].map(id=>document.getElementById(id));
+  btns.forEach(b=>{ b.disabled=true; });
+  try{
+    const fn=httpsCallable(functions, "setShipmentDiscount");
+    const r=await fn(remove ? { shipmentId: s._id, remove: true, reason } : { shipmentId: s._id, amount, reason });
+    const d=r.data||{};
+    document.getElementById("shipModal").classList.remove("open");
+    editingShip=null;
+    toast(remove ? `出荷 ${d.soNumber||""} の値引きを外しました` : `出荷 ${d.soNumber||""} に伴走支援費の値引き −${yen(d.pmDiscount)} を入れました${d.belowFloor?"（⚠ 報酬の下限を下回ります）":""}`);
+  }catch(e){ alert(`値引きの保存に失敗しました: ${e.message||e}`); }
+  finally{ btns.forEach(b=>{ b.disabled=false; }); }
+}
+
 // 数量欄・送料から、実際に保存される明細（単価つき）を組み立てる。合計表示と保存で同じものを使う
 function resolveShipItems(){
   // 修正時に「新しく足した品番」へ入れる単価の基準。
@@ -1788,7 +1866,17 @@ function resolveShipItems(){
     : document.getElementById("shipType").value;
   const productItems = shipProductItems(shipType);
   // 伴走支援費・金額調整（自動: チェックONのときだけ・Webからのお申し込みと同じ形の明細）と、任意の金額の伴走支援費（1行）を末尾に足す
-  return productItems.concat(subsidyExtraItems(), manualSupportItems());
+  // 伴走支援費の PM 値引きの行（2026-11-13）は、修正で開いた出荷の行をそのまま引き継ぐ（この画面では作らない・消さない。
+  // 入れる・外すは「値引きを入れる」＝サーバーの setShipmentDiscount）。引き継がないと「送付先・数量を直す」で黙って消える
+  return productItems.concat(subsidyExtraItems(), manualSupportItems()).concat(pmDiscountItems());
+}
+function pmDiscountItems(){
+  return editingShip ? pmRows(editingShip.items).map(i=>({ ...i })) : [];
+}
+// 保存前の検査: 値引きの行と記録（shipments.pmDiscount）が合っているか・二重に引いていないか・値引き後がマイナスにならないか
+function pmSaveError(items){
+  const r=checkPmRows(items, editingShip ? (editingShip.pmDiscount||null) : null);
+  return r.ok ? "" : r.errors.join("\n");
 }
 // 商品欄の明細（単価つき）。resolveShipItems と、任意行の上限（同じ出荷のカードリーダー購入費）の計算で共通に使う
 function shipProductItems(shipType){
@@ -1918,6 +2006,7 @@ function openShip(existing){
 
   // 伴走支援費ブロックは事業所へ直接請求する出荷（direct）だけ表示。認定事業者への直送（卸）は対象外
   document.getElementById("shipSubsidyWrap").style.display = subsidyApplicableFor(s) ? "" : "none";
+  updatePmBox();
 
   // 金額に関わる欄のロック（伴走支援費も金額に関わるのでロック対象に含める）
   const moneyIds=["shipFee","shipFeeLabel","shipMethod","shipYuSize","shipYuRegion","shipDate",
@@ -2012,6 +2101,7 @@ async function saveShip(){
   const items=resolveShipItems();
   if(!items.length){ alert("数量を入力してください"); return; }
   { const me=manualSaveError(items); if(me){ alert(me); return; } }   // 伴走支援費の行は1行まで・任意の金額は上限以下（画面の検査に頼らず保存する明細を検べる）
+  { const pe=pmSaveError(items); if(pe){ alert(pe); return; } }      // 値引きの行（新規には無い）
   // 物の出荷が無い（在庫を使う商品が0行＝伴走支援費だけ）出荷は、倉庫へ出荷指示を投稿しない・発送の工程を飛ばす（2026-11-09）
   const noGoods = shipQtySummary(items).total===0;
   const originLocationId=(document.getElementById("shipOrigin")||{}).value||"";
@@ -2177,6 +2267,7 @@ async function saveShipEdit(){
     items=resolveShipItems();
     if(!items.length){ alert("数量を入力してください"); return; }
     { const me=manualSaveError(items); if(me){ alert(me); return; } }   // 新規と同じ検査（伴走支援費は1行まで・任意の金額は上限以下）
+    { const pe=pmSaveError(items); if(pe){ alert(pe); return; } }      // 値引きの行が消えていないか・二重に引いていないか（2026-11-13）
     // 依頼済の出荷から商品をすべて外すと、倉庫へ出した出荷指示だけが残ってしまう。先に「依頼を取り消す」で下書きへ戻してもらう
     if(shipStatusOf(s0)==="requested" && shipQtySummary(items).total===0){
       alert("商品がすべて外れています。依頼済の出荷は、出荷指示がすでに倉庫へ出ているので、このままでは保存できません。\n先に行の「その他」→「依頼を取り消す」で下書きへ戻してから直してください。"); return; }
@@ -4267,6 +4358,7 @@ onAuthStateChanged(auth, async (user)=>{
   const myRole = await gateRole(db,user);
   if(!myRole) return;
   viewerMode = applyViewerMode(myRole);
+  isAdminUser = myRole.role==="admin";
   if(viewerMode) lockViewerButtons();
   currentUser=user;
   document.getElementById("userEmail").textContent=user.displayName||user.email;
@@ -4283,6 +4375,11 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("sendConfirmBtn").addEventListener("click",sendConfirmedOrder);
   document.getElementById("newShipBtn").addEventListener("click",()=>openShip());
   const closeShip=()=>{ document.getElementById("shipModal").classList.remove("open"); editingShip=null; };
+  // 伴走支援費の PM 値引き（2026-11-13）の入力欄。リスナーは起動時に1回だけ張る
+  ["shipPmAmount","shipPmReason"].forEach(id=>document.getElementById(id)?.addEventListener("input",pmShipPreview));
+  document.getElementById("shipPmAck")?.addEventListener("change",pmShipPreview);
+  document.getElementById("shipPmSave")?.addEventListener("click",()=>savePmDiscount(false));
+  document.getElementById("shipPmRemove")?.addEventListener("click",()=>savePmDiscount(true));
   document.getElementById("closeShipBtn").addEventListener("click",closeShip);
   document.getElementById("cancelShipBtn").addEventListener("click",closeShip);
   document.getElementById("saveShipBtn").addEventListener("click",saveShip);

@@ -316,6 +316,30 @@
               <p style="font-size:12px;color:var(--color-ink-muted);margin-top:-2px">この出荷にカードリーダーが無いときは、物の発送はありません。登録すると「発送済」になり、出荷指示は投稿しません（請求書の確認から先は同じです）。</p>
             </div>
           </div>
+          <!-- 伴走支援費の PM 値引き（2026-11-13）。修正で開いた事業所向けの出荷だけ。入れる・外すのは管理者だけ（サーバーの setShipmentDiscount）。
+               標準額は変えず、値引きの行（sku discount・pm:true）を足す。値引き後が報酬の下限を下回るときは承知のチェックが要る -->
+          <div id="shipPmBox" style="display:none;border-top:1px dashed var(--color-line);margin-top:12px;padding-top:12px">
+            <div style="font-weight:600;margin-bottom:4px">接続サポート等経費（伴走支援費）の値引き</div>
+            <div id="shipPmLine" style="font-size:13px;line-height:1.8"></div>
+            <p id="shipPmNote" style="display:none;font-size:12px;color:var(--color-ink-muted);margin:4px 0 0"></p>
+            <div id="shipPmForm" style="display:none;margin-top:8px">
+              <div class="form-row">
+                <div class="form-group"><label class="form-label" for="shipPmAmount">値引きの額（税込・円）</label>
+                  <input class="form-control" type="text" inputmode="numeric" id="shipPmAmount" placeholder="例: 5500"></div>
+                <div class="form-group"><label class="form-label" for="shipPmReason">理由（必須）</label>
+                  <input class="form-control" type="text" maxlength="500" id="shipPmReason" placeholder="例: 同一法人で3事業所まとめての導入のため"></div>
+              </div>
+              <div id="shipPmPreview" style="font-size:13px;margin:-2px 0 6px"></div>
+              <label id="shipPmAckWrap" style="display:none;align-items:center;gap:8px;font-size:13px;min-height:44px;color:#8a5a1f">
+                <input type="checkbox" id="shipPmAck" style="width:18px;height:18px"> <span id="shipPmAckText">報酬の下限を下回ることを承知で入れる</span>
+              </label>
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary" id="shipPmSave" data-tip="保存済みの明細に値引きの行を入れます（管理者だけ）。この画面で直しかけた内容は保存されないので、先に「修正を保存」してください。">値引きを保存</button>
+                <button type="button" class="btn btn-secondary" id="shipPmRemove" style="display:none" data-tip="値引きの行を外します（理由が要ります）。">値引きを外す</button>
+              </div>
+              <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">見積もりのある出荷（下書き）は、案件の見積もりカードの「値引きを入れる」から入れると、見積書と出荷の両方がそろいます。</p>
+            </div>
+          </div>
         </div>
         <!-- 送料（配送方法から自動計算・手修正可）。直送=レターパック / まとめ=ゆうパック(滋賀発) -->
         <div class="form-group" style="border-top:1px solid var(--color-line);padding-top:12px;margin-top:4px">

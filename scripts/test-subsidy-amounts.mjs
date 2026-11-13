@@ -397,4 +397,51 @@ t(() => {
   }
 });
 
+// ===== 伴走支援費の PM 値引き（2026-11-13・sku "discount"・pm:true）=====
+// 値引きの行は B に入り、A＋B（＝助成金の申請額）が値引きの分だけ下がる。領収証の明細合計＝請求書の合計のまま
+{
+  const PMm = await import("../admin/js/pm-discount.js");
+  t(() => {
+    const s0 = shipFromQuote("houmon", 3, 0);                         // BT3台: 機器 43,500 ＋ 伴走支援費 50,000 − 金額調整 29,500
+    const s1 = { ...s0, items: [...s0.items, PMm.pmDiscountRow(5500)], pmDiscount: { amount: 5500 } };
+    assert.equal(usageOfItem(PMm.pmDiscountRow(5500)), "B");
+    const g0 = guideAmountsFromShipment(s0), g1 = guideAmountsFromShipment(s1);
+    assert.equal(g0.aIncl, 43500); assert.equal(g0.bIncl, 20500);
+    assert.equal(g1.aIncl, 43500); assert.equal(g1.bIncl, 15000);     // B だけが下がる
+    assert.equal(g1.aIncl + g1.bIncl, g0.aIncl + g0.bIncl - 5500);
+    assert.equal(g1.units, 3);                                         // 台数は変わらない
+    const r1 = receiptRowsFromShipment(s1);
+    const pmRow = r1.find((r) => r.name === PMm.PM_DISCOUNT_NAME);
+    assert.equal(pmRow.kind, "B"); assert.equal(pmRow.price, -5500);
+    const u1 = usageTotalsOf(r1, priceIsTaxIncluded(s1));
+    assert.equal(u1.A + u1.B + u1.X, invoiceTotals(s1).total);       // 領収証の明細合計＝請求書の合計
+    assert.equal(invoiceTotals(s1).total, invoiceTotals(s0).total - 5500);
+    // 申請で入れる値（出荷1件）
+    const a1 = shipmentSubsidyAmounts(s1, null, subsidyCountsFromShipment(s1));
+    assert.equal(a1.b, 15000); assert.equal(a1.ab, 43500 + 15000);
+    // 0円まで値引きしても B は0円（マイナスにならない）
+    const s2 = { ...s0, items: [...s0.items, PMm.pmDiscountRow(20500)] };
+    assert.equal(guideAmountsFromShipment(s2).bIncl, 0);
+  });
+  // 乱数の事業所向けの出荷 1,000 件（見積もりから作った形＋値引き・送料）: 領収証の明細合計＝請求書の合計（invoiceTotals().total）
+  t(() => {
+    let sd = 20261113;
+    const r = (k) => { sd = (sd * 1103515245 + 12345) % 2147483648; return sd % k; };
+    const plans = ["houmon", "kyojyu", "other"];
+    for (let k = 0; k < 1000; k++) {
+      const plan = plans[r(3)];
+      const max = P.PLANS[plan].maxQty;
+      const b = r(max + 1), u = Math.max(b ? 0 : 1, r(max - b + 1));
+      const s0 = shipFromQuote(plan, b, u, r(3), r(2), { shippingFee: r(3) === 0 ? 1 + r(3000) : 0 });
+      const std = PMm.standardFeeOf(s0.items);
+      const pm = 1 + r(Math.max(1, std));
+      const s1 = { ...s0, items: [...s0.items, PMm.pmDiscountRow(Math.min(pm, std))] };
+      const u1 = usageTotalsOf(receiptRowsFromShipment(s1), priceIsTaxIncluded(s1));
+      assert.equal(u1.A + u1.B + u1.X, invoiceTotals(s1).total, JSON.stringify(s1));
+      assert.ok(u1.B >= 0, "B がマイナス");
+      assert.equal(PMm.checkPmRows(s1.items, { amount: Math.min(pm, std) }).ok, true);
+    }
+  });
+}
+
 console.log(`test-subsidy-amounts: 合計 ${n}/${n} 合格（うち乱数の出荷 2,000 件を共通化前の計算と照合）`);

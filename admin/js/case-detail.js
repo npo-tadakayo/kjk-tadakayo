@@ -2166,6 +2166,7 @@ onAuthStateChanged(auth, async (user) => {
     toast: showToast,
     userName: currentUser?.displayName || currentUser?.email || "",
     orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
+    isAdmin: () => isAdmin,  // 伴走支援費の PM 値引き（2026-11-13・管理者だけにボタンを出す）
   }).catch((e) => console.warn("consent card init:", e.message));
   // 資料の事前送付カード（承諾書カードの上に出る。挿入順で先頭になるよう後から init）
   initPreGuideCard({
@@ -2183,6 +2184,7 @@ onAuthStateChanged(auth, async (user) => {
     userName: currentUser?.displayName || currentUser?.email || "",
     functions,
     orderByConsent: orderOn, // 承諾書のサイン＝発注のスイッチ（2026-11-12）
+    isAdmin: () => isAdmin,  // 伴走支援費の PM 値引き（2026-11-13・管理者だけにボタンを出す）
   }).catch((e) => console.warn("quote card init:", e.message));
   renderAssigneeSelect();
   renderReferralSelect();

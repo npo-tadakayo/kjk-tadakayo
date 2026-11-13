@@ -476,3 +476,58 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   if (!/chatMentionFor\(s\.pickupByEmail, s\.pickupByName\)/.test(nb)) throw new Error("notifyShipment: 持ち出す人へメンションしていない");
   console.log("OK test-functions-wiring 追加: 倉庫（roleAllows の表・5つの Callable・出荷指示の文面）");
 }
+
+// ===== 伴走支援費の PM 値引き（2026-11-13）=====
+{
+  const src = indexSrc;
+  const cut = (head) => { const i = src.indexOf(head); if (i < 0) throw new Error(`見つからない: ${head}`); const j = src.indexOf("\nexports.", i + 10); return src.slice(i, j < 0 ? undefined : j); };
+  // 新しい Callable 2本は管理者だけ・既存の SA_MAIL
+  for (const name of ["setQuoteDiscount", "setShipmentDiscount"]) {
+    const b = cut(`exports.${name} = onCall(`);
+    assert.match(b, /serviceAccount: SA_MAIL/, `${name}: SA が SA_MAIL でない`);
+    assert.match(b, /const me = await requireStaff\(request, \{ allow: "admin" \}\);/, `${name}: allow:"admin" でない`);
+    assert.match(b, /validatePmDiscount\(/, `${name}: 判定を通していない`);
+    assert.match(b, /buildPmRecord\(\{ amount: newPm, reason: v\.reason, standardFee, byEmail: me\.email, byName: me\.name \}\)/, `${name}: 誰がを認証のメールで書いていない`);
+    assert.match(b, /at: now/, `${name}: いつを serverTimestamp で書いていない`);
+  }
+  // 出荷の値引きは請求済の前まで・トランザクションの中で
+  const sb = cut("exports.setShipmentDiscount = onCall(");
+  assert.match(sb, /await db\.runTransaction\(async \(tx\) => \{/);
+  assert.match(sb, /\["invoiced", "paid", "canceled"\]\.includes\(st\)/);
+  assert.match(sb, /checkPmRows\(nextItems, rec\)/);
+  // 見積もりの値引きは reviseQuote と同じ版の扱い（共通の関数を使う）
+  const qb = cut("exports.setQuoteDiscount = onCall(");
+  assert.match(qb, /await quoteVersionContext\(base,/);
+  assert.match(qb, /await writeQuoteVersion\(\{/);
+  assert.match(qb, /applyToAmounts\(baseAmounts, newPm\)/);
+  const rb = cut("exports.reviseQuote = onCall(");
+  assert.match(rb, /const vc = await quoteVersionContext\(base, \{ items, amounts \}\);/);
+  assert.match(rb, /pmRemovedByReviseText\(prevPm\)/);   // 台数・区分を変えたら値引きは外れる（記録に残す）
+  // shipmentItemsFromQuote は見積もりの pmDiscount から値引きの行を出す（同期の関数なので読み込んだものを使う）
+  const fb = src.slice(src.indexOf("function shipmentItemsFromQuote(q) {"), src.indexOf("const PRODUCT_NAMES = {"));
+  assert.match(fb, /_pmMod\.pmDiscountRow\(pmDiscount\)/);
+  const sifq = Function("Pricing", "PRODUCT_NAMES", "CONNECTION_LABELS", "_pmMod", `${fb}; return shipmentItemsFromQuote;`);
+  const Pricing = require("../functions/estimate-pricing.js");
+  const PMm = await import("../functions/pm-discount.mjs");
+  const f = sifq(Pricing, {}, {}, PMm);
+  const calc = Pricing.computeAmounts("houmon", 3, 0, 0, 0);
+  const base = { readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount, subsidyPartTotal: calc.subsidyPartTotal,
+    extraPartTotal: calc.extraPartTotal, totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay };
+  const items = Pricing.buildItems({ btQty: 3, usbQty: 0, btExtra: 0, usbExtra: 0 });
+  const plain = f({ items, amounts: base });
+  assert.equal(plain.filter((i) => i.pm).length, 0);
+  const withPm = f({ items, amounts: PMm.applyToAmounts(base, 5500) });
+  assert.deepEqual(withPm.slice(0, -1), plain);
+  assert.deepEqual(withPm[withPm.length - 1], { sku: "discount", pm: true, name: PMm.PM_DISCOUNT_NAME, qty: 1, unitPrice: -5500, nonStock: true });
+  // 出荷の明細の合計＝見積もりの値引き後の合計
+  assert.equal(withPm.reduce((a, i) => a + i.qty * i.unitPrice, 0), PMm.applyToAmounts(base, 5500).totalIncl);
+  // 読み込まずに呼んだら黙って行を落とさず止める
+  assert.throws(() => sifq(Pricing, {}, {}, null)({ items, amounts: { ...base, pmDiscount: 1 } }), /pm-discount\.mjs が読み込まれていません/);
+  // 申込（Web・承諾書）の道は先に読み込む／出荷にも値引きの記録を持たせる
+  for (const head of ["async function acceptQuoteTransaction(", "async function acceptOrderByConsentTransaction("]) {
+    const b = src.slice(src.indexOf(head), src.indexOf("\n}\n", src.indexOf(head)));
+    assert.match(b, /await loadPm\(\);[^\n]*\n\s+await db\.runTransaction/, `${head}: loadPm の前にトランザクションが始まる`);
+  }
+  assert.match(src, /if \(pmMeta\) orderFields\.pmDiscount = pmMeta;/);
+  console.log("OK test-functions-wiring 追加: 伴走支援費の PM 値引き（新 Callable 2本・shipmentItemsFromQuote）");
+}

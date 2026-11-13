@@ -904,3 +904,35 @@ stateDiagram-v2
 **テスト**: `scripts/test-ship-steps.mjs`（純粋関数14件＋結線）・`scripts/test-warehouse-emu.mjs` §12（エミュレータ42件: 権限・段の移り変わり・最終確認を省く設定・発送完了の知らせが1回・必須項目のサーバー確認・キャンセルリスト）。既存の節は fixtures を「発送準備」から始めるように直した。
 
 **決めたこと（計画にない細部）**: ①持ち出し・直送は受付と確認を省いて発送準備へ ②発送不可の出荷は発送済にできない（以前の「出荷できない」は発送済にすると消えた）③受付の「発送可」「入荷待ち」で一覧タブの「確認済み」も付ける ④Chat の依頼の知らせに事業所名も書かない（「どこ宛て（市区町村まで）」を字のとおりに）⑤案件詳細（case-detail.js）は触っていない（別のエージェントが作業中。最終確認は供給管理と Chat のリンクから）
+
+## §C15 接続サポート等経費（伴走支援費）の PM 値引き（2026-11-13・ブランチ `feat/pm-discount`）
+
+PM への提案（標準額＝上限−機器代・PM 判断で値引き可）に合わせた CRM の改修。福音会様3件（#473・#88・#474）が発端。**標準額（`computeAmounts`・`estimate-pricing.js` の3か所）は変えない。値引きは別の項目で、あとから引く。** 公開ページ（mitsumori.html・`js/order-consent-page.js`）・発行済みの書類は触っていない。
+
+**判定の正本**: `admin/js/pm-discount.js`（純粋 ESM）。Functions はバイト単位で同じ `functions/pm-discount.mjs`（`check-shared-sync.sh` の節）。`standardFeeOf(items)`（値引き前の B の合計）・`standardFeeOfAmounts(amounts)`（伴走支援費−金額調整）・`validatePmDiscount`（1円以上の整数・値引き後0円以上・理由必須500字以内）・`floorCheck`（`FLOOR`＝¥15,000 を下回れば `belowFloor`）・`pmDiscountRow`・`applyToAmounts`・`buildPmRecord`・`checkPmRows`（値引きの行は1つまで・記録と額が一致・値引き後がマイナスにならない）・`pmActivityText`。行の名前は定数 `PM_DISCOUNT_NAME`「接続サポート等経費（伴走支援費）の値引き」の1か所。
+
+**データ**
+| どこ | 何を |
+|---|---|
+| `quotes.amounts.pmDiscount` | 値引きの額（整数円・税込）。`totalIncl`・`subsidyPartTotal`・`grantAmt` は値引き後。`selfPay` は変わらない（補助対象パートは上限以下のため）。`discount`（自動の金額調整）・`accompanyFee` はそのまま |
+| `quotes.pmDiscount` / `shipments.pmDiscount` | 記録 `{amount, reason, standardFee, feeAfter, belowFloor, byEmail, byName, at(serverTimestamp)}`。誰がは認証のメール、いつはサーバーの時刻 |
+| `shipments.items` | 値引きの行 `{sku:"discount", pm:true, name:PM_DISCOUNT_NAME, qty:1, unitPrice:-amount, nonStock:true}`。sku は既存の "discount" を使い直す＝B への振り分け（subsidy-amounts.js）・倉庫と在庫と台数から外す（warehouse-rules・ship-steps-rules・ship-flow の shipQtySummary・supply.js stockItems）・請求書・領収証・手順書が無改修で効く。自動の「金額調整」とは `pm:true` で区別 |
+| `cases.totalAmount`・`expectedSubsidyAmount`・`selfPay` | 見積もりに入れたときは値引き後（出荷だけに入れたときは案件は変えない） |
+| `consentRequests.quotes[].amounts.pmDiscount` | 承諾書に焼き込む（値引きがあるときだけ。無い見積もりの記録の形は今までと同じ）。合計が変わるので `orderConsentStaleAfterRevise` で取り直しの印が立つ（値下げでも立てる） |
+
+**入れる道（管理者だけ・firestore.rules は変えていない）**
+- `setQuoteDiscount`（Callable・SA_MAIL・`requireStaff allow:"admin"`）: `{quoteId, amount, reason, remove?, sendMail?}`。reviseQuote と同じ版の扱い（新しい版・前の版は superseded・下書きの出荷を作り直す・承諾書の取り直しの印）。共通部分は `quoteVersionContext`・`writeQuoteVersion`・`mailRevisedQuote`・`quoteAmountsOf` に切り出した（reviseQuote も同じ関数を使う）。値引き前の金額は `computeAmounts` で出し直し、保存値と合わない古い見積もりには入れない（安全側）。出荷が下書きより先なら止めて出荷の値引きへ案内
+- `setShipmentDiscount`（Callable・SA_MAIL・admin）: `{shipmentId, amount, reason, remove?}`。トランザクションの中で状態が `invoiced`・`paid`・`canceled` でないこと（supply.js `shipIsLocked` と同じ）と、事業所向け（税込）であることを確かめ、値引きの行を置き換え（1行まで）・記録・活動を書く
+- 画面: 見積もりカード（quote-admin.js）の最新の版に「値引きを入れる／直す」（`ctx.isAdmin()`＝case-detail.js の `myRole.role==="admin"`）。出荷の修正モーダル（supply.js・supply.html `#shipPmBox`）に値引きの欄（管理者だけ・請求済の前まで・伴走支援費の行がある事業所向けの出荷）。押すと出荷の画面を閉じる（修正の保存とは別の操作）
+- 値引き後が ¥15,000 を下回るときは画面で警告し、「報酬の下限を下回ることを承知で入れる」のチェックまで送れない。サーバーは止めずに `belowFloor:true`、活動の件名に ⚠。標準額を超える値引きはエラー（0円までは可）
+
+**守ること**
+- **出荷のモーダルの保存は明細を作り直す**（resolveShipItems）。値引きの行は `pmDiscountItems()` で修正中の出荷の行をそのまま引き継ぎ、保存前に `pmSaveError`（`checkPmRows(items, editingShip.pmDiscount)`）で行と記録が合うか・二重に引いていないか・伴走支援費を外して値引き後がマイナスにならないかを確かめる（新規・修正の両方）
+- 台数・区分を変えた改版（reviseQuote）は値引きを引き継がない（標準額が変わるため）。活動に「値引きは外れました」（`pmRemovedByReviseText`）。下書きの出荷の `pmDiscount` も消す
+- `shipmentItemsFromQuote`（同期）は `_pmMod`（`loadPm()` で読み込んだもの）で行を作る。申込の道（`acceptQuoteTransaction`・`acceptOrderByConsentTransaction`）はトランザクションの前に `await loadPm()`。読み込まれていないのに値引きのある見積もりが来たら行を黙って落とさずエラー。受注で作る出荷にも見積もりの `pmDiscount` を写す
+- 書類: 見積書（quote-doc.js）は明細の「金額調整」の下と合計欄に1行。保存値との照合は `c.totalIncl − pmDiscount === a.totalIncl`（直さないと値引きした見積もりは必ず簡易の形になる）。合計見積書（quote-group-doc.js）は `pmDiscount` も足す。案内メール（quoteMailText・acceptMailText・変更のお知らせ）に「うち値引き −¥X」。請求書 `invoiceTotals` は明細の足し算なので直していない。領収証・手順書は discount 行が B に入るので自動で下がる（テストで確認）
+- 任意の金額の伴走支援費（manual-support-fee.js）: 標準額（上限−先方購入費−この出荷の機器代）より下げるのは管理者だけ・メモに理由（`belowStandardCheck`）。前から入っている額のまま保存するときは問わない。**任意の行は画面が Firestore に直接書くので、サーバー側の確かめは無い（限界）**
+
+**限界**: ①firestore.rules は変えていないので、編集者がブラウザの開発ツールから出荷の明細に値引きの行や安い任意の行を直接書くことは止められない（画面とサーバーの Callable だけが正しい道）②公開ページ（見積もりページ・承諾書のページ）は値引きの行を出さない（合計は値引き後、「うち伴走支援費」は標準額のまま）③出荷だけに入れた値引きは案件の `totalAmount` に反映しない ④練習モードの代役は管理者かどうかを本番の users で確かめる
+
+**テスト**: `scripts/test-pm-discount.mjs`（16件: 判定・写し・結線）／`test-subsidy-amounts.mjs`（+2: B に入り A＋B が下がる・乱数1,000件で領収証の明細合計＝`invoiceTotals().total`）／`test-functions-wiring.mjs`（新 Callable が allow:"admin"・SA_MAIL・`shipmentItemsFromQuote` が値引きの行を出す）／`test-ship-flow`・`test-warehouse-rules`・`test-ship-steps`（値引きの行が台数・倉庫・在庫に出ない）／`test-order-consent`（焼き込み・取り直しの印）／`test-manual-support-fee`（標準額より下げるのは管理者だけ）

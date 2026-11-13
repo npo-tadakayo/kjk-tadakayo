@@ -31,6 +31,10 @@ const loadOfficeMerge = () => (_om ||= import("./office-merge.mjs"));
 // 倉庫の画面の判定（純粋 ESM・正本 admin/js/warehouse-rules.js のコピー・2026-10-24）。同じく import() で遅延ロードする
 let _wr;
 const loadWarehouseRules = () => (_wr ||= import("./warehouse-rules.mjs"));
+// 伴走支援費の PM 値引きの判定（純粋 ESM・正本 admin/js/pm-discount.js のコピー・2026-11-13）。
+// shipmentItemsFromQuote（同期）でも使うので、読み込んだものを _pmMod に控える（使う道の入口で await loadPm() しておく）
+let _pm, _pmMod = null;
+const loadPm = async () => (_pmMod ||= await (_pm ||= import("./pm-discount.mjs")));
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -955,6 +959,7 @@ function quoteMailText(q, { resend = false } = {}) {
       `見積番号: ${q.estNo}（第${q.version}版）\n` +
       `プラン: ${q.planLabel || ""}\n` +
       `合計（税込）: ${yen(q.amounts?.totalIncl)}　／　助成金充当: ${yen(q.amounts?.grantAmt)}　／　自己負担: ${yen(q.amounts?.selfPay)}\n` +
+      (Number(q.amounts?.pmDiscount) > 0 ? `うち値引き −${yen(q.amounts.pmDiscount)}（接続サポート等経費（伴走支援費）から）\n` : "") +
       (until ? `有効期限: ${until}\n` : "") +
       `\nこの見積もりは仮のものではなく、そのままお申し込みいただけます。\n` +
       `台数や機種（Bluetooth／USB、USBの口の形）は、支援の日程を調整する際に変更できますので、\n` +
@@ -1144,6 +1149,12 @@ function shipmentItemsFromQuote(q) {
   if (discount > 0) {
     items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });
   }
+  // 伴走支援費の PM 値引き（2026-11-13）。金額調整の行の下に1行（sku "discount"・pm:true）。行の名前は pm-discount.mjs の定数
+  const pmDiscount = Number(q.amounts?.pmDiscount) || 0;
+  if (pmDiscount > 0) {
+    if (!_pmMod) throw new Error("shipmentItemsFromQuote: pm-discount.mjs が読み込まれていません（呼び出し側で await loadPm()）");
+    items.push(_pmMod.pmDiscountRow(pmDiscount));
+  }
   return items;
 }
 const PRODUCT_NAMES = {
@@ -1177,6 +1188,7 @@ function acceptMailText({ q, agreedName, payKey, delivery, preferredDate, consen
       `${w.lead}\n\n` +
       `見積番号: ${q.estNo}（第${q.version}版）\n` +
       `合計（税込）: ${yen(q.amounts?.totalIncl)}　／　助成金充当: ${yen(q.amounts?.grantAmt)}　／　自己負担: ${yen(q.amounts?.selfPay)}\n` +
+      (Number(q.amounts?.pmDiscount) > 0 ? `うち値引き −${yen(q.amounts.pmDiscount)}（接続サポート等経費（伴走支援費）から）\n` : "") +
       `お支払い: ${PAY_LABELS[payKey]}\n` +
       `お届け先: ${[d.postalCode ? "〒" + d.postalCode : "", d.company, d.officeName, d.address].filter(Boolean).join(" ")}\n` +
       (preferredDate ? `ご希望日: ${preferredDate}\n` : "") +
@@ -1306,6 +1318,9 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
   const orderFields = Flow.shipmentFieldsFromAccept({
     q, delivery: d, shipItems: shipmentItemsFromQuote(q), btSku: Pricing.SKU.BT, preferredDate, payKey, note,
   });
+  // 伴走支援費の PM 値引き（2026-11-13）: 見積もりの値引きの記録を出荷にも同じ形で持たせる（出荷の修正で行と記録を照合するため）
+  const pmMeta = Number(q.amounts?.pmDiscount) > 0 && q.pmDiscount ? q.pmDiscount : null;
+  if (pmMeta) orderFields.pmDiscount = pmMeta;
   let shipId;
   if (plan.reuse) {
     shipId = plan.reuse.id;
@@ -1314,7 +1329,7 @@ function acceptTxWrite(tx, st, { delivery, payKey, preferredDate, note, agreedPo
     out.reusedStatus = plan.reuse.status || "draft";
     // 状態・番号・出荷元・作成日時は既存のまま。requested のときは Chat に「センターへ連絡」を注記（acceptShipNote）
     tx.update(db.collection("shipments").doc(shipId), {
-      ...orderFields, updatedAt: now,
+      ...orderFields, ...(pmMeta ? {} : { pmDiscount: admin.firestore.FieldValue.delete() }), updatedAt: now,
       updatedBy: "web（事業所のお申し込み・既存の出荷を使い直し）",
     });
   } else {
@@ -1430,6 +1445,7 @@ async function acceptQuoteTransaction({ quoteId, quoteToken, delivery, payKey, p
   const staff = who.kind === "staff";
   const name = String(staff ? who.acceptedName : agreedName).trim();
   let out = null;
+  await loadPm(); // 値引きの行を出荷の下書きに出すため（shipmentItemsFromQuote）
   await db.runTransaction(async (tx) => {
     const st = await acceptTxRead(tx, { quoteId, quoteToken, who, name });
     if (st.alreadyAccepted) { out = { ...acceptOutBase(st.q), alreadyAccepted: true }; return; }
@@ -1464,6 +1480,7 @@ async function acceptOrderByConsentTransaction({ items, payKey, preferredDate, n
   const web = consent.method === "web_order";
   const name = cleanSignedName(consent.signedName).slice(0, 100);
   let outs = null, token = null, displayNo = "", already = false, alreadyToken = null;
+  await loadPm(); // 値引きの行を出荷の下書きに出すため（shipmentItemsFromQuote）
   await db.runTransaction(async (tx) => {
     const setSnap = await tx.get(db.collection("appConfig").doc("settings"));
     if (!orderByConsentOn(setSnap.exists ? setSnap.data() : {})) {
@@ -2010,139 +2027,292 @@ exports.reviseQuote = onCall(
     if (calc.subsidyTotal > calc.plan.maxQty) throw new HttpsError("invalid-argument", `${calc.plan.label}の補助対象は最大${calc.plan.maxQty}台です`);
     const connector = ["A", "C"].includes(usbConnector) ? usbConnector : null;
     const items = Pricing.buildItems({ btQty, usbQty, btExtra, usbExtra, usbConnector: connector });
-    const amounts = {
-      readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount,
-      subsidyPartTotal: calc.subsidyPartTotal, extraPartTotal: calc.extraPartTotal,
-      totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay,
-    };
-
-    // 出荷の状態を確認（下書きなら作り直す・確定後は触らない）
-    let shipmentId = base.shipmentId || null, shipStatus = null;
-    if (shipmentId) {
-      const sh = await db.collection("shipments").doc(shipmentId).get();
-      shipStatus = sh.exists ? (sh.data().status || null) : null;
-      // 依頼済（requested）も止める: 出荷指示をすでにセンターへ投稿しているため（2026-10-21 出荷の二段階化）
-      if (sh.exists && shipStatus === "requested") {
-        throw new HttpsError("failed-precondition",
-          `この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧で「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。センターへの取り消しの連絡もお願いします。`);
-      }
-      if (sh.exists && shipStatus !== "draft") {
-        throw new HttpsError("failed-precondition",
-          `この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
-      }
-    }
-
-    const now = admin.firestore.FieldValue.serverTimestamp();
-    const estNo = base.estNo; // 番号は引き継ぎ、版だけ上げる
-    const version = (Number(base.version) || 1) + 1;
-    const accessToken = newToken();
-    const quoteRef = db.collection("quotes").doc();
+    const amounts = quoteAmountsOf(calc);
     const cardReaders = [];
     const bt = Number(btQty) || 0, usb = Number(usbQty) || 0, btx = Number(btExtra) || 0, usbx = Number(usbExtra) || 0;
     if (bt > 0 || btx > 0) cardReaders.push({ type: "BT", subsidyQty: bt, extraQty: btx });
     if (usb > 0 || usbx > 0) cardReaders.push({ type: "USB", subsidyQty: usb, extraQty: usbx, connector });
 
-    // 承諾書のサイン＝発注（2026-11-12・発3）: 発注の承諾書がある案件（cases.orderConsentToken）で見積もりを直したら、
-    // 承諾書に焼き込んだ内容（品目・台数・合計）と比べ、違えば cases.orderConsentStale:true（承諾書の取り直しが要る）。
-    // 出荷は止めない（第1段）。承諾書の無い案件（設定オフのときはすべて）は何も足さない（従来どおり）。
-    let consentStale = null, consentClearReason = false;
-    const caseSnapR = await db.collection("cases").doc(base.caseId).get();
-    const kaseR = caseSnapR.exists ? caseSnapR.data() : null;
-    if (kaseR && kaseR.orderConsentToken) {
-      let entry = null;
-      try {
-        const cs = await db.collection("consentRequests").doc(String(kaseR.orderConsentToken)).get();
-        const qs = cs.exists && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
-        entry = qs.find((e) => e && e.caseId === base.caseId) || null;
-      } catch (e) { console.warn("reviseQuote: consent read failed", e.message); }
-      // 出荷キャンセルで立てた印は、内容が同じ改版でも下ろさない。それ以外は理由を消す（reviseConsentStale・小さな指摘4）
-      const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items, amounts }));
-      consentStale = rs.stale; consentClearReason = rs.clearReason;
-    }
+    // 出荷の状態（下書きなら作り直す・確定後は触らない）と、承諾書の取り直しの印（共通・quoteVersionContext）
+    const vc = await quoteVersionContext(base, { items, amounts });
+    const { shipmentId, shipStatus, consentStale, consentClearReason } = vc;
+    // 伴走支援費の PM 値引き（2026-11-13）は、台数・区分を変えた版には引き継がない（標準額が変わるため）。外れたことを記録に残す
+    const prevPm = Math.max(Number(base.amounts?.pmDiscount) || 0, shipmentId && shipStatus === "draft" ? vc.shipPm : 0);
+    const pmNote = prevPm > 0 ? `\n${(await loadPm()).pmRemovedByReviseText(prevPm)}` : "";
 
-    const batch = db.batch();
-    // 同じ案件の生きている版はすべて superseded に
-    const sibSnap = await db.collection("quotes").where("caseId", "==", base.caseId).get();
-    for (const d of sibSnap.docs) {
-      const st = d.data().status;
-      if (st === "issued" || st === "accepted") batch.update(d.ref, { status: "superseded", supersededAt: now });
-    }
-    batch.set(quoteRef, {
-      caseId: base.caseId, officeId: base.officeId || null, caseNumber: base.caseNumber || null,
-      estNo, version, plan: planKey, planLabel: calc.plan.label, items, amounts,
-      status: base.status === "accepted" ? "accepted" : "issued",
-      supersedes: base.id, reason: String(reason).trim().slice(0, 500),
-      validUntil: daysFromNow(30),   // 改版は新しい見積書なので有効期限を30日振り直す（2026-09-14）
-      createdVia: "staff", createdBy: email, createdAt: now,
-      contactEmail: normalizeEmail(base.contactEmail), contactName: base.contactName || "",
-      officeName: base.officeName || "", corpName: base.corpName || "",
-      accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
-      shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
-      payMethod: base.payMethod || null, delivery: base.delivery || null,
-      acceptedAt: base.acceptedAt || null, acceptedBy: base.acceptedBy || null,
-    });
-    batch.update(db.collection("cases").doc(base.caseId), {
-      latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
-      subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
-      expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
-      specialDiscount: calc.discount, selfPay: calc.selfPay,
-      ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
-      ...(consentClearReason ? { orderConsentStaleReason: admin.firestore.FieldValue.delete() } : {}),
-    });
-    // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）
-    if (shipmentId && shipStatus === "draft") {
-      batch.update(db.collection("shipments").doc(shipmentId), {
-        items: shipmentItemsFromQuote({ items, amounts }),
-        quoteId: quoteRef.id, estNo,
-        // 伴走支援費ブロックの復元に使う補助区分・台数も新しい版に合わせる（2026-10-21 レビュー指摘 2）
-        subsidyCategory: planKey || null, subsidyQty: Flow.subsidyQtyFromItems(items, Pricing.SKU.BT),
-        updatedAt: now, updatedBy: email,
-      });
-    }
     const before = (base.items || []).map((i) => `${i.sku}×${(Number(i.subsidyQty) || 0) + (Number(i.extraQty) || 0)}`).join("・");
     const after = items.map((i) => `${i.sku}×${(Number(i.subsidyQty) || 0) + (Number(i.extraQty) || 0)}`).join("・");
-    batch.set(db.collection("activities").doc(), {
-      caseId: base.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
-      subject: `見積もりを変更（${estNo} v${base.version} → v${version}）`,
-      body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
-        + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
-        + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
-        + (consentStale !== true ? "" : consentClearReason
-          ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
-          : "\n⚠️ 出荷をキャンセルしたため前の承諾書の発注は取り消しになっています。新しい版で承諾書の取り直しが要ります。"),
-      attachmentUrls: [],
+    const { quoteRef, version, estNo } = await writeQuoteVersion({
+      base, planKey, calc, items, amounts, cardReaders, reason, email, uid: request.auth.uid, vc,
+      activity: (v) => ({
+        subject: `見積もりを変更（${base.estNo} v${base.version} → v${v}）`,
+        body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
+          + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
+          + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+          + pmNote
+          + (consentStale !== true ? "" : consentClearReason
+            ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
+            : "\n⚠️ 出荷をキャンセルしたため前の承諾書の発注は取り消しになっています。新しい版で承諾書の取り直しが要ります。"),
+      }),
     });
-    await batch.commit();
 
     // 事業所へ変更後の見積もりを知らせる（PDFはこの時点では無いので、金額と変更点をメールで伝える）
-    let mailed = false;
-    const to = normalizeEmail(base.contactEmail);
-    if (sendMail !== false && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
-      const diff = calc.totalIncl - (Number(base.amounts?.totalIncl) || 0);
-      try {
-        await sendGmail({
-          to, cc: GMAIL_SENDER,
-          subject: `【変更後】【NPO法人タダカヨ】お見積もりの内容を変更しました（${estNo}）`,
-          body:
-            `${[base.corpName, base.officeName].filter(Boolean).join("　")} 御中\n${base.contactName ? base.contactName + " 様" : "ご担当者様"}\n\n` +
-            `お打ち合わせの内容にもとづき、お見積もりを変更しました。\n\n` +
-            `見積番号: ${estNo}（第${version}版）\n` +
-            `変更後の合計（税込）: ${yen(calc.totalIncl)}　／　助成金充当: ${yen(calc.grantAmt)}　／　自己負担: ${yen(calc.selfPay)}\n` +
-            (diff !== 0 ? `前回との差額: ${diff > 0 ? "＋" : "−"}${yen(Math.abs(diff))}\n` : "") +
-            `\n内容にお間違いがないか、ご確認をお願いします。相違があればこのメールへの返信でお知らせください。\n\n` +
-            `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
-        });
-        mailed = true;
-        await db.collection("activities").add({
-          caseId: base.caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
-          userId: request.auth.uid, userName: email,
-          subject: `メール送信: 【変更後】お見積もり（${estNo} v${version}）`, body: `宛先: ${to}`, attachmentUrls: [],
-        });
-      } catch (e) { console.error("reviseQuote mail error:", e); }
-    }
+    const mailed = await mailRevisedQuote({ base, estNo, version, amounts, sendMail, request, email });
     return { ok: true, quoteId: quoteRef.id, version, totalIncl: calc.totalIncl, mailed, shipmentUpdated: !!(shipmentId && shipStatus === "draft"),
+      ...(prevPm > 0 ? { pmDiscountRemoved: prevPm } : {}),
       ...(consentStale == null ? {} : { orderConsentStale: consentStale }) };
+  }
+);
+
+// ===== 見積もりの版を作る共通部分（reviseQuote・setQuoteDiscount・2026-11-13 切り出し）=====
+// computeAmounts の結果 → quotes.amounts の形
+function quoteAmountsOf(calc) {
+  return {
+    readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount,
+    subsidyPartTotal: calc.subsidyPartTotal, extraPartTotal: calc.extraPartTotal,
+    totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay,
+  };
+}
+// 出荷の状態を確認（下書きなら作り直す・確定後は触らない）し、承諾書の取り直しの印を決める。
+// items・amounts は新しい版のもの（承諾書に焼き込んだ内容と比べる）
+async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = null } = {}) {
+  let shipmentId = base.shipmentId || null, shipStatus = null, shipPm = 0;
+  if (shipmentId) {
+    const sh = await db.collection("shipments").doc(shipmentId).get();
+    shipStatus = sh.exists ? (sh.data().status || null) : null;
+    // 下書きの出荷に入っている値引きの行（作り直すと消える）。記録に残すために額を控える
+    shipPm = sh.exists ? (sh.data().items || []).filter((i) => i && i.sku === "discount" && i.pm === true)
+      .reduce((a, i) => a + Math.max(0, -(Number(i.unitPrice) || 0)), 0) : 0;
+    // 依頼済（requested）も止める: 出荷指示をすでにセンターへ投稿しているため（2026-10-21 出荷の二段階化）
+    if (sh.exists && shipStatus === "requested" && !shipLockedMsg) {
+      throw new HttpsError("failed-precondition",
+        `この見積もりの出荷（${sh.data().soNumber}）はすでに出荷を依頼済みです（出荷指示を投稿済み）。見積もりを作り直すときは、先に供給管理の出荷一覧で「依頼を取り消す」（下書きへ戻す）をしてから、もう一度やり直してください。センターへの取り消しの連絡もお願いします。`);
+    }
+    if (sh.exists && shipStatus !== "draft") {
+      throw new HttpsError("failed-precondition", shipLockedMsg ? shipLockedMsg(sh.data().soNumber, shipStatus)
+        : `この見積もりの出荷（${sh.data().soNumber}）はすでに「${shipStatus}」です。見積もりの作り直しではなく、供給管理の「出荷の修正」で直してください。`);
+    }
+  }
+
+  // 承諾書のサイン＝発注（2026-11-12・発3）: 発注の承諾書がある案件（cases.orderConsentToken）で見積もりを直したら、
+  // 承諾書に焼き込んだ内容（品目・台数・合計）と比べ、違えば cases.orderConsentStale:true（承諾書の取り直しが要る）。
+  // 出荷は止めない（第1段）。承諾書の無い案件（設定オフのときはすべて）は何も足さない（従来どおり）。
+  // 値引き（2026-11-13）で合計が下がった版も「違う」になる＝取り直しの印が立つ（値下げでも立てる）
+  let consentStale = null, consentClearReason = false;
+  const caseSnapR = await db.collection("cases").doc(base.caseId).get();
+  const kaseR = caseSnapR.exists ? caseSnapR.data() : null;
+  if (kaseR && kaseR.orderConsentToken) {
+    let entry = null;
+    try {
+      const cs = await db.collection("consentRequests").doc(String(kaseR.orderConsentToken)).get();
+      const qs = cs.exists && Array.isArray(cs.data().quotes) ? cs.data().quotes : [];
+      entry = qs.find((e) => e && e.caseId === base.caseId) || null;
+    } catch (e) { console.warn("quoteVersionContext: consent read failed", e.message); }
+    // 出荷キャンセルで立てた印は、内容が同じ改版でも下ろさない。それ以外は理由を消す（reviseConsentStale・小さな指摘4）
+    const rs = reviseConsentStale(kaseR, orderConsentStaleAfterRevise(entry, { items, amounts }));
+    consentStale = rs.stale; consentClearReason = rs.clearReason;
+  }
+  return { shipmentId, shipStatus, shipPm, consentStale, consentClearReason };
+}
+// 新しい版を書く（前の版は superseded・案件の金額・下書きの出荷の作り直し・対応記録）。1つの batch で書く。
+// quoteExtra … 新しい版に足す項目（値引きの記録など）。activity(version) … 対応記録の {subject, body}
+async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardReaders, reason, email, uid, vc, quoteExtra = {}, shipExtra = {}, activity }) {
+  const { shipmentId, shipStatus, consentStale, consentClearReason } = vc;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  const estNo = base.estNo; // 番号は引き継ぎ、版だけ上げる
+  const version = (Number(base.version) || 1) + 1;
+  const accessToken = newToken();
+  const quoteRef = db.collection("quotes").doc();
+  const batch = db.batch();
+  // 同じ案件の生きている版はすべて superseded に
+  const sibSnap = await db.collection("quotes").where("caseId", "==", base.caseId).get();
+  for (const d of sibSnap.docs) {
+    const st = d.data().status;
+    if (st === "issued" || st === "accepted") batch.update(d.ref, { status: "superseded", supersededAt: now });
+  }
+  batch.set(quoteRef, {
+    caseId: base.caseId, officeId: base.officeId || null, caseNumber: base.caseNumber || null,
+    estNo, version, plan: planKey, planLabel: calc.plan.label, items, amounts,
+    status: base.status === "accepted" ? "accepted" : "issued",
+    supersedes: base.id, reason: String(reason).trim().slice(0, 500),
+    validUntil: daysFromNow(30),   // 改版は新しい見積書なので有効期限を30日振り直す（2026-09-14）
+    createdVia: "staff", createdBy: email, createdAt: now,
+    contactEmail: normalizeEmail(base.contactEmail), contactName: base.contactName || "",
+    officeName: base.officeName || "", corpName: base.corpName || "",
+    accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
+    shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
+    payMethod: base.payMethod || null, delivery: base.delivery || null,
+    acceptedAt: base.acceptedAt || null, acceptedBy: base.acceptedBy || null,
+    ...quoteExtra,
+  });
+  batch.update(db.collection("cases").doc(base.caseId), {
+    latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
+    subsidyPlan: calc.plan.label, ...(cardReaders ? { cardReaders } : {}), subsidyCategory: planKey,
+    expectedSubsidyAmount: amounts.grantAmt, totalAmount: amounts.totalIncl,
+    specialDiscount: calc.discount, selfPay: amounts.selfPay,
+    ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
+    ...(consentClearReason ? { orderConsentStaleReason: admin.firestore.FieldValue.delete() } : {}),
+  });
+  // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）。値引きの行は amounts.pmDiscount から出る（shipmentItemsFromQuote）
+  if (shipmentId && shipStatus === "draft") {
+    batch.update(db.collection("shipments").doc(shipmentId), {
+      items: shipmentItemsFromQuote({ items, amounts }),
+      quoteId: quoteRef.id, estNo,
+      // 伴走支援費ブロックの復元に使う補助区分・台数も新しい版に合わせる（2026-10-21 レビュー指摘 2）
+      subsidyCategory: planKey || null, subsidyQty: Flow.subsidyQtyFromItems(items, Pricing.SKU.BT),
+      pmDiscount: admin.firestore.FieldValue.delete(),
+      ...shipExtra,
+      updatedAt: now, updatedBy: email,
+    });
+  }
+  const act = activity(version);
+  batch.set(db.collection("activities").doc(), {
+    caseId: base.caseId, type: "memo", occurredAt: now, userId: uid, userName: email,
+    subject: act.subject, body: act.body, attachmentUrls: [],
+  });
+  await batch.commit();
+  return { quoteRef, version, estNo };
+}
+// 変更後の見積もりのお知らせメール（reviseQuote・setQuoteDiscount）。送れたら true
+async function mailRevisedQuote({ base, estNo, version, amounts, sendMail, request, email, lead = "お打ち合わせの内容にもとづき、お見積もりを変更しました。" }) {
+  const to = normalizeEmail(base.contactEmail);
+  if (sendMail === false || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return false;
+  const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
+  const diff = Number(amounts.totalIncl) - (Number(base.amounts?.totalIncl) || 0);
+  const pm = Number(amounts.pmDiscount) || 0;
+  try {
+    await sendGmail({
+      to, cc: GMAIL_SENDER,
+      subject: `【変更後】【NPO法人タダカヨ】お見積もりの内容を変更しました（${estNo}）`,
+      body:
+        `${[base.corpName, base.officeName].filter(Boolean).join("　")} 御中\n${base.contactName ? base.contactName + " 様" : "ご担当者様"}\n\n` +
+        `${lead}\n\n` +
+        `見積番号: ${estNo}（第${version}版）\n` +
+        `変更後の合計（税込）: ${yen(amounts.totalIncl)}　／　助成金充当: ${yen(amounts.grantAmt)}　／　自己負担: ${yen(amounts.selfPay)}\n` +
+        (pm > 0 ? `うち値引き −${yen(pm)}（接続サポート等経費（伴走支援費）から）\n` : "") +
+        (diff !== 0 ? `前回との差額: ${diff > 0 ? "＋" : "−"}${yen(Math.abs(diff))}\n` : "") +
+        `\n内容にお間違いがないか、ご確認をお願いします。相違があればこのメールへの返信でお知らせください。\n\n` +
+        `NPO法人タダカヨ 介護情報基盤伴走支援事業\nkjk-staff@tadakayo.jp`,
+    });
+    await db.collection("activities").add({
+      caseId: base.caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
+      userId: request.auth.uid, userName: email,
+      subject: `メール送信: 【変更後】お見積もり（${estNo} v${version}）`, body: `宛先: ${to}`, attachmentUrls: [],
+    });
+    return true;
+  } catch (e) { console.error("mailRevisedQuote error:", e); return false; }
+}
+
+// ===== 伴走支援費の PM 値引き（2026-11-13・判定は pm-discount.mjs＝正本 admin/js/pm-discount.js）=====
+// 管理者だけ。見積もりに入れる（新しい版を作る・前の版は superseded・下書きの出荷も作り直す）。
+// data: { quoteId, amount（税込・整数円）, reason（必須）, remove?:true（外す）, sendMail?:boolean }
+// 出荷が下書きより先に進んでいるときは見積もりではなく出荷に入れる（setShipmentDiscount）。
+exports.setQuoteDiscount = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
+  async (request) => {
+    const me = await requireStaff(request, { allow: "admin" });
+    const PM = await loadPm();
+    const { quoteId, amount, reason, remove, sendMail } = request.data || {};
+    if (!quoteId || typeof quoteId !== "string") throw new HttpsError("invalid-argument", "quoteId は必須です");
+    const baseSnap = await db.collection("quotes").doc(quoteId).get();
+    if (!baseSnap.exists) throw new HttpsError("not-found", "見積もりが見つかりません");
+    const base = { id: baseSnap.id, ...baseSnap.data() };
+    if (!["issued", "accepted"].includes(base.status)) {
+      throw new HttpsError("failed-precondition", "この見積もりは旧版か期限切れのため、値引きを入れられません（最新の版で入れてください）");
+    }
+    // 値引き前の金額は料金の正本（computeAmounts）で出し直す。保存値と合わない古い見積もりには入れない（安全側）
+    const sub = { bt: 0, usb: 0, btx: 0, usbx: 0 };
+    for (const it of (base.items || [])) {
+      if (it.sku === Pricing.SKU.BT) { sub.bt += Number(it.subsidyQty) || 0; sub.btx += Number(it.extraQty) || 0; }
+      else { sub.usb += Number(it.subsidyQty) || 0; sub.usbx += Number(it.extraQty) || 0; }
+    }
+    const calc = Pricing.computeAmounts(base.plan, sub.bt, sub.usb, sub.btx, sub.usbx);
+    const prevPm = Number(base.amounts?.pmDiscount) || 0;
+    if (calc.totalIncl - prevPm !== Number(base.amounts?.totalIncl) || calc.discount !== Number(base.amounts?.discount || 0)) {
+      throw new HttpsError("failed-precondition", "この見積もりの金額が今の料金の計算と合いません（料金改定前の見積もりなど）。先に「内容を変更する」で新しい版にしてから入れてください");
+    }
+    const baseAmounts = quoteAmountsOf(calc);
+    const standardFee = PM.standardFeeOfAmounts(baseAmounts);
+    const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
+    if (!v.ok) throw new HttpsError("invalid-argument", v.errors.join("\n"));
+    if (remove === true && !prevPm) throw new HttpsError("failed-precondition", "この見積もりには値引きが入っていません");
+    if (remove !== true && v.amount === prevPm) throw new HttpsError("failed-precondition", "値引きの額が今と同じです（変わりません）");
+    const newPm = remove === true ? 0 : v.amount;
+    const amounts = PM.applyToAmounts(baseAmounts, newPm);
+    const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: me.email, byName: me.name }) : null;
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    const vc = await quoteVersionContext(base, { items: base.items || [], amounts }, {
+      shipLockedMsg: (soNo, st) => `この見積もりの出荷（${soNo}）はすでに「${st}」です。値引きは見積もりではなく、供給管理の出荷の「値引きを入れる」から入れてください（請求済の前まで）。`,
+    });
+    const target = `${base.estNo} v${(Number(base.version) || 1) + 1}`;
+    const txt = PM.pmActivityText({ target: `見積もり ${target}`, prevAmount: prevPm, rec, reason: v.reason, byName: me.name });
+    const { quoteRef, version, estNo } = await writeQuoteVersion({
+      base, planKey: base.plan, calc, items: base.items || [], amounts, cardReaders: null,
+      reason: newPm ? `伴走支援費の値引き: ${v.reason}` : `伴走支援費の値引きを外す: ${v.reason}`,
+      email: me.email, uid: request.auth.uid, vc,
+      quoteExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
+      shipExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
+      activity: () => ({
+        subject: txt.subject,
+        body: txt.body
+          + (vc.shipmentId && vc.shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+          + (vc.consentStale !== true ? "" : "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"),
+      }),
+    });
+    const mailed = await mailRevisedQuote({ base, estNo, version, amounts, sendMail: sendMail === true, request, email: me.email,
+      lead: newPm ? "接続サポート等経費（伴走支援費）を値引きしたお見積もりに変更しました。" : "お見積もりの内容を変更しました。" });
+    return { ok: true, quoteId: quoteRef.id, version, totalIncl: amounts.totalIncl, pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor),
+      mailed, shipmentUpdated: !!(vc.shipmentId && vc.shipStatus === "draft"),
+      ...(vc.consentStale == null ? {} : { orderConsentStale: vc.consentStale }) };
+  }
+);
+
+// 出荷に入れる（見積もりの無い手作りの出荷や、下書きより先に進んだ出荷用）。請求済の前まで（invoiced・paid・canceled は不可＝supply.js の shipIsLocked と同じ）。
+// data: { shipmentId, amount, reason, remove?:true }。行と記録はトランザクションの中で書く（更新の取り合いで二重に引かない）
+exports.setShipmentDiscount = onCall(
+  { region: "asia-northeast1", timeoutSeconds: 60, memory: "256MiB", serviceAccount: SA_MAIL },
+  async (request) => {
+    const me = await requireStaff(request, { allow: "admin" });
+    const PM = await loadPm();
+    const { shipmentId, amount, reason, remove } = request.data || {};
+    if (!shipmentId || typeof shipmentId !== "string") throw new HttpsError("invalid-argument", "shipmentId は必須です");
+    const ref = db.collection("shipments").doc(shipmentId);
+    let out = null;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError("not-found", "出荷が見つかりません");
+      const s = snap.data();
+      const st = s.status || "shipped";
+      if (["invoiced", "paid", "canceled"].includes(st)) {
+        throw new HttpsError("failed-precondition", `この出荷（${s.soNumber || ""}）は「${st}」のため、値引きを入れられません（請求書を出す前まで）`);
+      }
+      if (!PM.pmApplicableShipment(s)) throw new HttpsError("failed-precondition", "値引きは事業所向け（税込）の出荷だけに入れられます（認定事業者向けの卸には入れません）");
+      const items = Array.isArray(s.items) ? s.items : [];
+      const prevPm = PM.pmAmountOfItems(items);
+      const standardFee = PM.standardFeeOf(items);
+      const v = PM.validatePmDiscount({ amount, reason, standardFee, remove: remove === true });
+      if (!v.ok) throw new HttpsError("invalid-argument", v.errors.join("\n"));
+      if (remove === true && !prevPm) throw new HttpsError("failed-precondition", "この出荷には値引きが入っていません");
+      if (remove !== true && v.amount === prevPm) throw new HttpsError("failed-precondition", "値引きの額が今と同じです（変わりません）");
+      const newPm = remove === true ? 0 : v.amount;
+      // 値引きの行は1つまで（入れ直しは置き換え）。末尾に足す
+      const nextItems = PM.withoutPmRows(items).concat(newPm ? [PM.pmDiscountRow(newPm)] : []);
+      const rec = newPm ? PM.buildPmRecord({ amount: newPm, reason: v.reason, standardFee, byEmail: me.email, byName: me.name }) : null;
+      const chk = PM.checkPmRows(nextItems, rec);
+      if (!chk.ok) throw new HttpsError("failed-precondition", chk.errors.join("\n"));
+      const now = admin.firestore.FieldValue.serverTimestamp();
+      tx.update(ref, { items: nextItems, pmDiscount: rec ? { ...rec, at: now } : admin.firestore.FieldValue.delete(), updatedAt: now, updatedBy: me.email });
+      if (s.caseId) {
+        const txt = PM.pmActivityText({ target: `出荷 ${s.soNumber || ""}`, prevAmount: prevPm, rec, reason: v.reason, byName: me.name });
+        tx.set(db.collection("activities").doc(), {
+          caseId: s.caseId, type: "memo", occurredAt: now, userId: request.auth.uid, userName: me.email,
+          subject: txt.subject, body: txt.body, attachmentUrls: [],
+        });
+      }
+      out = { ok: true, shipmentId, soNumber: s.soNumber || "", pmDiscount: newPm, belowFloor: !!(rec && rec.belowFloor), standardFee };
+    });
+    return out;
   }
 );
 

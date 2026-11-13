@@ -432,3 +432,21 @@ console.log("OK test-ship-flow 追加: レターパックの初期値はプラ�
   assert.ok(mailedPendingNotes({ status: "shipped", invoiceMailedAt: "2026-11-10" })[0].hint.includes("発行日は送付日に合わせます"));
   console.log("OK test-ship-flow 追加: 送付済み・記録待ち");
 }
+
+// ===== 伴走支援費の PM 値引きの行（2026-11-13・sku "discount"・pm:true）は台数・出荷指示の再送の判定に出ない =====
+{
+  const { shipQtySummary } = await import("../admin/js/ship-flow.js");
+  const { pmDiscountRow } = await import("../admin/js/pm-discount.js");
+  const reader = { sku: "cir415a-01", name: "介護情報基盤 汎用カードリーダ CIR415A", qty: 2, unitPrice: 14500 };
+  const fee = { sku: "support-fee", name: "伴走支援費（補助対象2台）", qty: 1, unitPrice: 55000, nonStock: true };
+  const a = shipQtySummary([reader, fee]);
+  const b = shipQtySummary([reader, fee, pmDiscountRow(5500)]);
+  assert.deepEqual(b, a, "値引きの行が台数のまとめに出ている");
+  assert.equal(b.total, 2);
+  // 値引きの行を足しただけでは、依頼済の出荷指示の再送を聞かない（倉庫に関係ない）
+  const before = { status: "requested", items: [reader, fee] };
+  assert.equal(needsResendPrompt(before, { ...before, items: [reader, fee, pmDiscountRow(5500)] }), false);
+  // 下書き・依頼済は在庫を動かさない。発送済でも値引きの行は在庫の差分に出ない
+  assert.deepEqual(qtyDelta({ status: "shipped" }, { "cir415a-01": 2 }, { "cir415a-01": 2 }), {});
+  console.log("OK test-ship-flow 追加: 値引きの行は台数・再送に出ない");
+}
