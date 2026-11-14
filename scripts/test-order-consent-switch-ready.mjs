@@ -198,7 +198,7 @@ t("acceptQuote（スイッチがオンの道）: 応答に mailed を足し、�
   assert.ok(off.length > 1000 && !/mailed/.test(off), "オフの道（従来の申込）の応答に mailed を足していない");
   const h = read("mitsumori.html");
   assert.match(h, /consentUrl: data\.consentUrl, email: val\('contactEmail'\), mailed: data\.mailed,/);
-  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261115"><\/script>/);
+  assert.match(h, /<script src="js\/order-consent-page\.js\?v=20261116"><\/script>/);
 });
 
 // ===== ⑥ まとめ発注の完了の表示・断られたときの文（2026-11-12 画面確認 低×3）=====

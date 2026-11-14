@@ -223,11 +223,18 @@ t("点検7: 受注確定で作る出荷の下書きの品名・つなぎ方が�
 t("点検7: 倉庫で発送済・受け渡し済にしたとき、受注も出荷済にする（本番と同じ）", () => {
   const fn = read("functions/index.js");
   const real = fnBody(fn, "async function warehouseComplete(", "\n}\n");
-  has(real, /if \(po && po\.exists\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  // 受注を「出荷済」にするのは受付済・受注確定のときだけ（orderOnWarehouseDone・2026-11-15）。キャンセル済みは書き換えず出荷に印を残す
+  has(real, /const poAct = po && po\.exists \? os\.orderOnWarehouseDone\(po\.data\(\)\)/);
+  has(real, /if \(po && po\.exists && poAct\.action === "set"\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  has(real, /\.\.\.\(poAct\.note \? \{ partnerOrderNote: poAct\.note \} : \{\}\)/);
   const ps = read("admin/js/practice-stubs.js");
   const wh = fnBody(ps, "async function whMarkShipped(", "\n}\n");
   has(wh, /const po = cur\.partnerOrderId \? await tx\.get\(doc\(db\(\), "partnerOrders"/);
-  has(wh, /if \(po && po\.exists\(\)\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  has(wh, /const poAct = po && po\.exists\(\) \? orderOnWarehouseDone\(po\.data\(\)\)/);
+  has(wh, /if \(po && po\.exists\(\) && poAct\.action === "set"\) tx\.update\(po\.ref, \{ status: "shipped"/);
+  has(wh, /\.\.\.\(poAct\.note \? \{ partnerOrderNote: poAct\.note \} : \{\}\)/);
+  has(ps, /import \{ orderOnWarehouseDone \} from "\/js\/order-ship-rules\.js";/);
+  has(read("functions/index.js"), /import\("\.\/order-ship-rules\.mjs"\)/);
   // 読み取り（tx.get）は書き込み（tx.update）より前
   assert.ok(wh.indexOf('"partnerOrders"') < wh.indexOf("tx.update(ref"), "受注の読み取りが書き込みの後にある");
 });

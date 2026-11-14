@@ -152,6 +152,55 @@ t("公開ページ: 発注の内容（見積番号・版・事業所・品目・
   assert.equal(P.quotesHtml([plain(ENTRY), null]), null);
   assert.equal(P.quotesHtml([]), null);
 });
+// ----- 承諾書に焼き込んだ PM 値引きの行（2026-11-15） -----
+// 直す前の公開ページ（main e669be5）の部品。値引きの無い承諾書の出力が1文字も変わらないことを確かめる
+const OLD_SRC = execFileSync("git", ["show", "e669be5:js/order-consent-page.js"], { cwd: root, encoding: "utf8" });
+const octx = { window: {} };
+vm.createContext(octx);
+vm.runInContext(OLD_SRC, octx);
+const OLDP = octx.window.OrderConsentPage;
+const PMD = await import("../admin/js/pm-discount.js");
+const AMT = { readers: 1, accompanyFee: 33000, discount: 1000, totalIncl: 79200, grantAmt: 64000, selfPay: 15200 };
+t("値引きの行: 値引きの無い承諾書の出力は直す前と1文字も同じ（金額調整あり・なし・0・まとめ・品目なし・< > を含む名前）", () => {
+  const variants = [
+    plain(ENTRY),
+    plain({ ...ENTRY, amounts: { ...ENTRY.amounts, discount: 0 } }),
+    plain({ ...ENTRY, amounts: { ...ENTRY.amounts, pmDiscount: 0 } }),
+    plain({ ...ENTRY, amounts: { ...ENTRY.amounts, pmDiscount: "abc" } }),
+    plain({ ...ENTRY, amounts: { ...ENTRY.amounts, pmDiscount: -500 } }),
+    plain({ ...ENTRY, items: [], officeName: "<script>x</script>" }),
+    plain(R.orderConsentQuoteEntry({ id: "q2", estNo: "EST-2", version: 1, items: [], amounts: AMT })),
+  ];
+  for (const e of variants) assert.equal(P.quotesHtml([e]), OLDP.quotesHtml([e]), JSON.stringify(e.amounts));
+  assert.equal(P.quotesHtml(variants), OLDP.quotesHtml(variants));
+  assert.equal(P.quotesHtml([]), OLDP.quotesHtml([]));
+  // 値引きの無い見積もりは焼き込みに pmDiscount を持たない（記録の形も今までどおり）
+  assert.ok(!("pmDiscount" in plain(ENTRY).amounts));
+});
+t("値引きの行: 焼き込んだ pmDiscount があるときだけ「接続サポート等経費（伴走支援費）の値引き −¥X」を伴走支援費の内訳の下に1行", () => {
+  const e = plain(R.orderConsentQuoteEntry({ id: "q3", estNo: "EST-3", version: 2, officeName: "事業所", items: [{ sku: "cir415a-01", subsidyQty: 1, extraQty: 0 }],
+    amounts: { ...AMT, totalIncl: 74200, grantAmt: 59000, pmDiscount: 5000 } }));
+  assert.equal(e.amounts.pmDiscount, 5000);
+  const h = P.quotesHtml([e]);
+  const line = '<br><span class="oc-sub">接続サポート等経費（伴走支援費）の値引き −¥5,000</span>';
+  assert.equal(h.split(line).length, 2, "値引きの行が1つだけ出ていない");
+  assert.ok(h.indexOf("うち伴走支援費 ¥33,000・金額調整 −¥1,000") < h.indexOf(line) && h.indexOf(line) < h.indexOf("助成金充当 ¥59,000"), "並びが違う");
+  assert.ok(h.includes("<b>¥74,200</b>"), "合計は値引き後のまま");
+  // 値引きの行を足しただけ（それ以外は直す前と同じ）
+  assert.equal(h.replace(line, ""), OLDP.quotesHtml([e]));
+  // まとめ（2事業所・片方だけ値引き）
+  const g = P.quotesHtml([e, plain(ENTRY)]);
+  assert.equal(g.split("の値引き −").length, 2);
+  assert.equal(g.replace(line, ""), OLDP.quotesHtml([e, plain(ENTRY)]));
+});
+t("値引きの行: 呼び名は admin/js/pm-discount.js の PM_DISCOUNT_NAME と同じ（公開ページは import できないので直書き）", () => {
+  assert.equal(P.PM_DISCOUNT_NAME, PMD.PM_DISCOUNT_NAME);
+  assert.equal(P.PM_DISCOUNT_NAME, "接続サポート等経費（伴走支援費）の値引き");
+});
+t("値引きの行: 公開ページは admin・functions を読み込まない（外部の読み込みなし）", () => {
+  const src = read("js/order-consent-page.js");
+  assert.ok(!/import\s|require\(|pm-discount/.test(src.replace(/\/\/.*$/gm, "")));
+});
 t("公開ページ: 送る同意の印・承諾書のアドレスの確認・受け付けた表示", () => {
   assert.deepEqual(plain(P.consentPayload(CD.CONSENT_V1_2)), { agreed: true, version: "1.2" });
   const url = "https://kjk-tadakayo-admin.web.app/consent?t=0123456789abcdef0123456789abcdef";

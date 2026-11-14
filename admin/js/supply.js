@@ -39,7 +39,7 @@ import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, vali
 // 伴走支援費の PM 値引き（2026-11-13）。判定の正本は pm-discount.js。値引きを入れる・外すのはサーバー（setShipmentDiscount・管理者だけ）
 import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems, recalcPmRecord,
   shipmentPmBlockedByQuote, MSG_USE_QUOTE as PM_MSG_USE_QUOTE,
-  FLOOR as PM_FLOOR, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
+  FLOOR as PM_FLOOR, PM_DISCOUNT_NAME, pmChangedSinceOpen, MSG_PM_CHANGED, pmRecalcBelowFloorText } from "/js/pm-discount.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { STEP_TIPS } from "/js/case-ship-step.js"; // 段の吹き出し（案件詳細の出荷タブと同じ言い方・2026-11-13）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
@@ -2263,7 +2263,7 @@ async function saveShipEdit(){
     updatedBy:currentUser.displayName||currentUser.email,
   };
 
-  let items=null, delta={};
+  let items=null, delta={}, pmFloorAct=null;
   if(!locked){
     if(subsidyPlanMissing()){ alert("伴走支援費を含める場合はプランを選んでください"); return; }
     patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
@@ -2314,6 +2314,9 @@ async function saveShipEdit(){
         if(pr.negative){ alert(`値引き後の伴走支援費がマイナスになります（${yen(pr.feeAfter)}）。先に値引きを外すか、管理者に額を直してもらってください`); return; }
         if(pr.belowFloor && !confirm(`伴走支援費の標準額が変わり、値引き後の伴走支援費が ${yen(pr.feeAfter)} になります。報酬の下限（${yen(PM_FLOOR)}）を下回りますが、承知のうえで保存しますか？`)) return;
         patch.pmDiscount = { ...pr.record, recalculatedBy: currentUser.email||"", recalculatedAt: serverTimestamp() };
+        // 下限を下回ったら案件の対応記録に1行（誰が・標準額・値引き後）。出荷の保存と同じトランザクションで書く（2026-11-15 低指摘A）
+        if(pr.belowFloor && s0.caseId) pmFloorAct = pmRecalcBelowFloorText({ target:`出荷 ${s0.soNumber||""}`, prev:s0.pmDiscount||null, next:pr.record,
+          byName: currentUser.displayName||"", byEmail: currentUser.email||"" });
       }
     }
     // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
@@ -2335,6 +2338,8 @@ async function saveShipEdit(){
       const snap=await tx.get(shipRef);
       if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
       const cur=snap.data();
+      // 開いている間に管理者が値引きを変えていたら止める（記録の出し直しが古い値引きを元にしてしまうため・2026-11-15 低指摘B）
+      if(items && pmChangedSinceOpen(s0, cur)) throw new Error(MSG_PM_CHANGED);
       const a=cur.updatedAt?.toMillis?.()||0, b=s0.updatedAt?.toMillis?.()||0;
       if(a!==b) throw new Error("他の人が先にこの出荷を変更しています。画面を更新してから直してください");
       delta={}; moved=0; // トランザクションは再試行されることがあるので、毎回ここで初期化
@@ -2366,6 +2371,9 @@ async function saveShipEdit(){
           moved++;
         }
       }
+      if(pmFloorAct) tx.set(doc(collection(db,"activities")), { caseId:s0.caseId, type:"memo", occurredAt:serverTimestamp(),
+        userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"",
+        subject: pmFloorAct.subject, body: pmFloorAct.body, attachmentUrls: [] });
     });
     document.getElementById("shipModal").classList.remove("open");
     editingShip=null;

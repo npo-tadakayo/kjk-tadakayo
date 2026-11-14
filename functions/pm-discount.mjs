@@ -148,6 +148,32 @@ export function recalcPmRecord(meta, items) {
   return { changed, record: { ...m, standardFee: std, feeAfter, belowFloor }, feeAfter, belowFloor, negative: feeAfter < 0 };
 }
 
+// 出荷の修正（supply.js saveShipEdit）を開いている間に、管理者が値引きを変えたか（2026-11-15 低指摘B）。
+// open … 修正を開いた時点の出荷 ／ cur … トランザクションで読んだいまの出荷。記録の額か明細の値引きの行の額が違えば true
+export const MSG_PM_CHANGED = "値引きが変わっています。開き直してください";
+export function pmChangedSinceOpen(open, cur) {
+  const o = open || {}, c = cur || {};
+  return num(o.pmDiscount && o.pmDiscount.amount) !== num(c.pmDiscount && c.pmDiscount.amount)
+    || pmAmountOfItems(o.items) !== pmAmountOfItems(c.items);
+}
+
+// 出荷の修正で標準額が変わり、値引き後が報酬の下限を下回ったときの対応記録（2026-11-15 低指摘A）。
+// prev … 修正前の値引きの記録（standardFee・feeAfter）／ next … recalcPmRecord の record ／ byName・byEmail … 修正した人
+export function pmRecalcBelowFloorText({ target = "", prev = null, next = null, byName = "", byEmail = "" } = {}) {
+  const p = prev || {}, r = next || {};
+  const where = target ? `（${target}）` : "";
+  const who = byName || byEmail;
+  return {
+    subject: `⚠ 下限を下回りました: 伴走支援費の値引き後 ${yenText(r.feeAfter)}${where}`,
+    body: [
+      `出荷の修正で伴走支援費の標準額が変わり、値引き後が報酬の下限 ${yenText(FLOOR)} を下回りました（承知のうえで保存）`,
+      `標準額: ${p.standardFee != null ? `${yenText(p.standardFee)} → ` : ""}${yenText(r.standardFee)}`,
+      `値引き: ${yenText(r.amount)}／値引き後: ${p.feeAfter != null ? `${yenText(p.feeAfter)} → ` : ""}${yenText(r.feeAfter)}`,
+      `修正した人: ${who}${byEmail && byName && byName !== byEmail ? `（${byEmail}）` : ""}`,
+    ].join("\n"),
+  };
+}
+
 // 出荷に値引きを入れてよいか。見積もりのある下書き・依頼済の出荷は、申込や改版で見積もりから明細を作り直すので
 // 出荷に入れた値引きが上書きされる。見積もりカードの値引き（setQuoteDiscount）へ案内する（2026-11-13 レビュー中-1）
 export const MSG_USE_QUOTE = "この出荷は見積もりから作った下書き・依頼済の出荷です。値引きは案件の見積もりカードの「値引きを入れる」から入れてください（見積もりと出荷の両方がそろいます。出荷に入れると、申込や見積もりの変更で作り直したときに消えるため）";

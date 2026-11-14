@@ -6,6 +6,7 @@
 #   ・functions/trainer-rules.mjs … トレーナー認定の判定。正本は admin/js/trainer-rules.js（2026-11-12）
 #   ・functions/ship-steps-rules.mjs … 発送の5段（依頼→受付→確認→発送準備→発送完了）の判定。正本は admin/js/ship-steps-rules.js（2026-11-12）
 #   ・functions/pm-discount.mjs … 伴走支援費の PM 値引きの判定。正本は admin/js/pm-discount.js（2026-11-13）
+#   ・functions/order-ship-rules.mjs … 認定事業者の受注と出荷のつなぎの判定。正本は admin/js/order-ship-rules.js（2026-11-15 倉庫の発送完了で使う）
 #     functions は CommonJS で ESM の admin 側を require できないため、拡張子だけ .mjs にしたバイト単位で同じコピーを置く。
 # 違っていたら正本（admin 側）からコピーし直して揃える。
 cd "$(dirname "$0")/.."
@@ -44,6 +45,12 @@ if cmp -s admin/js/pm-discount.js functions/pm-discount.mjs; then
   echo "OK: admin/js/pm-discount.js と functions/pm-discount.mjs は一致"
 else
   echo "NG: admin/js/pm-discount.js と functions/pm-discount.mjs が違う。cp admin/js/pm-discount.js functions/pm-discount.mjs"
+  ok=0
+fi
+if cmp -s admin/js/order-ship-rules.js functions/order-ship-rules.mjs; then
+  echo "OK: admin/js/order-ship-rules.js と functions/order-ship-rules.mjs は一致"
+else
+  echo "NG: admin/js/order-ship-rules.js と functions/order-ship-rules.mjs が違う。cp admin/js/order-ship-rules.js functions/order-ship-rules.mjs"
   ok=0
 fi
 [ "$ok" = "1" ] && exit 0 || exit 1

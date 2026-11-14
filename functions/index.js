@@ -35,6 +35,9 @@ const loadWarehouseRules = () => (_wr ||= import("./warehouse-rules.mjs"));
 // shipmentItemsFromQuote（同期）でも使うので、読み込んだものを _pmMod に控える（使う道の入口で await loadPm() しておく）
 let _pm, _pmMod = null;
 const loadPm = async () => (_pmMod ||= await (_pm ||= import("./pm-discount.mjs")));
+// 認定事業者の受注と出荷のつなぎの判定（純粋 ESM・正本 admin/js/order-ship-rules.js のコピー・2026-11-15）。倉庫の発送完了で使う
+let _os;
+const loadOrderShip = () => (_os ||= import("./order-ship-rules.mjs"));
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -4211,15 +4214,16 @@ exports.warehouseList = onCall(
 async function warehouseComplete(me, shipmentId, mode, extra) {
   const wr = await loadWarehouseRules();
   const ss = await ShipSteps.loadShipSteps();
+  const os = await loadOrderShip();
   _settingsCache = null;
   const fc = ss.finalConfirmOn(await getSettings()); // 依頼者の最終確認を行う設定か（2026-11-12 送3）
   const locs = await warehouseLocations();
   const nameOf = (id) => ((locs.all.find((l) => l.id === id) || {}).name) || "";
   const ref = db.collection("shipments").doc(shipmentId);
   const now = admin.firestore.FieldValue.serverTimestamp();
-  let moved = 0;
+  let moved = 0, orderNote = "", orderRef = "";
   await db.runTransaction(async (tx) => {
-    moved = 0; // トランザクションは再試行されることがあるので、毎回ここで初期化
+    moved = 0; orderNote = ""; orderRef = ""; // トランザクションは再試行されることがあるので、毎回ここで初期化
     const snap = await tx.get(ref);
     if (!snap.exists) throw new HttpsError("not-found", "この出荷は削除されています。画面を更新してください");
     const cur = snap.data();
@@ -4257,11 +4261,16 @@ async function warehouseComplete(me, shipmentId, mode, extra) {
     }
     const moveSkus = Object.keys(need).filter((k) => need[k] > 0);
     const po = cur.partnerOrderId ? await tx.get(db.collection("partnerOrders").doc(String(cur.partnerOrderId))) : null;
+    // 受注を「出荷済」にするのは受付済・受注確定のときだけ（order-ship-rules の orderOnWarehouseDone・2026-11-15）。
+    // キャンセル済みの受注は書き換えない。物はもう出ているので発送の完了は止めず、出荷に partnerOrderNote を残す
+    const poAct = po && po.exists ? os.orderOnWarehouseDone(po.data()) : { action: "keep", note: "" };
+    orderNote = poAct.note; orderRef = String(cur.partnerOrderId || "");
     tx.update(ref, {
       status: "shipped", confirmedAt: now,
       ...(moveSkus.length ? { originLocationId: locId, originLocationName: nameOf(locId) } : {}),
       shippedBy: me.name, shippedByEmail: me.email, shippedAt: now, dueRule: "net14", // supply.js shippedStampPatch と同じ
       warehouseIssue: admin.firestore.FieldValue.delete(), // 倉庫からの差し戻しは、発送済・受け渡し済にしたら消す（§9.3）
+      ...(poAct.note ? { partnerOrderNote: poAct.note } : {}),
       ...extra,
       updatedAt: now,
     });
@@ -4275,8 +4284,9 @@ async function warehouseComplete(me, shipmentId, mode, extra) {
       });
       moved++;
     }
-    if (po && po.exists) tx.update(po.ref, { status: "shipped", updatedAt: now });
+    if (po && po.exists && poAct.action === "set") tx.update(po.ref, { status: "shipped", updatedAt: now });
   });
+  if (orderNote) console.warn(`warehouseComplete: 出荷 ${shipmentId}（受注 ${orderRef}）: ${orderNote}`);
   return moved;
 }
 

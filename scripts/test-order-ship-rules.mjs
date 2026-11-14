@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { canShipFromOrder, orderOnShipDone, ORDER_CANCELED_NO_SHIP_MSG, ORDER_CANCELED_NO_SHIPPED_MSG } from "../admin/js/order-ship-rules.js";
+import { canShipFromOrder, orderOnShipDone, orderOnWarehouseDone, ORDER_CANCELED_NO_SHIP_MSG, ORDER_CANCELED_NO_SHIPPED_MSG, ORDER_CANCELED_KEPT_NOTE } from "../admin/js/order-ship-rules.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 let n = 0;
@@ -52,14 +52,39 @@ t("supply.js の発送済にする（shipWithStock）が、無条件の書き込
   assert.match(fn, /poPlan\.action==="set"\) tx\.update\(po\.ref/);
   assert.ok(!/if\(po && po\.exists\(\)\) tx\.update\(po\.ref, \{ status:"shipped"/.test(fn), "無条件の書き込みが残っている");
 });
-t("練習の代役（practice-stubs.js の倉庫の発送）は本番の Functions と同じ形のまま（test-record-gaps が照合）＝この判定を通さない", () => {
-  assert.ok(!read("admin/js/practice-stubs.js").includes("order-ship-rules"));
-});
 t("純粋: order-ship-rules.js は firebase を読まない", () => {
   assert.ok(!/firebase|updateDoc|setDoc|runTransaction|addDoc/.test(read("admin/js/order-ship-rules.js").replace(/\/\/.*$/gm, "")));
 });
-t("Functions・rules は変えていない前提の目印: functions/index.js の warehouse 側はこの判定をまだ通らない（既知の限界）", () => {
-  assert.ok(!read("functions/index.js").includes("order-ship-rules"));
+
+// ===== 3. 倉庫の発送完了（warehouseComplete・練習の whMarkShipped）は受注の状態を見る（2026-11-15） =====
+t("倉庫: 受付済・受注確定 → 受注を「出荷済」にする（印は残さない）", () => {
+  for (const st of ["received", "confirmed"]) assert.deepEqual(orderOnWarehouseDone({ status: st }), { action: "set", note: "" });
+});
+t("倉庫: キャンセル済み → 受注は書き換えない・止めない（物は出ている）・出荷に残す文", () => {
+  const r = orderOnWarehouseDone({ status: "canceled" });
+  assert.equal(r.action, "keep");
+  assert.equal(r.note, "受注がキャンセル済みのため受注の状態は変えていません");
+  assert.equal(r.note, ORDER_CANCELED_KEPT_NOTE);
+});
+t("倉庫: 出荷済・状態なし・知らない値・受注なし → 受注には書かない・印も残さない（block は返さない）", () => {
+  for (const o of [{ status: "shipped" }, {}, { status: "???" }, null, undefined]) assert.deepEqual(orderOnWarehouseDone(o), { action: "keep", note: "" }, JSON.stringify(o));
+});
+t("倉庫: どの状態でも block を返さない（画面の orderOnShipDone と違い、発送の完了は止めない）", () => {
+  for (const st of ["received", "confirmed", "shipped", "canceled", "", "x"]) assert.notEqual(orderOnWarehouseDone({ status: st }).action, "block");
+});
+t("Functions のコピーがバイト単位で同じ・check-shared-sync.sh に節がある", () => {
+  assert.equal(read("functions/order-ship-rules.mjs"), read("admin/js/order-ship-rules.js"));
+  assert.match(read("scripts/check-shared-sync.sh"), /cmp -s admin\/js\/order-ship-rules\.js functions\/order-ship-rules\.mjs/);
+});
+t("Functions の warehouseComplete と練習の whMarkShipped が orderOnWarehouseDone を通る（無条件の書き込みが無い）", () => {
+  const fn = read("functions/index.js");
+  const wc = fn.slice(fn.indexOf("async function warehouseComplete"), fn.indexOf("exports.warehouseShip"));
+  assert.match(wc, /os\.orderOnWarehouseDone\(po\.data\(\)\)/);
+  assert.ok(!/if \(po && po\.exists\) tx\.update\(po\.ref/.test(wc), "本番に無条件の書き込みが残っている");
+  const ps = read("admin/js/practice-stubs.js");
+  const wh = ps.slice(ps.indexOf("async function whMarkShipped"), ps.indexOf("async function whMarkShipped") + 4000);
+  assert.match(wh, /orderOnWarehouseDone\(po\.data\(\)\)/);
+  assert.ok(!/if \(po && po\.exists\(\)\) tx\.update\(po\.ref/.test(wh), "練習に無条件の書き込みが残っている");
 });
 
 console.log(`order-ship-rules: ${n} 件 合格`);
