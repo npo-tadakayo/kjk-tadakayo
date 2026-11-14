@@ -3,6 +3,13 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 📝 2026-11-15 呼び名の統一「接続サポート等経費（伴走支援費）」（ブランチ `fix/shienhi-naming`・未push・未デプロイ・画面と PDF は未目視）
+
+- 事業所に出るもの（見積書・法人まとめの見積書・領収証の用途区分／但し書き／集計欄・助成金の申請手順書・承諾書・見積もりページ・LP・出荷の明細の品名）を「接続サポート等経費（伴走支援費）」に統一。手順書の入力欄は「介護情報基盤との接続サポート費用（伴走支援費）」。**社内の管理画面は「伴走支援費」のまま**。正本は `admin/js/support-fee-names.js`（詳細 ENGINEERING_NOTES.md §C17）
+- 新しく作る出荷の品名は「接続サポート等経費（伴走支援費・補助対象N台）」。**保存済みの出荷・請求書の品名は変わらない**（品名では判定していない＝sku で判定）
+- テスト `scripts/test-support-fee-names.mjs`（24）。出すもの: Functions `acceptQuote`・`staffAcceptQuote`・`reviseQuote`・`resetPractice`・`nightlyPracticeReset` ＋ Hosting admin・lp（`order-consent-page.js?v=20261115c`）。rules 変更なし
+- 目視が要る: 見積書・領収証・手順書の PDF、見積もりページ（合計欄を 330px に広げた）。`scripts/quote-cover/build.mjs` の帯グラフの中だけ「伴走支援費」のまま
+
 ## 📝 2026-11-15 伴走支援FAQ を CRM マニュアルに載せた（ブランチ `feat/support-faq`・未push・未デプロイ・画面は未目視）
 
 - `admin/manual.html` に章「よくある質問（伴走支援）」`ch-sfaq` を追加（「最近の注意」＋カテゴリ5つ＝証明書／ログイン／取り込み／申込／支援の進め方・計14件・各項目は開閉）。既存の目次・検索・印刷の仕組みに乗せただけ。末尾に正本の場所と更新日 2026-11-15

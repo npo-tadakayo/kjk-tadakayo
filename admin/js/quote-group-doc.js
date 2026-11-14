@@ -20,6 +20,7 @@
 
 import { doc, getDoc, collection, getDocs, query, where } from "/js/fs.js";
 import { PM_DISCOUNT_NAME } from "/js/pm-discount.js"; // 伴走支援費の PM 値引きの行の名前（2026-11-13）
+import { SUPPORT_FEE_LABEL } from "/js/support-fee-names.js"; // 事業所向けの呼び名「接続サポート等経費（伴走支援費）」（2026-11-15）
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }
@@ -253,7 +254,7 @@ export function renderQuoteGroupDocHtml(data) {
       <div class="qdoc-totals-wrap">
         <div class="qdoc-totals">
           <div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(T.readers)}</span></div>
-          <div class="qdoc-total-row sub"><span>伴走支援費（税込）</span><span>${yen(T.accompanyFee)}</span></div>
+          <div class="qdoc-total-row sub"><span>${SUPPORT_FEE_LABEL}・税込</span><span>${yen(T.accompanyFee)}</span></div>
           ${discountRow}
           ${pmRow}
           ${extraRow}

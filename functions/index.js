@@ -14,6 +14,7 @@ const { GoogleGenAI } = require("@google/genai");
 const { GoogleAuth } = require("google-auth-library");
 const { normalizeEmail, normalizePhone } = require("./normalize"); // メール・電話の全角→半角（正本 admin/js/normalize.js）
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（公開ページと同じ計算）
+const { supportFeeItemName } = require("./support-fee-names"); // 伴走支援費の行の品名「接続サポート等経費（伴走支援費・補助対象N台）」（正本 admin/js/support-fee-names.js・2026-11-15）
 const { onDocumentUpdated } = require("firebase-functions/v2/firestore");
 const { checkStaffAccept, STAFF_ACCEPT_CHANNELS } = require("./accept-rules"); // スタッフ受注の拒否条件（純粋関数）
 // 承諾書のサイン＝発注（2026-11-12）の判定（純粋関数）と、承諾書の条文の正本
@@ -1146,7 +1147,7 @@ function shipmentItemsFromQuote(q) {
   const fee = Number(q.amounts?.accompanyFee) || 0;
   if (fee > 0) {
     const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
-    items.push({ sku: "support-fee", name: `伴走支援費（補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
+    items.push({ sku: "support-fee", name: supportFeeItemName(n), qty: 1, unitPrice: fee, nonStock: true });
   }
   const discount = Number(q.amounts?.discount) || 0;
   if (discount > 0) {

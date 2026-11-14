@@ -18,6 +18,8 @@
 
   // 伴走支援費の PM 値引きの行の名前（admin/js/pm-discount.js の PM_DISCOUNT_NAME と同じ。公開ページは import できないので直書き・テストで照合）
   var PM_DISCOUNT_NAME = "接続サポート等経費（伴走支援費）の値引き";
+  // 事業所向けの呼び名（admin/js/support-fee-names.js の SUPPORT_FEE_LABEL と同じ。直書き・テストで照合・2026-11-15）
+  var SUPPORT_FEE_LABEL = "接続サポート等経費（伴走支援費）";
 
   // スイッチがオンのときの画面の文言（オフのときは mitsumori.html の元の文言のまま）
   var TEXT = {
@@ -74,7 +76,7 @@
         + '<div class="oc-row"><span class="oc-k">事業所</span><span class="oc-v">' + esc([e.corpName, e.officeName].filter(Boolean).join("　")) + "</span></div>"
         + '<div class="oc-row"><span class="oc-k">品目・台数</span><span class="oc-v">' + (lines.length ? lines.map(esc).join("<br>") : "—") + "</span></div>"
         + '<div class="oc-row"><span class="oc-k">金額（税込）</span><span class="oc-v"><b>' + yen(a.totalIncl) + "</b>"
-        + '<span class="oc-sub">（うち伴走支援費 ' + yen(a.accompanyFee) + (Number(a.discount) ? "・金額調整 −" + yen(a.discount) : "") + "）</span>"
+        + '<span class="oc-sub">（うち' + SUPPORT_FEE_LABEL + ' ' + yen(a.accompanyFee) + (Number(a.discount) ? "・金額調整 −" + yen(a.discount) : "") + "）</span>"
         // 承諾書に焼き込まれた PM 値引き（amounts.pmDiscount）があるときだけ1行足す（無い承諾書の出力は今までと同じ・2026-11-15）
         + (Number(a.pmDiscount) > 0 ? '<br><span class="oc-sub">' + esc(PM_DISCOUNT_NAME) + " −" + yen(a.pmDiscount) + "</span>" : "")
         + '<br><span class="oc-sub">助成金充当 ' + yen(a.grantAmt) + "　自己負担 " + yen(a.selfPay) + "</span></span></div>"

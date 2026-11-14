@@ -8,6 +8,7 @@
 // ・戻り値は { コレクション名: { ドキュメントID: データ } }（_counters も同じ形）
 
 const Pricing = require("./estimate-pricing"); // 見積もりの価格ロジック（本番の見積もり作成と同じ計算）
+const { supportFeeItemName } = require("./support-fee-names"); // 伴走支援費の行の品名（本番と同じ・2026-11-15）
 
 const DAY = 86400000;
 
@@ -62,7 +63,7 @@ function shipmentItems(q, availableSkus) {
   const fee = Number(q.amounts.accompanyFee) || 0;
   if (fee > 0) {
     const n = q.items.reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
-    items.push({ sku: "support-fee", name: `伴走支援費（補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
+    items.push({ sku: "support-fee", name: supportFeeItemName(n), qty: 1, unitPrice: fee, nonStock: true });
   }
   const discount = Number(q.amounts.discount) || 0;
   if (discount > 0) items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });

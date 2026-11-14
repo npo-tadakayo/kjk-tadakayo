@@ -20,6 +20,7 @@
 //   入金・消込（netPaidOf・billableInclOf など）には触れない。
 // invoiceTotals は「領収金額の予定（請求額）」の表示のためだけに使う（請求書と同じ計算。入金・消込の関数は呼ばない）
 import { priceIsTaxIncluded, itemPurposeNote, invoiceTotals } from "./invoice-doc.js";
+import { SUPPORT_FEE_GUIDE_FIELD } from "./support-fee-names.js"; // 品名の無い伴走支援費の行の既定の名前（2026-11-15）
 
 export const BT_SKU = "cir415a-01"; // estimate-pricing.js の SKU.BT と同じ（BT 以外のカードリーダーは USB に数える）
 const B_SKUS = ["support-fee", "discount"];
@@ -49,7 +50,7 @@ export function receiptRowsFromShipment(s) {
     const sku = String(i.sku || "");
     const qty = Number(i.qty) || 0, price = Number(i.unitPrice) || 0;
     const note = itemPurposeNote(sku);
-    if (sku === "support-fee") return { kind: "B", name: i.name || "介護情報基盤との接続サポート等経費", note, qty, price };
+    if (sku === "support-fee") return { kind: "B", name: i.name || SUPPORT_FEE_GUIDE_FIELD, note, qty, price };
     // 値引き（金額調整）は伴走支援費から引いている性格なのでBに入れる。
     // これでA＋B＝実際にお支払いいただいた額＝助成金の申請対象額になる
     if (sku === "discount") return { kind: "B", name: i.name || "値引き", note: "", qty, price };

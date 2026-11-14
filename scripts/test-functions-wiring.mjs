@@ -507,15 +507,18 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   // shipmentItemsFromQuote は見積もりの pmDiscount から値引きの行を出す（同期の関数なので読み込んだものを使う）
   const fb = src.slice(src.indexOf("function shipmentItemsFromQuote(q) {"), src.indexOf("const PRODUCT_NAMES = {"));
   assert.match(fb, /_pmMod\.pmDiscountRow\(pmDiscount\)/);
-  const sifq = Function("Pricing", "PRODUCT_NAMES", "CONNECTION_LABELS", "_pmMod", `${fb}; return shipmentItemsFromQuote;`);
+  const sifq = Function("Pricing", "PRODUCT_NAMES", "CONNECTION_LABELS", "_pmMod", "supportFeeItemName", `${fb}; return shipmentItemsFromQuote;`);
+  const { supportFeeItemName } = require("../functions/support-fee-names.js"); // 伴走支援費の行の品名（2026-11-15）
   const Pricing = require("../functions/estimate-pricing.js");
   const PMm = await import("../functions/pm-discount.mjs");
-  const f = sifq(Pricing, {}, {}, PMm);
+  const f = sifq(Pricing, {}, {}, PMm, supportFeeItemName);
   const calc = Pricing.computeAmounts("houmon", 3, 0, 0, 0);
   const base = { readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount, subsidyPartTotal: calc.subsidyPartTotal,
     extraPartTotal: calc.extraPartTotal, totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay };
   const items = Pricing.buildItems({ btQty: 3, usbQty: 0, btExtra: 0, usbExtra: 0 });
   const plain = f({ items, amounts: base });
+  // 伴走支援費の行の品名は事業所向けの呼び名（2026-11-15）
+  assert.equal(f({ items, amounts: { accompanyFee: 50000 } }).find((i) => i.sku === "support-fee").name, "接続サポート等経費（伴走支援費・補助対象3台）");
   assert.equal(plain.filter((i) => i.pm).length, 0);
   // 記録（誰が・理由）の無い値引きからは行を作らない（レビュー低-3）
   assert.equal(f({ items, amounts: PMm.applyToAmounts(base, 5500) }).filter((i) => i.pm).length, 0);
@@ -526,7 +529,7 @@ console.log(`OK: test-functions-wiring ${n} 件`);
   // 出荷の明細の合計＝見積もりの値引き後の合計
   assert.equal(withPm.reduce((a, i) => a + i.qty * i.unitPrice, 0), PMm.applyToAmounts(base, 5500).totalIncl);
   // 読み込まずに呼んだら黙って行を落とさず止める
-  assert.throws(() => sifq(Pricing, {}, {}, null)({ items, amounts: { ...base, pmDiscount: 1 }, pmDiscount: { amount: 1 } }), /pm-discount\.mjs が読み込まれていません/);
+  assert.throws(() => sifq(Pricing, {}, {}, null, supportFeeItemName)({ items, amounts: { ...base, pmDiscount: 1 }, pmDiscount: { amount: 1 } }), /pm-discount\.mjs が読み込まれていません/);
   // 見積もりの値引き（setQuoteDiscount）は1つのトランザクションで読み書きし、中で状態を確かめ直す（レビュー中-2）
   assert.match(qb, /await db\.runTransaction\(async \(tx\) => \{/);
   assert.match(qb, /const baseSnap = await tx\.get\(db\.collection\("quotes"\)\.doc\(quoteId\)\);/);

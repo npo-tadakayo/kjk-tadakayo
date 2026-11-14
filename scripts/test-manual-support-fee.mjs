@@ -122,7 +122,7 @@ t(() => {
   const f = manualFormFromItems([{ sku: "a", qty: 1 }, it]);
   assert.deepEqual([f.amount, f.name, f.priorBuyerReaderCost, f.memo, f.manualBy], [30200, "伴走支援費", 11800, "先方のリーダー購入費を差し引いた額", "a@tadakayo.jp"]);
   assert.equal(manualFormFromItems([auto]), null);
-  assert.equal(DEFAULT_MANUAL_NAME, "伴走支援費");
+  assert.equal(DEFAULT_MANUAL_NAME, "接続サポート等経費（伴走支援費）"); // 2026-11-15 事業所向けの呼び名に（品名は請求書・領収証に出る）
 });
 
 // ===== 保存時の検査（画面の検査だけに頼らない） =====
