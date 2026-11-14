@@ -152,6 +152,59 @@ t("公開ページ: 発注の内容（見積番号・版・事業所・品目・
   assert.equal(P.quotesHtml([plain(ENTRY), null]), null);
   assert.equal(P.quotesHtml([]), null);
 });
+// ----- 承諾書に焼き込んだ PM 値引きの行（2026-11-15） -----
+// 直す前（main e669be5）の quotesHtml の出力を scripts/fixtures/order-consent-quotes-before-pm.json に固定してある
+// （git の履歴が無い環境でも通るように）。値引きの無い承諾書の出力が1文字も変わらないことを確かめる
+const BEFORE = JSON.parse(read("scripts/fixtures/order-consent-quotes-before-pm.json")).cases;
+const before = (name) => { const c = BEFORE.find((x) => x.name === name); assert.ok(c, `固定値が無い: ${name}`); return c; };
+const PMD = await import("../admin/js/pm-discount.js");
+const PM_LINE = '<br><span class="oc-sub">接続サポート等経費（伴走支援費）の値引き −¥5,000</span>';
+t("値引きの行: 値引きの無い承諾書の出力は直す前（固定値）と1文字も同じ（金額調整あり・なし・0・文字・マイナス・品目なし・< > を含む名前・まとめ・空）", () => {
+  const noPm = BEFORE.filter((c) => !c.name.includes("値引き"));
+  assert.equal(noPm.length, 9);
+  for (const c of noPm) assert.equal(P.quotesHtml(c.entries), c.html, c.name);
+  assert.equal(before("空").html, null);
+  // 固定値の入力は今の焼き込み（orderConsentQuoteEntry）と同じ形（ずれていれば固定値が古い）
+  assert.deepEqual(before("金額調整あり").entries[0], plain(ENTRY));
+  assert.ok(!("pmDiscount" in plain(ENTRY).amounts)); // 値引きの無い見積もりは焼き込みに pmDiscount を持たない
+  assert.ok(before("金額調整あり").html.includes("事業所&lt;A&gt;") && !before("品目なし・<script>の名前").html.includes("<script>x"));
+});
+t("値引きの行: 焼き込んだ pmDiscount があるときだけ「接続サポート等経費（伴走支援費）の値引き −¥X」を伴走支援費の内訳の下に1行", () => {
+  const c = before("値引きあり（直す前は値引きの行なし）");
+  const e = c.entries[0];
+  assert.equal(e.amounts.pmDiscount, 5000);
+  const h = P.quotesHtml([e]);
+  assert.equal(h.split(PM_LINE).length, 2, "値引きの行が1つだけ出ていない");
+  assert.ok(h.indexOf("うち伴走支援費 ¥33,000・金額調整 −¥1,000") < h.indexOf(PM_LINE) && h.indexOf(PM_LINE) < h.indexOf("助成金充当 ¥59,000"), "並びが違う");
+  assert.ok(h.includes("<b>¥74,200</b>"), "合計は値引き後のまま");
+  assert.equal(h.replace(PM_LINE, ""), c.html); // 値引きの行を足しただけ（それ以外は直す前と同じ）
+  // まとめ（2事業所・片方だけ値引き）
+  const g2 = before("まとめ・片方だけ値引き（直す前）");
+  const g = P.quotesHtml(g2.entries);
+  assert.equal(g.split("の値引き −").length, 2);
+  assert.equal(g.replace(PM_LINE, ""), g2.html);
+  // 焼き込み（functions/accept-rules.js）から通しても出る
+  const e2 = plain(R.orderConsentQuoteEntry({ id: "q9", estNo: "EST-9", version: 1, items: [], amounts: { ...e.amounts } }));
+  assert.ok(P.quotesHtml([e2]).includes(PM_LINE));
+});
+t("値引きの行: 読み込みの版（?v=）は今日の日付＋印で、これまでに出した最大の 20261115 より新しい（キャッシュを切る）", () => {
+  const v = /js\/order-consent-page\.js\?v=(\d{8})([a-z]?)"/.exec(read("mitsumori.html"));
+  assert.ok(v, "版が見つからない");
+  assert.equal(v[1] + v[2], "20261115b");
+  assert.ok(v[1] + v[2] > "20261115" && v[1] <= "20261115", "未来の日付・古い版になっている");
+});
+t("値引きの行: テストは git の履歴に頼らない", () => {
+  const src = read("scripts/test-order-consent-web.mjs");
+  assert.ok(!src.includes("e669be5" + ":js/"), "直す前の出力を git show で取っている");
+});
+t("値引きの行: 呼び名は admin/js/pm-discount.js の PM_DISCOUNT_NAME と同じ（公開ページは import できないので直書き）", () => {
+  assert.equal(P.PM_DISCOUNT_NAME, PMD.PM_DISCOUNT_NAME);
+  assert.equal(P.PM_DISCOUNT_NAME, "接続サポート等経費（伴走支援費）の値引き");
+});
+t("値引きの行: 公開ページは admin・functions を読み込まない（外部の読み込みなし）", () => {
+  const src = read("js/order-consent-page.js");
+  assert.ok(!/import\s|require\(|pm-discount/.test(src.replace(/\/\/.*$/gm, "")));
+});
 t("公開ページ: 送る同意の印・承諾書のアドレスの確認・受け付けた表示", () => {
   assert.deepEqual(plain(P.consentPayload(CD.CONSENT_V1_2)), { agreed: true, version: "1.2" });
   const url = "https://kjk-tadakayo-admin.web.app/consent?t=0123456789abcdef0123456789abcdef";
@@ -256,7 +309,7 @@ t("承諾書の文書に職員・内部のメールアドレスを入れない�
 t("mitsumori.html: 同意の印は承諾書の画面を出したときだけ送る・部品を読み込む", () => {
   const h = read("mitsumori.html");
   assert.match(h, /if \(consentDoc\) body\.consent = OrderConsentPage\.consentPayload\(consentDoc\);/);
-  assert.match(h, /<script src="js\/order-consent-page\.js\?v=\d+"><\/script>/);
+  assert.match(h, /<script src="js\/order-consent-page\.js\?v=\d+[a-z]?"><\/script>/);
   assert.match(h, /if \(!on && !orderModeOn && !ORDER_PENDING\.size\) return;/); // オフのままなら文言に触らない
   // オフのときの元の文言はそのまま残っている
   for (const s of ["この内容でお申し込みになりますか？", "お申し込みの確認", "この内容で申し込む", "お申し込み者のお名前", "個人情報保護方針と利用規約への同意にチェックをお願いします"]) assert.ok(h.includes(s), s);

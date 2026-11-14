@@ -28,6 +28,7 @@ t("exports（firebase を読まない純粋関数だけ）", () => {
     "FLOOR", "MAX_REASON", "PM_DISCOUNT_NAME", "PM_DISCOUNT_SKU", "applyToAmounts", "buildPmRecord", "checkPmRows", "floorCheck",
     "MSG_USE_QUOTE", "isPmRow", "pmActivityText", "pmAmountOfItems", "pmApplicableShipment", "pmDiscountRow", "pmRemovedByReviseText", "pmRows",
     "recalcPmRecord", "shipmentPmBlockedByQuote", "standardFeeOf", "standardFeeOfAmounts", "validatePmDiscount", "withoutPmRows", "yenText",
+    "MSG_PM_CHANGED", "pmChangedSinceOpen", "pmRecalcBelowFloorText",
   ].sort());
   assert.ok(!/^import /m.test(read("admin/js/pm-discount.js")));
   assert.equal(PM.PM_DISCOUNT_NAME, "接続サポート等経費（伴走支援費）の値引き");
@@ -231,9 +232,50 @@ t("練習モードの代役: 新しい Callable 2本・管理者だけ・本番�
   assert.match(ps, /const prevForText = shipmentId && shipStatus === "draft" && shipPm > 0 \? shipPm : prevPm;/);
   assert.match(ps, /const prevPm = Math\.max\(Number\(base\.amounts\?\.pmDiscount\) \|\| 0, shipmentId && shipStatus === "draft" \? shipPm : 0\);/);
 });
-t("estimate-pricing.js（3か所）と公開ページは変えていない（値引きは別の項目）", () => {
+t("estimate-pricing.js（3か所）と見積もりページは変えていない（値引きは別の項目。承諾書の表示 js/order-consent-page.js は 2026-11-15 から値引きの行を出す）", () => {
   for (const p of ["functions/estimate-pricing.js", "js/estimate-pricing.js", "admin/js/estimate-pricing.js"]) assert.ok(!/pmDiscount|pm-discount/.test(read(p)), p);
-  for (const p of ["mitsumori.html", "js/order-consent-page.js"]) assert.ok(!/pmDiscount|pm-discount/.test(read(p)), p);
+  for (const p of ["mitsumori.html"]) assert.ok(!/pmDiscount|pm-discount/.test(read(p)), p);
 });
 
+// ===== 2026-11-15 低指摘 A（下限割れを対応記録に）・B（開いている間の値引きの変更で止める） =====
+t("B: pmChangedSinceOpen … 記録の額・明細の値引きの行の額のどちらかが違えば true", () => {
+  const row = (a) => PM.pmDiscountRow(a);
+  const fee = { sku: "support-fee", qty: 1, unitPrice: 30000 };
+  const S = (amt, rowAmt) => ({ ...(amt ? { pmDiscount: { amount: amt } } : {}), items: [fee, ...(rowAmt ? [row(rowAmt)] : [])] });
+  assert.equal(PM.pmChangedSinceOpen(S(0, 0), S(0, 0)), false);
+  assert.equal(PM.pmChangedSinceOpen(S(5000, 5000), S(5000, 5000)), false);
+  assert.equal(PM.pmChangedSinceOpen(S(5000, 5000), S(8000, 8000)), true);   // 額を変えた
+  assert.equal(PM.pmChangedSinceOpen(S(0, 0), S(5000, 5000)), true);         // 開いたあとで入れた
+  assert.equal(PM.pmChangedSinceOpen(S(5000, 5000), S(0, 0)), true);         // 開いたあとで外した
+  assert.equal(PM.pmChangedSinceOpen(S(5000, 5000), S(5000, 0)), true);      // 行だけ消えた
+  assert.equal(PM.pmChangedSinceOpen(null, null), false);
+  assert.equal(PM.MSG_PM_CHANGED, "値引きが変わっています。開き直してください");
+});
+t("A: pmRecalcBelowFloorText … ⚠・誰が・標準額・値引き後", () => {
+  const items = [{ sku: "support-fee", qty: 1, unitPrice: 20000 }, PM.pmDiscountRow(8000)];
+  const pr = PM.recalcPmRecord({ amount: 8000, standardFee: 30000, feeAfter: 22000, belowFloor: false, reason: "r" }, items);
+  assert.equal(pr.changed, true); assert.equal(pr.belowFloor, true); assert.equal(pr.feeAfter, 12000);
+  const x = PM.pmRecalcBelowFloorText({ target: "出荷 SH-1", prev: { standardFee: 30000, feeAfter: 22000 }, next: pr.record, byName: "次田", byEmail: "a@tadakayo.jp" });
+  assert.equal(x.subject, "⚠ 下限を下回りました: 伴走支援費の値引き後 ¥12,000（出荷 SH-1）");
+  assert.equal(x.body, [
+    "出荷の修正で伴走支援費の標準額が変わり、値引き後が報酬の下限 ¥15,000 を下回りました（承知のうえで保存）",
+    "標準額: ¥30,000 → ¥20,000",
+    "値引き: ¥8,000／値引き後: ¥22,000 → ¥12,000",
+    "修正した人: 次田（a@tadakayo.jp）",
+  ].join("\n"));
+  const y = PM.pmRecalcBelowFloorText({ next: pr.record, byEmail: "a@tadakayo.jp" });
+  assert.ok(y.body.includes("標準額: ¥20,000\n") && y.body.includes("修正した人: a@tadakayo.jp") && !y.subject.includes("（"));
+});
+t("A・B: supply.js の saveShipEdit の結線（トランザクションの中で値引きの変更を見る・下限割れの記録を同じトランザクションで書く）", () => {
+  const s = read("admin/js/supply.js");
+  const fn = s.slice(s.indexOf("async function saveShipEdit"), s.indexOf("async function prefillShipFromCase"));
+  const tx = fn.slice(fn.indexOf("await runTransaction(db"));
+  assert.match(tx, /if\(items && pmChangedSinceOpen\(s0, cur\)\) throw new Error\(MSG_PM_CHANGED\);/);
+  // 値引きの確認は「他の人が先に変更」より前（具体的な文を出す）
+  assert.ok(tx.indexOf("pmChangedSinceOpen") < tx.indexOf("他の人が先にこの出荷を変更しています"));
+  assert.match(fn, /if\(pr\.belowFloor && s0\.caseId\) pmFloorAct = pmRecalcBelowFloorText\(\{ target:`出荷 \$\{s0\.soNumber\|\|""\}`, prev:s0\.pmDiscount\|\|null, next:pr\.record,/);
+  assert.match(tx, /if\(pmFloorAct\) tx\.set\(doc\(collection\(db,"activities"\)\), \{ caseId:s0\.caseId, type:"memo",/);
+  // 下限割れの記録は承知の確認（confirm）のあとでしか作らない
+  assert.ok(fn.indexOf("confirm(`伴走支援費の標準額が変わり") < fn.indexOf("pmFloorAct = pmRecalcBelowFloorText"));
+});
 console.log(`OK test-pm-discount: ${n} 件合格`);

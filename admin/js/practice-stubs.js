@@ -23,6 +23,7 @@ import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document
 import { statusChangePatch } from "/js/case-progress.js"; // 進み具合の帯（状態を変えたら2項目を書く）
 // 伴走支援費の PM 値引き（2026-11-13）。判定は本番（functions/pm-discount.mjs）と同じ正本
 import * as PM from "/js/pm-discount.js";
+import { orderOnWarehouseDone } from "/js/order-ship-rules.js"; // 倉庫の発送完了での受注の扱い（本物の warehouseComplete と同じ・2026-11-15）
 import { getProdFirestore } from "/js/fs.js";
 
 function db() { return getFirestore(getApp()); } // 練習モード中なので練習DB
@@ -431,11 +432,14 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
     // 受注（認定事業者から）にひも付く出荷なら、受注も「出荷済」にする（本物の warehouseComplete と同じ・2026-11-10 点検7）。
     // 読み取りは書き込みより前に済ませる（Firestore トランザクションの決まり）
     const po = cur.partnerOrderId ? await tx.get(doc(db(), "partnerOrders", String(cur.partnerOrderId))) : null;
+    // 受付済・受注確定のときだけ（キャンセル済みは書き換えず、出荷に partnerOrderNote を残す・本物と同じ 2026-11-15）
+    const poAct = po && po.exists() ? orderOnWarehouseDone(po.data()) : { action: "keep", note: "" };
     tx.update(ref, {
       status: "shipped", confirmedAt: serverTimestamp(),
       ...(skus.length ? { originLocationId: locId, originLocationName: locName } : {}),
       shippedBy: u.name, shippedByEmail: u.email, shippedAt: serverTimestamp(), dueRule: "net14",
       warehouseIssue: deleteField(),
+      ...(poAct.note ? { partnerOrderNote: poAct.note } : {}),
       ...extra, updatedAt: serverTimestamp(),
     });
     for (const sku of skus) {
@@ -445,7 +449,7 @@ async function whMarkShipped(shipmentId, expectMode, extra) {
         createdAt: serverTimestamp(), userName: u.name,
       });
     }
-    if (po && po.exists()) tx.update(po.ref, { status: "shipped", updatedAt: serverTimestamp() });
+    if (po && po.exists() && poAct.action === "set") tx.update(po.ref, { status: "shipped", updatedAt: serverTimestamp() });
   });
   return { soNumber, caseId };
 }

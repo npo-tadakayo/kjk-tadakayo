@@ -450,6 +450,7 @@ console.log(`OK: test-functions-wiring ${n} 件`);
     [/shippedBy: me\.name, shippedByEmail: me\.email, shippedAt: now/, "shippedBy*"],
     [/warehouseIssue: admin\.firestore\.FieldValue\.delete\(\)/, "差し戻しを消す"],
     [/po\.ref, \{ status: "shipped"/, "認定事業者の受注も出荷済に"],
+    [/poAct\.action === "set"\) tx\.update\(po\.ref/, "受注を出荷済にするのは受付済・受注確定のときだけ"],
   ]) if (!re.test(wc)) throw new Error(`warehouseComplete: ${what}が無い`);
   if (!/warehouseComplete\(me, shipmentId, "ship"/.test(blockOf("warehouseShip"))) throw new Error("warehouseShip: 発送で呼んでいない");
   const hb = blockOf("warehouseHandover");

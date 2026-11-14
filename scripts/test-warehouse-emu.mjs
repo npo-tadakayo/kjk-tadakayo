@@ -584,6 +584,27 @@ r = await call("shipStepDone", STAFF, { shipmentId: "m-shipped0" });
 check("発送済にした日時の無い古い出荷にも知らせない（old）", r.ok && r.r.skipped === "old" && posted.length === 0, JSON.stringify(r));
 check("倉庫が発送済にした直後は知らせが出ていた（m-old）", !!(await get(sh("m-old"))).shipDoneNotifiedAt);
 
+// ---------- 受注がキャンセル済みの出荷（2026-11-15） ----------
+section("受注がキャンセル済みの出荷を倉庫で発送済にする");
+await seed([
+  [db.collection("products").doc("BX"), { name: "カードリーダーBX", stock: 5, stockByLocation: { L1: 5 }, price: 9800 }],
+  [db.collection("partnerOrders").doc("po-c"), { status: "canceled", updatedAt: "keep" }],
+  [db.collection("partnerOrders").doc("po-s"), { status: "shipped", updatedAt: "keep" }],
+  [sh("s-poc"), base({ soNumber: "SH-POC", originLocationId: "L1", partnerOrderId: "po-c", items: [{ sku: "BX", name: "カードリーダーBX", qty: 1, unitPrice: 9800 }] })],
+  [sh("s-pos"), base({ soNumber: "SH-POS", originLocationId: "L1", partnerOrderId: "po-s", items: [{ sku: "BX", name: "カードリーダーBX", qty: 1, unitPrice: 9800 }] })],
+]);
+r = await call("warehouseShip", WH1, { shipmentId: "s-poc", shipDate: TODAY });
+s = await get(sh("s-poc"));
+check("キャンセル済みの受注でも発送の完了は止めない（物は出ている）", r.ok && s.status === "shipped", JSON.stringify(r));
+check("受注はキャンセル済みのまま（書き換えない）", JSON.stringify(await get(db.collection("partnerOrders").doc("po-c"))) === JSON.stringify({ status: "canceled", updatedAt: "keep" }));
+check("出荷に「受注がキャンセル済みのため受注の状態は変えていません」を残す", s.partnerOrderNote === "受注がキャンセル済みのため受注の状態は変えていません", JSON.stringify(s.partnerOrderNote));
+check("在庫は引く（BX L1 5→4）", (await prod("BX")).stockByLocation.L1 === 4);
+r = await call("warehouseShip", WH1, { shipmentId: "s-pos", shipDate: TODAY });
+s = await get(sh("s-pos"));
+check("すでに出荷済の受注は書き換えない・印も残さない", r.ok && s.status === "shipped" && !("partnerOrderNote" in s)
+  && JSON.stringify(await get(db.collection("partnerOrders").doc("po-s"))) === JSON.stringify({ status: "shipped", updatedAt: "keep" }), JSON.stringify(r));
+check("確定の受注のときは印を残さない（s1）", !("partnerOrderNote" in (await get(sh("s1")))));
+
 console.log(results.join("\n"));
 console.log(`\n合計: ${pass}/${pass + fail} 合格`);
 process.exit(fail ? 1 : 0);

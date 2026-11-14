@@ -30,7 +30,7 @@ import { SHIP_STATUS_LABEL, SHIP_STATUS_BADGE, shipStatusOf, usesWarehouse, stoc
 import { billingMailActivityOf, mailRecordFailedText, mailSentNotesOf, prepaidNoteOf, ymdJstOf } from "/js/record-gaps.js";
 import { planShipCancelRevert, revertWrites, holdActivity, holdMessage, cancelPreviewText } from "/js/ship-cancel-case.js"; // 点検9（出荷キャンセル後の案件・2026-11-12）
 // 点検9の続き（2026-11-13 次田さん「その都度、人が選ぶ」）: 認定事業者の受注から作った出荷をキャンセルしたときの受注の戻し先
-import { canShipFromOrder, orderOnShipDone } from "/js/order-ship-rules.js"; // 受注と出荷のつなぎの判定（2026-11-13）
+import { canShipFromOrder, orderOnShipDone, canceledOrderShipWarn, canceledOrderInvoiceConfirmText } from "/js/order-ship-rules.js"; // 受注と出荷のつなぎの判定（2026-11-13）
 import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPartnerOrderShipment, validateOrderReturn,
   planOrderOnShipCancel, orderReturnWrites, lastShipCancelNote, shipOrderReturnNote } from "/js/ship-cancel-order.js";
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
@@ -39,7 +39,7 @@ import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, vali
 // 伴走支援費の PM 値引き（2026-11-13）。判定の正本は pm-discount.js。値引きを入れる・外すのはサーバー（setShipmentDiscount・管理者だけ）
 import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems, recalcPmRecord,
   shipmentPmBlockedByQuote, MSG_USE_QUOTE as PM_MSG_USE_QUOTE,
-  FLOOR as PM_FLOOR, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
+  FLOOR as PM_FLOOR, PM_DISCOUNT_NAME, pmChangedSinceOpen, MSG_PM_CHANGED, pmRecalcBelowFloorText } from "/js/pm-discount.js";
 // 倉庫からの差し戻し理由の表示名（2026-10-24 倉庫メニュー §9.3）
 import { STEP_TIPS } from "/js/case-ship-step.js"; // 段の吹き出し（案件詳細の出荷タブと同じ言い方・2026-11-13）
 import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/js/warehouse-rules.js";
@@ -70,6 +70,8 @@ let currentUser = null;
 let appSettings = {};
 let shipments = [];          // 出荷一覧（受注タブの入金状況表示に流用）
 let partnerOrdersCache = []; // 受注一覧（出荷の更新時に再描画するため保持）
+// 出荷にひも付く受注（いまの状態・画面が持っている受注一覧から）。無ければ null
+const orderOfShip = (s)=> s && s.partnerOrderId ? (partnerOrdersCache.find(o=>o._id===s.partnerOrderId)||null) : null;
 let isAdminUser = false;     // 管理者（myRole.role==="admin"）。伴走支援費の値引き・標準額より下げる任意の金額に使う（2026-11-13）
 let viewerMode = false;      // 閲覧のみ（viewer）。applyViewerMode が文言で拾えないボタンを自前で止めるため
 let shipDeepLinkTried = false; // ?so= の該当行スクロールは最初の描画で1回だけ試す（onSnapshotで何度も再描画されるため）
@@ -2263,7 +2265,7 @@ async function saveShipEdit(){
     updatedBy:currentUser.displayName||currentUser.email,
   };
 
-  let items=null, delta={};
+  let items=null, delta={}, pmFloorAct=null;
   if(!locked){
     if(subsidyPlanMissing()){ alert("伴走支援費を含める場合はプランを選んでください"); return; }
     patch.shipDate = document.getElementById("shipDate").value||today(); // 出荷日は請求書に印字されるのでロック外のときだけ
@@ -2314,6 +2316,9 @@ async function saveShipEdit(){
         if(pr.negative){ alert(`値引き後の伴走支援費がマイナスになります（${yen(pr.feeAfter)}）。先に値引きを外すか、管理者に額を直してもらってください`); return; }
         if(pr.belowFloor && !confirm(`伴走支援費の標準額が変わり、値引き後の伴走支援費が ${yen(pr.feeAfter)} になります。報酬の下限（${yen(PM_FLOOR)}）を下回りますが、承知のうえで保存しますか？`)) return;
         patch.pmDiscount = { ...pr.record, recalculatedBy: currentUser.email||"", recalculatedAt: serverTimestamp() };
+        // 下限を下回ったら案件の対応記録に1行（誰が・標準額・値引き後）。出荷の保存と同じトランザクションで書く（2026-11-15 低指摘A）
+        if(pr.belowFloor && s0.caseId) pmFloorAct = pmRecalcBelowFloorText({ target:`出荷 ${s0.soNumber||""}`, prev:s0.pmDiscount||null, next:pr.record,
+          byName: currentUser.displayName||"", byEmail: currentUser.email||"" });
       }
     }
     // 事業所向けで送料>0 のまま保存するときは「当法人負担」の名目を外す（feeLabelForSave・2026-11-12 レビュー中-2）
@@ -2335,6 +2340,8 @@ async function saveShipEdit(){
       const snap=await tx.get(shipRef);
       if(!snap.exists()) throw new Error("この出荷は削除されています。画面を更新してください");
       const cur=snap.data();
+      // 開いている間に管理者が値引きを変えていたら止める（記録の出し直しが古い値引きを元にしてしまうため・2026-11-15 低指摘B）
+      if(items && pmChangedSinceOpen(s0, cur)) throw new Error(MSG_PM_CHANGED);
       const a=cur.updatedAt?.toMillis?.()||0, b=s0.updatedAt?.toMillis?.()||0;
       if(a!==b) throw new Error("他の人が先にこの出荷を変更しています。画面を更新してから直してください");
       delta={}; moved=0; // トランザクションは再試行されることがあるので、毎回ここで初期化
@@ -2366,6 +2373,9 @@ async function saveShipEdit(){
           moved++;
         }
       }
+      if(pmFloorAct) tx.set(doc(collection(db,"activities")), { caseId:s0.caseId, type:"memo", occurredAt:serverTimestamp(),
+        userId: currentUser?.uid||null, userName: currentUser?.displayName||currentUser?.email||"",
+        subject: pmFloorAct.subject, body: pmFloorAct.body, attachmentUrls: [] });
     });
     document.getElementById("shipModal").classList.remove("open");
     editingShip=null;
@@ -3052,6 +3062,9 @@ function renderShipments(ships, dv){
     const wi = s.warehouseIssue;
     const issueHtml = wi
       ? `<div style="font-size:12px;color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> 倉庫から：${esc(ISSUE_REASONS[wi.reason]||wi.reason||"")}${wi.note?`（${esc(wi.note)}）`:""}</div>` : "";
+    // 受注がキャンセル済みのまま倉庫が発送した出荷（partnerOrderNote）。受注がいまもキャンセル済みのときだけ出す（2026-11-15）
+    const poWarn = canceledOrderShipWarn(s, orderOfShip(s));
+    const poWarnHtml = poWarn ? `<div class="po-canceled-warn" style="font-size:12px;color:var(--color-danger);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${esc(poWarn)}</div>` : "";
     // 下書きの重複（同じ案件に下書き・依頼済が2件以上）。残す候補＝案件に結びついている出荷（cases.shipmentId）
     const dup = dv.byShip.get(s._id);
     const dupBadge = dup
@@ -3209,7 +3222,7 @@ function renderShipments(ships, dv){
     return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}${dupBadge}</div></td>
       <td>${esc(s.shipDate||"")}${s.desiredDeliveryDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納品希望 ${esc(s.desiredDeliveryDate)}</div>`:""}${st==="canceled"&&s.canceledAt?`<div style="font-size:12px;color:var(--color-ink-muted)">キャンセル ${esc(fmtDate(s.canceledAt))}</div>`:""}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${pickupHtml}${issueHtml}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
+      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${pickupHtml}${issueHtml}${poWarnHtml}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
       <td style="font-size:12px">${summary}${adviceHtml}</td>
       <td>
         <!-- ボタンが増えて右にはみ出し、削除が画面外で押せなくなっていた（2026-09-01）。
@@ -3898,6 +3911,13 @@ async function doInvoiceReport(){
   const err = document.getElementById("invReportError"); err.style.display="none";
   if(send && (!subject || !body.trim())){ err.textContent="件名・本文は必須です"; err.style.display="block"; return; }
   if(invReportOnly && !send){ err.textContent="報告先が未設定です。「設定」画面で登録してください"; err.style.display="block"; return; }
+  // 受注がキャンセル済みのまま倉庫が発送した出荷なら確かめる（受注のいまの状態を読み直す・止めはしない・2026-11-15）
+  if(!invReportOnly && s.partnerOrderId && s.partnerOrderNote){
+    let po=orderOfShip(s);
+    try{ const ps=await getDoc(doc(db,"partnerOrders",String(s.partnerOrderId))); po=ps.exists()?ps.data():null; }catch(_){ /* 読めなければ画面の受注一覧で判定 */ }
+    const poAsk = canceledOrderInvoiceConfirmText(s, po);
+    if(poAsk && !confirm(poAsk)) return;
+  }
   // 請求書の発行日（2026-10-19 #6）。後追い報告では使わない（既存の請求日のまま）
   const issueYmd = invReportOnly ? "" : document.getElementById("invReportDate").value;
   if(!invReportOnly){
@@ -4007,6 +4027,8 @@ function renderPartnerOrders(orders){
     const rel=shipments.filter(s=>s.partnerOrderId===o._id && s.status!=="canceled");
     // ひも付く生きた出荷（キャンセル以外）があるときは「出荷へ」を出さない（同じ受注から出荷が2つできるのを防ぐ・2026-10-21）
     const relLabel = rel.length ? (SHIP_STATUS[shipStatusOf(rel[0])]||"") : "";
+    // キャンセル済みのまま倉庫が発送した出荷があれば警告（受注がいまもキャンセル済みのときだけ・2026-11-15）
+    const poWarn = rel.map(s=>canceledOrderShipWarn(s, o)).find(Boolean) || "";
     const shipBtn = rel.length
       ? `<span style="font-size:12px;color:${rel.some(s=>s.status==="draft"||s.status==="requested")?"var(--color-ink-muted)":"var(--color-success)"}">出荷 ${esc(relLabel)}</span>`
       : o.status==="shipped"
@@ -4028,7 +4050,7 @@ function renderPartnerOrders(orders){
       <td>${esc(o.partnerName||o.partnerEmail||"")}</td>
       <td>${esc(sh.officeName||"")}${sh.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(sh.company)}</div>`:""}</td>
       <td style="font-size:12px">${esc(sum)}</td>
-      <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select>${lastShipCancelNote(o)?`<div style="font-size:12px;color:var(--color-ink-muted);margin-top:2px">${esc(lastShipCancelNote(o))}</div>`:""}</td>
+      <td><select class="form-control po-status" data-id="${o._id}" style="padding:4px 8px;font-size:12px">${opts}</select>${poWarn?`<div class="po-canceled-warn" style="font-size:12px;color:var(--color-danger);font-weight:600;margin-top:2px"><i class="ti ti-alert-triangle" aria-hidden="true"></i> ${esc(poWarn)}</div>`:""}${lastShipCancelNote(o)?`<div style="font-size:12px;color:var(--color-ink-muted);margin-top:2px">${esc(lastShipCancelNote(o))}</div>`:""}</td>
       <td>${payCell}</td>
       <td>${shipBtn}</td>
     </tr>`;
@@ -4518,6 +4540,7 @@ onAuthStateChanged(auth, async (user)=>{
   onSnapshot(query(collection(db,"partnerOrders"),orderBy("createdAt","desc")),(snap)=>{
     partnerOrdersCache=snap.docs.map(d=>({_id:d.id,...d.data()}));
     renderPartnerOrders(partnerOrdersCache);
+    renderShipmentsView(); // 出荷の行の「受注がキャンセル済みのまま発送」の警告は受注のいまの状態を見るため（2026-11-15）
   });
   // 保管場所・入荷先のモーダル
   document.getElementById("newLocationBtn").addEventListener("click",()=>openLocationModal(null));

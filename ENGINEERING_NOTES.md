@@ -942,3 +942,10 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 **限界**: ①firestore.rules は変えていないので、編集者がブラウザの開発ツールから出荷の明細に値引きの行や安い任意の行を直接書くことは止められない（画面とサーバーの Callable だけが正しい道）②公開ページ（見積もりページ・承諾書のページ）は値引きの行を出さない（合計は値引き後、「うち伴走支援費」は標準額のまま）③出荷だけに入れた値引きは案件の `totalAmount` に反映しない（承諾書のある案件は取り直しの印は立つ）④練習モードの代役は管理者かどうかを本番の users で確かめる ⑤出荷の修正で標準額が変わったときの記録の出し直しは画面（editor でも書ける）で行う。誰が出し直したかは `recalculatedBy` に残す
 
 **テスト**: `scripts/test-pm-discount.mjs`（16件: 判定・写し・結線）／`test-subsidy-amounts.mjs`（+2: B に入り A＋B が下がる・乱数1,000件で領収証の明細合計＝`invoiceTotals().total`）／`test-functions-wiring.mjs`（新 Callable が allow:"admin"・SA_MAIL・`shipmentItemsFromQuote` が値引きの行を出す）／`test-ship-flow`・`test-warehouse-rules`・`test-ship-steps`（値引きの行が台数・倉庫・在庫に出ない）／`test-order-consent`（焼き込み・取り直しの印）／`test-manual-support-fee`（標準額より下げるのは管理者だけ）
+
+**2026-11-15 の直し（ブランチ `fix/warehouse-consent-discount`）**
+- 限界②を解消: 承諾書の表示（`js/order-consent-page.js` の `quotesHtml`）は、焼き込んだ `amounts.pmDiscount` があるときだけ伴走支援費の内訳の下に「接続サポート等経費（伴走支援費）の値引き −¥X」を1行出す（名前は直書き・`PM_DISCOUNT_NAME` とテストで照合）。値引きの無い承諾書の出力は直す前（e669be5）と1文字も同じ（`test-order-consent-web.mjs`）。`mitsumori.html` は読み込みの `?v=20261116` だけ変更。承諾書を開くページ（`order-consent-view.js`）は合計だけで内訳を出さないので変えていない
+- 低-A: 出荷の修正で標準額が変わり値引き後が下限を割ったら、承知の確認のあと、出荷の保存と同じトランザクションで案件の対応記録（`type:"memo"`・件名「⚠ 下限を下回りました…」・誰が・標準額・値引き後）を書く（`pmRecalcBelowFloorText`）
+- 低-B: `saveShipEdit` のトランザクションで、開いた時点といまの出荷の値引き（記録の額・明細の値引きの行の額）を比べ（`pmChangedSinceOpen`）、違えば「値引きが変わっています。開き直してください」で止める
+- 倉庫の発送完了（`warehouseComplete`・練習の `whMarkShipped`）は `orderOnWarehouseDone`（`admin/js/order-ship-rules.js`＝正本、`functions/order-ship-rules.mjs`＝同一コピー）で受注を見る。受付済・受注確定だけ「出荷済」に。キャンセル済みは受注を書き換えず、発送の完了は止めず、出荷に `partnerOrderNote`「受注がキャンセル済みのため受注の状態は変えていません」を残す（Functions はログにも）
+- 独立レビューの直し（同じブランチの2本目）: 中-1 出荷一覧の行・受注一覧の行に「⚠ 受注がキャンセル済みのまま発送されました。受注の状態を確認してください」（`canceledOrderShipWarn`。出荷の印は残し、警告は受注が**いま** canceled のときだけ）。請求済にする（受注を読み直す）・請求書の印刷とメール（`confirmInvoiceCanceledOrder`）で確認を1つ ／ 低-4 直す前の承諾書の出力は `scripts/fixtures/order-consent-quotes-before-pm.json` に固定（git の履歴に頼らない）／ 低-5 読み込みの版は `?v=20261115b`
