@@ -12,7 +12,8 @@
 //   ・admin/js/pm-discount.js の PM_DISCOUNT_NAME（＝SUPPORT_FEE_LABEL＋「の値引き」。functions へバイト単位で写すので import しない）
 //
 // ⚠ 品名の文字列で行を見分けない。伴走支援費の行は sku "support-fee"（値引きは "discount"）で見分ける。
-//   保存済みの出荷の品名（旧「伴走支援費（補助対象N台）」「伴走支援費」）はそのまま読める（書き換えない）。
+//   保存済みの出荷の品名（旧「伴走支援費（補助対象N台）」「伴走支援費」）は書き換えない。請求書・領収証に出すときだけ
+//   displaySupportFeeName で新しい呼び名にそろえる（表示のときの正規化・保存値は変えない）。
 //   supply.js の古い出荷の台数の逆引き（/補助対象(\d+)台/）が新しい品名でも効くよう「補助対象N台」は残す。
 
 /** 事業所向けの呼び名（見積書・領収証・承諾書・見積もりページ） */
@@ -27,4 +28,16 @@ export const SUPPORT_FEE_INTERNAL = "伴走支援費";
 /** 自動の伴走支援費の行の品名（請求書・領収証にそのまま出る）。n＝補助対象の台数 */
 export function supportFeeItemName(n) {
   return `接続サポート等経費（伴走支援費・補助対象${n}台）`;
+}
+
+// 表示のときの品名の正規化（2026-11-15 レビュー中-1）。デプロイ前に作った出荷の自動の行は旧い品名
+// 「伴走支援費（補助対象N台）」「伴走支援費」のまま保存されているので、請求書・領収証の初期明細に出すときだけ新しい呼び名にそろえる。
+// 保存値は変えない。任意の金額の行（manual:true）・人が自由に直した品名・sku が support-fee でない行は、そのまま返す。
+const OLD_ITEM_NAME = /^伴走支援費(?:（補助対象(\d+)台）)?$/;
+export function displaySupportFeeName(item) {
+  const name = item ? item.name : undefined;
+  if (!item || String(item.sku || "") !== "support-fee" || item.manual) return name;
+  const m = OLD_ITEM_NAME.exec(String(name == null ? "" : name));
+  if (!m) return name;
+  return m[1] !== undefined ? supportFeeItemName(m[1]) : SUPPORT_FEE_LABEL;
 }

@@ -6,9 +6,9 @@
 ## 📝 2026-11-15 呼び名の統一「接続サポート等経費（伴走支援費）」（ブランチ `fix/shienhi-naming`・未push・未デプロイ・画面と PDF は未目視）
 
 - 事業所に出るもの（見積書・法人まとめの見積書・領収証の用途区分／但し書き／集計欄・助成金の申請手順書・承諾書・見積もりページ・LP・出荷の明細の品名）を「接続サポート等経費（伴走支援費）」に統一。手順書の入力欄は「介護情報基盤との接続サポート費用（伴走支援費）」。**社内の管理画面は「伴走支援費」のまま**。正本は `admin/js/support-fee-names.js`（詳細 ENGINEERING_NOTES.md §C17）
-- 新しく作る出荷の品名は「接続サポート等経費（伴走支援費・補助対象N台）」。**保存済みの出荷・請求書の品名は変わらない**（品名では判定していない＝sku で判定）
-- テスト `scripts/test-support-fee-names.mjs`（24）。出すもの: Functions `acceptQuote`・`staffAcceptQuote`・`reviseQuote`・`resetPractice`・`nightlyPracticeReset` ＋ Hosting admin・lp（`order-consent-page.js?v=20261115c`）。rules 変更なし
-- 目視が要る: 見積書・領収証・手順書の PDF、見積もりページ（合計欄を 330px に広げた）。`scripts/quote-cover/build.mjs` の帯グラフの中だけ「伴走支援費」のまま
+- 新しく作る出荷の品名は「接続サポート等経費（伴走支援費・補助対象N台）」。**保存済みの出荷の旧い品名（「伴走支援費（補助対象N台）」「伴走支援費」）は、請求書・領収証に出すとき新しい呼び名にそろえる（保存値は変えない）**。任意の金額の行（manual）・人が直した品名は触らない。判定は sku（品名では判定しない）
+- テスト `scripts/test-support-fee-names.mjs`（29）。出すもの: Functions `acceptQuote`・`staffAcceptQuote`・`reviseQuote`・`resetPractice`・`nightlyPracticeReset` ＋ Hosting admin・lp（`order-consent-page.js?v=20261115c`）。rules 変更なし
+- 描画の確認（ヘッドレス Chrome・変更前 origin/main と変更後）: 手順書6ページ・見積書（明細／簡易／値引きあり）を PNG に出し `/tmp/shienhi-guide-after/`（18枚）。手順書は全ページはみ出しなし・中身の高さは前後で同じ、見積書の合計欄は全行1行。**人の目視（実際の PDF・見積もりページ・請求書・領収証の画面）はまだ**。`scripts/quote-cover/build.mjs` の帯グラフの中だけ「伴走支援費」のまま
 
 ## 📝 2026-11-15 伴走支援FAQ を CRM マニュアルに載せた（ブランチ `feat/support-faq`・未push・未デプロイ・画面は未目視）
 

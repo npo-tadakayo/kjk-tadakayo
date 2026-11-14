@@ -10,7 +10,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as N from "../admin/js/support-fee-names.js";
 import { PM_DISCOUNT_NAME } from "../admin/js/pm-discount.js";
-import { usageOfItem, receiptRowsFromShipment } from "../admin/js/subsidy-amounts.js";
+import { usageOfItem, receiptRowsFromShipment, usageTotalsOf } from "../admin/js/subsidy-amounts.js";
+import { renderInvoiceHtml, invoiceTotals, priceIsTaxIncluded } from "../admin/js/invoice-doc.js";
 import { DEFAULT_MANUAL_NAME, supportFeeRows } from "../admin/js/manual-support-fee.js";
 import { renderSubsidyGuideHtml } from "../admin/js/subsidy-guide.js";
 
@@ -20,6 +21,16 @@ let n = 0;
 const t = (name, fn) => { fn(); n++; };
 
 const LABEL = "接続サポート等経費（伴走支援費）";
+
+// 表示のときの正規化の入力（正本と写しの一致・期待値の確認に使う）
+const DISPLAY_CASES = [
+  { sku: "support-fee", name: "伴走支援費（補助対象3台）" }, { sku: "support-fee", name: "伴走支援費（補助対象12台）" },
+  { sku: "support-fee", name: "伴走支援費" }, { sku: "support-fee", name: "伴走支援費", manual: true },
+  { sku: "support-fee", name: "伴走支援費（補助対象3台）", manual: true }, { sku: "support-fee", name: "伴走支援サポート費（11月分）" },
+  { sku: "support-fee", name: " 伴走支援費" }, { sku: "support-fee", name: "伴走支援費（補助対象台）" }, { sku: "support-fee", name: "" },
+  { sku: "support-fee" }, { sku: "support-fee", name: N.supportFeeItemName(2) }, { sku: "discount", name: "伴走支援費" },
+  { sku: "cir415a-01", name: "伴走支援費（補助対象3台）" }, null,
+];
 
 // ===== ① 正本と写し =====
 t("正本の値", () => {
@@ -33,6 +44,7 @@ t("写し: functions/support-fee-names.js（CommonJS）は正本と同じ値", (
   const F = require("../functions/support-fee-names.js");
   assert.equal(F.SUPPORT_FEE_LABEL, N.SUPPORT_FEE_LABEL);
   for (let i = 0; i <= 12; i++) assert.equal(F.supportFeeItemName(i), N.supportFeeItemName(i));
+  for (const it of DISPLAY_CASES) assert.equal(F.displaySupportFeeName(it), N.displaySupportFeeName(it), JSON.stringify(it));
 });
 t("写し: functions/index.js・practice-seed.js は品名を写しから作る（直書きしない）", () => {
   for (const p of ["functions/index.js", "functions/practice-seed.js"]) {
@@ -106,10 +118,21 @@ const CUSTOMER_FILES = [
   "js/order-consent-page.js",     // 承諾書（公開ページ）
   "mitsumori.html",               // 見積もりページ（公開）
   "index.html",                   // LP（公開）
+  "scripts/quote-cover/build.mjs", // 合計お見積もりのご案内（法人内ご決裁用・PDF）
 ];
+// 除外する箇所（ファイルごとに、そのままの文字列）。除外は1か所ずつ・必ず実在すること（古い除外が残らないように）
+const EXEMPT = {
+  // 帯グラフの中の文字（高さ 11mm に統一形が収まらない。凡例で統一形を示す）
+  "scripts/quote-cover/build.mjs": ['background:var(--red)">伴走支援費<br>'],
+};
 for (const p of CUSTOMER_FILES) {
   t(`事業所向け: ${p} に表記ゆれが無い`, () => {
-    const bad = namingIssues(stripComments(read(p)));
+    let text = stripComments(read(p));
+    for (const ex of EXEMPT[p] || []) {
+      assert.equal(text.split(ex).length - 1, 1, `${p}: 除外する箇所「${ex}」がちょうど1か所ない`);
+      text = text.replace(ex, "");
+    }
+    const bad = namingIssues(text);
     assert.deepEqual(bad, [], `${p}\n${bad.join("\n")}`);
   });
 }
@@ -156,6 +179,55 @@ t("折り返し: 合計欄の幅は呼び名が1行に収まる 330px（見積�
 });
 
 // ===== ③ 品名に依存した判定を増やしていない・古い出荷も読める =====
+t("表示のときの正規化（displaySupportFeeName）: 旧い自動の品名だけ新しい呼び名に・それ以外はそのまま", () => {
+  const D = N.displaySupportFeeName;
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費（補助対象3台）" }), "接続サポート等経費（伴走支援費・補助対象3台）");
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費（補助対象12台）" }), "接続サポート等経費（伴走支援費・補助対象12台）");
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費" }), LABEL);
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費", manual: true }), "伴走支援費");                 // 任意の金額の行は触らない
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費（補助対象3台）", manual: true }), "伴走支援費（補助対象3台）");
+  assert.equal(D({ sku: "support-fee", name: "伴走支援サポート費（11月分）" }), "伴走支援サポート費（11月分）"); // 人が直した品名は触らない
+  assert.equal(D({ sku: "support-fee", name: " 伴走支援費" }), " 伴走支援費");
+  assert.equal(D({ sku: "support-fee", name: "伴走支援費（補助対象台）" }), "伴走支援費（補助対象台）");
+  assert.equal(D({ sku: "support-fee", name: "" }), "");
+  assert.equal(D({ sku: "support-fee" }), undefined);
+  assert.equal(D({ sku: "support-fee", name: N.supportFeeItemName(2) }), N.supportFeeItemName(2));
+  assert.equal(D({ sku: "discount", name: "伴走支援費" }), "伴走支援費");                                  // sku が違えば触らない
+  assert.equal(D({ sku: "cir415a-01", name: "伴走支援費（補助対象3台）" }), "伴走支援費（補助対象3台）");
+  assert.equal(D(null), undefined);
+});
+// デプロイ前に作った（旧い品名の）出荷から、請求書と領収証を出す
+const BT3 = { sku: "cir415a-01", name: "介護情報基盤 汎用カードリーダ CIR415A", qty: 3, unitPrice: 14500 };
+const oldShip = (fee) => ({ soNumber: "SH-2026-0999", shipType: "direct", company: "テスト事業所", items: [BT3, fee, { sku: "discount", name: "金額調整", qty: 1, unitPrice: -29500, nonStock: true }] });
+t("旧い品名の出荷: 請求書の明細は新しい呼び名で出る・保存値は変わらない・合計は変わらない", () => {
+  const fee = { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000, nonStock: true };
+  const s = oldShip(fee);
+  const before = JSON.stringify(s);
+  const h = renderInvoiceHtml(s, {}, { issueDate: "2026年11月15日" });
+  assert.ok(h.includes("<td>接続サポート等経費（伴走支援費・補助対象3台）<"), "請求書の明細が新しい呼び名になっていない");
+  assert.ok(!h.includes(">伴走支援費（補助対象3台）<"), "請求書に旧い品名が残っている");
+  assert.equal(JSON.stringify(s), before, "出荷のデータを書き換えている");
+  assert.equal(invoiceTotals(s).total, 64000);
+  // 新しい品名の出荷と同じ請求書になる（品名以外は1文字も同じ）
+  const s2 = oldShip({ ...fee, name: N.supportFeeItemName(3) });
+  assert.equal(renderInvoiceHtml(s2, {}, { issueDate: "2026年11月15日" }), h);
+});
+t("旧い品名の出荷: 領収証の初期明細も新しい呼び名・明細合計＝請求書の合計（旧・新・任意の行で同じ）", () => {
+  for (const fee of [
+    { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000, nonStock: true },
+    { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 50000, nonStock: true },
+    { sku: "support-fee", name: N.supportFeeItemName(3), qty: 1, unitPrice: 50000, nonStock: true },
+    { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 50000, nonStock: true, manual: true },
+  ]) {
+    const s = oldShip(fee);
+    const rows = receiptRowsFromShipment(s);
+    const b = rows.find((r) => r.kind === "B" && r.price === 50000);
+    assert.equal(b.name, fee.manual ? "伴走支援費" : N.displaySupportFeeName(fee));
+    const u = usageTotalsOf(rows, priceIsTaxIncluded(s));
+    assert.equal(u.A + u.B + u.X, invoiceTotals(s).total, fee.name);
+    assert.equal(u.B, 20500, fee.name);
+  }
+});
 t("振り分けは sku で決まる（品名が旧・新・任意のどれでも B）", () => {
   for (const name of ["伴走支援費（補助対象3台）", "伴走支援費", N.supportFeeItemName(3), N.SUPPORT_FEE_LABEL, "なんでも"]) {
     assert.equal(usageOfItem({ sku: "support-fee", name, qty: 1, unitPrice: 1 }), "B", name);
@@ -163,13 +235,13 @@ t("振り分けは sku で決まる（品名が旧・新・任意のどれでも
   assert.equal(usageOfItem({ sku: "cir415a-01", name: N.supportFeeItemName(3), qty: 1, unitPrice: 1 }), "A"); // 品名に呼び名が入っていても sku が機器なら A
   assert.equal(supportFeeRows([{ sku: "support-fee", name: "伴走支援費（補助対象2台）" }, { sku: "support-fee", name: N.supportFeeItemName(2) }]).length, 2);
 });
-t("領収証の行: 保存済みの品名はそのまま・品名の無い行だけ既定の名前", () => {
+t("領収証の行: 旧い自動の品名は表示のとき新しい呼び名に・品名の無い行は既定の名前", () => {
   const rows = receiptRowsFromShipment({ items: [
     { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000 },
     { sku: "support-fee", name: "", qty: 1, unitPrice: 1000 },
   ] });
-  assert.equal(rows[0].name, "伴走支援費（補助対象3台）");
-  assert.equal(rows[1].name, N.SUPPORT_FEE_GUIDE_FIELD);
+  assert.equal(rows[0].name, "接続サポート等経費（伴走支援費・補助対象3台）");
+  assert.equal(rows[1].name, N.SUPPORT_FEE_LABEL); // 2026-11-15 レビュー中-2: 品名の無い行は事業所向けの呼び名
   assert.ok(rows.every((r) => r.kind === "B"));
 });
 t("古い出荷の台数の逆引き（supply.js の /補助対象(\\d+)台/）は旧・新どちらの品名でも効く", () => {
@@ -179,6 +251,13 @@ t("古い出荷の台数の逆引き（supply.js の /補助対象(\\d+)台/）�
   assert.equal(re.exec("伴走支援費（補助対象2台）")[1], "2");
   assert.equal(re.exec(N.supportFeeItemName(2))[1], "2");
 });
+t("品名で見分ける検査そのものが効く（陽性対照）", () => {
+  const probe = (code) => /\/\^?(伴走支援費|接続サポート)[^/\n]*\/[gimsuy]*\.(test|exec)\(/.test(code) || /\.match\(\s*\/\^?(伴走支援費|接続サポート)/.test(code);
+  assert.ok(probe('if (/伴走支援費/.test(i.name))'));
+  assert.ok(probe('const m=/^伴走支援費（補助対象(\\d+)台）$/.exec(name)'));
+  assert.ok(probe('String(i.name).match(/接続サポート/)'));
+  assert.ok(!probe('const m=/補助対象(\\d+)台/.exec(supportItem.name||"")'));
+});
 t("品名の文字列で伴走支援費の行を見分けるコードを足していない（admin/js・functions・js）", () => {
   const files = ["admin/js/supply.js", "admin/js/subsidy-amounts.js", "admin/js/manual-support-fee.js", "admin/js/pm-discount.js",
     "admin/js/ship-flow.js", "admin/js/invoice-doc.js", "admin/js/supply-print.js", "functions/index.js", "js/order-consent-page.js"];
@@ -186,6 +265,10 @@ t("品名の文字列で伴走支援費の行を見分けるコードを足し�
     const s = stripComments(read(p));
     assert.ok(!/(includes|startsWith|indexOf|endsWith)\(\s*["'`](伴走支援費|接続サポート)/.test(s), `${p}: 品名の文字列で見分けている`);
     assert.ok(!/===\s*["'`](伴走支援費|接続サポート)/.test(s), `${p}: 品名の文字列と比べている`);
+    // 正規表現リテラルで品名を見る形（/伴走支援費…/.test( ・ .exec( ・ .match(/…/)）。
+    // 例外: 表示のときの正規化（support-fee-names.js の OLD_ITEM_NAME＝この判定の正本・sku と manual を先に見る）は対象ファイルに入れていない
+    assert.ok(!/\/\^?(伴走支援費|接続サポート)[^/\n]*\/[gimsuy]*\.(test|exec)\(/.test(s), `${p}: 正規表現リテラルで品名を見ている（.test/.exec）`);
+    assert.ok(!/\.match\(\s*\/\^?(伴走支援費|接続サポート)/.test(s), `${p}: 正規表現リテラルで品名を見ている（.match）`);
   }
 });
 

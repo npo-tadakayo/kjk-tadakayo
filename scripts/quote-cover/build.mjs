@@ -205,7 +205,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
         <thead><tr><th style="width:34mm">区分</th><th>内容</th><th style="width:30mm">助成対象</th></tr></thead>
         <tbody>
           <tr><td><b>① カードリーダー</b></td><td>AB Circle CIR415A（Bluetooth・${yen(P.BT_PRICE)}/台）または CIR315A（USB・${yen(P.USB_PRICE)}/台）。事業所ごとの端末環境に合わせて機種と台数を選び、各事業所へお届けします。</td><td>①購入経費</td></tr>
-          <tr><td><b>② 伴走支援</b><br><span class="note">（初回セットアップ 90〜120分）</span></td><td>電子請求受付システム等のID確認 → 介護情報基盤ポータルの初回登録 → 機器の接続・マイナ資格確認アプリの設定 → 動作確認。介護現場を知るスタッフが同席し、その場で助成金のオンライン申請までご一緒します。</td><td>②接続サポート等経費</td></tr>
+          <tr><td><b>② 伴走支援</b><br><span class="note">（初回セットアップ 90〜120分）</span></td><td>電子請求受付システム等のID確認 → 介護情報基盤ポータルの初回登録 → 機器の接続・マイナ資格確認アプリの設定 → 動作確認。介護現場を知るスタッフが同席し、その場で助成金のオンライン申請までご一緒します。</td><td>②接続サポート等経費（伴走支援費）</td></tr>
           <tr><td><b>③ 1年間の運用サポート</b></td><td>導入後1年間、チャット・メール・電話でご相談いただけます。振込の確認、運用の困りごと、職員の入れ替わり時のご質問にも対応します。</td><td>②に含む</td></tr>
           <tr><td><b>金額調整</b></td><td>①＋②の合計が助成上限を超える分は「特別割引」で調整し、上限ぴったりに収めます（見積書の「金額調整」行）。</td><td>—</td></tr>
         </tbody>
@@ -231,6 +231,8 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
     <div class="card">
       <h3>例：訪問・通所系で Bluetooth 3台の場合</h3>
       ${(() => { const a = P.computeAmounts("houmon", 3, 0, 0, 0); const w = (v) => (v / a.subsidyPartSubtotal * 100).toFixed(1) + "%"; return `
+      <!-- 帯グラフの中の文字だけは「伴走支援費」のまま（2026-11-15）: 帯の高さ 11mm・2行に、16字の「接続サポート等経費（伴走支援費）」は収まらない。
+           色の意味は下の凡例で「接続サポート等経費（伴走支援費）」と示す。scripts/test-support-fee-names.mjs はこの1か所だけを除外して検査する -->
       <div class="bar">
         <div style="width:${w(a.devSubsidyIncl)};background:#333">機器<br>${yen(a.devSubsidyIncl)}</div>
         <div style="width:${w(a.accFeeIncl - a.discount)};background:var(--red)">伴走支援費<br>${yen(a.accFeeIncl)}</div>

@@ -11,6 +11,7 @@ import {
 } from "../admin/js/subsidy-amounts.js";
 import { priceIsTaxIncluded, itemPurposeNote, invoiceTotals } from "../admin/js/invoice-doc.js";
 import Pricing from "../admin/js/estimate-pricing.js";
+import { displaySupportFeeName, SUPPORT_FEE_LABEL } from "../admin/js/support-fee-names.js";
 
 let n = 0;
 const t = (fn) => { fn(); n++; };
@@ -72,7 +73,12 @@ function OLD_guide(d) {
 }
 const sameAsBefore = (s) => {
   const oldRows = OLD_rowsInit(s), newRows = receiptRowsFromShipment(s);
-  assert.deepEqual(newRows, oldRows);
+  // 2026-11-15 呼び名の統一: 伴走支援費の行の品名だけは表示のとき新しい呼び名にそろえる（displaySupportFeeName・品名の無い行は SUPPORT_FEE_LABEL）。
+  // 品名以外（区分・数量・単価・注記）と金額は1円も変わらないことを確かめ続ける
+  const items = (s && s.items) || [];
+  const expected = oldRows.map((r, k) => (String(items[k]?.sku || "") === "support-fee"
+    ? { ...r, name: displaySupportFeeName(items[k]) || SUPPORT_FEE_LABEL } : r));
+  assert.deepEqual(newRows, expected);
   const ti = priceIsTaxIncluded(s);
   assert.deepEqual(NEW_recompute(newRows, ti), OLD_recompute(oldRows, ti));
   assert.deepEqual(guideAmountsFromShipment(s), OLD_guide(s));
