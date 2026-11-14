@@ -949,3 +949,8 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 - 低-B: `saveShipEdit` のトランザクションで、開いた時点といまの出荷の値引き（記録の額・明細の値引きの行の額）を比べ（`pmChangedSinceOpen`）、違えば「値引きが変わっています。開き直してください」で止める
 - 倉庫の発送完了（`warehouseComplete`・練習の `whMarkShipped`）は `orderOnWarehouseDone`（`admin/js/order-ship-rules.js`＝正本、`functions/order-ship-rules.mjs`＝同一コピー）で受注を見る。受付済・受注確定だけ「出荷済」に。キャンセル済みは受注を書き換えず、発送の完了は止めず、出荷に `partnerOrderNote`「受注がキャンセル済みのため受注の状態は変えていません」を残す（Functions はログにも）
 - 独立レビューの直し（同じブランチの2本目）: 中-1 出荷一覧の行・受注一覧の行に「⚠ 受注がキャンセル済みのまま発送されました。受注の状態を確認してください」（`canceledOrderShipWarn`。出荷の印は残し、警告は受注が**いま** canceled のときだけ）。請求済にする（受注を読み直す）・請求書の印刷とメール（`confirmInvoiceCanceledOrder`）で確認を1つ ／ 低-4 直す前の承諾書の出力は `scripts/fixtures/order-consent-quotes-before-pm.json` に固定（git の履歴に頼らない）／ 低-5 読み込みの版は `?v=20261115b`
+
+
+## §C16 マニュアルに「よくある質問（伴走支援）」の節（2026-11-15・ブランチ `feat/support-faq`）
+
+- `admin/manual.html` に章 `ch-sfaq`（目次・検索・開閉・印刷は既存の仕組みのまま）。**正本は `02_ケアプー事業/_共通/伴走支援FAQ/` の Markdown**（更新はそこ・CRM は写し）。載せるのは「回答あり／一部回答あり」の14件と「最近の注意」（証明書）だけ。要確認の10件は載せない。個人名・事業所名・地名は一般化。テスト `scripts/test-manual-support-faq.mjs`（6）。ケアプー記録・社内ポータルはリンクだけ（写しを持たない）

@@ -867,6 +867,44 @@
 <details class="faq"><summary>請求書の金額が税込か税抜かはどこで決まる？</summary><div><p><strong>請求先</strong>で決まります。事業所への直接請求は税込、認定事業者への卸は税別です（2026-09-13 是正・自動で切り替わります）。</p></div></details>
 </div>
 </div></section>
+<section class="chap" id="ch-sfaq"><header class="chap-h"><span class="ico"><i class="ti ti-messages" aria-hidden="true"></i></span><div><h2>よくある質問（伴走支援）</h2><div class="sub">証明書・ログイン・取り込み・申込・支援の進め方。押すと答えが開きます</div></div></header><div class="chap-b">
+<div class="sec" id="s-sfaq-notice" data-toc="最近の注意：設定後に受信メニューでエラー"><h3>最近の注意：介護WEBサービスを設定した後、ケアプーで「証明書のエラー」が出ることがあります <span class="chip new">11/15 追加</span></h3>
+<div class="callout warn"><strong>症状</strong>：ケアプランデータ連携システム（ケアプー）のトップ画面では証明書が「有効」と表示されているのに、<strong>受信メニューを開くとエラー</strong>が出る。<br><strong>確認（伴走支援で介護WEBサービスを設定したら、必ず行う）</strong>：設定のあと、ケアプーの「受信メニュー」を開いて、エラーが出ていないか確かめる。</div>
+<p><strong>対処</strong>：もともと入っていた介護DX証明書を削除してから、証明書を再インストールすると、ケアプー側の証明書も有効になります。</p>
+<p><strong>証明書の削除方法</strong>（ファイル名を指定して実行（certmgr.msc）を使う方法）</p>
+<div class="step"><span class="n">1</span><div>キーボードの Windows キー ＋ R キーを同時に押す</div></div>
+<div class="step"><span class="n">2</span><div>「ファイル名を指定して実行」の欄に <code>certmgr.msc</code> と入力して「OK」</div></div>
+<div class="step"><span class="n">3</span><div>左側のメニューから「個人」を開き、「証明書」をダブルクリック</div></div>
+<div class="step"><span class="n">4</span><div>削除したい証明書を右クリックして「削除」</div></div>
+<div class="step"><span class="n">5</span><div>確認画面で「はい」</div></div>
+<div class="callout imp">削除する証明書を間違えないよう、事業所の方に任せず、<strong>スタッフが画面を見ながら</strong>行ってください。</div>
+</div>
+<div class="sec" id="s-sfaq-cert" data-toc="証明書"><h3>証明書</h3>
+<details class="faq"><summary>介護WEBサービスを設定した後、ケアプーで証明書が正しく認識されない（トップ画面は「有効」でも、受信メニューを開くとエラー）</summary><div><p>もともと入っていた介護DX証明書を削除してから、証明書を再インストールします。削除は「Windows＋R → <code>certmgr.msc</code> → 個人 → 証明書 → 該当を右クリック → 削除 → はい」。<strong>設定後は必ず受信メニューを開いて確かめてください。</strong>→ <a href="#s-sfaq-notice">くわしく（手順）</a></p></div></details>
+<details class="faq"><summary>1台のPCに、法人内の複数事業所の電子証明書が入っていて、介護WEBサービスのログインでどれを使うか分からない</summary><div><p>1台で複数の事業所番号を使うのは、アプリ版では証明書の切り替えが煩雑なため<strong>推奨しません</strong>。Web版への移行後に再確認します（※確定しているのはここまでです）。</p></div></details>
+<details class="faq"><summary>電子証明書が入っていない</summary><div><p>電子証明書のインストール方法を案内します（ガイドブック導入編）。</p></div></details>
+</div>
+<div class="sec" id="s-sfaq-login" data-toc="ログイン・パスワード"><h3>ログイン・パスワード</h3>
+<details class="faq"><summary>KJから始まるIDのパスワードが期限切れになった（6か月ごとの更新）</summary><div><p>解説動画「KJから始まるIDのパスワードは半年ごとに更新を」（<a href="https://youtu.be/d_IyTcDL0Hc" target="_blank" rel="noopener noreferrer">https://youtu.be/d_IyTcDL0Hc</a>）を案内します。</p></div></details>
+<details class="faq"><summary>「サーバーとの接続に失敗しました」と出る</summary><div><p>国保中央会側の障害のことがあります。ヘルプデスクサポートサイトの障害情報を確認してください。</p></div></details>
+</div>
+<div class="sec" id="s-sfaq-import" data-toc="介護ソフトへの取り込み"><h3>介護ソフトへの取り込み</h3>
+<details class="faq"><summary>受信したCSVを介護ソフトに取り込めない（「該当するデータがない」「フォルダが空」「ファイルの組み合わせが正しくありません」など）</summary><div><p>介護ソフトの<strong>送受信フォルダの設定</strong>を確認します。ソフトごとの手順は、ベンダーの動画・マニュアルを見てください。<strong>時間切れで終わる例が多い</strong>ので、事前に手順を準備しておきます（※ソフト別の整理は途中です）。</p></div></details>
+<details class="faq"><summary>実績以外のファイル（UP・JSK・プラン・支給など）が届く。何か、取り込む必要はあるか</summary><div><p>居宅からは「サービス利用票・別表・実績・利用者補足情報」が届きます。取り込みはソフトによります（※確定しているのはここまでです）。</p></div></details>
+<details class="faq"><summary>介護ソフトの標準仕様の版（V3・V4・V5）はどう確認する？</summary><div><p>移行後は、標準仕様 4.1版／5.0版に対応したソフトのみ連携できます（介護保険最新情報 Vol.1539）。5.0版は令和9年3月下旬頃です。個別の対応状況はベンダーに確認してください。</p></div></details>
+</div>
+<div class="sec" id="s-sfaq-apply" data-toc="申込・連絡"><h3>申込・連絡</h3>
+<details class="faq"><summary>説明会・伴走支援の申込の受付メールが届かない</summary><div><p>記録アプリで申込があるかを確認して折り返します。メールアドレスに誤りがないかも確認してください。</p></div></details>
+<details class="faq"><summary>日程確定の案内メールが届かない（アドレスの誤り）</summary><div><p>記録アプリの不達通知を見て、事業所に電話でアドレスを確認します。複数の事業所で<strong>同じアドレスの登録</strong>があるときは、まとめて直します。</p></div></details>
+<details class="faq"><summary>同じ事業所番号で複数の拠点（サテライト）の申込が登録されない</summary><div><p>現在の仕組みでは、2件目以降が取り込まれません。改修を依頼中です（暫定の回答）。見つけたら管理者へ伝えてください。</p></div></details>
+</div>
+<div class="sec" id="s-sfaq-support" data-toc="支援の進め方"><h3>支援の進め方</h3>
+<details class="faq"><summary>TeamViewer が事業所のセキュリティ環境で入らない</summary><div><p>TeamViewer 以外のリモート手段を使います（※代わりの手段の詳細は未整理です）。</p></div></details>
+<details class="faq"><summary>伴走支援承諾書に、その場でサインいただけない</summary><div><p>メールで送り、確認後に送り返してもらいます。</p></div></details>
+<details class="faq"><summary>請求を外部に委託している事業所でも使えるか</summary><div><p>CSVの書き出しで対応できます（説明会で講師が説明）。</p></div></details>
+</div>
+<div class="sec" id="s-sfaq-src"><p class="mn-foot" style="margin-top:6px">正本: <code>02_ケアプー事業/_共通/伴走支援FAQ/</code>（更新はそこ。ここは写し）／ 更新日: 2026-11-15 ／ 回答が未確定の項目は載せていません（確定したら正本に足してから、ここへ写します）。</p></div>
+</div></section>
 <section class="chap" id="ch-help"><header class="chap-h"><span class="ico"><i class="ti ti-lifebuoy" aria-hidden="true"></i></span><div><h2>困ったとき</h2><div class="sub">ログイン・メールのトラブル</div></div></header><div class="chap-b">
 <div class="sec" id="s-help">
         <div class="callout warn"><strong>ログインできない</strong>：@tadakayo.jp のアカウントでログインしているか確認してください。認定事業者の方は許可リスト登録が必要です。</div>
@@ -874,7 +912,7 @@
 </div>
 </div></section>
             <div class="mn-noresult" id="mnNoResult">見つかりませんでした。別の言葉で探してみてください（例:「発送」「請求」「失注」）。</div>
-            <p class="mn-foot">最終更新: 2026-11-09（伴走支援費を任意の金額で入れる行を追記）／ 2026-11-08（伴走支援が終わったときの請求書の確認・毎朝のまとめの請求書の節を追記）／ 2026-10-21（出荷の二段階化・受注確定・完了の警告・入金明細・Chat通知・日次まとめ・設定の管理者限定を追記）／ 2026-10-20（2026-10-19 の改修10項目を追記：初期連絡5営業日・Chat投稿先4つ・通知の地域・出荷指示・宛名印刷・追跡番号の写真・請求書の発行日と支払期限14日・失注の理由・訪問予定日・事業所）／ 詳細は <code>MANUAL.md</code></p>
+            <p class="mn-foot">最終更新: 2026-11-15（よくある質問（伴走支援）の節を追記）／ 2026-11-09（伴走支援費を任意の金額で入れる行を追記）／ 2026-11-08（伴走支援が終わったときの請求書の確認・毎朝のまとめの請求書の節を追記）／ 2026-10-21（出荷の二段階化・受注確定・完了の警告・入金明細・Chat通知・日次まとめ・設定の管理者限定を追記）／ 2026-10-20（2026-10-19 の改修10項目を追記：初期連絡5営業日・Chat投稿先4つ・通知の地域・出荷指示・宛名印刷・追跡番号の写真・請求書の発行日と支払期限14日・失注の理由・訪問予定日・事業所）／ 詳細は <code>MANUAL.md</code></p>
           </div>
         </div>
       </div>
