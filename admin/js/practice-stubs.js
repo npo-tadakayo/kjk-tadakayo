@@ -23,6 +23,7 @@ import { CONSENT_DOCUMENT as ORDER_CONSENT_DOCUMENT } from "/js/consent-document
 import { statusChangePatch } from "/js/case-progress.js"; // 進み具合の帯（状態を変えたら2項目を書く）
 // 伴走支援費の PM 値引き（2026-11-13）。判定は本番（functions/pm-discount.mjs）と同じ正本
 import * as PM from "/js/pm-discount.js";
+import { supportFeeItemName } from "/js/support-fee-names.js"; // 伴走支援費の行の品名（本番と同じ・2026-11-15）
 import { orderOnWarehouseDone } from "/js/order-ship-rules.js"; // 倉庫の発送完了での受注の扱い（本物の warehouseComplete と同じ・2026-11-15）
 import { getProdFirestore } from "/js/fs.js";
 
@@ -236,7 +237,7 @@ function shipmentItemsFromQuote(P, q) {
   const fee = Number(q.amounts?.accompanyFee) || 0;
   if (fee > 0) {
     const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
-    items.push({ sku: "support-fee", name: `伴走支援費（補助対象${n}台）`, qty: 1, unitPrice: fee, nonStock: true });
+    items.push({ sku: "support-fee", name: supportFeeItemName(n), qty: 1, unitPrice: fee, nonStock: true });
   }
   const discount = Number(q.amounts?.discount) || 0;
   if (discount > 0) items.push({ sku: "discount", name: "金額調整", qty: 1, unitPrice: -discount, nonStock: true });

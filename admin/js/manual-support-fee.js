@@ -9,8 +9,11 @@
 //     manual:true, manualBy:<メール>, manualAt:<ISO>, priorBuyerReaderCost:<任意・整数円>, manualMemo:<任意> }
 // 自動の行は manual が無い。伴走支援費の行（sku "support-fee"）は、自動・任意を問わず1出荷に最大1行。
 
+import { SUPPORT_FEE_LABEL } from "./support-fee-names.js";
+
 export const SUPPORT_FEE_SKU = "support-fee";
-export const DEFAULT_MANUAL_NAME = "伴走支援費";
+// 品名の初期値（請求書・領収証に出る＝事業所向けの呼び名。2026-11-15 に「伴走支援費」から変更。保存済みの行の品名は書き換えない）
+export const DEFAULT_MANUAL_NAME = SUPPORT_FEE_LABEL;
 export const MAX_NAME_LENGTH = 60;
 export const MAX_MEMO_LENGTH = 200;
 

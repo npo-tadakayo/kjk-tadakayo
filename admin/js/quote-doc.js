@@ -13,6 +13,7 @@
 import { doc, getDoc, collection, getDocs } from "/js/fs.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
 import { PM_DISCOUNT_NAME } from "/js/pm-discount.js"; // 伴走支援費の PM 値引きの行の名前（2026-11-13）
+import { SUPPORT_FEE_LABEL } from "/js/support-fee-names.js"; // 事業所向けの呼び名「接続サポート等経費（伴走支援費）」（2026-11-15）
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }
@@ -94,7 +95,7 @@ function detailedQuoteRows(q, products) {
     `<tr${style ? ` style="${style}"` : ""}><td>${name}${note ? `<div class="qdoc-sub-note">${note}</div>` : ""}</td><td>${qty}</td><td class="qdoc-num">${unit}</td><td class="qdoc-num">${amount}</td></tr>`;
   if (bt > 0) r.push(row(btName, `補助対象 ${bt}台（伴走支援の対象）`, `${bt}台`, yen(EP.BT_PRICE), yen(c.btSubtotal)));
   if (usb > 0) r.push(row(usbName, `補助対象 ${usb}台（伴走支援の対象）`, `${usb}台`, yen(EP.USB_PRICE), yen(c.usbSubtotal)));
-  if (c.subsidyTotal > 0) r.push(row(`伴走支援費<span class="qdoc-badge-free">申請手続きの支援を含む</span>`,
+  if (c.subsidyTotal > 0) r.push(row(`${SUPPORT_FEE_LABEL}<span class="qdoc-badge-free">申請手続きの支援を含む</span>`,
     "初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談", "1式", yen(c.accFeeIncl), yen(c.accFeeIncl)));
   if (c.discount > 0) r.push(row(`<strong>金額調整</strong>`, "合計を助成金の上限ぴったりに収めるための調整", "1式", `−${yen(c.discount)}`, `−${yen(c.discount)}`, "color:#c02828"));
   if (pm > 0) r.push(row(`<strong>${esc(PM_DISCOUNT_NAME)}</strong>`, "", "1式", `−${yen(pm)}`, `−${yen(pm)}`, "color:#c02828"));
@@ -228,7 +229,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
       <div class="qdoc-totals-wrap">
         <div class="qdoc-totals">
           ${detailRows ? "" : `<div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>
-          <div class="qdoc-total-row sub"><span>伴走支援費（税込）</span><span>${yen(a.accompanyFee)}</span></div>
+          <div class="qdoc-total-row sub"><span>${SUPPORT_FEE_LABEL}・税込</span><span>${yen(a.accompanyFee)}</span></div>
           ${discountRow}`}
           ${pmRow}
           ${extraRow}

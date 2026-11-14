@@ -662,7 +662,8 @@
       justify-content: flex-end;
       margin-bottom: 5mm;
     }
-    .est-totals { width: 270px; }
+    /* 2026-11-15 呼び名「接続サポート等経費（伴走支援費）・税込」が1行に収まるよう、管理画面の見積書（.qdoc-totals 330px）と同じ幅に。狭い画面では親の幅まで */
+    .est-totals { width: 330px; max-width: 100%; }
     .est-total-row {
       display: flex;
       justify-content: space-between;
@@ -867,7 +868,7 @@
         <label class="check-card on" style="opacity:0.85;cursor:not-allowed;">
           <input type="checkbox" checked disabled>
           <div>
-            <div class="card-name">伴走支援費<span class="badge-rec">必須</span></div>
+            <div class="card-name">接続サポート等経費（伴走支援費）<span class="badge-rec">必須</span></div>
             <div class="card-desc" id="accompanyNote">¥50,000（税込・3台構成時）— 導入設定・機器登録・アプリ設定・申請手続きの支援・導入後の運用相談</div>
           </div>
         </label>
@@ -1036,7 +1037,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-check-compat.js"></script>
 <script src="js/estimate-pricing.js"></script>
 <script src="js/split-city.js"></script>
-<script src="js/order-consent-page.js?v=20261115b"></script>
+<script src="js/order-consent-page.js?v=20261115c"></script>
 <script src="js/vendor/html2pdf.bundle.min.js" defer></script>
 <script>
   (function () {
@@ -2397,7 +2398,7 @@
     }
     if (c.subsidyTotal > 0) {
       tbody.innerHTML += `<tr>
-        <td>伴走支援費<span class="est-badge-free">申請手続きの支援を含む</span>
+        <td>接続サポート等経費（伴走支援費）<span class="est-badge-free">申請手続きの支援を含む</span>
           <div class="est-sub-note">初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談</div>
         </td>
         <td>1式</td>
@@ -2452,7 +2453,7 @@
       </div>
       ${c.subsidyTotal > 0 ? `
       <div class="est-total-row sub">
-        <span>伴走支援費（税込）</span><span>${yen(c.accFeeIncl)}</span>
+        <span>接続サポート等経費（伴走支援費）・税込</span><span>${yen(c.accFeeIncl)}</span>
       </div>` : ''}
       ${c.discount > 0 ? `
       <div class="est-total-row sub" style="color:#c02828;">

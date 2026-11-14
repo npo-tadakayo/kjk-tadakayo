@@ -164,7 +164,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
   <h2 class="title">ご提案の要旨　—　この1枚でご判断いただけます</h2>
   <p class="lead">${n}事業所のカードリーダー導入と伴走支援を、国の「介護情報基盤 助成金」を使って進めます。${zeroAll ? "<strong style='color:var(--red)'>助成金の上限内に収めたため、法人さまの自己負担は ¥0 です。</strong>" : "助成金の対象外となる台数分のみ、法人さまのご負担となります。"}</p>
   <div class="kv" style="margin-bottom:5mm">
-    <div class="card"><div class="lbl">お見積合計（税込）</div><div class="val ink">${yen(T.total)}</div><div class="sub">機器 ${yen(T.dev)} ＋ 伴走支援費 ${yen(T.fee)}${T.disc ? ` − 調整 ${yen(T.disc)}` : ""}</div></div>
+    <div class="card"><div class="lbl">お見積合計（税込）</div><div class="val ink">${yen(T.total)}</div><div class="sub">機器 ${yen(T.dev)} ＋ 接続サポート等経費（伴走支援費）${yen(T.fee)}${T.disc ? ` − 調整 ${yen(T.disc)}` : ""}</div></div>
     <div class="card"><div class="lbl">介護情報基盤 助成金（見込み）</div><div class="val ink">−${yen(T.grant)}</div><div class="sub">定額型・申請の翌々月に事業所口座へ振込</div></div>
     <div class="card pink"><div class="lbl">法人さまの実質ご負担</div><div class="val">${yen(T.self)}</div><div class="sub">${zeroAll ? "助成金の上限ぴったりに設計" : "助成対象外の台数分"}</div></div>
     <div class="card"><div class="lbl">助成金の申請期限</div><div class="val ink" style="font-size:15pt;padding-top:1.5mm">2027年<br>3月12日</div><div class="sub">令和8年度・2026年5月7日受付開始</div></div>
@@ -205,7 +205,7 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
         <thead><tr><th style="width:34mm">区分</th><th>内容</th><th style="width:30mm">助成対象</th></tr></thead>
         <tbody>
           <tr><td><b>① カードリーダー</b></td><td>AB Circle CIR415A（Bluetooth・${yen(P.BT_PRICE)}/台）または CIR315A（USB・${yen(P.USB_PRICE)}/台）。事業所ごとの端末環境に合わせて機種と台数を選び、各事業所へお届けします。</td><td>①購入経費</td></tr>
-          <tr><td><b>② 伴走支援</b><br><span class="note">（初回セットアップ 90〜120分）</span></td><td>電子請求受付システム等のID確認 → 介護情報基盤ポータルの初回登録 → 機器の接続・マイナ資格確認アプリの設定 → 動作確認。介護現場を知るスタッフが同席し、その場で助成金のオンライン申請までご一緒します。</td><td>②接続サポート等経費</td></tr>
+          <tr><td><b>② 伴走支援</b><br><span class="note">（初回セットアップ 90〜120分）</span></td><td>電子請求受付システム等のID確認 → 介護情報基盤ポータルの初回登録 → 機器の接続・マイナ資格確認アプリの設定 → 動作確認。介護現場を知るスタッフが同席し、その場で助成金のオンライン申請までご一緒します。</td><td>②接続サポート等経費（伴走支援費）</td></tr>
           <tr><td><b>③ 1年間の運用サポート</b></td><td>導入後1年間、チャット・メール・電話でご相談いただけます。振込の確認、運用の困りごと、職員の入れ替わり時のご質問にも対応します。</td><td>②に含む</td></tr>
           <tr><td><b>金額調整</b></td><td>①＋②の合計が助成上限を超える分は「特別割引」で調整し、上限ぴったりに収めます（見積書の「金額調整」行）。</td><td>—</td></tr>
         </tbody>
@@ -223,20 +223,22 @@ const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>
 <!-- 5 費用の仕組み -->
 <section class="slide">
   <h2 class="title">費用の仕組み　—　助成金の上限に合わせて組み立てています</h2>
-  <p class="lead">助成上限はサービス種別ごとに決まっています。上限の範囲では「機器代 ＋ 伴走支援費 − 金額調整 ＝ 上限額」となり、助成金で全額がまかなわれます。</p>
+  <p class="lead">助成上限はサービス種別ごとに決まっています。上限の範囲では「機器代 ＋ 接続サポート等経費（伴走支援費） − 金額調整 ＝ 上限額」となり、助成金で全額がまかなわれます。</p>
   <div class="plans" style="margin-bottom:6mm">
-    ${Object.entries(P.PLANS).map(([k, p]) => `<div class="plan"><div class="h">${esc(PLAN_SHORT[k])}</div><div class="b"><div class="lim">${yen(p.limit)}</div><div class="q">助成対象 ${p.maxQty}台まで　／　伴走支援費 ${yen(P.ACCOMPANY_FEE[p.maxQty])}</div><div class="note" style="margin-top:1.5mm">${esc(p.label)}</div></div></div>`).join("")}
+    ${Object.entries(P.PLANS).map(([k, p]) => `<div class="plan"><div class="h">${esc(PLAN_SHORT[k])}</div><div class="b"><div class="lim">${yen(p.limit)}</div><div class="q">助成対象 ${p.maxQty}台まで　／　接続サポート等経費（伴走支援費）${yen(P.ACCOMPANY_FEE[p.maxQty])}</div><div class="note" style="margin-top:1.5mm">${esc(p.label)}</div></div></div>`).join("")}
   </div>
   <div class="grid2">
     <div class="card">
       <h3>例：訪問・通所系で Bluetooth 3台の場合</h3>
       ${(() => { const a = P.computeAmounts("houmon", 3, 0, 0, 0); const w = (v) => (v / a.subsidyPartSubtotal * 100).toFixed(1) + "%"; return `
+      <!-- 帯グラフの中の文字だけは「伴走支援費」のまま（2026-11-15）: 帯の高さ 11mm・2行に、16字の「接続サポート等経費（伴走支援費）」は収まらない。
+           色の意味は下の凡例で「接続サポート等経費（伴走支援費）」と示す。scripts/test-support-fee-names.mjs はこの1か所だけを除外して検査する -->
       <div class="bar">
         <div style="width:${w(a.devSubsidyIncl)};background:#333">機器<br>${yen(a.devSubsidyIncl)}</div>
         <div style="width:${w(a.accFeeIncl - a.discount)};background:var(--red)">伴走支援費<br>${yen(a.accFeeIncl)}</div>
         <div style="width:${w(a.discount)};background:#bbb;color:#333">調整<br>−${yen(a.discount)}</div>
       </div>
-      <div class="legend"><span style="--c:#333">機器代</span><span style="--c:var(--red)">伴走支援費</span><span style="--c:#bbb">金額調整（特別割引）</span></div>
+      <div class="legend"><span style="--c:#333">機器代</span><span style="--c:var(--red)">接続サポート等経費（伴走支援費）</span><span style="--c:#bbb">金額調整（特別割引）</span></div>
       <p style="font-size:10pt;margin-top:2.5mm">合計 <b>${yen(a.totalIncl)}</b> − 助成金 <b>${yen(a.grantAmt)}</b> ＝ ご負担 <b style="color:var(--red)">${yen(a.selfPay)}</b></p>`; })()}
     </div>
     <div class="card pink">

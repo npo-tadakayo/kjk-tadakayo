@@ -155,7 +155,10 @@ t("公開ページ: 発注の内容（見積番号・版・事業所・品目・
 // ----- 承諾書に焼き込んだ PM 値引きの行（2026-11-15） -----
 // 直す前（main e669be5）の quotesHtml の出力を scripts/fixtures/order-consent-quotes-before-pm.json に固定してある
 // （git の履歴が無い環境でも通るように）。値引きの無い承諾書の出力が1文字も変わらないことを確かめる
-const BEFORE = JSON.parse(read("scripts/fixtures/order-consent-quotes-before-pm.json")).cases;
+// 2026-11-15 呼び名の統一で「うち伴走支援費」→「うち接続サポート等経費（伴走支援費）」にした。固定値は直す前のまま残し、
+// 比べるときだけその1か所を置き換える（呼び名以外は1文字も変わらないことを確かめ続ける）
+const RENAME = (h) => (h == null ? h : h.split("（うち伴走支援費 ").join("（うち接続サポート等経費（伴走支援費） "));
+const BEFORE = JSON.parse(read("scripts/fixtures/order-consent-quotes-before-pm.json")).cases.map((c) => ({ ...c, html: RENAME(c.html) }));
 const before = (name) => { const c = BEFORE.find((x) => x.name === name); assert.ok(c, `固定値が無い: ${name}`); return c; };
 const PMD = await import("../admin/js/pm-discount.js");
 const PM_LINE = '<br><span class="oc-sub">接続サポート等経費（伴走支援費）の値引き −¥5,000</span>';
@@ -175,7 +178,7 @@ t("値引きの行: 焼き込んだ pmDiscount があるときだけ「接続サ
   assert.equal(e.amounts.pmDiscount, 5000);
   const h = P.quotesHtml([e]);
   assert.equal(h.split(PM_LINE).length, 2, "値引きの行が1つだけ出ていない");
-  assert.ok(h.indexOf("うち伴走支援費 ¥33,000・金額調整 −¥1,000") < h.indexOf(PM_LINE) && h.indexOf(PM_LINE) < h.indexOf("助成金充当 ¥59,000"), "並びが違う");
+  assert.ok(h.indexOf("うち接続サポート等経費（伴走支援費） ¥33,000・金額調整 −¥1,000") < h.indexOf(PM_LINE) && h.indexOf(PM_LINE) < h.indexOf("助成金充当 ¥59,000"), "並びが違う");
   assert.ok(h.includes("<b>¥74,200</b>"), "合計は値引き後のまま");
   assert.equal(h.replace(PM_LINE, ""), c.html); // 値引きの行を足しただけ（それ以外は直す前と同じ）
   // まとめ（2事業所・片方だけ値引き）
@@ -190,8 +193,8 @@ t("値引きの行: 焼き込んだ pmDiscount があるときだけ「接続サ
 t("値引きの行: 読み込みの版（?v=）は今日の日付＋印で、これまでに出した最大の 20261115 より新しい（キャッシュを切る）", () => {
   const v = /js\/order-consent-page\.js\?v=(\d{8})([a-z]?)"/.exec(read("mitsumori.html"));
   assert.ok(v, "版が見つからない");
-  assert.equal(v[1] + v[2], "20261115b");
-  assert.ok(v[1] + v[2] > "20261115" && v[1] <= "20261115", "未来の日付・古い版になっている");
+  assert.equal(v[1] + v[2], "20261115c"); // 2026-11-15 呼び名の統一（うち接続サポート等経費（伴走支援費））で c に
+  assert.ok(v[1] + v[2] > "20261115b" && v[1] <= "20261115", "未来の日付・古い版になっている");
 });
 t("値引きの行: テストは git の履歴に頼らない", () => {
   const src = read("scripts/test-order-consent-web.mjs");

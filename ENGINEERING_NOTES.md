@@ -954,3 +954,24 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 ## §C16 マニュアルに「よくある質問（伴走支援）」の節（2026-11-15・ブランチ `feat/support-faq`）
 
 - `admin/manual.html` に章 `ch-sfaq`（目次・検索・開閉・印刷は既存の仕組みのまま）。**正本は `02_ケアプー事業/_共通/伴走支援FAQ/` の Markdown**（更新はそこ・CRM は写し）。載せるのは「回答あり／一部回答あり」の14件と「最近の注意」（証明書）だけ。要確認の10件は載せない。個人名・事業所名・地名は一般化。テスト `scripts/test-manual-support-faq.mjs`（6）。ケアプー記録・社内ポータルはリンクだけ（写しを持たない）
+
+## §C17 助成金の内訳B の呼び名「接続サポート等経費（伴走支援費）」（2026-11-15・ブランチ `fix/shienhi-naming`）
+
+**決定（次田さん 11/13・ブランドポリシー）**: 事業所に出る書類・画面・メールでは、助成金の内訳B「接続サポート等経費」を **「接続サポート等経費（伴走支援費）」** と書く（括弧書きで「伴走支援費」を必ず添える）。手順書で申請画面の入力欄を指すときは **「介護情報基盤との接続サポート費用（伴走支援費）」**。理由: 「接続サポート」だけだと業者が全部やるイメージになる／申請画面・領収書の用途は「接続サポート等経費」なので、照らし合わせられるよう残す。**社内の CRM 画面（出荷・見積もりの管理・活動の記録・Chat）はこれまでどおり「伴走支援費」**。
+
+| 区分 | 呼び名 | 正本の定数（`admin/js/support-fee-names.js`） |
+|---|---|---|
+| 事業所向け（見積書・領収証の用途区分と但し書き・承諾書・見積もりページ・LP） | 接続サポート等経費（伴走支援費） | `SUPPORT_FEE_LABEL` |
+| 手順書の申請画面の欄 | 介護情報基盤との接続サポート費用（伴走支援費） | `SUPPORT_FEE_GUIDE_FIELD` |
+| 領収証の集計欄・手順書の「領収証のどこか」 | 接続サポート等経費（伴走支援費）の合計（対象B） | `SUPPORT_FEE_TOTAL_LABEL` |
+| 出荷の明細の品名（請求書・領収証にそのまま出る） | 接続サポート等経費（伴走支援費・補助対象N台） | `supportFeeItemName(n)` |
+| 任意の金額の行の品名の初期値 | 接続サポート等経費（伴走支援費） | `DEFAULT_MANUAL_NAME`＝`SUPPORT_FEE_LABEL` |
+| PM 値引きの行 | 接続サポート等経費（伴走支援費）の値引き | `pm-discount.js` の `PM_DISCOUNT_NAME`（11/13 から） |
+| 社内 | 伴走支援費 | `SUPPORT_FEE_INTERNAL`（参照用） |
+
+- **写し**（import できない場所）: `functions/support-fee-names.js`（CommonJS。`shipmentItemsFromQuote` が同期で使うため require できる形）・`js/order-consent-page.js` の `SUPPORT_FEE_LABEL`（公開ページは外部を読まない）・`mitsumori.html`／`index.html` の直書き。一致は `scripts/test-support-fee-names.mjs`（29件）が確かめる
+- **品名で行を見分けない**: 伴走支援費の行は sku `support-fee`（値引きは `discount`）。B 区分の振り分け（`subsidy-amounts.js` の `B_SKUS`）・在庫の扱い（`nonStock`）・PM 値引き（`pm:true`）は品名に依存しない。**保存済みの出荷の品名（旧「伴走支援費（補助対象N台）」「伴走支援費」）は書き換えず、表示のとき新しい呼び名にそろえる**: `displaySupportFeeName(item)`（正本 `support-fee-names.js`・写し `functions/support-fee-names.js`）を請求書（`invoice-doc.js` の明細）と領収証の初期明細（`subsidy-amounts.js` の `receiptRowsFromShipment`）で使う。対象は sku `support-fee` かつ manual でない行で、品名が `^伴走支援費(（補助対象\d+台）)?$` に当たるときだけ（任意の金額の行・人が直した品名はそのまま）。品名の無い行の既定名は `SUPPORT_FEE_LABEL`。発行を記録した領収証（保存した明細）は保存値のまま。古い出荷の台数の逆引き（`supply.js` の `/補助対象(\d+)台/`）が新しい品名でも効くよう「補助対象N台」を残した
+- **表記ゆれの検査**: 事業所向けファイル（`quote-doc.js`・`quote-group-doc.js`・`invoice-doc.js`・`subsidy-guide.js`・`js/order-consent-page.js`・`mitsumori.html`・`index.html`）と `supply-print.js` の領収証の範囲から、コメントを除いて「伴走支援費」単独・「接続サポート費用」単独・「接続サポート等経費」単独（「」で公式の呼び名を引用しているところは除く）・「接続サポート費」を探す（陽性対照つき）
+- **折り返し**: 合計欄は見積書（`.qdoc-totals`）330px・見積もりページ（`.est-totals`）を 270px → 330px（`max-width:100%`）にそろえた（ヘッドレス Chrome で実測。270px だと2行）。手順書は描画して各ページの中身の高さ・金額表の行の高さが変更前と同じことを実測。`scripts/quote-cover/build.mjs`（合計見積もりの案内）も検査の対象。帯グラフの中の文字だけは幅が足りないため「伴走支援費」のまま（凡例は統一形・テストの除外は1か所だけで実在を確かめる）。描画の確認: 手順書6ページ・見積書3通りを変更前後で PNG に（`/tmp/shienhi-guide-after/`）、手順書は scrollHeight＝clientHeight・最後の行が下余白の内側、見積書の合計欄は全行1行
+- 承諾書の固定値（`scripts/fixtures/order-consent-quotes-before-pm.json`）は直す前のまま残し、テストで「うち伴走支援費」→「うち接続サポート等経費（伴走支援費）」の1か所だけ置き換えて比べる。`js/order-consent-page.js?v=20261115c`
+- 出すもの: Functions `acceptQuote`・`staffAcceptQuote`・`reviseQuote`（出荷の下書きの品名）・`resetPractice`・`nightlyPracticeReset`（練習データの品名）＋ Hosting admin・lp。firestore.rules・estimate-pricing.js（3か所）は変えていない

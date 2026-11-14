@@ -14,6 +14,7 @@ import { markInvoiced } from "/js/invoice-mark.js";
 import { canceledOrderInvoiceConfirmText } from "/js/order-ship-rules.js"; // 受注がキャンセル済みのまま発送した出荷の確認（2026-11-15）
 import { invoiceFeeConfirmText, invoiceFeeNoticeText } from "/js/ship-fee-rules.js"; // 事業所向けは送料を請求しない（2026-11-12）
 import { renderSubsidyGuideHtml, SUBSIDY_GUIDE_STYLE, buildSubsidyGuidePdf } from "/js/subsidy-guide.js";
+import { SUPPORT_FEE_LABEL, SUPPORT_FEE_TOTAL_LABEL } from "/js/support-fee-names.js"; // 事業所向けの呼び名（2026-11-15）
 // 助成金の A・B・X の振り分け（正本・2026-11-12）。領収証の初期明細・区分ごとの丸め・手順PDFの A・B はここを通す
 import { receiptRowsFromShipment, receiptShippingWarning, taxFnsOf, guideAmountsFromShipment } from "/js/subsidy-amounts.js";
 import { renderFurikomiGuideHtml, FURIKOMI_STYLE, buildFurikomiGuidePdf } from "/js/furikomi-guide.js";
@@ -129,7 +130,7 @@ function renderInvoice(s, st, contactName){
 //   印影＝設定のpoSealImage、無ければ実際のタダカヨ印影 /images/seal-tadakayo.png を常に表示。
 //   内訳＝見積のような編集可能な明細表（伴走支援サポート費など行を追加できる）。）
 // 用途区分（助成金: A=カードリーダー / B=接続サポート等経費 / X=対象外）
-const RCPT_KINDS=[["A","カードリーダー"],["B","接続サポート等経費"],["X","対象外(送料等)"]];
+const RCPT_KINDS=[["A","カードリーダー"],["B",SUPPORT_FEE_LABEL],["X","対象外(送料等)"]];
 // 送料らしい品名の手がかり（用途区分の付け間違いを見つけるためだけに使う）
 const RCPT_SHIP_WORDS=["送料","配送","レターパック","ゆうパック"];
 // 助成金の取りこぼし・過大申請の注意を作る（画面のみ・保存も印刷も止めない）。
@@ -141,7 +142,7 @@ function receiptWarnings(rows, ship){
   // ① B区分（接続サポート等経費）の入れ忘れ＝事業所の申請額がそのぶん丸ごと減る
   if(!rs.some(r=>(r&&r.kind)==="B")){
     list.push({
-      head:"接続サポート等経費（B）の行がありません。",
+      head:`${SUPPORT_FEE_LABEL}（B）の行がありません。`,
       body:"伴走支援のサポート費などがある場合は「行を追加」で入れてください。入れ忘れると事業所の助成金申請額が減ります。",
     });
   }
@@ -248,8 +249,8 @@ function renderReceipt(s, st, saved, contactName){
   const isPartial = autoAmount>0 && autoAmount<billable;
   const overpay = Math.max(0, net-billable);
   const noteText = saved?.note || (isPartial
-    ? "介護情報基盤の導入（カードリーダー・接続サポート等経費）の内金として"
-    : "介護情報基盤の導入（カードリーダー・接続サポート等経費）として");
+    ? `介護情報基盤の導入（カードリーダー・${SUPPORT_FEE_LABEL}）の内金として`
+    : `介護情報基盤の導入（カードリーダー・${SUPPORT_FEE_LABEL}）として`);
   const sealSrc = st.poSealImage || "/images/seal-tadakayo.png";
   return `
     <div class="inv">
@@ -303,7 +304,7 @@ function renderReceipt(s, st, saved, contactName){
         <table class="po-sum rcpt-sum" style="flex:1"><thead><tr><th>区分</th><th class="num">税抜</th><th class="num">消費税(10%)</th><th class="num">税込</th></tr></thead>
         <tbody>
           <tr><td class="lbl">カードリーダー費の合計（対象A）</td><td class="num" id="aExcl">¥0</td><td class="num" id="aTax">¥0</td><td class="num" id="aIncl">¥0</td></tr>
-          <tr><td class="lbl">伴走支援費・接続サポート等経費の合計（対象B）</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
+          <tr><td class="lbl">${SUPPORT_FEE_TOTAL_LABEL}</td><td class="num" id="bExcl">¥0</td><td class="num" id="bTax">¥0</td><td class="num" id="bIncl">¥0</td></tr>
           <!-- 助成金の申請対象額。事業所が申請書に書き写す額なので、書面（印刷・メール添付）にも出す（2026-09-30 次田さん指示） -->
           <tr><td class="lbl">助成金の申請対象額（A＋B・税込）</td><td class="num"></td><td class="num"></td><td class="num"><strong id="abIncl">¥0</strong></td></tr>
           <tr id="xRow" style="display:none"><td class="lbl">対象外（送料等）</td><td class="num" id="xExcl">¥0</td><td class="num" id="xTax">¥0</td><td class="num" id="xIncl">¥0</td></tr>
@@ -311,7 +312,7 @@ function renderReceipt(s, st, saved, contactName){
         </tbody></table>
         <div id="rcptStamp" style="display:none;border:1px solid var(--muted);width:120px;height:80px;align-items:center;justify-content:center;text-align:center;font-size:11px;color:var(--muted)">収入印紙<br>（5万円以上を紙で<br>発行する場合に貼付）</div>
       </div>
-      <p style="font-size:11px;color:var(--muted);margin-top:8px">※ 助成金の申請額は「カードリーダー費の合計（対象A・税込）」＋「伴走支援費・接続サポート等経費の合計（対象B・税込）」です（対象外の送料等は申請対象に含みません）。カードリーダーはマイナ資格確認アプリ対応品です。</p>
+      <p style="font-size:11px;color:var(--muted);margin-top:8px">※ 助成金の申請額は「カードリーダー費の合計（対象A・税込）」＋「${SUPPORT_FEE_LABEL}の合計（対象B・税込）」です（対象外の送料等は申請対象に含みません）。カードリーダーはマイナ資格確認アプリ対応品です。</p>
       <div class="footer">${esc(issuerName)}　介護情報基盤伴走支援事業${regNo?`　登録番号 ${esc(regNo)}`:""}</div>
     </div>`;
 }

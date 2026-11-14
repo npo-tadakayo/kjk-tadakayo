@@ -36,6 +36,8 @@ import { ORDER_STATUS_LABEL, ORDER_RETURN_CHOICES, ORDER_RETURN_STALE_MSG, isPar
 // 伴走支援費を任意の金額で入れる行の判定（検証・上限・排他・明細の組み立て）は manual-support-fee.js が正本（2026-11-09）
 import { DEFAULT_MANUAL_NAME, parseYen, readerCostOf, exclusion, limitText, validateManual,
   buildManualItem, manualFormFromItems, checkSupportFeeRows, manualActivityText, supportFeeRows, belowStandardCheck } from "/js/manual-support-fee.js";
+// 伴走支援費の行の品名（事業所向けの呼び名・2026-11-15）。正本は support-fee-names.js
+import { supportFeeItemName } from "/js/support-fee-names.js";
 // 伴走支援費の PM 値引き（2026-11-13）。判定の正本は pm-discount.js。値引きを入れる・外すのはサーバー（setShipmentDiscount・管理者だけ）
 import { pmRows, checkPmRows, standardFeeOf, validatePmDiscount, pmApplicableShipment, pmAmountOfItems, recalcPmRecord,
   shipmentPmBlockedByQuote, MSG_USE_QUOTE as PM_MSG_USE_QUOTE,
@@ -1598,7 +1600,7 @@ function subsidyExtraItems(){
   if(!subsidyEnabled()) return [];
   const a=subsidyAmounts(); if(!a) return [];
   const items=[];
-  if(a.accFeeIncl>0) items.push({ sku:"support-fee", name:`伴走支援費（補助対象${a.subsidyTotal}台）`, qty:1, unitPrice:a.accFeeIncl, nonStock:true });
+  if(a.accFeeIncl>0) items.push({ sku:"support-fee", name:supportFeeItemName(a.subsidyTotal), qty:1, unitPrice:a.accFeeIncl, nonStock:true });
   if(a.discount>0) items.push({ sku:"discount", name:"金額調整", qty:1, unitPrice:-a.discount, nonStock:true });
   return items;
 }
@@ -1762,7 +1764,7 @@ function restoreSubsidyFromShip(s){
     btEl.value=Number(s.subsidyQty.bt)||0; btEl.dataset.auto="0";
     usbEl.value=Number(s.subsidyQty.usb)||0; usbEl.dataset.auto="0";
   }else{
-    // 保存値が無い古い出荷: 「伴走支援費（補助対象N台）」の N から逆引き。プランは未選択のまま人に選ばせる
+    // 保存値が無い古い出荷: 「伴走支援費（補助対象N台）」（2026-11-15 からは「接続サポート等経費（伴走支援費・補助対象N台）」）の N から逆引き。プランは未選択のまま人に選ばせる
     const m=/補助対象(\d+)台/.exec(supportItem.name||"");
     btEl.value=m?parseInt(m[1],10):0; btEl.dataset.auto="0";
     usbEl.value=0; usbEl.dataset.auto="0";

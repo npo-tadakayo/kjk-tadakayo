@@ -33,6 +33,7 @@ function foot() {
 // 入力する値の吹き出し
 function val(label, v) { return `<div class="sg-val"><div class="k">${label}</div><div class="v">${v}</div></div>`; }
 
+import { SUPPORT_FEE_LABEL, SUPPORT_FEE_GUIDE_FIELD, SUPPORT_FEE_TOTAL_LABEL } from "./support-fee-names.js"; // 事業所向けの呼び名（2026-11-15）
 export function renderSubsidyGuideHtml(g) {
   const a = Number(g.aIncl) || 0, b = Number(g.bIncl) || 0;
   const units = esc(g.units ?? "");
@@ -47,7 +48,7 @@ export function renderSubsidyGuideHtml(g) {
       <img src="/images/tadakayo_logo.png" alt="タダカヨ" class="sg-logo" crossorigin="anonymous" onerror="this.remove()">
       <div>
         <div class="sg-title">介護情報基盤 助成金の申請手順</div>
-        <div class="sg-sub">カードリーダーの購入費・接続サポート等経費（介護事業所向け・令和8年度）</div>
+        <div class="sg-sub">カードリーダーの購入費・${SUPPORT_FEE_LABEL}　介護事業所向け・令和8年度</div>
       </div>
     </div>
     <div class="sg-to">${to} 様　／　${g.fromInvoice ? `領収証 ${esc(g.rcptNo || "")}（入金確認後にお送りします）` : `同封の領収証 ${esc(g.rcptNo || "")}`}</div>
@@ -74,7 +75,7 @@ export function renderSubsidyGuideHtml(g) {
       <tr><td>カードリーダー購入費用（税込の総額）</td><td class="v">${yen(a)}</td><td>カードリーダー費の合計（対象A）</td><td class="c">P.4</td></tr>
       <tr><td>カードリーダーの台数</td><td class="v">${units} 台</td><td>明細のカードリーダーの数量</td><td class="c">P.4</td></tr>
       <tr><td>カードリーダーの種類</td><td class="v small">「マイナ資格確認アプリに対応したカードリーダーである」にチェック<br>（${reader}）</td><td>明細の品名</td><td class="c">P.4</td></tr>
-      <tr><td>介護情報基盤との接続サポート費用（税込の総額）</td><td class="v">${yen(b)}</td><td>伴走支援費・接続サポート等経費の合計（対象B）</td><td class="c">P.4</td></tr>
+      <tr><td>${SUPPORT_FEE_GUIDE_FIELD}・税込の総額</td><td class="v">${yen(b)}</td><td>${SUPPORT_FEE_TOTAL_LABEL}</td><td class="c">P.4</td></tr>
     </table>
     <p class="sg-note">総事業費（A＋B）・助成限度額・交付額は申請画面に自動で表示されます。交付額は千円未満切り捨てです。金額は領収書と一致している必要があります。</p>
 
@@ -144,7 +145,7 @@ export function renderSubsidyGuideHtml(g) {
     ${val("購入額（税込）", yen(a))}
     ${val("カードリーダーの種類", "「マイナ資格確認アプリに対応したカードリーダーである」にチェック")}
     ${val("カードリーダーの台数", `${units} 台`)}
-    <h2 class="sg-h">介護情報基盤との接続サポート費用（B）と交付額</h2>
+    <h2 class="sg-h">${SUPPORT_FEE_GUIDE_FIELD}（B）と交付額</h2>
     ${val("サポート費用（税込）", yen(b))}
     <p>入力すると、①総事業費（A＋B）②助成限度額 ③選定額（①と②の低い方）④交付額（千円未満切り捨て）が自動で表示されます。備考は任意です。金額や添付書類で補足したいことがあれば書きます。</p>
     ${foot()}
