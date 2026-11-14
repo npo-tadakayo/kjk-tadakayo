@@ -1,0 +1,479 @@
+{
+ "about": "js/order-consent-page.js の quotesHtml の、PM 値引きの行を足す前（main e669be5・2026-11-15）の出力。値引きの無い承諾書の出力が変わっていないかを test-order-consent-web.mjs が照合する。作り直さないこと（直す前の出力の記録）",
+ "cases": [
+  {
+   "name": "金額調整あり",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "金額調整なし",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 0,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "pmDiscount 0",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": 0
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "pmDiscount 文字",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": "abc"
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "pmDiscount マイナス",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": -500
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "品目なし・<script>の名前",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "<script>x</script>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　&lt;script&gt;x&lt;/script&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">—</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "焼き込みから・品目なし",
+   "entries": [
+    {
+     "quoteId": "q2",
+     "estNo": "EST-2",
+     "version": 1,
+     "caseId": "",
+     "caseNumber": null,
+     "officeName": "",
+     "corpName": "",
+     "plan": null,
+     "items": [],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-2</b>（第1版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\"></span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">—</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "空",
+   "entries": [],
+   "html": null
+  },
+  {
+   "name": "値引きあり（直す前は値引きの行なし）",
+   "entries": [
+    {
+     "quoteId": "q3",
+     "estNo": "EST-3",
+     "version": 2,
+     "caseId": "",
+     "caseNumber": null,
+     "officeName": "事業所",
+     "corpName": "",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 1,
+       "extraQty": 0
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 74200,
+      "grantAmt": 59000,
+      "selfPay": 15200,
+      "pmDiscount": 5000
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-3</b>（第2版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">事業所</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：1台（補助対象 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥74,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥59,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "まとめ・片方だけ値引き（直す前）",
+   "entries": [
+    {
+     "quoteId": "q3",
+     "estNo": "EST-3",
+     "version": 2,
+     "caseId": "",
+     "caseNumber": null,
+     "officeName": "事業所",
+     "corpName": "",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 1,
+       "extraQty": 0
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 74200,
+      "grantAmt": 59000,
+      "selfPay": 15200,
+      "pmDiscount": 5000
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-3</b>（第2版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">事業所</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：1台（補助対象 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥74,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥59,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-total\">合計（2事業所）　<b>¥153,400</b>（助成金充当 ¥123,000／自己負担 ¥30,400）</div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  },
+  {
+   "name": "まとめ（上の7つ）",
+   "entries": [
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 0,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": 0
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": "abc"
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "事業所<A>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [
+      {
+       "sku": "cir415a-01",
+       "subsidyQty": 2,
+       "extraQty": 1
+      }
+     ],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200,
+      "pmDiscount": -500
+     }
+    },
+    {
+     "quoteId": "q1",
+     "estNo": "EST-9",
+     "version": 3,
+     "caseId": "c1",
+     "caseNumber": 5,
+     "officeName": "<script>x</script>",
+     "corpName": "法人",
+     "plan": null,
+     "items": [],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    },
+    {
+     "quoteId": "q2",
+     "estNo": "EST-2",
+     "version": 1,
+     "caseId": "",
+     "caseNumber": null,
+     "officeName": "",
+     "corpName": "",
+     "plan": null,
+     "items": [],
+     "amounts": {
+      "readers": 1,
+      "accompanyFee": 33000,
+      "discount": 1000,
+      "totalIncl": 79200,
+      "grantAmt": 64000,
+      "selfPay": 15200
+     }
+    }
+   ],
+   "html": "<div class=\"oc-head\">本書に表示する見積書（発注の内容）</div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　事業所&lt;A&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">介護情報基盤 汎用カードリーダ CIR415A：3台（補助対象 2台＋追加 1台）</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-9</b>（第3版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\">法人　&lt;script&gt;x&lt;/script&gt;</span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">—</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-quote\"><div class=\"oc-row\"><span class=\"oc-k\">見積番号</span><span class=\"oc-v\"><b>EST-2</b>（第1版）</span></div><div class=\"oc-row\"><span class=\"oc-k\">事業所</span><span class=\"oc-v\"></span></div><div class=\"oc-row\"><span class=\"oc-k\">品目・台数</span><span class=\"oc-v\">—</span></div><div class=\"oc-row\"><span class=\"oc-k\">金額（税込）</span><span class=\"oc-v\"><b>¥79,200</b><span class=\"oc-sub\">（うち伴走支援費 ¥33,000・金額調整 −¥1,000）</span><br><span class=\"oc-sub\">助成金充当 ¥64,000　自己負担 ¥15,200</span></span></div></div><div class=\"oc-total\">合計（7事業所）　<b>¥554,400</b>（助成金充当 ¥448,000／自己負担 ¥106,400）</div><div class=\"oc-note\">見積書の内容（品目・台数・金額）を変える場合は、「やめる」を押して、お見積もりの入力欄で選び直してください（新しい版のお見積書になります）。</div>"
+  }
+ ]
+}

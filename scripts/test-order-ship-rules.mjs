@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { canShipFromOrder, orderOnShipDone, orderOnWarehouseDone, ORDER_CANCELED_NO_SHIP_MSG, ORDER_CANCELED_NO_SHIPPED_MSG, ORDER_CANCELED_KEPT_NOTE } from "../admin/js/order-ship-rules.js";
+import { canShipFromOrder, orderOnShipDone, orderOnWarehouseDone, ORDER_CANCELED_NO_SHIP_MSG, ORDER_CANCELED_NO_SHIPPED_MSG, ORDER_CANCELED_KEPT_NOTE,
+  canceledOrderShipWarn, canceledOrderInvoiceConfirmText, ORDER_CANCELED_SHIPPED_WARN } from "../admin/js/order-ship-rules.js";
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(`../${rel}`, import.meta.url)), "utf8");
 let n = 0;
@@ -87,4 +88,61 @@ t("Functions の warehouseComplete と練習の whMarkShipped が orderOnWarehou
   assert.ok(!/if \(po && po\.exists\(\)\) tx\.update\(po\.ref/.test(wh), "練習に無条件の書き込みが残っている");
 });
 
+
+// ===== 4. 受注がキャンセル済みのまま倉庫が発送した出荷を画面で知らせる（2026-11-15 レビュー中-1） =====
+const NOTED = { soNumber: "SH-9", partnerOrderId: "po1", partnerOrderNote: ORDER_CANCELED_KEPT_NOTE };
+t("警告: 印があり、受注がいまもキャンセル済みのときだけ出す", () => {
+  assert.equal(ORDER_CANCELED_SHIPPED_WARN, "⚠ 受注がキャンセル済みのまま発送されました。受注の状態を確認してください");
+  assert.equal(canceledOrderShipWarn(NOTED, { status: "canceled" }), ORDER_CANCELED_SHIPPED_WARN);
+  // 受注を戻したら出ない（出荷の印は残っていても）
+  for (const st of ["received", "confirmed", "shipped", undefined]) assert.equal(canceledOrderShipWarn(NOTED, { status: st }), "", String(st));
+  // 印が無い・受注が無い・受注のひも付けが無い
+  assert.equal(canceledOrderShipWarn({ ...NOTED, partnerOrderNote: "" }, { status: "canceled" }), "");
+  assert.equal(canceledOrderShipWarn(NOTED, null), "");
+  assert.equal(canceledOrderShipWarn({ ...NOTED, partnerOrderId: "" }, { status: "canceled" }), "");
+  assert.equal(canceledOrderShipWarn(null, { status: "canceled" }), "");
+});
+t("確認の文: 警告と同じ条件で、出荷番号入り。出さないときは空", () => {
+  const a = canceledOrderInvoiceConfirmText(NOTED, { status: "canceled" });
+  assert.ok(a.startsWith(ORDER_CANCELED_SHIPPED_WARN) && a.includes("出荷 SH-9") && a.includes("このまま請求を進めますか？"));
+  assert.equal(canceledOrderInvoiceConfirmText(NOTED, { status: "confirmed" }), "");
+  assert.equal(canceledOrderInvoiceConfirmText({ soNumber: "SH-1", partnerOrderId: "po1" }, { status: "canceled" }), "");
+});
+t("画面: 出荷一覧の行・受注一覧の行に esc して出す。受注の更新で出荷一覧も描き直す", () => {
+  const s = read("admin/js/supply.js");
+  assert.match(s, /const orderOfShip = \(s\)=> s && s\.partnerOrderId \? \(partnerOrdersCache\.find\(o=>o\._id===s\.partnerOrderId\)\|\|null\) : null;/);
+  assert.match(s, /const poWarn = canceledOrderShipWarn\(s, orderOfShip\(s\)\);/);
+  assert.match(s, /color:var\(--color-danger\);font-weight:600"><i class="ti ti-alert-triangle" aria-hidden="true"><\/i> \$\{esc\(poWarn\)\}<\/div>` : "";/);
+  assert.match(s, /\$\{issueHtml\}\$\{poWarnHtml\}/);
+  const po = s.slice(s.indexOf("function renderPartnerOrders"), s.indexOf("document.querySelectorAll(\".po-status\")"));
+  assert.match(po, /const poWarn = rel\.map\(s=>canceledOrderShipWarn\(s, o\)\)\.find\(Boolean\) \|\| "";/);
+  assert.match(po, /\$\{poWarn\?`<div class="po-canceled-warn"[^`]*\$\{esc\(poWarn\)\}<\/div>`:""\}/);
+  assert.equal((s.match(/\$\{esc\(poWarn\)\}/g) || []).length, 2, "esc を通さずに出している所がある");
+  const snap = s.slice(s.indexOf('collection(db,"partnerOrders"),orderBy("createdAt","desc")'));
+  assert.match(snap.slice(0, 400), /renderPartnerOrders\(partnerOrdersCache\);\n\s*renderShipmentsView\(\);/);
+});
+t("画面: 請求済にする（doInvoiceReport）は受注を読み直して確かめ、書き込みより前", () => {
+  const s = read("admin/js/supply.js");
+  const fn = s.slice(s.indexOf("async function doInvoiceReport"), s.indexOf("async function doInvoiceReport") + 6000);
+  assert.match(fn, /if\(!invReportOnly && s\.partnerOrderId && s\.partnerOrderNote\)\{/);
+  assert.match(fn, /await getDoc\(doc\(db,"partnerOrders",String\(s\.partnerOrderId\)\)\)/);
+  assert.match(fn, /const poAsk = canceledOrderInvoiceConfirmText\(s, po\);\n\s*if\(poAsk && !confirm\(poAsk\)\) return;/);
+  assert.ok(fn.indexOf("canceledOrderInvoiceConfirmText") < fn.indexOf("markInvoiced(db"), "確認が請求済の書き込みより後");
+});
+t("画面: 請求書の印刷・メール（supply-print.js）も確かめる。動き（キャンセル→いいえで止まる・はいで進む・印なしは聞かない）", () => {
+  const p = read("admin/js/supply-print.js");
+  assert.match(p, /if\(type==="invoice" && !confirmInvoiceCanceledOrder\(\)\) return;\n\s*if\(type==="invoice" && !confirmInvoiceShipFee\(\)\) return;/);
+  assert.match(p, /if\(kind==="invoice" && !confirmInvoiceCanceledOrder\(\)\) return;\n\s*if\(kind==="invoice" && !confirmInvoiceShipFee\(\)\) return;/);
+  assert.match(p, /docInvoiceOrder=os\.exists\(\)\?os\.data\(\):null;/);
+  const head = "function confirmInvoiceCanceledOrder(){";
+  const body = p.slice(p.indexOf(head), p.indexOf("\n}\n", p.indexOf(head)) + 3);
+  const run = (ship, order, answer) => { const asked = [];
+    const ret = new Function("canceledOrderInvoiceConfirmText", "docInvoiceShip", "docInvoiceOrder", "confirm", `${body}\nreturn confirmInvoiceCanceledOrder();`)(
+      canceledOrderInvoiceConfirmText, ship, order, (m) => { asked.push(m); return answer; });
+    return { ret, asked }; };
+  let r = run(NOTED, { status: "canceled" }, false); assert.equal(r.ret, false); assert.equal(r.asked.length, 1);
+  r = run(NOTED, { status: "canceled" }, true); assert.equal(r.ret, true);
+  r = run(NOTED, { status: "confirmed" }, false); assert.equal(r.ret, true); assert.equal(r.asked.length, 0);
+  r = run(null, null, false); assert.equal(r.ret, true);
+});
 console.log(`order-ship-rules: ${n} 件 合格`);

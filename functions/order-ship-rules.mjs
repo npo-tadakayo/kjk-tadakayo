@@ -57,3 +57,18 @@ export function orderOnWarehouseDone(order) {
   if (st === "canceled") return { action: "keep", note: ORDER_CANCELED_KEPT_NOTE };
   return { action: "keep", note: "" };
 }
+
+// 倉庫が発送したあとの出荷の印（partnerOrderNote）を画面に出すか（2026-11-15 レビュー中-1）。
+// 出荷の印は残したまま、警告は「受注がいまもキャンセル済み」のときだけ出す（受注を戻したら出ない）。
+// ship … 出荷 ／ order … その出荷の partnerOrderId の受注（いまの状態）。出すなら文、出さないなら ""
+export const ORDER_CANCELED_SHIPPED_WARN = "⚠ 受注がキャンセル済みのまま発送されました。受注の状態を確認してください";
+export function canceledOrderShipWarn(ship, order) {
+  if (!ship || !ship.partnerOrderNote || !ship.partnerOrderId) return "";
+  if (!order || order.status !== "canceled") return "";
+  return ORDER_CANCELED_SHIPPED_WARN;
+}
+// 請求書を作る（印刷・メール）・請求済にするときの確認の文。出さないなら ""
+export function canceledOrderInvoiceConfirmText(ship, order) {
+  if (!canceledOrderShipWarn(ship, order)) return "";
+  return `${ORDER_CANCELED_SHIPPED_WARN}\n\n出荷 ${(ship && ship.soNumber) || ""} にひも付く受注はキャンセル済みです。このまま請求を進めますか？`;
+}
