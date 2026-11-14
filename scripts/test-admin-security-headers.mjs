@@ -1,7 +1,7 @@
 // 管理画面（firebase.json の hosting target "admin"）のセキュリティヘッダーのテスト（2026-11-12）。
 // node scripts/test-admin-security-headers.mjs
 // ・必須のヘッダーがそろっていること（リリース前チェックの6項目＋既存の2つが変わっていないこと）
-// ・CSP（いまは Report-Only）が、管理画面の HTML / JS が実際に読み込んでいる外部の先を許可していること
+// ・CSP（2026-11-14 から強制。Report-Only の間に違反0件を実測済み＝HANDOFF）が、管理画面の HTML / JS が実際に読み込んでいる外部の先を許可していること
 //   （新しい CDN を足したのに CSP を直し忘れる、を防ぐ）
 import assert from "node:assert/strict";
 import fs from "node:fs";
