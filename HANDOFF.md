@@ -3,11 +3,12 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
-## 📝 2026-11-18 見積書メールの1日の送信数の上限（`feat/quote-mail-rate-limit`・未push・未デプロイ）
+## 📝 2026-11-19 データ自動削除（`feat/data-ttl`・未デプロイ・スイッチはオフ）／送信数の上限は本番反映済み
 
-- 公開の入口 `sendQuotePdf` の自動の見積書メールだけに上限: **同じ宛先1日30通・全体1日150通**（JST）。Firestore のトランザクションで送信直前に予約・失敗は数えない。上限を超えたらメールは送らず、見積書は保存・画面に出す（`mailed:false`・`mailError:rate_limited_*`）。全体の上限で、その日1回だけ PM の Chat に警報（無ければ CRM 通知の投稿先）。詳細 ENGINEERING_NOTES §C19
-- テスト `scripts/test-quote-mail-ratelimit-emu.mjs`（66）。`test-all.sh` 普通 60・エミュレータ 12 すべて合格
-- **次にやること**: ①デプロイ（`sendQuotePdf`＋Hosting lp の `mitsumori.html`）②`_rateLimit` を rules で塞ぐか（いまは登録スタッフが読め、編集者が書ける）③`expiresAt` に TTL を張るか
+- **送信数の上限（§C19）は 2026-11-19 に本番反映済み**（PR #106・`sendQuotePdf`＋rules＋lp。同じ宛先30通/全体150通。`_rateLimit` は管理者だけ読め誰も書けない）。レビューの軽微な指摘2件は §C19 に「未対応」として記録
+- **データ自動削除（§C20）**: `functions/data-purge.js`＋`purgeExpiredData`（毎日 03:30）。`appConfig/dataPurge.enabled` が true のときだけ消す（既定は数えるだけ）。署名済みの承諾書は何があっても消さない。テスト `test-data-purge-emu.mjs`（27）。本番の消す予定は `leadTokens` 36件だけ
+- **次にやること**: ①独立レビュー ②デプロイ（`functions:purgeExpiredData`・数えるだけの状態）③件数を次田さんに見せて `enabled:true` にする（消すのは次田さんの了承のあと）
+- 承諾書 v1.3（`feat/consent-v1-3`・push 済み・テスト全件合格）は夜間か朝一番に本番反映（`acceptQuote`・`staffAcceptQuote` ほか＋admin hosting）
 
 ## 📝 2026-11-18 セキュリティ点検の修正 A2・A3・B1 を本番反映（`fix/security-a2-a3-b1`・PR 未作成→この変更とあわせてマージ）
 
