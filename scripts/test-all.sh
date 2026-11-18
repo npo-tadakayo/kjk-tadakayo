@@ -7,7 +7,7 @@
 #   bash scripts/test-all.sh --emu-only エミュレータのテストだけ
 #
 # 1段目: scripts/test-*.mjs のうちエミュレータが要らないものを node で1本ずつ。
-# 2段目: エミュレータが要る10本（2026-11-13 test-pm-discount-emu を足した）。
+# 2段目: エミュレータが要る11本（2026-11-13 test-pm-discount-emu・2026-11-18 test-quote-mail-emu〔firestore,storage〕を足した）。
 #   ・ルール3本（test-rules / test-rules-appconfig / test-rules-catchall）は、リポジトリの外の
 #     作業フォルダ（既定 ${TMPDIR:-/tmp}/kjk-emu-run。EMU_RUN_DIR で変更可）に
 #     @firebase/rules-unit-testing と firebase を入れ（入っていれば入れ直さない）、そこへコピーして動かす。
@@ -41,7 +41,7 @@ if [ "$RUN_NORMAL" = 0 ] && [ "$RUN_EMU" = 0 ]; then
   echo "--no-emu と --emu-only は同時に指定できません" >&2; exit 2
 fi
 
-EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs test-ship-cancel-emu.mjs test-pm-discount-emu.mjs)
+EMU_TESTS=(test-rules.mjs test-rules-appconfig.mjs test-rules-catchall.mjs test-office-merge-emu.mjs test-warehouse-emu.mjs test-order-consent-emu.mjs test-order-consent-web-emu.mjs test-trainer-emu.mjs test-ship-cancel-emu.mjs test-pm-discount-emu.mjs test-quote-mail-emu.mjs)
 
 TMP_OUT="$(mktemp -d "${TMPDIR:-/tmp}/kjk-test-all.XXXXXX")"
 LINKED_NM=""          # このスクリプトが張った functions/node_modules の symlink
@@ -219,6 +219,14 @@ if [ "$RUN_EMU" = 1 ]; then
       EMU_RUN_DIR="$EMU_RUN_DIR" emu_exec "$pid" --only firestore "node scripts/$t" > "$out" 2>&1 < /dev/null
       record emu "scripts/$t" "$out" $?
     done
+    # 見積書の PDF 送付（A2・2026-11-18）は Storage のエミュレータも使う（本番の Storage に書かないため）
+    if [ "$nm_ok" = 0 ]; then
+      record_fail_msg emu "scripts/test-quote-mail-emu.mjs" "functions/node_modules が無い。\`cd functions && npm ci\` を実行してから"
+    else
+      out="$TMP_OUT/test-quote-mail-emu.mjs.out"
+      emu_exec demo-quote-mail-test --only firestore,storage "node scripts/test-quote-mail-emu.mjs" > "$out" 2>&1 < /dev/null
+      record emu "scripts/test-quote-mail-emu.mjs" "$out" $?
+    fi
     # symlink はここで外す（trap でも外す）
     if [ -n "$LINKED_NM" ] && [ -L "$LINKED_NM" ]; then rm -f "$LINKED_NM"; LINKED_NM=""; fi
   fi
