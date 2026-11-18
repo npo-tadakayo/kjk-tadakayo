@@ -2,11 +2,13 @@
 // 実際に関数（webhookMitsumori・sendQuotePdf）を動かして確かめる。本番には繋がない（demo- プロジェクト・外への通信は止める）。
 //
 //   A. PDF でない添付（文章・HTML・data URI の頭付きの文章）・大きすぎる添付は 400。メールは出ない・保存もしない・見積もりも変えない
-//   B. 宛先: リクエストに to/email/cc を足しても、見積もりの contactEmail が別でも、届くのは案件に登録済みのアドレスだけ
+//   B. 宛先: リクエストに to/email/cc を足しても、届くのは見積もりに保存した contactEmail だけ（案件の contactEmail でもない・R1）
 //   C. ヘッダー: 改行入りの名前でも、ヘッダーの数・名前は増えない（Bcc は出ない）。添付は application/pdf・中身は %PDF-
-//   D. 案件にアドレスが無ければ送らない（mailError に理由）
-//   E. まとめ（pdfs[]）経路: 1件でも PDF でなければ全体を 400／宛先は先頭の案件のアドレス
+//   D. 見積もりにアドレスが無ければ送らない（mailError に理由）
+//   E. まとめ（pdfs[]）経路: 1件でも PDF でなければ全体を 400／宛先は先頭の見積もりに保存したアドレス
 //   F. webhookMitsumori: 改行入りの名前・住所は1行にして保存。そのまま正規の流れ（見積もり→PDF送付）で、作った本人に届く
+//   G. 継続リンク（R1）: LP の問い合わせを A@ で作成 → 継続トークンでメール欄を B@ に変えて見積もり → 届くのは B@（画面の表示と一致）。
+//      リクエストに to=C@ を足しても B@ だけ
 //
 // 実行: firebase emulators:exec --only firestore,storage --project demo-quote-mail-test "node scripts/test-quote-mail-emu.mjs"
 //   （bash scripts/test-all.sh の2段目でも動く）
@@ -131,10 +133,10 @@ const send = (id, pdfBase64, extra = {}) => http("sendQuotePdf", { quoteId: id, 
 
 await seed([
   [cd("A"), { contactEmail: "office@example.test", officeName: "事業所A", status: "confirming" }], [qd("A"), quote("A")],
-  [cd("B"), { contactEmail: "office@example.test", officeName: "事業所B", status: "confirming" }],
-  [qd("B"), quote("B", { contactEmail: "attacker@example.test", contactName: "山田\r\nBcc: evil@example.test\r\nX-Evil: 1",
+  [cd("B"), { contactEmail: "case@example.test", officeName: "事業所B", status: "confirming" }],
+  [qd("B"), quote("B", { contactEmail: "saved@example.test", contactName: "山田\r\nBcc: evil@example.test\r\nX-Evil: 1",
     corpName: "法人\nSubject: spam", officeName: "事業所\r\n\r\n--tadakayo_po_mixed_boundary" })],
-  [cd("D"), { contactEmail: "", officeName: "事業所D", status: "confirming" }], [qd("D"), quote("D")],
+  [cd("D"), { contactEmail: "case@example.test", officeName: "事業所D", status: "confirming" }], [qd("D"), quote("D", { contactEmail: "" })],
   [cd("G1"), { contactEmail: "group@example.test", status: "confirming" }], [qd("G1"), quote("G1", { contactEmail: "other1@example.test" })],
   [cd("G2"), { contactEmail: "group@example.test", status: "confirming" }], [qd("G2"), quote("G2", { contactEmail: "other2@example.test" })],
 ]);
@@ -161,20 +163,20 @@ section("A. PDF でない添付・大きすぎる添付は拒否");
 }
 
 // ---------- B・C ----------
-section("B・C. 宛先は案件のアドレスだけ・ヘッダーは増えない");
+section("B・C. 宛先は見積もりに保存したアドレスだけ・ヘッダーは増えない");
 {
   const before = sentMails.length;
   const r = await send("B", PDF64, { to: "evil@example.test", email: "evil@example.test", cc: "evil@example.test", mailTo: "evil@example.test" });
   check("正規の PDF は通る（200・mailed）", r.status === 200 && r.body.mailed === true, JSON.stringify(r.body));
   check("メールはちょうど1通", sentMails.length === before + 1);
   const m = parseMail(sentMails[sentMails.length - 1] || "");
-  check("To は案件の登録アドレス", m.hdr.To === "office@example.test", m.hdr.To);
+  check("To は見積もりに保存したアドレス", m.hdr.To === "saved@example.test", m.hdr.To);
   check("Cc は事務局のアドレス（固定）", m.hdr.Cc === "kjk-staff@tadakayo.jp", m.hdr.Cc);
   check("ヘッダーの並びは From/To/Cc/Subject/MIME-Version/Content-Type だけ",
     JSON.stringify(m.names) === JSON.stringify(["From", "To", "Cc", "Subject", "MIME-Version", "Content-Type"]), JSON.stringify(m.names));
   const raw = sentMails[sentMails.length - 1] || "";
   check("リクエストの to・cc（evil）はどのヘッダーにも出ない", !/^[A-Za-z-]+:.*evil@/m.test(raw.split("\r\n\r\n")[0]));
-  check("attacker@ はメールのどこにも無い", !raw.includes("attacker@example.test"));
+  check("案件の contactEmail（case@）はメールのどこにも無い", !raw.includes("case@example.test"));
   check("Bcc・X-Evil のヘッダーは無い", !/^Bcc:/mi.test(raw) && !/^X-Evil:/mi.test(raw));
   check("区切り（boundary）は本物の3つ（本文・添付・終わり）だけ", (raw.match(/--tadakayo_po_mixed_boundary/g) || []).length === 3);
   check("本文の宛名は1行（改行入りの名前が行を作らない）", m.text.includes("山田 Bcc: evil@example.test X-Evil: 1 様") && !/^Bcc:/m.test(m.text), m.text.slice(0, 120));
@@ -182,7 +184,7 @@ section("B・C. 宛先は案件のアドレスだけ・ヘッダーは増えな�
   check("添付は1つ・application/pdf", m.atts.length === 1 && /Content-Type: application\/pdf;/.test(m.atts[0].head), m.atts[0] && m.atts[0].head);
   check("添付の中身は送った PDF そのもの", m.atts[0] && m.atts[0].data.equals(PDF));
   const q = await get(qd("B"));
-  check("見積もりの mailedTo は案件のアドレス", q.mailedTo === "office@example.test", q.mailedTo);
+  check("見積もりの mailedTo は保存したアドレス", q.mailedTo === "saved@example.test", q.mailedTo);
   const files = await filesOf("B");
   check("Storage（エミュレータ）に PDF を保存", files.length === 1 && files[0].endsWith(".pdf"), JSON.stringify(files));
   if (files[0]) {
@@ -190,11 +192,11 @@ section("B・C. 宛先は案件のアドレスだけ・ヘッダーは増えな�
     check("保存した中身も PDF", buf.equals(PDF));
   }
   const acts = (await db.collection("activities").where("caseId", "==", "B").get()).docs.map((d) => d.data());
-  check("活動の記録の宛先も案件のアドレス", acts.some((a) => a.type === "gmail_sent" && a.body.startsWith("宛先: office@example.test")));
+  check("活動の記録の宛先も保存したアドレス", acts.some((a) => a.type === "gmail_sent" && a.body.startsWith("宛先: saved@example.test")));
 }
 
 // ---------- D ----------
-section("D. 案件にアドレスが無ければ送らない");
+section("D. 見積もりにアドレスが無ければ送らない（案件にあっても使わない）");
 {
   const before = sentMails.length;
   const r = await send("D", PDF64);
@@ -220,7 +222,7 @@ section("E. まとめ（pdfs[]）経路");
   ] });
   check("両方 PDF なら 200・mailed", r2.status === 200 && r2.body.mailed === true, JSON.stringify(r2.body));
   const m = parseMail(sentMails[sentMails.length - 1] || "");
-  check("宛先は先頭の案件の登録アドレス（見積もりの other1/other2・リクエストの evil ではない）", m.hdr.To === "group@example.test", m.hdr.To);
+  check("宛先は先頭の見積もりに保存したアドレス（案件の group@・リクエストの evil ではない）", m.hdr.To === "other1@example.test", m.hdr.To);
   check("添付2つ・どちらも application/pdf", m.atts.length === 2 && m.atts.every((a) => /application\/pdf/.test(a.head)));
 }
 
@@ -252,6 +254,37 @@ section("F. webhookMitsumori → sendQuotePdf（正規の流れ）");
     check("2回目は already（二重送信しない・従来どおり）", again.status === 200 && again.body.status === "already");
     const wrong = await http("sendQuotePdf", { quoteId: r.body.quoteId, quoteToken: "x".repeat(32), pdfBase64: PDF64 });
     check("トークン違いは 403（従来どおり）", wrong.status === 403);
+  }
+}
+
+// ---------- G ----------
+section("G. 継続リンクでメール欄を書き換えた見積もり（R1）");
+{
+  const lp = await http("webhookLpInquiry", {
+    officeName: "継続事業所", corpName: "継続法人", name: "問合 太郎", email: "a-lp@example.test", phone: "03-1111-2222",
+    postalCode: "100-0001", prefecture: "東京都", city: "千代田区", addressDetail: "2-2", message: "テスト",
+  });
+  check("LP の問い合わせで継続トークンが返る", lp.status === 200 && /^[0-9a-f]{32}$/.test(lp.body.token || ""), JSON.stringify(lp.body).slice(0, 160));
+  if (lp.body.token) {
+    const mq = await http("webhookMitsumori", {
+      token: lp.body.token, officeName: "継続事業所", corpName: "継続法人", contactName: "問合 太郎", email: "b-new@example.test",
+      phone: "03-1111-2222", postalCode: "100-0001", prefecture: "東京都", city: "千代田区", addressDetail: "2-2",
+      subsidyCategory: "houmon", btSubsidyQty: 1, usbSubsidyQty: 0, btExtraQty: 0, usbExtraQty: 0, usbConnector: null,
+    });
+    check("見積もりができる", mq.status === 200 && mq.body.quoteToken, JSON.stringify(mq.body).slice(0, 160));
+    const q = await get(qd(mq.body.quoteId));
+    const c = await get(cd(q.caseId));
+    check("見積もりは LP の案件に付いた（案件のアドレスは A@ のまま）", c.contactEmail === "a-lp@example.test" && q.caseId === lp.body.caseId, c.contactEmail);
+    check("見積もりに保存したアドレスは B@", q.contactEmail === "b-new@example.test");
+    const before = sentMails.length;
+    const s = await http("sendQuotePdf", { quoteId: mq.body.quoteId, quoteToken: mq.body.quoteToken, pdfBase64: PDF64, to: "c-evil@example.test", cc: "c-evil@example.test" });
+    check("送れる（mailed）", s.status === 200 && s.body.mailed === true, JSON.stringify(s.body));
+    const raw = sentMails[before] || "";
+    const m = parseMail(raw);
+    check("届くのは B@（画面で入れたアドレス）", m.hdr.To === "b-new@example.test", m.hdr.To);
+    check("A@（案件のアドレス）にも C@（リクエストの to）にも送らない", !raw.includes("a-lp@example.test") && !raw.includes("c-evil@example.test"));
+    check("メールは1通だけ", sentMails.length === before + 1);
+    check("mailedTo は B@", (await get(qd(mq.body.quoteId))).mailedTo === "b-new@example.test");
   }
 }
 

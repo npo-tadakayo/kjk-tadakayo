@@ -960,12 +960,12 @@ async function storeQuotePdfFile(caseId, filename, pdfBase64) {
   const url = `https://firebasestorage.googleapis.com/v0/b/${QUOTE_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
   return { path, url };
 }
-// 公開の sendQuotePdf の宛先: 見積もりの案件（cases）に登録済みの contactEmail（2026-11-18 セキュリティ点検 A2）。
-// 案件が無い・アドレスの形でないときは ""（＝送らない）。
-async function quoteCaseEmail(q) {
-  if (!q || !q.caseId) return "";
-  const cs = await db.collection("cases").doc(String(q.caseId)).get();
-  return cs.exists ? QuoteGuard.quoteMailRecipient(normalizeEmail(cs.data().contactEmail)) : "";
+// 公開の sendQuotePdf の宛先: その見積もりに保存した contactEmail（見積もりを作ったとき画面に入っていたアドレス）だけ。
+// リクエストの to/cc などは読まない。形が正しくなければ ""（＝送らない）（2026-11-18 セキュリティ点検 A2・独立レビュー R1）。
+// ※ 案件（cases）の contactEmail にはしない: 継続リンク（?t=）で既存の案件に付いた見積もりでは、画面でアドレスを
+//    書き換えても案件の contactEmail は変わらず、画面の「◯◯宛に送りました」と実際の宛先がずれる（代理の問い合わせでは別人に届く）。
+function quoteSavedEmail(q) {
+  return QuoteGuard.quoteMailRecipient(normalizeEmail(q && q.contactEmail));
 }
 function quoteMailText(q, { resend = false } = {}) {
   const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
@@ -1062,14 +1062,14 @@ exports.sendQuotePdf = onRequest(
         }
 
         const first = saves[0].q;
-        // 宛先は、先頭の見積もりの「案件に登録済みのメールアドレス」に固定する（2026-11-18 A2。見積もりの contactEmail は使わない）
-        const caseEmails = await Promise.all(saves.map(({ q }) => quoteCaseEmail(q)));
-        const to = caseEmails[0];
-        const mismatched = caseEmails.some((e) => e !== to);
-        if (mismatched) console.warn("sendQuotePdf(group): 案件の宛先メールが揃っていません。先頭の案件の宛先を採用します。");
+        // 宛先は、先頭の見積もりに保存した contactEmail に固定する（2026-11-18 A2・R1。リクエストの値は使わない）
+        const savedEmails = saves.map(({ q }) => quoteSavedEmail(q));
+        const to = savedEmails[0];
+        const mismatched = savedEmails.some((e) => e !== to);
+        if (mismatched) console.warn("sendQuotePdf(group): 宛先メールが揃っていません。先頭を採用します。");
 
         let mailed = false, mailError = null;
-        if (wantsMail && !to) mailError = "案件に宛先のメールアドレスが登録されていません";
+        if (wantsMail && !to) mailError = "見積もりに宛先のメールアドレスがありません";
         if (wantsMail && to) {
           const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           try {
@@ -1129,10 +1129,10 @@ exports.sendQuotePdf = onRequest(
 
       const filename = `${q.estNo}-v${q.version}.pdf`;
       const saved = await storeQuotePdfFile(q.caseId, filename, pdf.base64);
-      // 宛先は「案件に登録済みのメールアドレス」に固定する（2026-11-18 A2。見積もりの contactEmail・リクエストの値は使わない）
-      const to = await quoteCaseEmail(q);
+      // 宛先は、この見積もりに保存した contactEmail に固定する（2026-11-18 A2・R1。リクエストの値は使わない）
+      const to = quoteSavedEmail(q);
       let mailed = false, mailError = null;
-      if (wantsMail && !to) mailError = "案件に宛先のメールアドレスが登録されていません";
+      if (wantsMail && !to) mailError = "見積もりに宛先のメールアドレスがありません";
       if (wantsMail && to) {
         try {
           const m = quoteMailText(q);

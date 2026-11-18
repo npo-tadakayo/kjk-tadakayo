@@ -58,10 +58,13 @@ t("oneLine: CR・LF・タブ・U+2028 を空白にまとめ、長さで切る", 
   assert.equal(G.oneLine("a\u2028b\u2029c\td\u0000e"), "a b c d e");
   assert.equal(G.oneLine("  前後  "), "前後");
   assert.equal(G.oneLine("あ".repeat(80), 60).length, 60);
+  assert.equal(G.oneLine("ab😀cd", 3), "ab😀", "サロゲートペア（絵文字）の途中で切らない（R6）");
+  assert.equal(G.oneLine("𠮷野家", 1), "𠮷", "4バイトの漢字も1文字として数える");
+  assert.ok(!/[\ud800-\udbff]$/.test(G.oneLine("😀".repeat(70), 61)), "末尾に片割れが残らない");
   assert.equal(G.oneLine(null), "");
   assert.equal(G.oneLine(undefined), "");
 });
-t("quoteMailRecipient: 案件のアドレスだけを使い、形が違えば空（送らない）", () => {
+t("quoteMailRecipient: 1つのアドレスの形でなければ空（送らない）", () => {
   assert.equal(G.quoteMailRecipient("office@example.test"), "office@example.test");
   assert.equal(G.quoteMailRecipient("office@example.test\r\nBcc: evil@example.test"), "", "改行を除いても1つのアドレスの形にならない");
   assert.equal(G.quoteMailRecipient(""), "");
@@ -71,6 +74,7 @@ t("quoteMailRecipient: 案件のアドレスだけを使い、形が違えば空
 
 // ---------- 2. 結線（functions/index.js）----------
 const src = readFileSync(new URL("../functions/index.js", import.meta.url), "utf8");
+const h0 = readFileSync(new URL("../mitsumori.html", import.meta.url), "utf8");
 const sq = src.slice(src.indexOf("exports.sendQuotePdf"), src.indexOf("// ===== 申し込みを受ける"));
 t("結線: sendQuotePdf の両方の経路で checkQuotePdf を通し、元の pdfBase64 を保存・添付に使っていない", () => {
   assert.equal((sq.match(/QuoteGuard\.checkQuotePdf\(/g) || []).length, 2, "まとめ・単一の2か所");
@@ -79,15 +83,22 @@ t("結線: sendQuotePdf の両方の経路で checkQuotePdf を通し、元の p
   assert.match(sq, /contentBase64: pdf\.base64/);
   assert.match(sq, /storeQuotePdfFile\(q\.caseId, filename, pdf\.base64\)/);
 });
-t("結線: sendQuotePdf の宛先は案件の contactEmail（quoteCaseEmail）。見積もりの contactEmail・リクエストの値を宛先にしない", () => {
-  assert.ok(!/normalizeEmail\((q|first)\.contactEmail\)/.test(sq), "見積もりの contactEmail を宛先にしていない");
+t("結線: sendQuotePdf の宛先は見積もりに保存した contactEmail（quoteSavedEmail）。案件の contactEmail・リクエストの値を宛先にしない（R1）", () => {
   assert.ok(!/body\.(to|email|cc)\b/.test(sq), "リクエストの to/email/cc を読んでいない");
-  assert.equal((sq.match(/await quoteCaseEmail\(/g) || []).length, 1, "単一経路");
-  assert.match(sq, /saves\.map\(\(\{ q \}\) => quoteCaseEmail\(q\)\)/, "まとめ経路");
-  const fn = src.slice(src.indexOf("async function quoteCaseEmail"), src.indexOf("function quoteMailText"));
-  assert.match(fn, /collection\("cases"\)\.doc\(String\(q\.caseId\)\)/);
-  assert.match(fn, /QuoteGuard\.quoteMailRecipient\(normalizeEmail\(cs\.data\(\)\.contactEmail\)\)/);
+  assert.ok(!/quoteCaseEmail/.test(src), "案件のアドレスを宛先にする関数は残っていない");
+  assert.equal((sq.match(/const to = quoteSavedEmail\(q\);/g) || []).length, 1, "単一経路");
+  assert.match(sq, /saves\.map\(\(\{ q \}\) => quoteSavedEmail\(q\)\)/, "まとめ経路");
+  const fn = src.slice(src.indexOf("function quoteSavedEmail"), src.indexOf("function quoteMailText"));
+  assert.match(fn, /QuoteGuard\.quoteMailRecipient\(normalizeEmail\(q && q\.contactEmail\)\)/);
+  assert.ok(!/collection\("cases"\)/.test(fn));
   assert.match(sq, /mimeType: "application\/pdf"/);
+});
+t("R2: 画面は mailed===true か already のときだけ「お送りしました」（まとめ・単一とも）", () => {
+  const send1 = h0.slice(h0.indexOf("async function sendQuotePdfToOffice"), h0.indexOf("async function sendQuotePdfsToOffice"));
+  const sendN = h0.slice(h0.indexOf("async function sendQuotePdfsToOffice"), h0.indexOf("async function sendQuotePdfsToOffice") + 4000);
+  assert.match(send1, /res\.ok && \(data\.mailed \|\| data\.status === 'already'\)/);
+  assert.equal((sendN.match(/data\.mailed === true \|\| data\.status === 'already'/g) || []).length, 2, "1枚ずつ・まとめての2か所");
+  assert.ok(!/data\.status === 'ok'/.test(sendN), "status:ok だけで成功にしない");
 });
 t("結線: buildRawMessage はヘッダーの値（From/To/Cc/Subject）を1行にする・添付の種別は形を確かめる", () => {
   const bm = src.slice(src.indexOf("function buildRawMessage"), src.indexOf("exports.sendCaseEmail"));

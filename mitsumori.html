@@ -1832,12 +1832,12 @@
         for (const p of pdfs) {
           const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs: [p] }) });
           const data = await res.json().catch(() => ({}));
-          if (!(res.ok && (data.status === 'ok' || data.status === 'already' || data.mailed))) ok = false;
+          if (!(res.ok && (data.mailed === true || data.status === 'already'))) ok = false; // 送れなかった（status:ok・mailed:false）も失敗として出す（2026-11-18 R2）
         }
       } else {
         const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs }) });
         const data = await res.json().catch(() => ({}));
-        ok = res.ok && (data.status === 'ok' || data.status === 'already');
+        ok = res.ok && (data.mailed === true || data.status === 'already');
       }
       if (ok) {
         setQuoteMailNote('ok', `お見積書（${offices.length}件）を ${to} 宛にメールでお送りしました。控えとしてご利用ください。台数や機種は、支援の日程調整の際に変更できます。`);

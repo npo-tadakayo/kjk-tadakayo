@@ -3,7 +3,7 @@
 //
 //   checkQuotePdf      … ブラウザから渡された base64 が「本当に PDF で、大きすぎない」かを確かめ、正規化した base64 を返す
 //   oneLine            … メールのヘッダー・本文の1行に入る文字列から、改行・制御文字を除き、長さに上限を付ける
-//   quoteMailRecipient … 見積書の送り先を「案件に登録済みのメールアドレス」に固定する（リクエストの値・見積もりの値は使わない）
+//   quoteMailRecipient … 見積書の送り先（見積もりに保存した contactEmail）が1つのアドレスの形かを確かめる
 
 // 1通あたりの上限（デコード後）。本番の見積書 PDF（quotes/ 186件・2026-11-18 実測）は 中央値 約0.44MB・最大 約1.16MB。
 // その4倍強の 5MB を上限にする（正規の見積書は通り、大きなファイルを運ばせない）。
@@ -40,16 +40,17 @@ function checkQuotePdf(input, { maxBytes = QUOTE_PDF_MAX_BYTES } = {}) {
  * 行・段落の区切り（U+2028・U+2029）を空白1つにまとめ、前後の空白を落とし、max 文字で切る。
  */
 function oneLine(s, max = 100) {
-  return String(s ?? "")
+  const t = String(s ?? "")
     .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
     .replace(/ {2,}/g, " ")
-    .trim()
-    .slice(0, max);
+    .trim();
+  // サロゲートペア（絵文字・一部の漢字）の途中で切らないよう、文字（コードポイント）単位で切る
+  return Array.from(t).slice(0, max).join("");
 }
 
 /**
- * 見積書の送り先。案件（cases）に登録済みの contactEmail だけを使う。
- * 見積もり（quotes.contactEmail）やリクエストの値は使わない（公開の入口から宛先を差し替えられないように）。
+ * 見積書の送り先の検査。呼び出し側は「見積もりに保存した contactEmail」だけを渡す
+ * （リクエストの値は渡さない＝公開の入口から宛先を差し替えられないように）。
  * 形が正しくなければ ""（＝送らない）。
  */
 function quoteMailRecipient(caseContactEmail) {
