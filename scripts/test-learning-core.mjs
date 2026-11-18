@@ -398,7 +398,7 @@ t("評価シート・バッジ台帳・マニュアル・ルールのつなぎ",
   assert.match(man, /href="\/learning\.html"/);
   const rules = src("../firestore.rules");
   assert.match(rules, /match \/learningProgress\/\{email\}/);
-  assert.match(rules, /"appConfig", "_notifyLog", "learningProgress"\]/);
+  assert.match(rules, /"appConfig", "_notifyLog", "_rateLimit", "learningProgress"\]/);
 });
 
 t("保存は書けてから画面に入れる・古い動画の読み込みを捨てる（Codex 指摘 2026-10-24）", () => {

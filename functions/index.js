@@ -23,6 +23,7 @@ const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderCo
 const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
 const QuoteGuard = require("./quote-mail-guard"); // 公開の見積もりの入口の踏み台メール対策（PDF の検査・1行化・宛先の固定。2026-11-18 セキュリティ点検 A2・テスト scripts/test-quote-mail-guard.mjs）
+const QuoteRateLimit = require("./quote-mail-ratelimit"); // 公開の見積もりの入口の見積書メールの1日の上限（宛先30通・全体150通。2026-11-18 §C19・テスト scripts/test-quote-mail-ratelimit-emu.mjs）
 const CaseMail = require("./case-mail"); // sendCaseEmail の送信→記録（送信後の失敗は recordError で返す・テスト scripts/test-case-mail.mjs）
 // 通知の分類と文面（純粋 ESM）。CommonJS からは import() で遅延ロードする
 let _nt;
@@ -1006,6 +1007,40 @@ async function sendGmail({ to, cc, subject, body, attachments }) {
   return { sender, id: (await res.json()).id };
 }
 
+// 見積書メールの送信数の上限（2026-11-18 §C19）。公開の入口 sendQuotePdf だけが使う（職員の送信には使わない）。
+// 送ってよければ { ok:true, release }（送信に失敗したら release() で予約を戻す）、だめなら { ok:false, code, message }。
+//   code は画面に返す理由コード（rate_limited_recipient / rate_limited_total / rate_limit_error）、message は CRM に残す職員向けの文。
+// 予約そのものが失敗したときは送らない（上限を確かめられないまま送らない）。見積書の保存・表示はそのまま。
+async function reserveQuoteMailSlot(to) {
+  let r;
+  try {
+    r = await QuoteRateLimit.reserveQuoteMail(db, to, { FieldValue: admin.firestore.FieldValue, Timestamp: admin.firestore.Timestamp });
+  } catch (e) {
+    console.error("sendQuotePdf: 送信数の予約に失敗:", e.message);
+    return { ok: false, code: "rate_limit_error", message: QuoteRateLimit.STAFF_MESSAGES.rate_limit_error };
+  }
+  if (r.ok) return r;
+  console.warn(`sendQuotePdf: 見積書メールの1日の上限のため送らない（${r.reason}・${QuoteRateLimit.dayLabel(r.day)}・宛先 ${QuoteRateLimit.maskEmail(to)}）`);
+  if (r.alert) await alertQuoteMailTotalLimit(r.day);
+  return { ok: false, code: r.reason, message: QuoteRateLimit.STAFF_MESSAGES[r.reason] };
+}
+async function releaseQuoteMailSlot(slot) {
+  try { if (slot && slot.release) await slot.release(); } catch (e) { console.error("sendQuotePdf: 送信数の予約を戻せませんでした:", e.message); }
+}
+// 全体の上限に達したときの警報（その日1回だけ・予約のトランザクションで決める）。投稿先は PM（設定 pmChatWebhookUrl）、
+// 空・停止なら CRM 通知の投稿先（設定 chatWebhookUrl）。sendQuotePdf は Secret CHAT_WEBHOOK_URL を読めない（SA_MAIL）ので、設定の URL だけを使う。
+// 宛先・個人情報は入れない。失敗しても本体の処理は止めない。
+async function alertQuoteMailTotalLimit(day) {
+  try {
+    const s = await getSettings();
+    const url = resolveWebhook("pm", s, "") || resolveWebhook("crm", s, "");
+    if (!url) { console.error("sendQuotePdf: 上限の警報の投稿先（PM・CRM の Webhook）が設定にありません"); return; }
+    await postChatText(url, QuoteRateLimit.totalLimitAlertText(day));
+  } catch (e) {
+    console.error("sendQuotePdf: 上限の警報を Chat に送れませんでした:", maskUrl(e));
+  }
+}
+
 exports.sendQuotePdf = onRequest(
   { region: "asia-northeast1", cors: true, timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (req, res) => {
@@ -1068,9 +1103,14 @@ exports.sendQuotePdf = onRequest(
         const mismatched = savedEmails.some((e) => e !== to);
         if (mismatched) console.warn("sendQuotePdf(group): 宛先メールが揃っていません。先頭を採用します。");
 
-        let mailed = false, mailError = null;
+        let mailed = false, mailError = null, limitCode = null, slot = null;
         if (wantsMail && !to) mailError = "見積もりに宛先のメールアドレスがありません";
         if (wantsMail && to) {
+          // 1日の上限（§C19）: まとめて1通は1通と数える。上限なら送らない（PDF の保存・画面の表示はそのまま）
+          slot = await reserveQuoteMailSlot(to);
+          if (!slot.ok) { limitCode = slot.code; mailError = slot.message; }
+        }
+        if (wantsMail && to && slot && slot.ok) {
           const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           try {
             const lines = saves.map(({ q }) =>
@@ -1100,6 +1140,7 @@ exports.sendQuotePdf = onRequest(
               });
             }
           } catch (e) { mailError = e.message; console.error("sendQuotePdf(group) mail error:", e); }
+          if (!mailed) await releaseQuoteMailSlot(slot); // 送れなかった分は数えない
         }
         for (const { ref, saved } of saves) {
           const update = { pdfPath: saved.path, pdfUrl: saved.url };
@@ -1109,7 +1150,7 @@ exports.sendQuotePdf = onRequest(
           });
           await ref.update(update);
         }
-        res.status(200).json({ status: "ok", mailed: wantsMail ? mailed : false, pdfUrls: saves.map(({ saved }) => saved.url) });
+        res.status(200).json({ status: "ok", mailed: wantsMail ? mailed : false, pdfUrls: saves.map(({ saved }) => saved.url), ...(limitCode ? { mailError: limitCode } : {}) });
         return;
       }
 
@@ -1131,9 +1172,14 @@ exports.sendQuotePdf = onRequest(
       const saved = await storeQuotePdfFile(q.caseId, filename, pdf.base64);
       // 宛先は、この見積もりに保存した contactEmail に固定する（2026-11-18 A2・R1。リクエストの値は使わない）
       const to = quoteSavedEmail(q);
-      let mailed = false, mailError = null;
+      let mailed = false, mailError = null, limitCode = null, slot = null;
       if (wantsMail && !to) mailError = "見積もりに宛先のメールアドレスがありません";
       if (wantsMail && to) {
+        // 1日の上限（§C19）。上限なら送らない（PDF の保存・画面の表示はそのまま）
+        slot = await reserveQuoteMailSlot(to);
+        if (!slot.ok) { limitCode = slot.code; mailError = slot.message; }
+      }
+      if (wantsMail && to && slot && slot.ok) {
         try {
           const m = quoteMailText(q);
           const sent = await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body,
@@ -1145,6 +1191,7 @@ exports.sendQuotePdf = onRequest(
             subject: `メール送信: ${m.subject}`, body: `宛先: ${to}（見積書PDF添付・自動送付）`, attachmentUrls: [saved.url],
           });
         } catch (e) { mailError = e.message; console.error("sendQuotePdf mail error:", e); }
+        if (!mailed) await releaseQuoteMailSlot(slot); // 送れなかった分は数えない
       }
       const update = { pdfPath: saved.path, pdfUrl: saved.url };
       if (wantsMail) Object.assign(update, {
@@ -1152,7 +1199,7 @@ exports.sendQuotePdf = onRequest(
         mailedTo: mailed ? to : null, mailError: mailError || null,
       });
       await ref.update(update);
-      res.status(200).json({ status: "ok", mailed: wantsMail ? mailed : false, pdfUrl: saved.url });
+      res.status(200).json({ status: "ok", mailed: wantsMail ? mailed : false, pdfUrl: saved.url, ...(limitCode ? { mailError: limitCode } : {}) });
     } catch (e) {
       console.error("sendQuotePdf error:", e);
       res.status(500).json({ status: "error", message: e.message });

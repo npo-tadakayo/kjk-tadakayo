@@ -49,6 +49,7 @@ await env.withSecurityRulesDisabled(async (ctx) => {
   await setDoc(doc(db, "supportBadges", "b1"), { a: 1 });
   await setDoc(doc(db, "supportEvaluations", "e1"), { a: 1 });
   await setDoc(doc(db, "cases", "c1"), { status: 1 });
+  await setDoc(doc(db, "_rateLimit", "quoteMail_20261118"), { count: 5 });
 });
 const as = (email) => env.authenticatedContext(email.replace(/[@.]/g, "_"), { email, email_verified: true }).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
@@ -79,6 +80,13 @@ console.log("leadTokens");
 await t("staff は leadTokens を書けない（Functions だけ）", () => no(setDoc(doc(as(STAFF), "leadTokens", "tok2"), { a: 1 })));
 await t("staff は leadTokens を書き換えられない", () => no(updateDoc(doc(as(STAFF), "leadTokens", "tok1"), { a: 2 })));
 await t("未認証でも leadTokens を get できる（従来どおり）", () => yes(getDoc(doc(anon(), "leadTokens", "tok1"))));
+
+console.log("_rateLimit（見積書メールの送信数のカウンタ・Functions だけ）");
+await t("staff は _rateLimit を読めない", () => no(getDoc(doc(as(STAFF), "_rateLimit", "quoteMail_20261118"))));
+await t("管理者は _rateLimit を読める", () => yes(getDoc(doc(as(ADMIN), "_rateLimit", "quoteMail_20261118"))));
+await t("staff は _rateLimit を書き換えられない（上限を戻せない）", () => no(updateDoc(doc(as(STAFF), "_rateLimit", "quoteMail_20261118"), { count: 0 })));
+await t("管理者でも _rateLimit を書けない（Functions だけ）", () => no(setDoc(doc(as(ADMIN), "_rateLimit", "quoteMail_20261118"), { count: 0 })));
+await t("未認証は _rateLimit を読めない", () => no(getDoc(doc(anon(), "_rateLimit", "quoteMail_20261118"))));
 
 console.log("supportBadges / supportEvaluations（名簿の文書なし＝初期4名を氏名で照合）");
 const badge = (by) => ({ userId: "x@tadakayo.jp", grantedById: by, basis: "discretion", reason: "テスト" });

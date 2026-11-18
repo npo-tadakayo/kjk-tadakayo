@@ -201,6 +201,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 見積書メールの1日の送信数のカウンタ（§C19・2026-11-18）。書き込みは Functions（Admin SDK）だけ。
+    // 読めるのは管理者だけ（編集者がカウンタを戻して上限を外せないように）。
+    match /_rateLimit/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
     // それ以外（案件・事業所・在庫・発注・出荷・設定・カウンタ等）は登録スタッフのみ
     //
     // ⚠ 2026-10-20 修正: Firestore のルールは「どれか1つの match が許せば通る」。この「その他すべて」は
@@ -209,16 +216,16 @@ service cloud.firestore {
     //    個別の match で書き込みを「狭く」決めているコレクションは、ここでの書き込みの対象から外す:
     //      users（管理者と本人の onboarding だけ）／leadTokens（Functions だけ）／
     //      supportBadges（訂正・削除は管理者だけ）／supportEvaluations（削除は管理者だけ）／
-    //      appConfig（管理者だけ）／_notifyLog（Functions だけ）／learningProgress（本人だけ・削除は管理者だけ。2026-10-24）
+    //      appConfig（管理者だけ）／_notifyLog・_rateLimit（Functions だけ）／learningProgress（本人だけ・削除は管理者だけ。2026-10-24）
     //    bankTxns（入金明細の取り込み記録）・bankConfig（列割り当てのプリセット・名義の学習）は
     //    職員が書くのでここのまま（除外しない）。
     //    読み取りは従来どおり（担当営業の候補などで職員が users を読んでいるため、ここでは変えない）。
     //    partnerOrders は職員の発注ファイル取り込み（supply.js）がここの書き込みに頼っているので対象外にしない。
     match /{coll}/{document=**} {
-      // _notifyLog だけは読みも管理者に絞る（ここで読めてしまうと個別 match の「管理者だけ」が素通りになる）
-      allow read: if isRegistered() && coll != "_notifyLog";
+      // _notifyLog・_rateLimit は読みも管理者に絞る（ここで読めてしまうと個別 match の「管理者だけ」が素通りになる）
+      allow read: if isRegistered() && !(coll in ["_notifyLog", "_rateLimit"]);
       allow write: if isEditor()
-        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations", "appConfig", "_notifyLog", "learningProgress"]);
+        && !(coll in ["users", "leadTokens", "supportBadges", "supportEvaluations", "appConfig", "_notifyLog", "_rateLimit", "learningProgress"]);
     }
   }
 }

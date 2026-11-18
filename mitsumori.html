@@ -1780,6 +1780,11 @@
     } finally { cleanup(); }
   }
 
+  // メールの1日の送信数の上限（2026-11-18 §C19）に当たったとき（サーバーの mailError が rate_limited_*）の案内。
+  // お客様には理由を短く伝え、PDFの保存を案内する（何度押しても送れないので、押し直しを促さない）
+  const QUOTE_MAIL_LIMIT_NOTE = '本日はメールでお送りできる件数の上限に達したため、お見積書をメールでお送りできませんでした。お手数ですが、右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。';
+  const isQuoteMailLimited = (data) => /^rate_limited_/.test(String((data && data.mailError) || ''));
+
   // 画面の見積書をPDFにして、事業所へメールで送る（控えが残る）。失敗してもダウンロードは使える（1事業所・既存）
   async function sendQuotePdfToOffice() {
     if (!quoteInfo || !quoteInfo.quoteToken) return;
@@ -1797,6 +1802,8 @@
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data.mailed || data.status === 'already')) {
         setQuoteMailNote('ok', `お見積書（${estNo}）を ${to} 宛にメールでお送りしました。控えとしてご利用ください。台数や機種は、支援の日程調整の際に変更できます。`);
+      } else if (isQuoteMailLimited(data)) {
+        setQuoteMailNote('error', QUOTE_MAIL_LIMIT_NOTE);
       } else {
         setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
       }
@@ -1827,20 +1834,24 @@
       if (appCheckToken) headers['X-Firebase-AppCheck'] = appCheckToken;
       // base64合計がおよそ9MBを超えるときは、1通のリクエストが大きくなりすぎるので1枚ずつ送る
       const totalLen = pdfs.reduce((a, p) => a + p.pdfBase64.length, 0);
-      let ok = true;
+      let ok = true, limited = false;
       if (totalLen > 9_000_000) {
         for (const p of pdfs) {
           const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs: [p] }) });
           const data = await res.json().catch(() => ({}));
           if (!(res.ok && (data.mailed === true || data.status === 'already'))) ok = false; // 送れなかった（status:ok・mailed:false）も失敗として出す（2026-11-18 R2）
+          if (isQuoteMailLimited(data)) limited = true;
         }
       } else {
         const res = await fetch(SEND_QUOTE_PDF_URL, { method: 'POST', headers, body: JSON.stringify({ pdfs }) });
         const data = await res.json().catch(() => ({}));
         ok = res.ok && (data.mailed === true || data.status === 'already');
+        limited = isQuoteMailLimited(data);
       }
       if (ok) {
         setQuoteMailNote('ok', `お見積書（${offices.length}件）を ${to} 宛にメールでお送りしました。控えとしてご利用ください。台数や機種は、支援の日程調整の際に変更できます。`);
+      } else if (limited) {
+        setQuoteMailNote('error', QUOTE_MAIL_LIMIT_NOTE);
       } else {
         setQuoteMailNote('error', `お見積書のメール送付ができませんでした。右上の「PDFダウンロード」から保存してください（内容はタダカヨにも届いています）。`);
       }
