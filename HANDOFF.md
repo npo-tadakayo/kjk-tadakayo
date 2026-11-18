@@ -3,6 +3,12 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 📝 2026-11-18 見積書メールの1日の送信数の上限（`feat/quote-mail-rate-limit`・未push・未デプロイ）
+
+- 公開の入口 `sendQuotePdf` の自動の見積書メールだけに上限: **同じ宛先1日30通・全体1日150通**（JST）。Firestore のトランザクションで送信直前に予約・失敗は数えない。上限を超えたらメールは送らず、見積書は保存・画面に出す（`mailed:false`・`mailError:rate_limited_*`）。全体の上限で、その日1回だけ PM の Chat に警報（無ければ CRM 通知の投稿先）。詳細 ENGINEERING_NOTES §C19
+- テスト `scripts/test-quote-mail-ratelimit-emu.mjs`（66）。`test-all.sh` 普通 60・エミュレータ 12 すべて合格
+- **次にやること**: ①デプロイ（`sendQuotePdf`＋Hosting lp の `mitsumori.html`）②`_rateLimit` を rules で塞ぐか（いまは登録スタッフが読め、編集者が書ける）③`expiresAt` に TTL を張るか
+
 ## 📝 2026-11-18 セキュリティ点検の修正 A2・A3・B1 を本番反映（`fix/security-a2-a3-b1`・PR 未作成→この変更とあわせてマージ）
 
 - 総務省・NCO の不正アクセス対策の依頼（11/6）に合わせ、LP と CRM を点検。**重大なし・侵入の跡なし**。高3件のうち A2（見積書メールの踏み台）・A3（見積もり画面の XSS）と、B1（依存部品の緊急2・重要5）を修正して本番に反映済み。詳細は ENGINEERING_NOTES §C18、報告書は `06_介護情報基盤事業/docs/セキュリティ点検_LP_CRM_20261118.md`。
