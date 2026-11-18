@@ -22,6 +22,7 @@ const { checkOrderConsent, checkOrderReconsent, buildOrderConsentRecord, orderCo
   ORDER_RECEIVED_VIA, channelOfReceivedVia, checkWebOrderConsentInput, orderConsentQuoteEntry, cleanSignedName } = require("./accept-rules");
 const { ORDER_CONSENT_DOCUMENT } = require("./consent-document");
 const Flow = require("./accept-flow"); // 受注確定・通知・認可の判定（純粋関数・テスト scripts/test-functions-wiring.mjs）
+const QuoteGuard = require("./quote-mail-guard"); // 公開の見積もりの入口の踏み台メール対策（PDF の検査・1行化・宛先の固定。2026-11-18 セキュリティ点検 A2・テスト scripts/test-quote-mail-guard.mjs）
 const CaseMail = require("./case-mail"); // sendCaseEmail の送信→記録（送信後の失敗は recordError で返す・テスト scripts/test-case-mail.mjs）
 // 通知の分類と文面（純粋 ESM）。CommonJS からは import() で遅延ロードする
 let _nt;
@@ -633,9 +634,17 @@ function validateMitsumoriOfficeInput(o) {
 
 async function createOrUpdateMitsumoriQuote(input, groupMeta) {
   const now = admin.firestore.FieldValue.serverTimestamp();
+  // 名前・住所などの欄は1行にして長さに上限を付ける（2026-11-18 セキュリティ点検 A2: 改行入りの自由文を、見積書メールの本文に運ばせない）
+  const L = QuoteGuard.oneLine;
+  input = {
+    ...input,
+    officeName: L(input.officeName, 100), corpName: L(input.corpName, 100), contactName: L(input.contactName, 60),
+    postalCode: L(input.postalCode, 10), prefecture: L(input.prefecture, 10), city: L(input.city, 50),
+    addressDetail: L(input.addressDetail, 200), website: L(input.website, 300),
+  };
   const officeName = input.officeName || "";
-  const email = normalizeEmail(input.email);
-  input = { ...input, phone: normalizePhone(input.phone) };
+  const email = normalizeEmail(L(input.email, 254));
+  input = { ...input, phone: normalizePhone(L(input.phone, 30)) };
 
   const v = validateMitsumoriOfficeInput(input);
   if (!v.ok) return { ok: false, message: v.message };
@@ -951,14 +960,22 @@ async function storeQuotePdfFile(caseId, filename, pdfBase64) {
   const url = `https://firebasestorage.googleapis.com/v0/b/${QUOTE_BUCKET}/o/${encodeURIComponent(path)}?alt=media&token=${token}`;
   return { path, url };
 }
+// 公開の sendQuotePdf の宛先: 見積もりの案件（cases）に登録済みの contactEmail（2026-11-18 セキュリティ点検 A2）。
+// 案件が無い・アドレスの形でないときは ""（＝送らない）。
+async function quoteCaseEmail(q) {
+  if (!q || !q.caseId) return "";
+  const cs = await db.collection("cases").doc(String(q.caseId)).get();
+  return cs.exists ? QuoteGuard.quoteMailRecipient(normalizeEmail(cs.data().contactEmail)) : "";
+}
 function quoteMailText(q, { resend = false } = {}) {
   const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
   const until = q.validUntil?.toDate ? q.validUntil.toDate().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" }) : "";
-  const to = [q.corpName, q.officeName].filter(Boolean).join("　");
+  const to = [QuoteGuard.oneLine(q.corpName, 100), QuoteGuard.oneLine(q.officeName, 100)].filter(Boolean).join("　");
+  const cname = QuoteGuard.oneLine(q.contactName, 60);
   return {
-    subject: `${resend ? "【再送】" : ""}【NPO法人タダカヨ】お見積書（${q.estNo}）をお送りします`,
+    subject: `${resend ? "【再送】" : ""}【NPO法人タダカヨ】お見積書（${QuoteGuard.oneLine(q.estNo, 40)}）をお送りします`,
     body:
-      `${to} 御中\n${q.contactName ? q.contactName + " 様" : "ご担当者様"}\n\n` +
+      `${to} 御中\n${cname ? cname + " 様" : "ご担当者様"}\n\n` +
       `NPO法人タダカヨです。介護情報基盤伴走支援のお見積書をPDFで添付しました。\n\n` +
       `見積番号: ${q.estNo}（第${q.version}版）\n` +
       `プラン: ${q.planLabel || ""}\n` +
@@ -1014,15 +1031,23 @@ exports.sendQuotePdf = onRequest(
           totalLen += p.pdfBase64.length;
         }
         if (totalLen > 13_400_000) { res.status(400).json({ status: "error", message: "PDFが大きすぎます（合計10MB以下）" }); return; }
+        // 中身が PDF か・1通の大きさの上限を、見積もりを読む前に確かめる（2026-11-18 A2）。以降は作り直した base64 だけを使う
+        const checked = [];
+        for (const p of pdfs) {
+          const c = QuoteGuard.checkQuotePdf(p.pdfBase64);
+          if (!c.ok) { res.status(400).json({ status: "error", message: c.message }); return; }
+          checked.push(c.base64);
+        }
 
         const quotes = [];
-        for (const p of pdfs) {
+        for (let i = 0; i < pdfs.length; i++) {
+          const p = pdfs[i];
           const ref = db.collection("quotes").doc(String(p.quoteId));
           const snap = await ref.get();
           if (!snap.exists) { res.status(404).json({ status: "error", message: "見積もりが見つかりません" }); return; }
           const q = { id: snap.id, ...snap.data() };
           if (!q.accessToken || q.accessToken !== p.quoteToken) { res.status(403).json({ status: "error", message: "この見積もりを操作する権限がありません" }); return; }
-          quotes.push({ ref, q, pdfBase64: p.pdfBase64 });
+          quotes.push({ ref, q, pdfBase64: checked[i] });
         }
         if (wantsMail && quotes.every(({ q }) => q.mailedAt)) {
           res.status(200).json({ status: "already", pdfUrls: quotes.map(({ q }) => q.pdfUrl || null) });
@@ -1037,21 +1062,25 @@ exports.sendQuotePdf = onRequest(
         }
 
         const first = saves[0].q;
-        const to = normalizeEmail(first.contactEmail);
-        const mismatched = saves.some(({ q }) => (normalizeEmail(q.contactEmail)) !== to);
-        if (mismatched) console.warn("sendQuotePdf(group): 宛先メールが揃っていません。先頭を採用します。", to);
+        // 宛先は、先頭の見積もりの「案件に登録済みのメールアドレス」に固定する（2026-11-18 A2。見積もりの contactEmail は使わない）
+        const caseEmails = await Promise.all(saves.map(({ q }) => quoteCaseEmail(q)));
+        const to = caseEmails[0];
+        const mismatched = caseEmails.some((e) => e !== to);
+        if (mismatched) console.warn("sendQuotePdf(group): 案件の宛先メールが揃っていません。先頭の案件の宛先を採用します。");
 
         let mailed = false, mailError = null;
-        if (wantsMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+        if (wantsMail && !to) mailError = "案件に宛先のメールアドレスが登録されていません";
+        if (wantsMail && to) {
           const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
           try {
             const lines = saves.map(({ q }) =>
-              `・${q.estNo}（${q.officeName || ""}） 合計 ${yen(q.amounts?.totalIncl)}／自己負担 ${yen(q.amounts?.selfPay)}`).join("\n");
+              `・${q.estNo}（${QuoteGuard.oneLine(q.officeName, 100)}） 合計 ${yen(q.amounts?.totalIncl)}／自己負担 ${yen(q.amounts?.selfPay)}`).join("\n");
             const grandTotal = saves.reduce((a, { q }) => a + (Number(q.amounts?.totalIncl) || 0), 0);
-            const corp = first.corpName || "";
+            const corp = QuoteGuard.oneLine(first.corpName, 100);
+            const cname = QuoteGuard.oneLine(first.contactName, 60);
             const subject = `【NPO法人タダカヨ】お見積書（${saves.length}事業所分）をお送りします`;
             const body =
-              `${corp} 御中\n${first.contactName ? first.contactName + " 様" : "ご担当者様"}\n\n` +
+              `${corp} 御中\n${cname ? cname + " 様" : "ご担当者様"}\n\n` +
               `NPO法人タダカヨです。介護情報基盤伴走支援のお見積書をPDFで添付しました。\n\n` +
               `${lines}\n\n法人合計（税込）: ${yen(grandTotal)}\n\n` +
               `この見積もりは仮のものではなく、そのままお申し込みいただけます。\n` +
@@ -1088,6 +1117,9 @@ exports.sendQuotePdf = onRequest(
       const { quoteId, quoteToken, pdfBase64 } = body;
       if (!quoteId || !quoteToken || !pdfBase64) { res.status(400).json({ status: "error", message: "quoteId・quoteToken・pdfBase64 は必須です" }); return; }
       if (typeof pdfBase64 !== "string" || pdfBase64.length > 13_400_000) { res.status(400).json({ status: "error", message: "PDFが大きすぎます（10MB以下）" }); return; }
+      // 中身が PDF か・大きさの上限（2026-11-18 A2）。以降は作り直した base64（pdf.base64）だけを使う
+      const pdf = QuoteGuard.checkQuotePdf(pdfBase64);
+      if (!pdf.ok) { res.status(400).json({ status: "error", message: pdf.message }); return; }
       const ref = db.collection("quotes").doc(String(quoteId));
       const snap = await ref.get();
       if (!snap.exists) { res.status(404).json({ status: "error", message: "見積もりが見つかりません" }); return; }
@@ -1096,14 +1128,16 @@ exports.sendQuotePdf = onRequest(
       if (wantsMail && q.mailedAt) { res.status(200).json({ status: "already", pdfUrl: q.pdfUrl || null }); return; }
 
       const filename = `${q.estNo}-v${q.version}.pdf`;
-      const saved = await storeQuotePdfFile(q.caseId, filename, pdfBase64);
-      const to = normalizeEmail(q.contactEmail);
+      const saved = await storeQuotePdfFile(q.caseId, filename, pdf.base64);
+      // 宛先は「案件に登録済みのメールアドレス」に固定する（2026-11-18 A2。見積もりの contactEmail・リクエストの値は使わない）
+      const to = await quoteCaseEmail(q);
       let mailed = false, mailError = null;
-      if (wantsMail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      if (wantsMail && !to) mailError = "案件に宛先のメールアドレスが登録されていません";
+      if (wantsMail && to) {
         try {
           const m = quoteMailText(q);
           const sent = await sendGmail({ to, cc: GMAIL_SENDER, subject: m.subject, body: m.body,
-            attachments: [{ filename: `${q.estNo}.pdf`, mimeType: "application/pdf", contentBase64: pdfBase64 }] });
+            attachments: [{ filename: `${q.estNo}.pdf`, mimeType: "application/pdf", contentBase64: pdf.base64 }] });
           mailed = true;
           await db.collection("activities").add({
             caseId: q.caseId, type: "gmail_sent", occurredAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -2954,12 +2988,14 @@ function safeAttachmentName(name) {
 }
 
 function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
+  // ヘッダーに入る値から改行・制御文字を除く（2026-11-18 セキュリティ点検 A2。To/Cc/From に CR・LF が入るとヘッダーを足せてしまう）
+  const hv = (s) => QuoteGuard.oneLine(s, 2000);
   const headers = [
-    `From: ${encWord("タダカヨ事務局")} <${sender}>`,
-    `To: ${to}`,
+    `From: ${encWord("タダカヨ事務局")} <${hv(sender)}>`,
+    `To: ${hv(to)}`,
   ];
-  if (cc) headers.push(`Cc: ${cc}`);
-  headers.push(`Subject: ${encWord(subject)}`, "MIME-Version: 1.0");
+  if (cc) headers.push(`Cc: ${hv(cc)}`);
+  headers.push(`Subject: ${encWord(hv(subject))}`, "MIME-Version: 1.0");
   let lines;
   if (attachments && attachments.length) {
     const bd = "tadakayo_po_mixed_boundary";
@@ -2973,7 +3009,7 @@ function buildRawMessage({ to, cc, subject, body, sender, attachments }) {
     for (const att of attachments) {
       lines.push(
         `--${bd}`,
-        `Content-Type: ${att.mimeType || "application/pdf"}; name="${safeAttachmentName(att.filename)}"`,
+        `Content-Type: ${/^[A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+$/.test(att.mimeType || "") ? att.mimeType : "application/pdf"}; name="${safeAttachmentName(att.filename)}"`,
         "Content-Transfer-Encoding: base64",
         `Content-Disposition: attachment; filename="${safeAttachmentName(att.filename)}"`, "",
         wrap76(att.contentBase64),

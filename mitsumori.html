@@ -1169,7 +1169,7 @@
 
   function sfx(seq) { return seq === 0 ? '' : String(seq + 1); }
   function val(id) { const el = document.getElementById(id); return el ? (el.value || '').trim() : ''; }
-  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+  function esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
   function gtagSafe() { /* 予約: 既存の gtag('event', ...) 呼び出しが無いため、現状は何もしない */ }
 
   const PREFECTURES = ['北海道','青森県','岩手県','宮城県','秋田県','山形県','福島県','茨城県','栃木県','群馬県',
@@ -2362,12 +2362,13 @@
     const contactEmail = val('contactEmail');
     const fullAddress = [o.prefecture, o.city, o.addressDetail].filter(Boolean).join('');
     const contactLines = [];
-    if (o.postalCode) contactLines.push(`〒${o.postalCode}`);
-    if (fullAddress) contactLines.push(fullAddress);
-    if (contactName) contactLines.push(`ご担当：${contactName} 様`);
+    // 入力値（継続リンク ?t= から自動で入るものも含む）は必ず esc() を通してから innerHTML に入れる（2026-11-18 セキュリティ点検 A3・XSS）
+    if (o.postalCode) contactLines.push(`〒${esc(o.postalCode)}`);
+    if (fullAddress) contactLines.push(esc(fullAddress));
+    if (contactName) contactLines.push(`ご担当：${esc(contactName)} 様`);
     const tellinks = [];
-    if (contactTel) tellinks.push(`TEL: ${contactTel}`);
-    if (contactEmail) tellinks.push(contactEmail);
+    if (contactTel) tellinks.push(`TEL: ${esc(contactTel)}`);
+    if (contactEmail) tellinks.push(esc(contactEmail));
     if (tellinks.length) contactLines.push(tellinks.join(' ／ '));
     document.getElementById('prevContact' + s).innerHTML = contactLines.join('<br>');
 
