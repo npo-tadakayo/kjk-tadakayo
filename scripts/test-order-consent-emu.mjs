@@ -4,7 +4,7 @@
 // 確かめること
 //   A. スイッチがオフ: staffAcceptQuote は今までどおり（承諾書の記録を作らない・承諾書の項目を足さない）
 //   B. スイッチがオン: 承諾書の情報が無ければ拒否し、何も書かない
-//   C. スイッチがオン: 承諾書の記録（kind:"order"・署名済み・条文 v1.2 の全文・見積もりの焼き込み）と受注確定が同時に入る
+//   C. スイッチがオン: 承諾書の記録（kind:"order"・署名済み・条文 v1.3 の全文・見積もりの焼き込み）と受注確定が同時に入る
 //   D. まとめ見積もり: 承諾書1件に全事業所を焼き込み、1回で全部を受注確定
 //   E. まとめ見積もりの1件が確認に通らない → どれも受注確定にならず、承諾書の記録も無い
 //   F. 書き込みの最後（承諾書の作成）で失敗 → 受注確定も入らない（同じトランザクション）
@@ -174,7 +174,7 @@ const tokC = r.ok ? r.r.consentToken : "";
 check("戻り値に承諾書のトークン（128bit＝16進32文字）と表示番号", /^[0-9a-f]{32}$/.test(tokC) && /^CST-202/.test(r.r.displayNo || ""), JSON.stringify(r.r));
 const recC = await get(db.collection("consentRequests").doc(tokC));
 check("承諾書: kind order・status signed", recC && recC.kind === "order" && recC.status === "signed");
-check("承諾書: 条文 v1.2 の全文（題名・§6・同意文）", recC && recC.document.version === "1.2" && /発注書を兼ねます/.test(recC.document.title)
+check("承諾書: 条文 v1.3 の全文（題名・§6・同意文・連絡先の電話）", recC && recC.document.version === "1.3" && /050-8894-9502/.test(recC.document.issuer_detail) && /発注書を兼ねます/.test(recC.document.title)
   && recC.document.sections.length === 7 && /発注したものとします/.test(recC.document.sections[5].body));
 check("承諾書: 見積もりの焼き込み（見積番号・版・案件・事業所・品目・金額）", recC && recC.quotes.length === 1 && recC.quotes[0].quoteId === "qB"
   && recC.quotes[0].estNo === "EST-T-qB" && recC.quotes[0].version === 1 && recC.quotes[0].caseId === "cB"

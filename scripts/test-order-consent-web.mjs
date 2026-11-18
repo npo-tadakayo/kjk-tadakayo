@@ -44,6 +44,13 @@ t("checkWebOrderConsentInput: 同意・版・名前", () => {
     "consent_version_mismatch", "consent_version_mismatch", "no_signed_name", "signed_name_too_long"]);
   assert.match(r[4].message, /現在の版 1\.2/);
 });
+t("改版（1.2 → 1.3・2026-11-16）: 1.2 を見せたままのページからの同意は、いまの版と違うので拒否する", () => {
+  const p = { consent: { agreed: true, version: "1.2" }, signedName: "山田 花子", documentVersion: CD.ORDER_CONSENT_DOCUMENT.version };
+  assert.equal(CD.ORDER_CONSENT_DOCUMENT.version, "1.3");
+  assert.equal(R.checkWebOrderConsentInput(p).code, "consent_version_mismatch");
+  assert.deepStrictEqual(E.checkWebOrderConsentInput(p), R.checkWebOrderConsentInput(p));
+  assert.equal(R.checkWebOrderConsentInput({ ...p, consent: { agreed: true, version: CD.ORDER_CONSENT_DOCUMENT.version } }).ok, true);
+});
 t("練習用の写しも同じ結果", () => {
   WCASES.forEach((p) => assert.deepStrictEqual(E.checkWebOrderConsentInput({ ...p, documentVersion: "1.2" }), R.checkWebOrderConsentInput({ ...p, documentVersion: "1.2" })));
 });
@@ -119,20 +126,22 @@ vm.createContext(ctx);
 vm.runInContext(read("js/order-consent-page.js"), ctx);
 const P = ctx.window.OrderConsentPage;
 const escH = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-t("公開ページ: 条文（サーバーの正本 v1.2）を全部そのまま出す", () => {
-  const html = P.documentHtml(plain(CD.CONSENT_V1_2));
-  const d = CD.CONSENT_V1_2;
+t("公開ページ: 条文（サーバーの正本＝現行 v1.3）を全部そのまま出す", () => {
+  const html = P.documentHtml(plain(CD.ORDER_CONSENT_DOCUMENT));
+  const d = CD.ORDER_CONSENT_DOCUMENT;
+  assert.equal(d.version, "1.3");
   for (const s of [d.title, d.preamble, d.consent_statement, d.issuer, d.issuer_detail, d.terms_url, d.privacy_url, ...d.sections.flatMap((x) => [x.title, x.body])]) {
     assert.ok(html.includes(escH(s)), `出ていない: ${s.slice(0, 30)}`);
   }
-  assert.ok(html.includes("条文の版 1.2"));
+  assert.ok(html.includes("条文の版 1.3"));
+  assert.ok(html.includes("050-8894-9502") && !html.includes("050-1808-2999"), "連絡先の電話はサポートデスク");
   assert.equal(P.documentHtml({ version: "1.2" }), null);
   assert.equal(P.documentHtml(null), null);
 });
 t("公開ページ: 条文の写しを置いていない（mitsumori.html・js/order-consent-page.js に条文の本文が無い）", () => {
   const page = read("mitsumori.html") + read("js/order-consent-page.js");
-  for (const s of CD.CONSENT_V1_2.sections) assert.ok(!page.includes(s.body.slice(0, 40)), `写しがある: ${s.title}`);
-  assert.ok(!page.includes(CD.CONSENT_V1_2.consent_statement.slice(0, 30)));
+  for (const s of CD.ORDER_CONSENT_DOCUMENT.sections) assert.ok(!page.includes(s.body.slice(0, 40)), `写しがある: ${s.title}`);
+  assert.ok(!page.includes(CD.ORDER_CONSENT_DOCUMENT.consent_statement.slice(0, 30)));
 });
 t("品名: 公開ページ・管理画面・Functions で同じ", () => {
   assert.deepStrictEqual(plain(P.PRODUCT_NAMES), plain(S.PRODUCT_NAMES));

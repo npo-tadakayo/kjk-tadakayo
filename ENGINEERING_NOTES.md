@@ -744,7 +744,8 @@ sequenceDiagram
 
 - **ルールは変えていない**: 発注の承諾書はサーバー（Admin SDK）だけが作る。公開の署名ページは従来どおり `get` で読める（署名後の画面を同じアドレスで開ける）。署名ページで発注の内容（焼き込んだ見積もり）を表示するのは第2段（`admin/js/consent-sign.js`）
 - **§7 の変更（2026-11-12 司令塔判断・次田さんへ朝に報告）**: v1.2 だけ、§7 の「書面でご署名いただいた場合、原本は事業所へお渡しし、伴走支援担当者は持ち帰りません。」を「書面でご署名いただいた場合は、署名済みの書面またはその写しを当法人が受け取り、本書の記録として保管します。控えは事業所にて保管してください。」に替えた（紙の発注では署名済みの紙を当法人が受け取るため）。v1.1 は不変
-- **条文の正本**: `functions/consent-document.js`（CommonJS。`CONSENT_V1_1`・`CONSENT_V1_2`）。画面の写し `admin/js/consent-document.js` は `CONSENT_DOCUMENT`＝v1.2、`CONSENT_ARCHIVE`＝[1.1, 1.0]、`SUPPORT_CONSENT_DOCUMENT`＝1.1。一字一句の一致は `test-order-consent.mjs`。**伴走支援だけの承諾書（事前確認タブの署名依頼・紙で取得済みを記録）は v1.1 のまま**（v1.2 は「本書に表示する見積書」を前提にした文面なので、見積もりの無い承諾書には使わない）
+- **条文の正本**: `functions/consent-document.js`（CommonJS。`CONSENT_V1_1`・`CONSENT_V1_2`・`CONSENT_V1_3`）。画面の写し `admin/js/consent-document.js` は `CONSENT_DOCUMENT`＝v1.3、`CONSENT_ARCHIVE`＝[1.2, 1.1, 1.0]、`SUPPORT_CONSENT_DOCUMENT`＝1.1。一字一句の一致は `test-order-consent.mjs`。**伴走支援だけの承諾書（事前確認タブの署名依頼・紙で取得済みを記録）は v1.1 のまま**（v1.2 は「本書に表示する見積書」を前提にした文面なので、見積もりの無い承諾書には使わない）
+- **v1.3（2026-11-16 次田さん決定）**: v1.2 と同じ文面で、発行者の連絡先の電話だけを `050-1808-2999` → `050-8894-9502`（サポートデスク）に替えた。受付時間（平日10:00〜17:00）の記載は変えていない。v1.2 は凍結庫へ（v1.2 で署名済みの記録は焼き込んだ v1.2 のまま）。改版後に v1.2 を表示したままの見積もりページから同意すると `consent_version_mismatch`（読み込み直し）。以下で「v1.2」と書いた発注の承諾書の仕組みは v1.3 でも同じ
 - **判定**: `functions/accept-rules.js` の `checkOrderConsent`・`checkOrderReconsent`・`buildOrderConsentRecord`・`orderConsentStaleAfterRevise`・`orderByConsentOn`・`channelOfReceivedVia`。練習モード用の写し `admin/js/order-consent-rules.js`（本文が同じ・同じ結果になることをテストで確認）
 - **`acceptQuoteTransaction` の分割**: 読み取り `acceptTxRead`（読む順は従来と同じ）／書き込み `acceptTxWrite`（`consent` を渡したときだけ承諾書の項目を足す・`setCounter:false` で採番の書き込みを呼び出し側に回す）。1件の申込（Web・スイッチオフのスタッフ）は従来と同じ1件1トランザクション
 - **まとめ見積もり（発6）**: スイッチがオンのときは全事業所を1つのトランザクションで受注確定（1件でも通らなければ全部止める。オフのときの「一部だけ確定（partial）」とは違う）。出荷番号は連番でまとめて採り、`_counters/shipments` は最後に1回だけ書く

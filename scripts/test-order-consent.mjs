@@ -1,6 +1,7 @@
 // 見積もり必須・承諾書のサイン＝発注（2026-11-12・第1段）のテスト。node scripts/test-order-consent.mjs
 // 設計: 06_介護情報基盤事業/docs/改善1_承諾書で発注_設計書_20261112.md
 //   ①条文: サーバーの正本（functions/consent-document.js）と画面の写し（admin/js/consent-document.js）が一字一句同じ。
+//          現行は v1.3（2026-11-16 連絡先の電話をサポートデスクに）。v1.2 も凍結庫にそのまま。
 //          v1.1 は凍結庫にそのまま（今まで現行だった文面と同じ）。伴走支援だけの承諾書は v1.1 のまま
 //   ②判定の純粋関数（functions/accept-rules.js）の単体テスト
 //   ③練習モード用の写し（admin/js/order-consent-rules.js）が正本と同じ結果・同じ本文
@@ -30,17 +31,36 @@ const t = (name, fn) => { try { fn(); n++; } catch (e) { console.error(`NG ${nam
 const plain = (o) => JSON.parse(JSON.stringify(o));
 
 // ===== ① 条文 =====
-t("条文 v1.2: サーバーの正本と画面の写しが一字一句同じ", () => {
-  assert.deepStrictEqual(plain(AD.CONSENT_DOCUMENT), plain(CD.CONSENT_V1_2));
-  assert.equal(CD.ORDER_CONSENT_DOCUMENT, CD.CONSENT_V1_2);
-  assert.equal(AD.CONSENT_DOCUMENT.version, "1.2");
+t("条文 v1.3（現行）: サーバーの正本と画面の写しが一字一句同じ", () => {
+  assert.deepStrictEqual(plain(AD.CONSENT_DOCUMENT), plain(CD.CONSENT_V1_3));
+  assert.equal(CD.ORDER_CONSENT_DOCUMENT, CD.CONSENT_V1_3);
+  assert.equal(AD.CONSENT_DOCUMENT.version, "1.3");
+});
+t("条文 v1.2: サーバーの写しと画面の凍結庫が一字一句同じ（過去版として引ける）", () => {
+  const v12 = AD.CONSENT_ARCHIVE.find((d) => d.version === "1.2");
+  assert.ok(v12, "凍結庫に v1.2 が無い");
+  assert.deepStrictEqual(plain(v12), plain(CD.CONSENT_V1_2));
+  assert.match(v12.issuer_detail, /電話 050-1808-2999（平日10:00〜17:00）/); // 凍結した文面は書き換えない
+  // v1.2 で署名済みの記録（焼き込み済みの条文）は、そのまま読めて表示に使える
+  const parsed = AD.parseEmbeddedDocument(plain(CD.CONSENT_V1_2));
+  assert.equal(parsed.version, "1.2");
+  assert.equal(parsed.issuer_detail, CD.CONSENT_V1_2.issuer_detail);
+});
+t("条文 v1.3: v1.2 から変えたのは版と、連絡先の電話番号だけ（受付時間は変えない）", () => {
+  const a = CD.CONSENT_V1_2, b = CD.CONSENT_V1_3;
+  assert.equal(b.version, "1.3");
+  assert.equal(b.issuer_detail, a.issuer_detail.replace("電話 050-1808-2999", "電話 050-8894-9502"));
+  assert.match(b.issuer_detail, /電話 050-8894-9502（平日10:00〜17:00）／メール info@tadakayo\.jp$/);
+  assert.ok(!JSON.stringify(b).includes("050-1808-2999"), "現行に旧番号が残っている");
+  assert.deepStrictEqual({ ...plain(b), version: a.version, issuer_detail: a.issuer_detail }, plain(a));
+  assert.ok(!new RegExp("特定非営利活動法人" + "タダカヨ").test(JSON.stringify(b)), "法人名は NPO法人タダカヨ");
 });
 t("条文 v1.1: サーバーの写しと画面の凍結庫が一字一句同じ・伴走支援だけの承諾書は v1.1", () => {
   const v11 = AD.CONSENT_ARCHIVE.find((d) => d.version === "1.1");
   assert.deepStrictEqual(plain(v11), plain(CD.CONSENT_V1_1));
   assert.equal(AD.SUPPORT_CONSENT_DOCUMENT, v11);
   assert.equal(CD.SUPPORT_CONSENT_DOCUMENT, CD.CONSENT_V1_1);
-  assert.deepEqual(AD.CONSENT_ARCHIVE.map((d) => d.version), ["1.1", "1.0"]);
+  assert.deepEqual(AD.CONSENT_ARCHIVE.map((d) => d.version), ["1.2", "1.1", "1.0"]);
 });
 t("条文 v1.1 は今まで（main）の現行の文面と同じ（凍結）", () => {
   // git が使えない環境では飛ばさずに失敗させない（ソースから main の文面を読む）
@@ -53,6 +73,17 @@ t("条文 v1.1 は今まで（main）の現行の文面と同じ（凍結）", (
   const curBody = block(cur, /export const CONSENT_ARCHIVE = \[\n  \{\n    version: "1\.1"/);
   const norm = (x) => x.replace(/\s+/g, "");
   assert.ok(norm(curBody).includes(norm(oldBody).slice(1, -1)), "凍結した v1.1 が main の現行の文面と違う");
+});
+t("条文 v1.2 は今まで（main）の現行の文面と同じ（凍結）", () => {
+  let old = null;
+  try { old = execFileSync("git", ["-C", root, "show", "origin/main:admin/js/consent-document.js"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }); } catch (_) { old = null; }
+  if (old == null || !/export const CONSENT_DOCUMENT = \{\n  version: "1\.2"/.test(old)) return; // main の現行が 1.2 でないときは比べない
+  const cur = read("admin/js/consent-document.js");
+  const block = (src, startRe) => { const i = src.search(startRe); const j = src.indexOf("\n};\n", i); return src.slice(i, j); };
+  const oldBody = block(old, /export const CONSENT_DOCUMENT = \{/).replace(/^export const CONSENT_DOCUMENT = /, "");
+  const curBody = block(cur, /export const CONSENT_ARCHIVE = \[\n  \{\n    version: "1\.2"/);
+  const norm = (x) => x.replace(/\s+/g, "");
+  assert.ok(norm(curBody).includes(norm(oldBody).slice(1, -1)), "凍結した v1.2 が main の現行の文面と違う");
 });
 t("条文 v1.2: 変えたのは題名・§6・同意文と、§7 の書面の扱いの1文だけ", () => {
   const a = CD.CONSENT_V1_1, b = CD.CONSENT_V1_2;
@@ -296,7 +327,7 @@ t("承諾書の印刷: 見積番号・版・品目・台数・金額。まとめ
     { estNo: "EST-2026-0002", version: 1, officeName: "B", items: [{ sku: "cir315a-04", subsidyQty: 1 }], amounts: { totalIncl: 50000, selfPay: 5000 } },
   ] });
   for (const s of ["EST-2026-0001", "第3版", "EST-2026-0002", "第1版", "¥79,200", "¥50,000", "¥129,200", "合計（2事業所）", "CIR415A：3台（補助対象 2台＋追加 1台）",
-    "CIR315A（Type-C）：1台（補助対象 1台）", "A&lt;事業所&gt;", "法人&amp; 御中", DOC.title, DOC.consent_statement, DOC.sections[5].body, "条文の版 1.2", "印刷日 2026-11-12"]) {
+    "CIR315A（Type-C）：1台（補助対象 1台）", "A&lt;事業所&gt;", "法人&amp; 御中", DOC.title, DOC.consent_statement, DOC.sections[5].body, `条文の版 ${DOC.version}`, "印刷日 2026-11-12"]) {
     assert.ok(html.includes(s), `印刷に無い: ${s}`);
   }
   assert.ok(!html.includes("<事業所>"));

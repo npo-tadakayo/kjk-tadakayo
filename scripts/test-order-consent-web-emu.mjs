@@ -6,12 +6,12 @@
 //   A. スイッチがオフ: acceptQuote（1件・まとめ）と webhookMitsumori は今までどおり（承諾書の記録なし・応答に承諾書の項目なし・
 //      consent を送っても使わない）。ORDER_EMU_DUMP を渡すと書き込みと応答を書き出す（main の functions と突き合わせる）
 //   B. スイッチがオン: 同意（consent）が無い・版が違う・名前が無い → 拒否し、何も書かない
-//   C. スイッチがオン: 承諾書の記録（kind order・web_order・署名者名・サーバー時刻・userAgent・条文 v1.2 全文・見積もりの焼き込み）と
+//   C. スイッチがオン: 承諾書の記録（kind order・web_order・署名者名・サーバー時刻・userAgent・条文 v1.3 全文・見積もりの焼き込み）と
 //      受注確定（accepted・consent_web・出荷の下書き・状態3）が同時に入る。応答に承諾書のアドレス。二重送信は already（2件目を作らない）
 //   D. まとめ見積もり: 承諾書1件に全事業所。1回で全部が受注確定
 //   E. まとめの1件が期限切れ → どれも受注確定にならず、承諾書も無い（番号も進まない）
 //   F. 古い版（superseded・新しい版がある）・鍵（quoteToken）違い → 拒否
-//   G. webhookMitsumori（スイッチがオン）: 応答に orderByConsent・条文 v1.2 の全文・各見積もりの「承諾書に焼き込む形」
+//   G. webhookMitsumori（スイッチがオン）: 応答に orderByConsent・条文 v1.3 の全文・各見積もりの「承諾書に焼き込む形」
 //
 // 実行（本番に繋がらない demo- プロジェクト。依存は functions/node_modules）:
 //   cd <repo> && firebase emulators:exec --only firestore --project demo-order-consent-web-test "node scripts/test-order-consent-web-emu.mjs"
@@ -187,7 +187,7 @@ if (DUMP) {
 // オフのときに consent が付いた申込（ページを開いたあとで設定が切れた）は 409 で止め、何も書かない（レビュー 中-1）
 await seed([[cd("wA2"), { status: 2, caseNumber: 704 }], [qd("wqA2"), quote("wqA2", "wA2", { caseNumber: 704 })]]);
 const cA20 = await counter();
-r = await http("acceptQuote", webBody("wqA2", { consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqA2", { consent: { agreed: true, version: "1.3" } }));
 check("オフなのに consent が付いている → 409 order_by_consent_off", r.status === 409 && r.body.code === "order_by_consent_off" && /読み込み直して/.test(r.body.message), JSON.stringify(r));
 check("409 のあと何も書かない", (await get(qd("wqA2"))).status === "issued" && (await get(cd("wA2"))).status === 2 && (await shipsOf("wA2")).length === 0 && (await counter()) === cA20);
 // 進み具合の2項目（statusChangedAt・statusChangedTo）: 状態が変わったときだけ書く
@@ -217,11 +217,13 @@ await seed([[cd("wB"), { status: 2, caseNumber: 711, officeName: "事業所B" }]
 const cB0 = await counter();
 r = await http("acceptQuote", webBody("wqB"));
 check("consent が無い → 400 consent_required", r.status === 400 && r.body.code === "consent_required", JSON.stringify(r));
-r = await http("acceptQuote", webBody("wqB", { consent: { agreed: false, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqB", { consent: { agreed: false, version: "1.3" } }));
 check("agreed が true でない → 400 consent_required", r.status === 400 && r.body.code === "consent_required", JSON.stringify(r));
 r = await http("acceptQuote", webBody("wqB", { consent: { agreed: true, version: "1.1" } }));
 check("版が違う → 400 consent_version_mismatch", r.status === 400 && r.body.code === "consent_version_mismatch", JSON.stringify(r));
-r = await http("acceptQuote", webBody("wqB", { agreedName: "  ", consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqB", { consent: { agreed: true, version: "1.2" } }));
+check("改版前（v1.2）のページから同意 → 400 consent_version_mismatch（読み込み直してもらう）", r.status === 400 && r.body.code === "consent_version_mismatch", JSON.stringify(r));
+r = await http("acceptQuote", webBody("wqB", { agreedName: "  ", consent: { agreed: true, version: "1.3" } }));
 check("名前が空 → 400", r.status === 400 && r.body.status === "error", JSON.stringify(r));
 r = await http("acceptQuote", { quotes: [{ quoteId: "wqB", quoteToken: "tok-wqB" }], agreedName: "x", payMethod: "after" });
 check("まとめの形でも consent が無ければ拒否", r.status === 400 && r.body.code === "consent_required", JSON.stringify(r));
@@ -231,7 +233,7 @@ check("拒否したあと、何も変わっていない", (await get(qd("wqB")))
 // ---------- C. スイッチがオン・1件 ----------
 section("C. スイッチがオン: 承諾書の記録と受注確定が同時に入る（1件）");
 posted.length = 0;
-r = await http("acceptQuote", webBody("wqB", { agreedName: "  同意 一郎  ", payMethod: "before", consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqB", { agreedName: "  同意 一郎  ", payMethod: "before", consent: { agreed: true, version: "1.3" } }));
 check("200 ok", r.status === 200 && r.body.status === "ok", JSON.stringify(r));
 // エミュレータでは Gmail に送れない → 受注確認のメールは送れていない、と応答で伝える（見積もりページが「お送りしました」と出さない・2026-11-12 スイッチ前の点検）
 check("応答の mailed は false（受注確認のメールを送れなかった）", r.body.mailed === false, JSON.stringify(r.body));
@@ -243,7 +245,7 @@ check("承諾書: kind order・status signed", recC && recC.kind === "order" && 
 check("承諾書: signed.method web_order・署名者名（前後の空白なし）・サーバー時刻・userAgent",
   recC.signed.method === "web_order" && recC.signed.name === "同意 一郎" && recC.signed.signedAt instanceof TS && recC.signed.userAgent === UA
   && !("receivedDate" in recC.signed) && !("recordedBy" in recC.signed), JSON.stringify(recC.signed));
-check("承諾書: 条文 v1.2 の全文", JSON.stringify(plain(recC.document)) === JSON.stringify(plain(CD.CONSENT_V1_2)));
+check("承諾書: 条文 v1.3 の全文", JSON.stringify(plain(recC.document)) === JSON.stringify(plain(CD.CONSENT_V1_3)));
 check("承諾書: 見積もりの焼き込み（見積番号・版・事業所・品目・金額）", recC.quotes.length === 1 && recC.quotes[0].estNo === "EST-W-wqB"
   && recC.quotes[0].version === 1 && recC.quotes[0].officeName === "事業所wqB" && recC.quotes[0].items[0].subsidyQty === 2
   && recC.quotes[0].amounts.totalIncl === 79200 && recC.totalIncl === 79200);
@@ -258,13 +260,13 @@ check("案件: 3・orderConsentToken・orderConsentAt・orderConsentStale false�
 check("出荷の下書きが1件・番号が1つ進む", (await shipsOf("wB")).length === 1 && (await counter()) === cB0 + 1);
 const actB = await actsOf("wB");
 check("対応記録: 承諾書にオンラインで同意・承諾書の番号", actB.length === 1 && actB[0].subject.startsWith("承諾書にオンラインで同意いただき、受注確定にしました")
-  && actB[0].body.includes(recC.displayNo) && actB[0].body.includes("条文の版 1.2"), JSON.stringify(actB).slice(0, 300));
+  && actB[0].body.includes(recC.displayNo) && actB[0].body.includes("条文の版 1.3"), JSON.stringify(actB).slice(0, 300));
 check("Chat: ご発注（承諾書への同意）・承諾書の番号・署名者名は載せない", posted.length === 2 && posted[1].text.startsWith("🎉 ご発注（承諾書への同意）を受け付けました")
   && posted[1].text.includes(recC.displayNo) && !posted[1].text.includes("同意 一郎"), JSON.stringify(posted).slice(0, 300));
 check("宛先が無いので、受注確認のメールを送っていないことを Chat に（案件番号と見積番号だけ・事業所名なし）", /宛先のメールアドレスが無い/.test(posted[0].text)
   && posted[0].text.includes("案件 #711（EST-W-wqB）") && !posted[0].text.includes("事業所wqB"), JSON.stringify(posted[0]));
 // 二重送信
-r = await http("acceptQuote", webBody("wqB", { consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqB", { consent: { agreed: true, version: "1.3" } }));
 check("再送は already・同じ承諾書のアドレス・2件目を作らない", r.status === 200 && r.body.status === "already" && r.body.consentUrl === urlC
   && (await consentsOf("wB")).length === 1 && (await shipsOf("wB")).length === 1, JSON.stringify(r));
 
@@ -278,7 +280,7 @@ await seed([
 const cD0 = await counter();
 posted.length = 0;
 r = await http("acceptQuote", { quotes: [{ quoteId: "wqD1", quoteToken: "tok-wqD1" }, { quoteId: "wqD2", quoteToken: "tok-wqD2" }],
-  deliveryMode: "single", delivery: DELIVERY, payMethod: "after", agreedName: "まとめ 同意", agreedPolicy: true, consent: { agreed: true, version: "1.2" } });
+  deliveryMode: "single", delivery: DELIVERY, payMethod: "after", agreedName: "まとめ 同意", agreedPolicy: true, consent: { agreed: true, version: "1.3" } });
 check("200 ok・2件", r.status === 200 && r.body.status === "ok" && r.body.results.length === 2, JSON.stringify(r));
 check("まとめの応答にも mailed: false", r.body.mailed === false, JSON.stringify(r.body));
 const tokD = (/t=([0-9a-f]{32})$/.exec(r.body.consentUrl || "") || [])[1];
@@ -301,7 +303,7 @@ await seed([
 ]);
 const cE0 = await counter();
 r = await http("acceptQuote", { quotes: [{ quoteId: "wqE1", quoteToken: "tok-wqE1" }, { quoteId: "wqE2", quoteToken: "tok-wqE2" }],
-  deliveryMode: "each", payMethod: "after", agreedName: "期限 切れ", consent: { agreed: true, version: "1.2" } });
+  deliveryMode: "each", payMethod: "after", agreedName: "期限 切れ", consent: { agreed: true, version: "1.3" } });
 check("409・期限切れの文言", r.status === 409 && /有効期限/.test(r.body.message || ""), JSON.stringify(r));
 check("どちらも issued のまま・承諾書なし・出荷なし・番号は進まない", (await get(qd("wqE1"))).status === "issued" && (await get(qd("wqE2"))).status === "issued"
   && (await consentsOf("wE1")).length === 0 && (await shipsOf("wE1")).length === 0 && (await counter()) === cE0);
@@ -316,19 +318,19 @@ await seed([
   // 発行中のまま新しい版がある（本来は起きないが、版の確認を Web でも行うことを確かめる）
   [qd("wqF3a"), quote("wqF3a", "wF3", { caseNumber: 742, version: 1 })], [qd("wqF3b"), quote("wqF3b", "wF3", { caseNumber: 742, version: 2 })],
 ]);
-r = await http("acceptQuote", webBody("wqF1", { consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqF1", { consent: { agreed: true, version: "1.3" } }));
 check("superseded（古い版）→ 409", r.status === 409 && /新しい見積もり/.test(r.body.message || ""), JSON.stringify(r));
-r = await http("acceptQuote", webBody("wqF3a", { consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqF3a", { consent: { agreed: true, version: "1.3" } }));
 check("新しい版がある発行中の古い版 → 409 old_version", r.status === 409 && r.body.code === "old_version", JSON.stringify(r));
-r = await http("acceptQuote", webBody("wqF2", { quoteToken: "wrong", consent: { agreed: true, version: "1.2" } }));
+r = await http("acceptQuote", webBody("wqF2", { quoteToken: "wrong", consent: { agreed: true, version: "1.3" } }));
 check("鍵違い → 403", r.status === 403, JSON.stringify(r));
 check("何も書かない", (await consentsOf("wF")).length === 0 && (await consentsOf("wF3")).length === 0 && (await get(qd("wqF2"))).status === "issued");
 
 // ---------- G. 見積もりの登録の応答（スイッチがオン）----------
 section("G. 見積もりの登録: スイッチがオンなら条文と焼き込む形を返す");
 r = await http("webhookMitsumori", { ...wmBody, email: "w3@example.test", officeName: "見積事業所G" });
-check("1件: orderByConsent true・条文 v1.2 の全文", r.status === 200 && r.body.orderByConsent === true
-  && JSON.stringify(r.body.consentDocument) === JSON.stringify(plain(CD.CONSENT_V1_2)), JSON.stringify(r).slice(0, 200));
+check("1件: orderByConsent true・条文 v1.3 の全文", r.status === 200 && r.body.orderByConsent === true
+  && JSON.stringify(r.body.consentDocument) === JSON.stringify(plain(CD.CONSENT_V1_3)), JSON.stringify(r).slice(0, 200));
 const qG = await get(qd(r.body.quoteId));
 check("1件: consentEntry は承諾書に焼き込む形と同じ（orderConsentQuoteEntry）",
   JSON.stringify(r.body.consentEntry) === JSON.stringify(plain(R.orderConsentQuoteEntry({ id: r.body.quoteId, ...qG }))), JSON.stringify(r.body.consentEntry));
@@ -339,7 +341,7 @@ r = await http("webhookMitsumori", { email: "w4@example.test", corpName: "見積
     { officeName: "Gまとめ1", subsidyCategory: "houmon", btSubsidyQty: 1, usbSubsidyQty: 0, btExtraQty: 0, usbExtraQty: 0, prefecture: "東京都", city: "港区", addressDetail: "1" },
     { officeName: "Gまとめ2", subsidyCategory: "houmon", btSubsidyQty: 2, usbSubsidyQty: 0, btExtraQty: 1, usbExtraQty: 0, prefecture: "東京都", city: "港区", addressDetail: "2" },
   ] });
-check("まとめ: orderByConsent・各見積もりに consentEntry", r.status === 200 && r.body.orderByConsent === true && r.body.consentDocument.version === "1.2"
+check("まとめ: orderByConsent・各見積もりに consentEntry", r.status === 200 && r.body.orderByConsent === true && r.body.consentDocument.version === "1.3"
   && r.body.quotes.length === 2 && r.body.quotes.every((q) => q.consentEntry && q.consentEntry.quoteId === q.quoteId && q.consentEntry.estNo === q.estNo), JSON.stringify(r).slice(0, 300));
 // 見積もりの登録 → そのまま Web で発注（画面と同じ流れ）
 const gq = r.body.quotes;
