@@ -4615,3 +4615,23 @@ const ShipSteps = require("./ship-steps")({
 });
 exports.warehouseAccept = ShipSteps.warehouseAccept;
 exports.shipStepDone = ShipSteps.shipStepDone;
+
+// ---- 役目を終えた記録の自動削除（2026-11-19・セキュリティ点検の残件。仕様は functions/data-purge.js・§C20） ----
+// 毎日 03:30（JST）。appConfig/dataPurge.enabled が true のときだけ消す。それ以外は「数えるだけ」で何も消さない（ログに件数）。
+// 消す対象: leadTokens（期限＋7日）／_notifyLog（90日）／_rateLimit（その日の終わり＋7日を過ぎたもの）／署名のない承諾書の依頼（180日）。署名済みは消さない。
+const DataPurge = require("./data-purge");
+exports.purgeExpiredData = onSchedule(
+  { schedule: "30 3 * * *", timeZone: "Asia/Tokyo", region: "asia-northeast1", serviceAccount: SA_BATCH, timeoutSeconds: 540 },
+  async () => {
+    let enabled = false;
+    try {
+      const cfg = await db.collection("appConfig").doc("dataPurge").get();
+      enabled = DataPurge.isEnabled(cfg);
+    } catch (e) {
+      console.error("purgeExpiredData: 設定を読めなかったので、消さずに数えるだけにします", maskUrl(e));
+    }
+    const out = await DataPurge.purgeExpired(db, { now: Date.now(), dryRun: !enabled });
+    console.log("purgeExpiredData", JSON.stringify({ mode: enabled ? "delete" : "count-only", results: out.results }));
+    if (out.results.some((r) => r.error)) console.error("purgeExpiredData: 一部のコレクションで失敗しました", JSON.stringify(out.results.filter((r) => r.error)));
+  }
+);
