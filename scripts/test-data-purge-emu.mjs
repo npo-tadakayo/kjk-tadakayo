@@ -6,6 +6,9 @@
 //   C. dryRun は何も消さずに件数だけ返す
 //   D. 「残すもの」が大量にあっても、その先の消す対象まで届く（ページをまたぐ）
 //   E. 1つのコレクションで失敗しても、ほかは処理される
+//   F. 検索で読んだあとに署名されても、署名済みは消えない（消す直前に読み直す）
+//   G. 1日の上限に当たったら途中で止めて capped を返す／翌日に続きができる
+//   H. 削除のスイッチ（true だけが有効。"true"・1・文書なし・読めないは無効）
 //
 // 実行: firebase emulators:exec --only firestore --project demo-data-purge-test "node scripts/test-data-purge-emu.mjs"
 import { createRequire } from "node:module";
@@ -104,7 +107,7 @@ check("承諾書: 発注の承諾書（kind:order・900日前）は残る", awai
 check("承諾書: status が pending のままでも signed が付いているものは残る（安全側）", await exists("consentRequests", "c_weird_old"));
 check("承諾書: 状態が読めないものは消さない", await exists("consentRequests", "c_nostatus_old"));
 check("別のコレクション（cases）は触らない", await exists("cases", "case_old"));
-check("残した件数が報告される（承諾書 kept ≥ 5）", by(live, "consentRequests").kept >= 5, JSON.stringify(by(live, "consentRequests")));
+check("残した件数が報告される（承諾書 kept ＝ 2：発注の承諾書と、pending のまま signed が付いているもの。署名済みは読みもしない）", by(live, "consentRequests").kept === 2, JSON.stringify(by(live, "consentRequests")));
 
 // ---------- 2回目は何もしない ----------
 section("もう一度回しても壊れない（冪等）");
@@ -141,6 +144,54 @@ section("E. 1つのコレクションの失敗が全体を止めない");
   db.collection = realCollection;
   check("_notifyLog は error として返る", !!by(e, "_notifyLog").error, JSON.stringify(by(e, "_notifyLog")));
   check("ほかのコレクションは結果が返る", e.results.filter((r) => !r.error).length === 3, JSON.stringify(e.results));
+}
+
+// ---------- F. 署名との行き違い ----------
+section("F. 読んだあとに署名されても、署名済みは消えない");
+await wipe();
+await db.collection("consentRequests").doc("race_signed").set({ status: "pending", createdAt: ago(300), contactName: "行き違い" });
+await db.collection("consentRequests").doc("race_plain").set({ status: "pending", createdAt: ago(300) });
+await db.collection("consentRequests").doc("race_canceled").set({ status: "pending", createdAt: ago(300) });
+{
+  const r = await P.purgeExpired(db, {
+    now: NOW, dryRun: false,
+    // 検索で読み終わった直後（消す直前）に、利用者が署名したことにする
+    afterScan: async (coll) => {
+      if (coll !== "consentRequests") return;
+      await db.collection("consentRequests").doc("race_signed").update({ status: "signed", signed: { name: "署名者", method: "web", signedAt: ago(0) } });
+      await db.collection("consentRequests").doc("race_canceled").update({ status: "signed", signed: { name: "別の署名者", method: "web" } });
+    },
+  });
+  const c = by(r, "consentRequests");
+  check("消す直前に署名された2件は残る", (await exists("consentRequests", "race_signed")) && (await exists("consentRequests", "race_canceled")));
+  check("署名の中身も壊れていない", (await db.collection("consentRequests").doc("race_signed").get()).data().signed.name === "署名者");
+  check("署名のないままだった1件は消える", !(await exists("consentRequests", "race_plain")) && c.deleted === 1, JSON.stringify(c));
+}
+
+// ---------- G. 1日の上限 ----------
+section("G. 上限に当たったら途中で止める・翌日に続きができる");
+await wipe();
+for (let i = 0; i < 10; i++) await db.collection("leadTokens").doc(`cap${i}`).set({ expiresAt: ago(10 + i) });
+{
+  const day1 = await P.purgeExpired(db, { now: NOW, dryRun: false, batchSize: 2, maxRounds: 2 });
+  const l1 = by(day1, "leadTokens");
+  check("2件×2ページ＝4件で止まり capped が立つ", l1.deleted === 4 && l1.capped === true, JSON.stringify(l1));
+  check("残りは6件", (await db.collection("leadTokens").get()).size === 6);
+  const day2 = await P.purgeExpired(db, { now: NOW + DAY, dryRun: false, batchSize: 2, maxRounds: 10 });
+  const l2 = by(day2, "leadTokens");
+  check("翌日に続きをやると全部消え、capped は立たない", l2.deleted === 6 && l2.capped === false && (await db.collection("leadTokens").get()).size === 0, JSON.stringify(l2));
+}
+
+// ---------- H. スイッチ ----------
+section("H. 削除のスイッチ（isEnabled）");
+{
+  const snap = (exists, data) => ({ exists, data: () => data });
+  check("enabled:true だけが有効", P.isEnabled(snap(true, { enabled: true })) === true);
+  check('"true"（文字列）は無効', P.isEnabled(snap(true, { enabled: "true" })) === false);
+  check("1 は無効", P.isEnabled(snap(true, { enabled: 1 })) === false);
+  check("false は無効", P.isEnabled(snap(true, { enabled: false })) === false);
+  check("文書なしは無効", P.isEnabled(snap(false, undefined)) === false);
+  check("読めない（例外・undefined）は無効", P.isEnabled({ exists: true, data() { throw new Error("x"); } }) === false && P.isEnabled(undefined) === false);
 }
 
 console.log(results.join("\n"));
