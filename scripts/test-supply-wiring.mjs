@@ -10,7 +10,7 @@ import {
   initialSelection, groupByShipment, bankPaymentOf, bankTxnDocOf, remainOf, applyBankPayments,
   payConfirmText, aliasLearnings, invoicePatchOf, paymentRemovalOf,
   dueDateOf, invoiceDueOf, askInvoicedAfterMail, mailedInvoiceDatesOf, accountingReportDestOf,
-  printInvoiceShipOf, invoiceIssueDefaultOf, markInvoicedPlanOf, NOT_SHIPPED_MSG,
+  printInvoiceShipOf, invoiceIssueDefaultOf, markInvoicedPlanOf, NOT_SHIPPED_MSG, shipDestLabelOf,
 } from "../admin/js/supply-rules.js";
 import { fillInvoiceReportText, billToForReportOf, paymentDueText } from "../admin/js/invoice-doc.js";
 
@@ -493,6 +493,30 @@ await t("指摘4: 印字する支払期限（net14）の起点＝保存と同じ
   assert.match(src, /const ps = printInvoiceShipOf\(s, openedYmd\);/);
   // 指摘5: 完了メッセージに過入金の充当の案内
   assert.match(src, /過入金がある場合の充当は、出荷の画面で行ってください/);
+});
+
+await t("出荷の一覧: 案件の事業所名とお届け先が違うときだけ、案件の事業所名を主にしてお届け先を添える（オプス3件・2026-11-19）", () => {
+  // 法人まとめ申込で「1か所にまとめてお届け」: 3件とも届け先は最初の事業所の名前
+  const ship = { officeName: "居宅介護支援事業所オプス" };
+  assert.deepEqual(shipDestLabelOf(ship, "居宅介護支援事業所オプス"), { main: "居宅介護支援事業所オプス", dest: "" }, "同じなら今までどおり");
+  assert.deepEqual(shipDestLabelOf(ship, "訪問看護ステーションオプス"), { main: "訪問看護ステーションオプス", dest: "居宅介護支援事業所オプス" });
+  assert.deepEqual(shipDestLabelOf(ship, "訪問介護ボヌール"), { main: "訪問介護ボヌール", dest: "居宅介護支援事業所オプス" });
+  // 空白・全角空白だけの違いは同じ名前として扱う（桂久会の「湖水荘」のような表記の揺れ）
+  assert.deepEqual(shipDestLabelOf({ officeName: "介護老人保健施設湖水荘" }, "介護老人保健施設\u3000湖水荘"), { main: "介護老人保健施設湖水荘", dest: "" });
+  // 案件が引けない・案件の事業所名が空・出荷の届け先が空 → 今までどおり（出荷の値）
+  assert.deepEqual(shipDestLabelOf(ship, undefined), { main: "居宅介護支援事業所オプス", dest: "" });
+  assert.deepEqual(shipDestLabelOf(ship, ""), { main: "居宅介護支援事業所オプス", dest: "" });
+  assert.deepEqual(shipDestLabelOf({ officeName: "" }, "訪問介護ボヌール"), { main: "", dest: "" });
+  assert.deepEqual(shipDestLabelOf({}, "訪問介護ボヌール"), { main: "", dest: "" });
+  assert.deepEqual(shipDestLabelOf(null, "x"), { main: "", dest: "" });
+  // 出荷のデータは書き換えない
+  assert.deepEqual(ship, { officeName: "居宅介護支援事業所オプス" });
+  // 画面のつなぎ: 一覧の行は shipOfficeCellHtml（案件の事業所名の表を使う）で事業所名を出す・案件の購読で表を作る
+  const sup = readFileSync(fileURLToPath(new URL("../admin/js/supply.js", import.meta.url)), "utf8");
+  assert.match(sup, /shipDestLabelOf \} from "\/js\/supply-rules\.js"/);
+  assert.match(sup, /caseOfficeNames=Object\.fromEntries\(snap\.docs\.map\(d=>\[d\.id,d\.data\(\)\.officeName\|\|""\]\)\)/);
+  assert.match(sup, /<td>\$\{shipOfficeCellHtml\(s\)\}\$\{s\.company\?/);
+  assert.match(sup, /お届け先: \$\{esc\(l\.dest\)\}/);
 });
 
 console.log(`OK test-supply-wiring: ${n} 件合格`);
