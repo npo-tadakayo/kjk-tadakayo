@@ -48,7 +48,7 @@ import { ISSUE_REASONS, defaultLocationIdOf, canPickup, validatePickup } from "/
 // 下書きの重複警告・在庫の目安（2026-10-21 設計 §6）と入金明細の取り込み（§7）
 import { findDuplicateDrafts, stockAdvice } from "/js/ship-dup.js";
 import { dupView, filterDupOnly, othersToCancel, stockAdviceShown, paymentRemovalOf, VIEWER_LOCK_SELECTOR,
-  dueDateOf, invoiceDueOf, accountingReportDestOf, invoiceIssueDefaultOf, NOT_SHIPPED_MSG } from "/js/supply-rules.js";
+  dueDateOf, invoiceDueOf, accountingReportDestOf, invoiceIssueDefaultOf, NOT_SHIPPED_MSG, shipDestLabelOf } from "/js/supply-rules.js";
 import { initBankImport } from "/js/bank-import.js";
 // 発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12 藤田さんの要望）。判定は ship-steps-rules.js が正本
 import { stepOf, stepCounts, STEP_LABEL, STEP_LISTS, STEP_BADGE, finalConfirmOn, requestMissing, requestMissingText,
@@ -2947,6 +2947,7 @@ async function saveTrackNumber(){
 // 出荷そのものは担当を持たないので、元の案件（caseId）の担当営業で見る。
 // 受注タブの入金状況は全件の shipments を使うので、ここでは表示用に絞った配列だけを作る。
 let caseOwners = {};   // caseId → assignedUserId
+let caseOfficeNames = {}; // caseId → 案件の事業所名（出荷の一覧で、お届け先と違うときに案件の事業所名も見せる・2026-11-19）
 let casesForOwners = []; // 担当の選択肢を作るための案件（担当の id と氏名だけ使う）
 let ownersState = "loading"; // 担当情報（案件）の読み込み状態: loading / ok / error
 let caseShipmentIds = {}; // caseId → cases.shipmentId（下書きの重複で「残す候補」にする・2026-10-21）
@@ -2954,6 +2955,11 @@ let dupOnly = false;      // サマリーの「⚠ 下書きの重複」を押�
 let lastDupView = null;   // 最後に描いた重複の情報（「こちらを残す」で使う）
 let stepFilter = "";      // 発送の5段の絞り込み（""＝すべて・2026-11-12）。?step= で開いたときはその段から
 try{ const q0=new URLSearchParams(location.search).get("step"); if(q0 && STEP_LABEL[q0]) stepFilter=q0; }catch(_){ /* 読めなければ「すべて」 */ }
+// 一覧の「事業所名」の欄: 案件の事業所名と届け先の名前が違うときだけ、案件の事業所名を主にして届け先を添える（supply-rules.js）
+function shipOfficeCellHtml(s){
+  const l=shipDestLabelOf(s, caseOfficeNames[s.caseId]);
+  return esc(l.main)+(l.dest?`<div style="font-size:12px;color:var(--color-ink-muted)">お届け先: ${esc(l.dest)}</div>`:"");
+}
 function renderStepBar(list){
   const bar=document.getElementById("shipStepBar"); if(!bar) return;
   const c=stepCounts(list, { finalConfirm: finalConfirmNow() });
@@ -3224,7 +3230,7 @@ function renderShipments(ships, dv){
     return `<tr data-so="${esc(s.soNumber)}"${st==="canceled"?' style="opacity:.55"':""}>
       <td><strong>${esc(s.soNumber)}</strong><div style="margin-top:2px">${typeBadge} ${stBadge}${dupBadge}</div></td>
       <td>${esc(s.shipDate||"")}${s.desiredDeliveryDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納品希望 ${esc(s.desiredDeliveryDate)}</div>`:""}${st==="canceled"&&s.canceledAt?`<div style="font-size:12px;color:var(--color-ink-muted)">キャンセル ${esc(fmtDate(s.canceledAt))}</div>`:""}</td>
-      <td>${esc(s.officeName)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${pickupHtml}${issueHtml}${poWarnHtml}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
+      <td>${shipOfficeCellHtml(s)}${s.company?`<div style="font-size:12px;color:var(--color-ink-muted)">${esc(s.company)}</div>`:""}<div style="font-size:12px;color:var(--color-ink-muted)">請求先: ${esc(billName)}（${yen(shipTotalIncl(s))}）</div>${payInfo}${pickupHtml}${issueHtml}${poWarnHtml}${shipNotifyHtml(s)}${trackingHtml(s)}</td>
       <td style="font-size:12px">${summary}${adviceHtml}</td>
       <td>
         <!-- ボタンが増えて右にはみ出し、削除が画面外で押せなくなっていた（2026-09-01）。
@@ -4531,6 +4537,7 @@ onAuthStateChanged(auth, async (user)=>{
     onSnapshot(collection(db,"cases"),(snap)=>{
       casesForOwners=snap.docs.map(d=>({_id:d.id,assignedUserId:d.data().assignedUserId||null,assignedUserName:d.data().assignedUserName||null}));
       caseOwners=Object.fromEntries(casesForOwners.map(c=>[c._id,c.assignedUserId]));
+      caseOfficeNames=Object.fromEntries(snap.docs.map(d=>[d.id,d.data().officeName||""]));
       // 下書きの重複で「残す候補」にする出荷（案件に結びついている shipmentId）
       caseShipmentIds=Object.fromEntries(snap.docs.filter(d=>d.data().shipmentId).map(d=>[d.id,d.data().shipmentId]));
       ownersState="ok";

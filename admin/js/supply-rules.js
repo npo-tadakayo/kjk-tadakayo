@@ -396,3 +396,20 @@ export const VIEWER_LOCK_SELECTOR = [
     "final-ok", "reselect-ship", // 発送の5段の最終確認・選び直し（2026-11-12）
   ].map((c) => `button.${c}`),
 ].join(",");
+
+// ===== 出荷の一覧の「事業所名」と「お届け先」（2026-11-19・藤田さんの質問「オプスの3件が同じ名前に見える」）=====
+// 出荷の officeName は「お届け先の名前」。法人まとめ申込で「1か所にまとめてお届け」を選ぶと、1つの届け先が全件に入るため、
+// 事業所が別の出荷が同じ名前に見える。案件の事業所名（cases.officeName）が届け先の名前と違うときだけ、
+// 案件の事業所名を主にし、届け先を小さく添える。同じ（空白・全角空白の違いを除く）なら今までどおり。出荷のデータは変えない（表示だけ）。
+const _normName = (v) => String(v == null ? "" : v).replace(/[\s\u3000]/g, "");
+/**
+ * @param {{officeName?:string}} s              出荷
+ * @param {string} [caseOfficeName]             出荷の案件の事業所名（案件が引けないとき・空のときは今までどおり）
+ * @returns {{main:string, dest:string}}        main＝1行目に出す名前／dest＝「お届け先: ○○」に出す届け先（出さないときは ""）
+ */
+export function shipDestLabelOf(s, caseOfficeName) {
+  const ship = String((s && s.officeName) || "");
+  const co = String(caseOfficeName || "");
+  if (!co || !ship || _normName(co) === _normName(ship)) return { main: ship, dest: "" };
+  return { main: co, dest: ship };
+}
