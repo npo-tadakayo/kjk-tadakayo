@@ -16,6 +16,7 @@
 import { STEPS, PRACTICE_TASKS, READY_STEPS, findStep } from "./learning-catalog.js";
 import { findVideo } from "./video-catalog.js";
 import { STATUS_ORDER, LOST } from "./constants.js";
+import { courseDone, courseWatched, courseQuizPassed, trainerIds } from "./trainer-rules.js";
 
 export const VIDEO_DONE_RATIO = 0.9; // 再生した最大位置が長さの9割以上で「見た」
 export const DEFAULT_PASS_RATIO = 0.8;
@@ -442,4 +443,191 @@ export function evaluationLine(progress, badge, quizzes = {}) {
     text: `育成コース：${n ? `STEP${n}まで済` : "STEP1の途中"}。OJTの前の学習（STEP1〜5）が済んでいません（評価の保存はできます）`,
     warn: true,
   };
+}
+
+// ---------- メンバーの一覧（育成 → 独り立ち → トレーナー → トレーナーコース。2026-11-22） ----------
+// 育成コースの画面の下（トレーナー・管理者だけ）に出す表と、その CSV。判定は既存の関数をそのまま使う
+// （isReadyForOjt・stepStates・reachedStep・lastProgressAt・nextAction／trainer-rules.js の courseDone・trainerIds）。
+// 新しいデータは作らない（読むだけ）。管理者が手で済みにした記録には manualClear（at・by・reason）が付いている。
+export const ROLE_LABEL = { admin: "管理者", staff: "スタッフ", viewer: "閲覧のみ", trainee: "練習生", warehouse: "倉庫" };
+export const MEMBER_EXCLUDED_ROLES = ["warehouse", "viewer"]; // 一覧に入れないロール（育成の記録か名簿があれば入れる）
+export const SUPPORT_MODES = ["solo", "training", "observe"]; // 単独・見守り付き・見学
+const lowMail = (s) => String(s || "").trim().toLowerCase();
+
+/** 育成（STEP1〜5）の状況。status: "done"（完了）／"partial"（途中）／"none"（未開始） */
+export function trainingSummary(progress, quizzes = {}) {
+  const p = progress || null;
+  const manual = !!(p && p.manualClear);
+  const states = stepStates(p, {}, quizzes);
+  if (p && isReadyForOjt(p, quizzes)) {
+    const ats = states.filter((s) => READY_STEPS.includes(s.step.id)).map((s) => s.at).filter((t) => t != null);
+    const at = toMs(p.readyForOjtAt) ?? (ats.length ? Math.max(...ats) : null);
+    return { status: "done", label: "完了", at, reached: 5, practice: null, manual };
+  }
+  const reached = reachedStep(states);
+  const touched = !!p && (reached > 0 || lastProgressAt(p) != null
+    || Object.values(p.videos || {}).some((v) => Number(v?.maxPos) > 0));
+  if (!touched) return { status: "none", label: "未開始", at: null, reached: 0, practice: null, manual };
+  let label = reached ? `STEP${reached}まで済` : "STEP1の途中";
+  let practice = null;
+  if (reached === 4) { // STEP5（練習課題）が残り
+    const it = p.practice?.items || {};
+    practice = { done: PRACTICE_TASKS.filter((t) => it[t.key] === true).length, total: PRACTICE_TASKS.length };
+    label += `（練習課題 ${practice.done}/${practice.total}）`;
+  }
+  return { status: "partial", label, at: null, reached, practice, manual };
+}
+
+/** トレーナーコースの状況（appConfig/trainerProgram/course/{メール}） */
+export function courseSummary(course) {
+  const c = course || null;
+  const manual = !!(c && c.manualClear);
+  if (courseDone(c)) return { status: "done", label: "修了", manual };
+  if (courseWatched(c)) return { status: "partial", label: "途中（動画だけ）", manual };
+  if (courseQuizPassed(c)) return { status: "partial", label: "途中（テストだけ）", manual };
+  return { status: "none", label: "未受講", manual };
+}
+
+/** 伴走支援の実施記録（supportChecklists.performance）を人ごとに数える。{ [小文字のメール]: { solo, training, observe } }。1案件1件 */
+export function countPerformances(checklists) {
+  const out = {};
+  for (const sc of Object.values(checklists || {})) {
+    const p = sc && sc.performance;
+    if (!p || !p.performerId || !SUPPORT_MODES.includes(p.mode)) continue;
+    const id = lowMail(p.performerId);
+    out[id] = out[id] || { solo: 0, training: 0, observe: 0 };
+    out[id][p.mode]++;
+  }
+  return out;
+}
+
+/** 担当の案件のうち「伴走支援実施済」以降（失注を除く）の件数。{ [小文字のメール]: 件数 } */
+export function countAssignedDone(cases) {
+  const out = {};
+  for (const c of cases || []) {
+    if (!c || !c.assignedUserId || !statusReached(c.status, STATUS_DONE_SUPPORT)) continue;
+    const id = lowMail(c.assignedUserId);
+    out[id] = (out[id] || 0) + 1;
+  }
+  return out;
+}
+
+/** 担当の案件を数えるときに読む状態（伴走支援実施済とその先。失注は入れない）。Firestore の "in" に渡す */
+export const STATUSES_FROM_DONE_SUPPORT = STATUS_ORDER.slice(STATUS_ORDER.indexOf(STATUS_DONE_SUPPORT)).filter((s) => s !== LOST);
+
+/** 独り立ちの記録（supportBadges）を人ごとに1件へ。1人に複数あればいちばん早い認定。Map（小文字のメール → 記録） */
+export function earliestBadges(badges) {
+  const out = new Map();
+  const at = (b) => toMs(b.grantedDate) ?? toMs(b.createdAt) ?? Infinity;
+  for (const b of badges || []) {
+    const id = lowMail(b && b.userId);
+    if (!id) continue;
+    const prev = out.get(id);
+    if (!prev || at(b) < at(prev)) out.set(id, b);
+  }
+  return out;
+}
+
+/**
+ * 一覧の行を組み立てる。対象は users の有効な人（倉庫・閲覧のみは除く）・learningProgress がある人・トレーナー名簿の人。無効（active:false）は出さない。
+ * input: { users:[{_id,name,role,active}], progresses:{ [メール]: 文書 }, badges:[supportBadges], rosterIds,
+ *          courses:{ [メール]: 文書 }, checklists:{ [caseId]: supportChecklists }, cases:[{_id,status,assignedUserId}] }
+ */
+export function memberRows(input, quizzes = {}) {
+  const i = input || {};
+  const users = i.users || [];
+  const userOf = new Map(users.map((u) => [lowMail(u._id), u]));
+  const progOf = new Map(Object.entries(i.progresses || {}).map(([k, v]) => [lowMail(k), v]));
+  const courseOf = new Map(Object.entries(i.courses || {}).map(([k, v]) => [lowMail(k), v]));
+  const roster = new Set(trainerIds(users, i.rosterIds).map(lowMail));
+  const perf = countPerformances(i.checklists);
+  const assigned = countAssignedDone(i.cases);
+  const badgeOf = earliestBadges(i.badges);
+  const ids = new Set();
+  // 倉庫・閲覧のみの人は伴走支援をしないので入れない（2026-11-22 次田さん）。育成の記録がある人・名簿の人は下で入る
+  for (const u of users) if (u.active !== false && !MEMBER_EXCLUDED_ROLES.includes(u.role)) ids.add(lowMail(u._id));
+  for (const id of progOf.keys()) ids.add(id);
+  for (const id of roster) ids.add(id);
+  const rows = [];
+  for (const id of ids) {
+    if (!id) continue;
+    const u = userOf.get(id);
+    if (u && u.active === false) continue;
+    const p = progOf.get(id) || null;
+    const b = badgeOf.get(id) || null;
+    const training = trainingSummary(p, quizzes);
+    const sp = perf[id] || { solo: 0, training: 0, observe: 0 };
+    rows.push({
+      email: u ? u._id : id,
+      name: (u && u.name) || (p && p.name) || id,
+      role: u ? (u.role || "") : "",
+      roleLabel: u ? (ROLE_LABEL[u.role] || u.role || "—") : "（ユーザー管理にいない）",
+      training,
+      badge: b ? { at: toMs(b.grantedDate) ?? toMs(b.createdAt), by: b.grantedByName || "",
+        basis: b.basis === "discretion" ? "特別裁量" : "評価シート" } : null,
+      trainer: roster.has(id),
+      course: courseSummary(courseOf.get(id) || null),
+      support: sp,
+      assignedDone: assigned[id] || 0,
+      lastAt: lastProgressAt(p),
+      // 育成が済んでいない人には、独り立ち済でも育成の続きを出す（DM の文面に使う）
+      next: nextAction(p, training.status === "done" ? { badge: b } : {}, quizzes),
+    });
+  }
+  const rank = { done: 0, partial: 1, none: 2 };
+  return rows.sort((a, b) => (rank[a.training.status] - rank[b.training.status])
+    || (b.training.reached - a.training.reached) || ((b.lastAt || 0) - (a.lastAt || 0))
+    || String(a.name).localeCompare(String(b.name), "ja"));
+}
+
+/** 絞り込み（ボタンの順） */
+export const MEMBER_FILTERS = [
+  { key: "all", label: "全員", test: () => true },
+  { key: "done", label: "育成完了", test: (r) => r.training.status === "done" },
+  { key: "ojt", label: "OJT待ち", hint: "育成完了で、独り立ちがまだ", test: (r) => r.training.status === "done" && !r.badge },
+  { key: "partial", label: "途中", test: (r) => r.training.status === "partial" },
+  { key: "none", label: "未開始", test: (r) => r.training.status === "none" },
+  { key: "gap", label: "伴走支援しているのに育成が未完了",
+    hint: "実施の記録（単独・見守り付き）があるか、担当の案件が伴走支援実施済以降なのに、STEP1〜5 が済んでいない",
+    test: (r) => r.training.status !== "done" && (r.support.solo + r.support.training > 0 || r.assignedDone > 0) },
+  { key: "cand", label: "トレーナー候補", hint: "育成完了・独り立ち済で、トレーナーでない",
+    test: (r) => r.training.status === "done" && !!r.badge && !r.trainer },
+];
+export function filterMembers(rows, key) {
+  const f = MEMBER_FILTERS.find((x) => x.key === key) || MEMBER_FILTERS[0];
+  return (rows || []).filter(f.test);
+}
+
+/** CSV の列（列名は固定。Claude が読んで Chat の DM の宛先と文面を作るため、メールアドレスと次にやることを必ず入れる） */
+export const MEMBER_CSV_COLUMNS = [
+  ["名前", (r) => r.name],
+  ["メールアドレス", (r) => r.email],
+  ["ロール", (r) => r.roleLabel],
+  ["育成", (r) => r.training.label],
+  ["育成完了日", (r) => fmtDate(r.training.at)],
+  ["育成_管理者の操作で済み", (r) => (r.training.manual ? "はい" : "")],
+  ["独り立ち", (r) => (r.badge ? "済" : "まだ")],
+  ["独り立ち認定日", (r) => (r.badge ? fmtDate(r.badge.at) : "")],
+  ["独り立ち認定者", (r) => (r.badge ? r.badge.by : "")],
+  ["独り立ちの根拠", (r) => (r.badge ? r.badge.basis : "")],
+  ["トレーナー", (r) => (r.trainer ? "○" : "")],
+  ["トレーナーコース", (r) => r.course.label],
+  ["トレーナーコース_管理者の操作で済み", (r) => (r.course.manual ? "はい" : "")],
+  ["伴走支援_単独", (r) => r.support.solo],
+  ["伴走支援_見守り付き", (r) => r.support.training],
+  ["伴走支援_見学", (r) => r.support.observe],
+  ["担当案件_伴走支援実施済以降", (r) => r.assignedDone],
+  ["最後に進んだ日", (r) => fmtDate(r.lastAt)],
+  ["次にやること", (r) => r.next],
+];
+function csvCell(v) {
+  let s = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // 表計算ソフトで式として動かないように
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+/** CSV の本文（先頭に BOM。改行は CRLF） */
+export function memberCsv(rows) {
+  const lines = [MEMBER_CSV_COLUMNS.map(([h]) => csvCell(h)).join(",")];
+  for (const r of rows || []) lines.push(MEMBER_CSV_COLUMNS.map(([, f]) => csvCell(f(r))).join(","));
+  return "﻿" + lines.join("\r\n") + "\r\n";
 }

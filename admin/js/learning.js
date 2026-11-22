@@ -2,7 +2,8 @@
 // 仕様: docs/伴走支援者育成プログラム_提案_20261024.md §3〜§4（次田さん了承 2026-10-24）
 //   - 本人の画面: 7ステップを縦に並べ、いまのステップを開く。動画はその場で再生（video-player.js）、
 //     確認テストもその場で受ける（learning-quiz.js）。STEP1 は「約束します」、STEP5 は練習モードの課題を判定
-//   - トレーナー・管理者の画面（同じページの下）: 受講中の方の一覧（名前・いまのSTEP・最後に進んだ日・OJTに入れます）
+//   - トレーナー・管理者の画面（同じページの下）: メンバーの一覧（育成 → 独り立ち → トレーナー → トレーナーコース・
+//     伴走支援の実施記録・次にやること。絞り込みと CSV。2026-11-22 広げた）
 //   - 進み具合は本番DBの learningProgress/{メール}。練習モード中でも getProdFirestore で読み書きする
 //     （練習DBは毎晩3時・ログアウトで消えるため）。練習課題の判定だけ練習DB（getFirestore）を読む
 //   - 練習生は本番の supportBadges・users・appConfig を読めない。読めなければ黙って表示を省く
@@ -421,10 +422,19 @@ document.addEventListener("change", (e) => {
 });
 const stepOfQuiz = (key) => (STEPS.find((s) => s.quiz === key) || {}).id;
 
-// ---------- トレーナー・管理者の一覧 ----------
+// ---------- トレーナー・管理者の一覧（育成 → 独り立ち → トレーナー → トレーナーコース。2026-11-22） ----------
+// 行の組み立て・絞り込み・CSV は learning-core.js の memberRows・MEMBER_FILTERS・memberCsv（scripts/test-learning-core.mjs）。
+// 読むだけ（本番DB）。Chat の DM はアプリからは送らない（CSV を Claude が読み、次田さんの名前で送る運用）。
 let rows = [];
+let progressOf = new Map();   // 小文字のメール → learningProgress（「見る」の中身に使う）
+let badgeOf = new Map();      // 小文字のメール → supportBadges（同上）
+let filterKey = "all";
+const lowMail = (s) => String(s || "").toLowerCase();
 function detailHtml(row) {
-  return `<ul class="ls-mini">${row.states.map((s) => {
+  // 育成（STEP1〜5）が済んでいない人は、独り立ち済でも STEP7 を済にしない（表の「次にやること」とそろえる）
+  const b = row.training.status === "done" ? badgeOf.get(lowMail(row.email)) || null : null;
+  const st = L.stepStates(progressOf.get(lowMail(row.email)) || null, { badge: b }, QUIZZES);
+  return `<ul class="ls-mini">${st.map((s) => {
     const ic = s.state === "done" ? "ti-circle-check-filled" : s.state === "current" ? "ti-player-play" : s.state === "optional" ? "ti-circle-dashed" : "ti-circle";
     const q = s.quiz && s.quiz.best != null ? `・テスト最高 ${s.quiz.best}%` : "";
     return `<li><i class="ti ${ic}" aria-hidden="true" style="color:${s.state === "done" ? "#2f6420" : "var(--color-ink-muted)"}"></i><span>STEP${s.step.no} ${esc(s.step.title)}：${esc(STATE_LABEL[s.state])}${s.at ? ` ${esc(L.fmtDate(s.at))}` : ""}${esc(q)}</span></li>`;
@@ -438,37 +448,97 @@ function toggleDetail(btn) {
   btn.innerHTML = isOpen ? '<i class="ti ti-chevron-down" aria-hidden="true"></i>見る' : '<i class="ti ti-chevron-up" aria-hidden="true"></i>閉じる';
   tr.hidden = isOpen;
 }
+const MANUAL = '<small class="ls-manual">管理者の操作で済み</small>';
+function trainingCell(t) {
+  if (t.status === "done") return `<span class="ls-chip"><i class="ti ti-check" aria-hidden="true"></i> 完了${t.at ? ` ${esc(L.fmtDate(t.at))}` : ""}</span>${t.manual ? MANUAL : ""}`;
+  if (t.status === "none") return '<span class="ls-chip no">未開始</span>';
+  return `<span class="ls-chip mid">${esc(t.label)}</span>`;
+}
+function badgeCell(b) {
+  if (!b) return '<span class="ls-chip no">まだ</span>';
+  return `<span class="ls-chip badge"><i class="ti ti-award" aria-hidden="true"></i> ${esc(L.fmtDate(b.at) || "済")}</span><small class="ls-sub">${esc(b.by)}・${esc(b.basis)}</small>`;
+}
+function courseCell(c) {
+  const cls = c.status === "done" ? "" : c.status === "partial" ? " mid" : " no";
+  return `<span class="ls-chip${cls}">${esc(c.label)}</span>${c.manual ? MANUAL : ""}`;
+}
+function supportCell(r) {
+  const s = r.support;
+  const parts = [`単独 ${s.solo}`, `見守り付き（トレーニング） ${s.training}`, `見学 ${s.observe}`];
+  return `<span class="ls-nums">${parts.map(esc).join("<br>")}</span>${r.assignedDone ? `<small class="ls-sub">担当の案件（伴走支援実施済以降）${r.assignedDone}件</small>` : ""}`;
+}
+function renderFilters() {
+  const box = $("memberFilters");
+  box.innerHTML = L.MEMBER_FILTERS.map((f) => {
+    const n = L.filterMembers(rows, f.key).length;
+    return `<button type="button" class="ls-filter" data-filter="${esc(f.key)}" aria-pressed="${f.key === filterKey}"${f.hint ? ` title="${esc(f.hint)}"` : ""}>${esc(f.label)} <b>${n}</b></button>`;
+  }).join("");
+  const f = L.MEMBER_FILTERS.find((x) => x.key === filterKey);
+  $("memberHint").textContent = f && f.hint ? `「${f.label}」＝${f.hint}` : "";
+}
 function renderTrainer() {
+  renderFilters();
   const body = $("trainerBody");
-  if (!rows.length) { body.innerHTML = `<p class="ls-note">まだ受講中の方はいません。</p>`; return; }
-  body.innerHTML = `<table class="ls-tbl"><thead><tr><th scope="col">名前</th><th scope="col">いまのSTEP</th><th scope="col">最後に進んだ日</th><th scope="col">OJTに入れます</th><th scope="col"><span class="ls-sr">進み具合</span></th></tr></thead><tbody>
-    ${rows.map((r, i) => `<tr>
+  const list = L.filterMembers(rows, filterKey);
+  $("memberCsvBtn").disabled = !list.length;
+  if (!rows.length) { body.innerHTML = `<p class="ls-note">まだ対象の方はいません。</p>`; return; }
+  if (!list.length) { body.innerHTML = `<p class="ls-note">この絞り込みに当てはまる方はいません。</p>`; return; }
+  body.innerHTML = `<div class="ls-tbl-wrap"><table class="ls-tbl"><thead><tr><th scope="col">名前</th><th scope="col">ロール</th><th scope="col">育成（STEP1〜5）</th><th scope="col">独り立ち</th><th scope="col">トレーナー</th><th scope="col">トレーナーコース</th><th scope="col">伴走支援の実施記録</th><th scope="col">最後に進んだ日</th><th scope="col">次にやること</th><th scope="col"><span class="ls-sr">進み具合</span></th></tr></thead><tbody>
+    ${list.map((r, i) => `<tr>
       <td class="who"><strong>${esc(r.name)}</strong><small>${esc(r.email)}</small></td>
-      <td data-k="いまのSTEP">${esc(r.stepLabel)}</td>
+      <td data-k="ロール">${esc(r.roleLabel)}</td>
+      <td data-k="育成">${trainingCell(r.training)}</td>
+      <td data-k="独り立ち">${badgeCell(r.badge)}</td>
+      <td data-k="トレーナー">${r.trainer ? '<span class="ls-chip">○<span class="ls-sr">トレーナー</span></span>' : '<span class="ls-dash">—</span>'}</td>
+      <td data-k="トレーナーコース">${courseCell(r.course)}</td>
+      <td data-k="伴走支援の実施記録">${supportCell(r)}</td>
       <td data-k="最後に進んだ日">${r.lastAt ? esc(L.fmtDate(r.lastAt)) : "—"}</td>
-      <td data-k="OJT">${r.badge ? `<span class="ls-chip badge"><i class="ti ti-award" aria-hidden="true"></i> 独り立ち ${esc(L.fmtDate(r.badge.grantedDate) || "")}</span>` : r.ready ? '<span class="ls-chip"><i class="ti ti-check" aria-hidden="true"></i> OJTに入れます</span>' : '<span class="ls-chip no">まだ</span>'}</td>
+      <td data-k="次にやること" class="ls-next-cell">${esc(r.next)}</td>
       <td><button type="button" class="btn btn-secondary" data-who="${i}" aria-expanded="false" aria-controls="detail-${i}" aria-label="${esc(r.name)}さんの進み具合を見る"><i class="ti ti-chevron-down" aria-hidden="true"></i>見る</button></td>
     </tr>
-    <tr class="ls-detail" id="detail-${i}" hidden><td colspan="5">${detailHtml(r)}</td></tr>`).join("")}
-    </tbody></table>`;
+    <tr class="ls-detail" id="detail-${i}" hidden><td colspan="10">${detailHtml(r)}</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+function downloadCsv() {
+  const list = L.filterMembers(rows, filterKey);
+  if (!list.length) return;
+  const f = L.MEMBER_FILTERS.find((x) => x.key === filterKey) || L.MEMBER_FILTERS[0];
+  const ymd = L.fmtDate(Date.now()).split("/").map((x) => x.padStart(2, "0")).join("");
+  const url = URL.createObjectURL(new Blob([L.memberCsv(list)], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = `育成の一覧_${ymd}_${f.label}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(`${list.length}人分を書き出しました（${f.label}）`);
 }
 
-async function loadTrainer(users, grants) {
-  let docs = [];
-  try {
-    const s = await getDocs(collection(prod, "learningProgress"));
-    docs = s.docs.map((d) => ({ _id: d.id, ...d.data() }));
-  } catch (e) { console.warn("[learning] list", e.message); }
-  const byEmail = new Map(docs.map((d) => [d._id, d]));
-  // まだ始めていない練習生も一覧に出す（ユーザー管理で「練習生」にした方）
-  for (const u of users) if (u.role === "trainee" && u.active !== false && !byEmail.has(u._id)) byEmail.set(u._id, null);
-  rows = [...byEmail.entries()].map(([email, p]) => {
-    const u = users.find((x) => x._id === email);
-    const b = grants.find((g) => g.userId === email) || null;
-    return L.listRow(p, { email, name: (u && u.name) || email, badge: b }, QUIZZES);
-  }).sort((a, b) => (!!a.badge - !!b.badge) || (b.ready - a.ready) || (b.reached - a.reached) || ((b.lastAt || 0) - (a.lastAt || 0)));
+async function loadTrainer(users, grants, rosterIds) {
+  const safe = async (label, fn, fallback) => { try { return await fn(); } catch (e) { console.warn(`[learning] ${label}`, e.message); return fallback; } };
+  const docsOf = (s) => s.docs.map((d) => ({ _id: d.id, ...d.data() }));
+  const [progs, courses, checks, cases] = await Promise.all([
+    safe("list", async () => docsOf(await getDocs(collection(prod, "learningProgress"))), []),
+    safe("course", async () => docsOf(await getDocs(collection(prod, "appConfig", "trainerProgram", "course"))), []),
+    safe("checklists", async () => docsOf(await getDocs(query(collection(prod, "supportChecklists"), where("performance.mode", "in", L.SUPPORT_MODES)))), []),
+    safe("cases", async () => docsOf(await getDocs(query(collection(prod, "cases"), where("status", "in", L.STATUSES_FROM_DONE_SUPPORT)))), []),
+  ]);
+  progressOf = new Map(progs.map((p) => [lowMail(p._id), p]));
+  badgeOf = L.earliestBadges(grants);
+  rows = L.memberRows({
+    users, progresses: Object.fromEntries(progs.map((p) => [p._id, p])), badges: grants, rosterIds,
+    courses: Object.fromEntries(courses.map((c) => [c._id, c])),
+    checklists: Object.fromEntries(checks.map((c) => [c._id, c])),
+    cases: cases.map((c) => ({ _id: c._id, status: c.status, assignedUserId: c.assignedUserId || "" })),
+  }, QUIZZES);
   renderTrainer();
 }
+$("memberFilters").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-filter]");
+  if (!b) return;
+  filterKey = b.dataset.filter;
+  renderTrainer();
+  const again = $("memberFilters").querySelector(`[data-filter="${filterKey}"]`); if (again) again.focus();
+});
+$("memberCsvBtn").addEventListener("click", downloadCsv);
 
 // ---------- はじまり ----------
 onAuthStateChanged(auth, async (user) => {
@@ -504,7 +574,7 @@ onAuthStateChanged(auth, async (user) => {
   try { const d = await getDoc(doc(prod, "appConfig", "supportTrainers")); if (d.exists()) rosterIds = d.data().ids || null; } catch (_) {}
   if (myRole.role === "admin" || isTrainer(me.email, users, rosterIds)) {
     $("trainerSec").hidden = false;
-    await loadTrainer(users, grants);
+    await loadTrainer(users, grants, rosterIds);
   }
 });
 

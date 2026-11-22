@@ -433,4 +433,118 @@ t("guardPatch: 古いタブからの保存で達成が巻き戻らない", () =>
   assert.ok(!("pledgeAt" in first));
 });
 
+// ---- メンバーの一覧（2026-11-22） ----
+t("trainingSummary: 完了・途中・練習課題の数・未開始・管理者の操作", () => {
+  const done = L.trainingSummary(progressThrough(5), QZ);
+  assert.equal(done.status, "done"); assert.equal(done.label, "完了"); assert.ok(done.at > 0); assert.equal(done.manual, false);
+  // readyForOjtAt があればそれを完了日にする
+  assert.equal(L.trainingSummary({ ...progressThrough(5), readyForOjtAt: 123 }, QZ).at, 123);
+  const four = progressThrough(4);
+  const s4 = L.trainingSummary({ ...four, practice: { items: { firstContact: true, visitDate: true } } }, QZ);
+  assert.equal(s4.status, "partial"); assert.equal(s4.label, "STEP4まで済（練習課題 2/6）"); assert.deepEqual(s4.practice, { done: 2, total: 6 });
+  assert.equal(L.trainingSummary(progressThrough(2), QZ).label, "STEP2まで済");
+  assert.equal(L.trainingSummary({ videos: { "L-A": { maxPos: 10, duration: 100 } } }, QZ).label, "STEP1の途中");
+  assert.equal(L.trainingSummary(null, QZ).status, "none");
+  assert.equal(L.trainingSummary({ name: "名前だけ" }, QZ).label, "未開始");
+  assert.equal(L.trainingSummary({ ...progressThrough(5), manualClear: { at: 1, by: "a", reason: "r" } }, QZ).manual, true);
+});
+t("courseSummary: 修了・動画だけ・未受講", () => {
+  assert.equal(L.courseSummary({ watchedAt: 1, quiz: { passedAt: 2 } }).label, "修了");
+  assert.equal(L.courseSummary({ watchedAt: 1 }).label, "途中（動画だけ）");
+  assert.equal(L.courseSummary({ quiz: { passedAt: 2 } }).label, "途中（テストだけ）");
+  assert.equal(L.courseSummary(null).label, "未受講");
+  assert.equal(L.courseSummary({ watchedAt: 1, quiz: { passedAt: 2 }, manualClear: { at: 1 } }).manual, true);
+});
+t("countPerformances・countAssignedDone", () => {
+  const cl = { c1: { performance: { performerId: "A@x.jp", mode: "solo" } }, c2: { performance: { performerId: "a@x.jp", mode: "training" } },
+    c3: { performance: { performerId: "a@x.jp", mode: "observe" } }, c4: { performance: { performerId: "b@x.jp", mode: "other" } }, c5: {} };
+  assert.deepEqual(L.countPerformances(cl), { "a@x.jp": { solo: 1, training: 1, observe: 1 } });
+  const cases = [{ assignedUserId: "a@x.jp", status: 8 }, { assignedUserId: "A@x.jp", status: 13 }, { assignedUserId: "a@x.jp", status: 7 },
+    { assignedUserId: "a@x.jp", status: 4 }, { assignedUserId: "", status: 9 }];
+  assert.deepEqual(L.countAssignedDone(cases), { "a@x.jp": 2 });
+});
+t("memberRows: 対象・各列・絞り込み・並び", () => {
+  const users = [
+    { _id: "done@x.jp", name: "完了 さん", role: "staff" },          // 育成完了・独り立ちまだ → OJT待ち
+    { _id: "solo@x.jp", name: "独立 さん", role: "staff" },          // 育成完了・独り立ち済・トレーナーでない → 候補
+    { _id: "gap@x.jp", name: "途中 さん", role: "staff" },           // 独り立ち済なのに育成が途中・実施記録あり → gap
+    { _id: "tr@x.jp", name: "トレーナー さん", role: "admin" },      // 名簿・育成完了・独り立ち済 → 候補ではない
+    { _id: "new@x.jp", name: "新人 さん", role: "trainee" },        // 未開始
+    { _id: "off@x.jp", name: "無効 さん", role: "staff", active: false }, // 出さない（進み具合があっても）
+    { _id: "wh@x.jp", name: "倉庫 さん", role: "warehouse" },       // 出さない（記録なし）
+    { _id: "vw@x.jp", name: "閲覧 さん", role: "viewer" },          // 出さない（記録なし）
+    { _id: "vw2@x.jp", name: "閲覧二 さん", role: "viewer" },       // 育成の記録があるので出す
+  ];
+  const full = progressThrough(5);
+  const rows = L.memberRows({
+    users,
+    progresses: { "done@x.jp": full, "solo@x.jp": full, "gap@x.jp": progressThrough(2), "tr@x.jp": { ...full, manualClear: { at: 1, by: "x", reason: "r" } },
+      "off@x.jp": full, "ghost@x.jp": progressThrough(1), "vw2@x.jp": progressThrough(1) },
+    badges: [{ userId: "solo@x.jp", grantedDate: "2026-11-10", grantedByName: "山田", basis: "evaluation" },
+      { userId: "gap@x.jp", grantedDate: "2026-11-01", grantedByName: "次田", basis: "discretion" },
+      { userId: "gap@x.jp", grantedDate: "2026-11-15", grantedByName: "別", basis: "evaluation" },
+      { userId: "TR@x.jp", grantedDate: "2026-10-01", grantedByName: "次田", basis: "discretion" }],
+    rosterIds: ["tr@x.jp"],
+    courses: { "TR@x.jp": { watchedAt: 1, quiz: { passedAt: 2 } } },
+    checklists: { c1: { performance: { performerId: "gap@x.jp", mode: "solo" } } },
+    cases: [{ assignedUserId: "gap@x.jp", status: 9 }],
+  }, QZ);
+  const by = Object.fromEntries(rows.map((r) => [r.email, r]));
+  assert.ok(!by["off@x.jp"], "無効な人が出ている");
+  assert.ok(by["ghost@x.jp"], "ユーザー管理にいないが進み具合がある人が出ていない");
+  assert.equal(by["ghost@x.jp"].roleLabel, "（ユーザー管理にいない）");
+  assert.ok(!by["wh@x.jp"] && !by["vw@x.jp"], "倉庫・閲覧のみの人が出ている");
+  assert.ok(by["vw2@x.jp"], "育成の記録がある閲覧のみの人が出ていない");
+  assert.equal(rows.length, 7);
+  assert.equal(by["gap@x.jp"].badge.by, "次田"); assert.equal(by["gap@x.jp"].badge.basis, "特別裁量"); // いちばん早い認定
+  assert.equal(by["solo@x.jp"].badge.basis, "評価シート");
+  assert.equal(by["tr@x.jp"].trainer, true); assert.equal(by["tr@x.jp"].course.label, "修了"); assert.equal(by["tr@x.jp"].training.manual, true);
+  assert.equal(by["tr@x.jp"].badge.by, "次田", "メールの大文字小文字で独り立ちを取りこぼしている");
+  assert.deepEqual(by["gap@x.jp"].support, { solo: 1, training: 0, observe: 0 }); assert.equal(by["gap@x.jp"].assignedDone, 1);
+  // 独り立ち済でも育成が途中なら、次にやることは育成の続き
+  assert.match(by["gap@x.jp"].next, /^STEP3/);
+  assert.match(by["done@x.jp"].next, /^OJTに入れます/);
+  assert.match(by["solo@x.jp"].next, /^独り立ちしました/);
+  assert.match(by["new@x.jp"].next, /^STEP1/);
+  const names = (k) => L.filterMembers(rows, k).map((r) => r.email).sort();
+  assert.deepEqual(names("done"), ["done@x.jp", "solo@x.jp", "tr@x.jp"]);
+  assert.deepEqual(names("ojt"), ["done@x.jp"]);
+  assert.deepEqual(names("partial"), ["gap@x.jp", "ghost@x.jp", "vw2@x.jp"]);
+  assert.deepEqual(names("none"), ["new@x.jp"]);
+  assert.deepEqual(names("gap"), ["gap@x.jp"]);
+  assert.deepEqual(names("cand"), ["solo@x.jp"]);
+  assert.equal(L.filterMembers(rows, "nope").length, 7);
+  // 並び: 完了 → 途中（進んだ順） → 未開始
+  assert.deepEqual(rows.map((r) => r.training.status), ["done", "done", "done", "partial", "partial", "partial", "none"]);
+  assert.equal(rows[3].email, "gap@x.jp");
+});
+t("memberCsv: 列名は固定・BOM・CRLF・引用・式の無効化", () => {
+  const heads = L.MEMBER_CSV_COLUMNS.map(([h]) => h);
+  for (const h of ["名前", "メールアドレス", "次にやること", "育成", "独り立ち", "トレーナー", "トレーナーコース"]) assert.ok(heads.includes(h), h);
+  const row = { name: '山田, "太郎"', email: "y@x.jp", roleLabel: "スタッフ", training: { label: "完了", at: null, manual: false },
+    badge: null, trainer: false, course: { label: "未受講", manual: false }, support: { solo: 0, training: 0, observe: 0 },
+    assignedDone: 0, lastAt: null, next: "=HYPERLINK(1)" };
+  const csv = L.memberCsv([row]);
+  assert.ok(csv.startsWith("﻿名前,メールアドレス,"));
+  const lines = csv.slice(1).split("\r\n");
+  assert.equal(lines.length, 3); assert.equal(lines[2], "");
+  assert.ok(lines[1].startsWith('"山田, ""太郎""",y@x.jp,'));
+  assert.ok(lines[1].endsWith(",'=HYPERLINK(1)"));
+});
+
+t("一覧の読み込み: 案件は伴走支援実施済以降だけ・画面は core の関数を使う", () => {
+  assert.deepEqual(L.STATUSES_FROM_DONE_SUPPORT, [8, 9, 10, 11, 12, 13]);
+  assert.equal(L.earliestBadges([{ userId: "A@x.jp", grantedDate: "2026-11-02" }, { userId: "a@x.jp", grantedDate: "2026-11-01" }]).get("a@x.jp").grantedDate, "2026-11-01");
+  const js = src("../admin/js/learning.js");
+  assert.match(js, /L\.memberRows\(/); assert.match(js, /L\.memberCsv\(/); assert.match(js, /L\.filterMembers\(/);
+  assert.match(js, /where\("status", "in", L\.STATUSES_FROM_DONE_SUPPORT\)/);
+  assert.match(js, /where\("performance\.mode", "in", L\.SUPPORT_MODES\)/);
+  // 一覧は練習生には出さない（いまと同じ条件）
+  assert.match(js, /if \(myRole\.role === "trainee"\) return;[\s\S]*if \(myRole\.role === "admin" \|\| isTrainer\(me\.email, users, rosterIds\)\)/);
+  // アプリから Chat を送らない
+  assert.doesNotMatch(js, /webhook|chat\.googleapis|httpsCallable|notify/i);
+  const html = src("../admin/learning.html");
+  for (const id of ["memberFilters", "memberHint", "memberCsvBtn", "trainerBody"]) assert.match(html, new RegExp(`id="${id}"`), id);
+});
+
 console.log(`test-learning-core: ${n} 件 OK`);
