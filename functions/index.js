@@ -71,27 +71,12 @@ async function getSettings() {
   _settingsAt = Date.now();
   return _settingsCache;
 }
-// 投稿先の解決（2026-10-19 Webhook設定メニュー）。kind: 'crm' | 'pm' | 'shipping' | 'accounting'
-// 停止スイッチ（<kind>ChatWebhookEnabled）が false のとき、または URL が空のときは '' を返す。未定義は「有効」扱い。
-// crm だけは従来どおり Secret CHAT_WEBHOOK_URL へのフォールバックを残す（設定が空でも通知を止めない）。
-const WEBHOOK_FIELDS = {
-  crm: { url: "chatWebhookUrl", enabled: "chatWebhookEnabled" },
-  pm: { url: "pmChatWebhookUrl", enabled: "pmChatWebhookEnabled" },
-  shipping: { url: "shippingChatWebhookUrl", enabled: "shippingChatWebhookEnabled" },
-  accounting: { url: "accountingChatWebhookUrl", enabled: "accountingChatWebhookEnabled" },
-};
-function resolveWebhook(kind, s, secretValue) {
-  const f = WEBHOOK_FIELDS[kind];
-  if (!f) return "";
-  const st = s || {};
-  if (st[f.enabled] === false) return "";
-  const url = String(st[f.url] || "").trim();
-  if (url) return url;
-  return kind === "crm" ? (secretValue || "") : "";
-}
+// 投稿先の解決（2026-10-19 Webhook設定メニュー／2026-11-22 受付通知 reception・今日の対応 daily を追加）。
+// 判定は functions/webhook-route.js（停止スイッチ・空欄のときの回し先・crm だけ Secret CHAT_WEBHOOK_URL へフォールバック）。
+const { resolveWebhook, KINDS_USING_CRM_SECRET } = require("./webhook-route");
 async function getWebhook(kind) {
   const s = await getSettings();
-  return resolveWebhook(kind, s, kind === "crm" ? CHAT_WEBHOOK_URL.value() : "");
+  return resolveWebhook(kind, s, KINDS_USING_CRM_SECRET.includes(kind) ? CHAT_WEBHOOK_URL.value() : "");
 }
 
 // 通知本文用の地域ラベル「【大阪府 豊中市】」。住所が手元になければ offices から引く。取れなければ「（地域不明）」。
@@ -503,7 +488,7 @@ exports.webhookLpInquiry = onRequest(
         // 同じ事業所からの再問い合わせは、最新の希望を採用する（既存案件の inquiryIntent を更新）
         await db.collection("cases").doc(existing.id)
           .update({ updatedAt: now, message: body.message || existing.message || "", inquiryIntent: intent });
-        const chatWebhook = await getWebhook("crm");
+        const chatWebhook = await getWebhook("reception");
         const regionLp = await officeRegionLabel({ prefecture: body.prefecture, city: body.city, officeId: existing.officeId });
         await notifyChat(
           chatWebhook,
@@ -582,7 +567,7 @@ exports.webhookLpInquiry = onRequest(
         attachmentUrls: [],
       });
 
-      const chatWebhook = await getWebhook("crm");
+      const chatWebhook = await getWebhook("reception");
       await notifyChat(
         chatWebhook,
         `${INQUIRY_INTENT_EMOJI[intent]} 新規LP問い合わせ [案件 #${caseNumber}]\nご希望: ${INQUIRY_INTENT_LABEL[intent]}\n事業所: ${formatRegion(prefecture, city)}${officeData.officeName}\n担当者: ${body.name || ""}\nTEL: ${body.phone || ""}\nメール: ${body.email || ""}\nメッセージ: ${body.message || ""}`
@@ -872,7 +857,7 @@ exports.webhookMitsumori = onRequest(
         const notifySettings = await getSettings();
         if (notifySettings.notifyQuoteChat === true && oks.some((r) => !r.duplicate)) {
           const created = oks.filter((r) => !r.duplicate);
-          const chatWebhook = await getWebhook("crm");
+          const chatWebhook = await getWebhook("reception");
           const regions = await Promise.all(created.map((r) => officeRegionLabel(r)));
           await notifyChat(
             chatWebhook,
@@ -928,7 +913,7 @@ exports.webhookMitsumori = onRequest(
       // 相談・お申し込みの通知（webhookLpInquiry・acceptQuote）はこの設定に関係なく従来どおり送る。
       const notifySettings = await getSettings();
       if (notifySettings.notifyQuoteChat === true) {
-        const chatWebhook = await getWebhook("crm");
+        const chatWebhook = await getWebhook("reception");
         const regionQ = await officeRegionLabel(r);
         await notifyChat(
           chatWebhook,
@@ -1772,7 +1757,7 @@ async function acceptQuoteByConsent(req, res, body) {
   }
 
   // Chat（署名者名は載せない＝第1段と同じ）
-  const chatWebhook = await getWebhook("crm");
+  const chatWebhook = await getWebhook("reception");
   // 受注確認のメール（承諾書 v1.2 §6 の「受注確認のご連絡」）が出せなかったら知らせる（2026-11-12 レビュー 気づき-1）。
   // 事業所名・個人名は書かず、案件番号と見積番号だけ。スイッチがオフの道では知らせない（今のまま）
   if (mailProblem) {
@@ -1872,7 +1857,7 @@ exports.acceptQuote = onRequest(
             } catch (e) { console.error("acceptQuote(group) mail error:", e); }
           }
 
-          const chatWebhook = await getWebhook("crm");
+          const chatWebhook = await getWebhook("reception");
           const regionsA = await Promise.all(newly.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
           await notifyChat(
             chatWebhook,
@@ -1925,7 +1910,7 @@ exports.acceptQuote = onRequest(
         } catch (e) { console.error("acceptQuote mail error:", e); }
       }
 
-      const chatWebhook = await getWebhook("crm");
+      const chatWebhook = await getWebhook("reception");
       const regionAq = await officeRegionLabel({ officeId: q.officeId });
       await notifyChat(
         chatWebhook,
@@ -2080,7 +2065,7 @@ exports.staffAcceptQuote = onCall(
     try {
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const regions = await Promise.all(done.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
-      await notifyChat(await getWebhook("crm"),
+      await notifyChat(await getWebhook("reception"),
         `${orderConsent ? Flow.orderConsentChatHead(me.name) : Flow.staffAcceptChatHead(channel, me.name)}\n`
         + done.map((r, i) => `・#${r.q.caseNumber} ${regions[i]}${r.q.officeName || ""}（${r.q.estNo}）出荷 ${r.soNumber} ${yen(r.q.amounts?.totalIncl)}`
           + (acceptShipNote(r) ? `\n　${acceptShipNote(r)}` : "")).join("\n")
@@ -2669,7 +2654,7 @@ exports.saveQuotePdf = onCall(
   }
 );
 
-const WEBHOOK_KIND_LABELS = { crm: "CRM通知", pm: "PM", shipping: "出荷指示", accounting: "経理" };
+const WEBHOOK_KIND_LABELS = { crm: "CRM通知", reception: "受付通知", daily: "今日の対応", pm: "PM", shipping: "出荷指示", accounting: "経理" };
 exports.testChatNotify = onCall({ region: "asia-northeast1", secrets: [CHAT_WEBHOOK_URL], serviceAccount: SA_BATCH }, async (request) => {
     await requireStaff(request, { allow: "admin" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
   const email = request.auth?.token?.email || "";
@@ -2755,10 +2740,10 @@ exports.dailyFollowup = onSchedule(
         console.log("dailyFollowup done: 通知不要");
         return;
       }
-      const url = await getWebhook("crm");
+      const url = await getWebhook("daily");
       if (!url) {
         await logRef.update({ status: "no-webhook", finishedAt: admin.firestore.FieldValue.serverTimestamp() });
-        console.warn("dailyFollowup: CRM通知の投稿先が未設定・停止中");
+        console.warn("dailyFollowup: 今日の対応の投稿先（空ならCRM通知の投稿先）が未設定・停止中");
         return;
       }
       const errs = [];
@@ -2840,7 +2825,7 @@ exports.onCaseAssigned = onDocumentUpdated(
       const by = byEmail ? ((await getUser(byEmail)) || { email: byEmail }) : null;
       const regionLabel = await officeRegionLabel({ officeId: after.officeId });
       const text = nt.assigneeNoticeText({ kase: { ...after, id: caseId }, assignee, assignedBy: by, regionLabel, caseId });
-      const url = await getWebhook("crm");
+      const url = await getWebhook("reception");
       if (!url) { await logRef.update({ status: "no-webhook" }); return; }
       await postChatText(url, text);
       await logRef.update({ status: "posted", postedAt: admin.firestore.FieldValue.serverTimestamp() });
@@ -2882,8 +2867,8 @@ exports.onConsentSigned = onDocumentUpdated(
       }
       const regionLabel = await officeRegionLabel({ officeId: kase && kase.officeId });
       const text = nt.consentSignedText({ kase: { ...(kase || {}), id: caseId }, assignee, regionLabel, caseId });
-      const url = await getWebhook("crm");
-      if (!url) postErr = "CRM通知の投稿先が未設定・停止中";
+      const url = await getWebhook("reception");
+      if (!url) postErr = "受付通知の投稿先（空ならCRM通知の投稿先）が未設定・停止中";
       else await postChatText(url, text);
     } catch (e) {
       postErr = maskUrl(e);

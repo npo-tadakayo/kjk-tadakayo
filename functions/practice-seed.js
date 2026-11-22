@@ -366,6 +366,7 @@ const SENDER_ALLOW = ["name", "postal", "phone", "address"];
 const SETTINGS_DENY_EXAMPLES = [
   "chatWebhookUrl", "chatWebhookEnabled", "pmChatWebhookUrl", "pmChatWebhookEnabled",
   "shippingChatWebhookUrl", "shippingChatWebhookEnabled", "accountingChatWebhookUrl", "accountingChatWebhookEnabled",
+  "receptionChatWebhookUrl", "receptionChatWebhookEnabled", "dailyChatWebhookUrl", "dailyChatWebhookEnabled",
   "gmailSender", "notifyQuoteChat", "supplierEmail", "supplierCc", "supplierContact",
   "accountingEmail", "accountingEmailCc", "accountingContactName",
   "poSealImage", "poOrderers", "poOrdererName", "poIssuerRep",
