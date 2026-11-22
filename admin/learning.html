@@ -90,11 +90,31 @@
     .ls-mini li{font-size:12.5px;display:flex;gap:6px;align-items:flex-start;line-height:1.6;}
     .ls-mini li i{margin-top:3px;flex:0 0 auto;}
     .ls-mini li span{flex:1 1 0;min-width:0;overflow-wrap:anywhere;word-break:break-word;}
+    .ls-tbl-wrap{overflow-x:auto;border-radius:12px;}
+    .ls-tbl-wrap .ls-tbl{min-width:1280px;}
+    .ls-tbl-wrap .who{min-width:170px;}
+    .ls-tbl-wrap .who small{overflow-wrap:normal;word-break:break-all;}
+    .ls-tbl td{vertical-align:top;}
+    .ls-chip.mid{background:#fff4e5;color:#7a4a00;}
+    .ls-sub,.ls-manual{display:block;font-size:11.5px;color:var(--color-ink-muted);margin-top:3px;line-height:1.5;}
+    .ls-manual{color:#7a4a00;}
+    .ls-nums{font-size:12.5px;line-height:1.6;white-space:nowrap;}
+    .ls-next-cell{font-size:12.5px;line-height:1.6;min-width:220px;}
+    .ls-dash{color:var(--color-ink-muted);}
+    .ls-filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px;}
+    .ls-filter{min-height:44px;padding:6px 14px;border:1px solid var(--color-line);border-radius:999px;background:#fff;color:var(--color-ink);font-size:13px;cursor:pointer;}
+    .ls-filter b{margin-left:4px;}
+    .ls-filter[aria-pressed="true"]{background:#2C2416;border-color:#2C2416;color:#fff;}
+    .ls-filter:focus-visible{outline:3px solid #B02626;outline-offset:2px;}
+    .ls-tools{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin:0 0 10px;}
+    .ls-hint{font-size:12.5px;color:var(--color-ink-muted);margin:0;flex:1 1 280px;line-height:1.6;}
     .ls-chip{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e8f5ec;color:#2f6420;white-space:nowrap;}
     .ls-chip.no{background:#f3efe8;color:var(--color-ink-muted);}
     .ls-chip.badge{background:#fff1c9;color:#6b4e00;}
     @media (max-width:640px){
       .ls-tbl thead{display:none;}
+      .ls-tbl-wrap .ls-tbl{min-width:0;}
+      .ls-tbl-wrap .who{min-width:0;}
       .ls-tbl,.ls-tbl tbody,.ls-tbl tr,.ls-tbl td{display:block;width:100%;box-sizing:border-box;min-width:0;}
       .ls-tbl tr{border-bottom:1px solid var(--color-line);padding:8px 0;}
       .ls-tbl td{border:0;padding:4px 12px;}
@@ -148,9 +168,12 @@
         <div class="ls-steps" id="steps"></div>
 
         <section class="ls-trainer" id="trainerSec" hidden aria-labelledby="trainerTitle">
-          <h2 id="trainerTitle">受講中の方の進み具合（トレーナー・管理者）</h2>
+          <h2 id="trainerTitle">伴走支援者の一覧（トレーナー・管理者）</h2>
           <p class="drivelinks" style="margin:0 0 10px"><a href="/trainer-course.html"><i class="ti ti-certificate" aria-hidden="true"></i> トレーナーコース（新人の見守り方の動画と確認テスト。トレーナー合格の前提）は別の画面です</a></p>
-          <p style="font-size:13px;color:var(--color-ink-muted);line-height:1.7;margin:0 0 10px">「OJTに入れます」の方から、OJT（支援先での評価シート）の割当てを組んでください。行の「見る」で、その方のステップごとの状態を開けます。</p>
+          <p style="font-size:13px;color:var(--color-ink-muted);line-height:1.7;margin:0 0 10px">一人ずつ「育成（STEP1〜5）→ 独り立ち → トレーナー → トレーナーコース」の状況を並べています。「OJT待ち」の方から、OJT（支援先での評価シート）の割当てを組んでください。行の「見る」で、その方のステップごとの状態を開けます。CSV は、いま選んでいる絞り込みの方だけを書き出します。</p>
+          <div class="ls-filters" id="memberFilters" role="group" aria-label="一覧の絞り込み"></div>
+          <div class="ls-tools"><p class="ls-hint" id="memberHint" aria-live="polite"></p>
+            <button type="button" class="btn btn-secondary" id="memberCsvBtn" disabled><i class="ti ti-download" aria-hidden="true"></i>CSV を書き出す</button></div>
           <div id="trainerBody"></div>
         </section>
       </div>
