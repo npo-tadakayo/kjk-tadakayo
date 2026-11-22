@@ -39,7 +39,13 @@ for (const f of ["js/role.js", "js/auth.js"]) {
 // 2) Functions を CDN から直接読むのは入口（fn.js）と、練習DBだけを初期化する settings.js の resetPractice だけ
 for (const [f, s] of Object.entries(src)) {
   if (!s.includes(CDN("functions"))) continue;
-  ok(f === "js/fn.js" || f === "js/settings.js", `${f} が Functions を CDN から直接 import している（/js/fn.js を使う）`);
+  ok(f === "js/fn.js" || f === "js/settings.js" || f === "js/learning.js", `${f} が Functions を CDN から直接 import している（/js/fn.js を使う）`);
+}
+// learning.js が本物を直接呼ぶのは、自分の担当トレーナーを読むだけの trainerMyAssignment だけ（2026-11-22・書き込みなし。
+// 練習中も本番の進み具合を出している画面なので、担当も本番を出す。割り当ての操作 trainerAssign は fn.js 経由＝練習中は代役が断る）
+{
+  const real = [...src["js/learning.js"].matchAll(/realCallable\(\s*fns\s*,\s*"([^"]+)"/g)].map((m) => m[1]);
+  ok(real.length === 1 && real[0] === "trainerMyAssignment", `learning.js の realCallable は trainerMyAssignment だけ: ${real}`);
 }
 {
   const s = src["js/settings.js"];

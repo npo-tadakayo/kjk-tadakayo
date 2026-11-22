@@ -16,7 +16,7 @@
 import { STEPS, PRACTICE_TASKS, READY_STEPS, findStep } from "./learning-catalog.js";
 import { findVideo } from "./video-catalog.js";
 import { STATUS_ORDER, LOST } from "./constants.js";
-import { courseDone, courseWatched, courseQuizPassed, trainerIds } from "./trainer-rules.js";
+import { courseDone, courseWatched, courseQuizPassed, trainerIds, assignmentOf, assignmentStale } from "./trainer-rules.js";
 
 export const VIDEO_DONE_RATIO = 0.9; // 再生した最大位置が長さの9割以上で「見た」
 export const DEFAULT_PASS_RATIO = 0.8;
@@ -531,7 +531,9 @@ export function earliestBadges(badges) {
 /**
  * 一覧の行を組み立てる。対象は users の有効な人（倉庫・閲覧のみは除く）・learningProgress がある人・トレーナー名簿の人。無効（active:false）は出さない。
  * input: { users:[{_id,name,role,active}], progresses:{ [メール]: 文書 }, badges:[supportBadges], rosterIds,
- *          courses:{ [メール]: 文書 }, checklists:{ [caseId]: supportChecklists }, cases:[{_id,status,assignedUserId}] }
+ *          courses:{ [メール]: 文書 }, checklists:{ [caseId]: supportChecklists }, cases:[{_id,status,assignedUserId}],
+ *          assignments:{ [メール]: appConfig/trainerProgram/assignments の文書 } }
+ *   row.assignment: { trainerId, trainerName, at, byName, note, stale } か null（stale＝担当が名簿にいない・動けない）
  */
 export function memberRows(input, quizzes = {}) {
   const i = input || {};
@@ -543,6 +545,7 @@ export function memberRows(input, quizzes = {}) {
   const perf = countPerformances(i.checklists);
   const assigned = countAssignedDone(i.cases);
   const badgeOf = earliestBadges(i.badges);
+  const asgOf = new Map(Object.entries(i.assignments || {}).map(([k, v]) => [lowMail(k), v]));
   const ids = new Set();
   // 倉庫・閲覧のみの人は伴走支援をしないので入れない（2026-11-22 次田さん）。育成の記録がある人・名簿の人は下で入る
   for (const u of users) if (u.active !== false && !MEMBER_EXCLUDED_ROLES.includes(u.role)) ids.add(lowMail(u._id));
@@ -570,6 +573,7 @@ export function memberRows(input, quizzes = {}) {
       support: sp,
       assignedDone: assigned[id] || 0,
       lastAt: lastProgressAt(p),
+      assignment: rowAssignment(asgOf.get(id), users, i.rosterIds),
       // 育成が済んでいない人には、独り立ち済でも育成の続きを出す（DM の文面に使う）
       next: nextAction(p, training.status === "done" ? { badge: b } : {}, quizzes),
     });
@@ -580,11 +584,20 @@ export function memberRows(input, quizzes = {}) {
     || String(a.name).localeCompare(String(b.name), "ja"));
 }
 
+function rowAssignment(doc, users, rosterIds) {
+  const a = assignmentOf(doc);
+  return a ? { ...a, stale: assignmentStale(a, users, rosterIds) } : null;
+}
+/** 担当トレーナーが実際にいるか（名簿から外れた担当は「いない」と数える） */
+export const hasTrainer = (r) => !!(r && r.assignment && !r.assignment.stale);
+
 /** 絞り込み（ボタンの順） */
 export const MEMBER_FILTERS = [
   { key: "all", label: "全員", test: () => true },
   { key: "done", label: "育成完了", test: (r) => r.training.status === "done" },
   { key: "ojt", label: "OJT待ち", hint: "育成完了で、独り立ちがまだ", test: (r) => r.training.status === "done" && !r.badge },
+  { key: "ojtNoTrainer", label: "OJT待ち・担当なし", hint: "OJT待ちで、担当トレーナーが決まっていない（名簿から外れた担当も含む）",
+    test: (r) => r.training.status === "done" && !r.badge && !hasTrainer(r) },
   { key: "partial", label: "途中", test: (r) => r.training.status === "partial" },
   { key: "none", label: "未開始", test: (r) => r.training.status === "none" },
   { key: "gap", label: "伴走支援しているのに育成が未完了",
@@ -617,6 +630,9 @@ export const MEMBER_CSV_COLUMNS = [
   ["伴走支援_見守り付き", (r) => r.support.training],
   ["伴走支援_見学", (r) => r.support.observe],
   ["担当案件_伴走支援実施済以降", (r) => r.assignedDone],
+  ["担当トレーナー", (r) => (r.assignment ? `${r.assignment.trainerName}${r.assignment.stale ? "（名簿にいない）" : ""}` : "")],
+  ["担当トレーナーのメール", (r) => (r.assignment ? r.assignment.trainerId : "")],
+  ["担当にした日", (r) => (r.assignment ? fmtDate(r.assignment.at) : "")],
   ["最後に進んだ日", (r) => fmtDate(r.lastAt)],
   ["次にやること", (r) => r.next],
 ];

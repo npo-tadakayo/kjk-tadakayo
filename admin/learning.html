@@ -95,6 +95,12 @@
     .ls-tbl-wrap .who{min-width:170px;}
     .ls-tbl-wrap .who small{overflow-wrap:normal;word-break:break-all;}
     .ls-tbl td{vertical-align:top;}
+    /* 担当トレーナー（2026-11-22） */
+    .ls-mytrainer{margin-top:6px;font-size:14px;font-weight:600;color:#2f6420;}
+    .ls-tbl-wrap .ls-asg{min-width:190px;}
+    .ls-asg-ops{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+    .ls-asg-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+    .ls-asg-ops select{min-height:44px;font-size:13px;padding:0 8px;border:1px solid var(--color-line);border-radius:8px;background:#fff;max-width:100%;}
     .ls-chip.mid{background:#fff4e5;color:#7a4a00;}
     .ls-sub,.ls-manual{display:block;font-size:11.5px;color:var(--color-ink-muted);margin-top:3px;line-height:1.5;}
     .ls-manual{color:#7a4a00;}
@@ -160,7 +166,7 @@
         <div id="solo" class="ls-solo" hidden></div>
         <div class="ls-next" role="status" aria-live="polite">
           <i class="ti ti-flag-3" aria-hidden="true"></i>
-          <div><div class="k">次にやること</div><div class="v" id="nextAction">—</div></div>
+          <div><div class="k">次にやること</div><div class="v" id="nextAction">—</div><div class="ls-mytrainer" id="myTrainer" hidden></div></div>
         </div>
         <div class="ls-meter" id="meter" aria-hidden="true"></div>
         <p class="ls-meter-t" id="meterText"></p>
@@ -170,7 +176,7 @@
         <section class="ls-trainer" id="trainerSec" hidden aria-labelledby="trainerTitle">
           <h2 id="trainerTitle">伴走支援者の一覧（トレーナー・管理者）</h2>
           <p class="drivelinks" style="margin:0 0 10px"><a href="/trainer-course.html"><i class="ti ti-certificate" aria-hidden="true"></i> トレーナーコース（新人の見守り方の動画と確認テスト。トレーナー合格の前提）は別の画面です</a></p>
-          <p style="font-size:13px;color:var(--color-ink-muted);line-height:1.7;margin:0 0 10px">一人ずつ「育成（STEP1〜5）→ 独り立ち → トレーナー → トレーナーコース」の状況を並べています。「OJT待ち」の方から、OJT（支援先での評価シート）の割当てを組んでください。行の「見る」で、その方のステップごとの状態を開けます。CSV は、いま選んでいる絞り込みの方だけを書き出します。</p>
+          <p style="font-size:13px;color:var(--color-ink-muted);line-height:1.7;margin:0 0 10px">一人ずつ「育成（STEP1〜5）→ 独り立ち → トレーナー → トレーナーコース」の状況を並べています。「OJT待ち」の方から、OJT（支援先での評価シート）の割当てを組んでください。担当トレーナーは「引き受ける」（トレーナー）か「割り当てる」（管理者）で決めます。担当が決まると、その方の育成コースの画面に名前が出ます（Chat などでの連絡は自動では送られません）。「OJT待ち・担当なし」で、まだ担当が決まっていない方を絞り込めます。行の「見る」で、その方のステップごとの状態を開けます。CSV は、いま選んでいる絞り込みの方だけを書き出します。</p>
           <div class="ls-filters" id="memberFilters" role="group" aria-label="一覧の絞り込み"></div>
           <div class="ls-tools"><p class="ls-hint" id="memberHint" aria-live="polite"></p>
             <button type="button" class="btn btn-secondary" id="memberCsvBtn" disabled><i class="ti ti-download" aria-hidden="true"></i>CSV を書き出す</button></div>
