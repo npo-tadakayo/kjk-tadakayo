@@ -210,13 +210,13 @@ async function runDailyPreview(){
 const WEBHOOK_PREFIX = "https://chat.googleapis.com/";
 const HOOKS = [
   { kind:"crm",        label:"CRM通知の投稿先",  url:"chatWebhookUrl",           en:"chatWebhookEnabled",
-    note:"受付通知・今日の対応が空欄のときの予備の投稿先（以前はすべての CRM 通知がここに流れていました）。" },
+    note:"予備の投稿先。受付通知・今日の対応が空欄のときはここへ送ります。PMが空欄のときの点検・送信数の上限の警報もここへ送ります（以前はすべての CRM 通知がここに流れていました）。停止すると、ここへ回る通知も止まります。" },
   { kind:"reception",  label:"受付通知の投稿先", url:"receptionChatWebhookUrl",  en:"receptionChatWebhookEnabled", fallback:"crm",
     note:"LP問い合わせ・お申し込み・発注・受注確定・担当が決まった・承諾書の署名の通知先（TM介護情報基盤_受付通知）。空欄なら CRM通知の投稿先へ送ります。" },
   { kind:"daily",      label:"今日の対応の投稿先", url:"dailyChatWebhookUrl",    en:"dailyChatWebhookEnabled", fallback:"crm",
     note:"毎朝9時の日次フォローアップ（担当者ごとのメンション）の投稿先（TM介護情報基盤_今日の対応）。空欄なら CRM通知の投稿先へ送ります。" },
   { kind:"pm",         label:"PMの投稿先",       url:"pmChatWebhookUrl",         en:"pmChatWebhookEnabled",
-    note:"PM（プロジェクト管理）向けの投稿先。※現在、CRMからの自動投稿はありません（将来用・テスト送信のみ）。" },
+    note:"PM（プロジェクト管理）向けの投稿先。ログインの点検（毎朝8時・異常時のみ）と見積書メールの送信数の上限の警報が届きます。空欄なら CRM通知の投稿先へ送ります。" },
   { kind:"shipping",   label:"出荷指示の投稿先", url:"shippingChatWebhookUrl",   en:"shippingChatWebhookEnabled",
     note:"出荷指示の投稿先。" },
   { kind:"accounting", label:"経理の投稿先",     url:"accountingChatWebhookUrl", en:"accountingChatWebhookEnabled",
@@ -244,7 +244,11 @@ function hookState(h){
   if (!url){
     if (h.kind==="crm") return { t:"未設定（予備の投稿先を使います）", c:"var(--color-ink-muted)" };
     if (h.fallback && !on) return { t:"停止", c:"var(--color-danger)" };
-    if (h.fallback) return { t:"未設定（CRM通知の投稿先へ送ります）", c:"var(--color-ink-muted)" };
+    if (h.fallback){
+      const to = HOOKS.find(x=>x.kind===h.fallback);
+      if (to && !$(to.en).checked) return { t:"停止（回し先のCRM通知の投稿先が停止中）", c:"var(--color-danger)" };
+      return { t:"未設定（CRM通知の投稿先へ送ります）", c:"var(--color-ink-muted)" };
+    }
     return { t:"未設定", c:"var(--color-ink-muted)" };
   }
   return on ? { t:"有効", c:"var(--color-success)" } : { t:"停止", c:"var(--color-danger)" };

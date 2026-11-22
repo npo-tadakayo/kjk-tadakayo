@@ -98,6 +98,24 @@ t("結線: reception・daily を使う関数は Secret CHAT_WEBHOOK_URL を宣�
   // acceptQuoteByConsent は acceptQuote から呼ばれる
   assert.ok(exportBody("acceptQuote").includes("acceptQuoteByConsent("));
 });
+t("結線: Secret を読む kind を使う export はすべて Secret を宣言している（ROUTES に無い関数も）", () => {
+  // getWebhook("crm"|"reception"|"daily") を含む補助関数（トップレベルの async function）→ それを呼ぶ export へ辿る
+  const re = new RegExp(`getWebhook\\("(${W.KINDS_USING_CRM_SECRET.join("|")})"\\)`);
+  const helpers = [...idx.matchAll(/\nasync function (\w+)\(/g)].map((m) => m[1]).filter((h) => re.test(fnBody(h)));
+  // トップレベルの宣言（exports. / function / async function / const / let / class）の境目で区切る
+  // （export の後ろに置かれた補助関数の本文を、その export のものと数えない）
+  const chunks = idx.split(/\n(?=(?:exports\.|async function |function |const |let |class ))/).filter((c) => c.startsWith("exports."));
+  let checked = 0;
+  for (const c of chunks) {
+    const name = /^exports\.(\w+)/.exec(c)[1];
+    const uses = re.test(c) || helpers.some((h) => new RegExp(`\\b${h}\\(`).test(c));
+    if (!uses) continue;
+    const head = c.slice(0, c.indexOf("async"));
+    assert.ok(/secrets:\s*\[[^\]]*CHAT_WEBHOOK_URL/.test(head), `${name} に secrets: [CHAT_WEBHOOK_URL] が無い`);
+    checked++;
+  }
+  assert.ok(checked >= Object.keys(ROUTES).length, `検査した関数が少ない（${checked}）`);
+});
 t("テスト送信: 受付通知・今日の対応を選べる", () => {
   const m = /const WEBHOOK_KIND_LABELS = \{([^}]*)\}/.exec(idx);
   assert.ok(m && /reception:/.test(m[1]) && /daily:/.test(m[1]));

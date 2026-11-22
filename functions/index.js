@@ -1941,7 +1941,7 @@ exports.acceptQuote = onRequest(
 // 戻り値 {ok:true, results:[{quoteId, shipmentId, soNumber}], partial:boolean, errors:[{quoteId, code, message}],
 //        mailed:boolean, mailError:string|null}（確認メールの宛先は案件の contactEmail → 見積もりの contactEmail の順）
 // 全件が拒否されたときは HttpsError（failed-precondition）で返す（メッセージは checkStaffAccept の文言そのまま）。
-// 確認メールは sendMail が真で宛先があるときだけ。Chat は常に投稿する（CRM通知の投稿先）。
+// 確認メールは sendMail が真で宛先があるときだけ。Chat は常に投稿する（受付通知の投稿先・空ならCRM通知の投稿先）。
 // 2026-11-12 承諾書のサイン＝発注: 設定 appConfig/settings.orderByConsent がオンなら consent:{signedName, receivedDate, receivedVia?} が必須
 //   （申込者名・受付日・受付方法は承諾書の値で決める）。承諾書の記録と受注確定を1つのトランザクションで作り、戻り値に consentToken・displayNo。
 //   reconsent:true は受注後に改版した見積もりの承諾書の取り直し（出荷・受注は変えない）。オフのときは従来どおり（consent は使わない）。
@@ -2061,7 +2061,7 @@ exports.staffAcceptQuote = onCall(
     // 承諾書のサイン＝発注（スイッチがオン）: 受注確認のメールが出ていない理由（無ければ ""）。Chat に手で連絡するよう出す
     const orderConsentMailProblem = Flow.orderConsentMailProblemKind({ orderConsent: !!orderConsent, sendMail: !!sendMail, to, mailed });
 
-    // Chat（CRM通知の投稿先）。利用者の情報・申込者名・連絡先は載せない
+    // Chat（受付通知の投稿先・空ならCRM通知の投稿先）。利用者の情報・申込者名・連絡先は載せない
     try {
       const yen = (n) => `¥${fmtNum(Number(n || 0))}`;
       const regions = await Promise.all(done.map((r) => officeRegionLabel({ officeId: r.q.officeId })));
@@ -2839,7 +2839,7 @@ exports.onCaseAssigned = onDocumentUpdated(
 // ===== N4 承諾書にオンラインで署名されたら通知（2026-10-21 設計 §3）=====
 // 条件 Flow.shouldNotifyConsent（pending→signed・method==="web"・caseId あり）。紙の記録（新規作成で signed）は対象外。
 // 発注の承諾書（kind:"order"・2026-11-12）も対象外（受注確定の処理が通知するので二重にしない）。
-// 案件の活動に記録し cases.updatedAt を更新。Chat（CRM通知）へ担当を @メンション。確認者名・連絡先は載せない。
+// 案件の活動に記録し cases.updatedAt を更新。Chat（受付通知）へ担当を @メンション。確認者名・連絡先は載せない。
 // 投稿に失敗しても活動は残し、失敗したことを本文に書く。二重防止 _notifyLog/consent_${token}。
 // ⚠️ region はデプロイ時に Firestore のロケーションを確認（onCaseAssigned の注記と同じ）。
 exports.onConsentSigned = onDocumentUpdated(

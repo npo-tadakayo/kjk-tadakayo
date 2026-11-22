@@ -272,7 +272,7 @@ export function summarizeAcceptResult(r, opt = {}) {
 export function dailyPreviewBlocks(data) {
   const d = data || {};
   const blocks = [{
-    title: "全体のまとめ（CRM通知の投稿先へ1通）",
+    title: "全体のまとめ（今日の対応の投稿先へ1通）",
     text: d.overall || "投稿する内容はありません（この日は全体のまとめを投稿しません）",
     empty: !d.overall,
   }];
