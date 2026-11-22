@@ -3,6 +3,20 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 📝 2026-11-22 Chat 通知を「受付通知」「今日の対応」のスペースへ振り分けた（PR #111・本番反映済み）
+
+- 発端: CRM の通知が全部 TM（AAQAsxvbafY）に流れ、直近14日 886件中 545件が機械の投稿で人の相談が埋もれていた
+- 振り分け（判定 `functions/webhook-route.js`・テスト `scripts/test-webhook-route.mjs`）
+  - **受付通知**（`reception`・TM介護情報基盤_受付通知 AAQA9gpoW78）: LP問い合わせ（新規・追記）・見積作成（設定時のみ）・お申し込み・ご発注・受注確定・担当決定・承諾書の署名
+  - **今日の対応**（`daily`・TM介護情報基盤_今日の対応 AAQAGKG_gmg）: 毎朝9時の dailyFollowup
+  - 変えていない: 点検・送信数上限の警報（PM→空なら CRM）、出荷指示、経理
+  - 空欄なら CRM通知の投稿先（TM）へ回す。停止スイッチ false なら投稿しない
+- 本番: Functions 8個（webhookLpInquiry, webhookMitsumori, acceptQuote, staffAcceptQuote, dailyFollowup, onCaseAssigned, onConsentSigned, testChatNotify）→ admin 版 `4d036c982a0b6568` → `appConfig/settings` に Secret `CHAT_WEBHOOK_URL_RECEPTION`・`CHAT_WEBHOOK_URL_TODAY`（kjk-tadakayo）の値を入れて読み戻しで一致
+- 11/22 20:39 に2つのスペースへ試験投稿（Webhook へ直接）→ 読み取りで到着を確認。**関数経由のテスト送信と、設定画面のコントラスト走査は未確認**（ブラウザ画面でログインしていなかった）
+- ⚠️ admin は **#110（育成コースの担当トレーナー・未マージだが本番に出ている）を合わせた版**から出した。#110 より先に #111 を main に入れても、#110 のファイルは本番のまま
+- 🏦 銀行CSV取込完了（送り主「お知らせ」）は CRM の Functions ではない（入金のスプレッドシートの Apps Script と見ている・未確認）。移すならそのスクリプトの Webhook を受付通知のものに差し替える
+- 次: 11/23 9時の日次フォローアップが今日の対応に出るか確認／TM への周知（文面は会話で了承待ち）
+
 ## 📝 2026-11-22 育成コースの一覧を広げた（PR #109・本番反映済み・読むだけ）
 
 - `/learning` の下（トレーナー・管理者だけ）の一覧に、育成（STEP1〜5）→ 独り立ち → トレーナー → トレーナーコース・伴走支援の実施記録（単独・見守り付き・見学）・担当の案件（伴走支援実施済以降）・次にやること を並べた。絞り込み7つ・絞り込み中の人だけの CSV（列名固定・メールと次にやることを含む＝Claude が読んで DM の宛先と文面を作る）
