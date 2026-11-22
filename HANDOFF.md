@@ -15,6 +15,21 @@
 - **PM に報告済み**（11/22 20:46・蜂須賀さんにメンション・送信台帳に記録）。岡田さん・永井さんは蜂須賀さんが「引き受ける」で担当にする想定。OJT待ち6人は全員まだ「担当なし」
 - 次にやること: ①本番でログイン後の画面を確認（OJT待ち・担当なし に6人・選択肢に名簿8人）②担当が決まったら CSV を元に受講者へ DM（次田さん名義）
 
+## 📝 2026-11-22 Chat 通知を「受付通知」「今日の対応」のスペースへ振り分けた（PR #111・本番反映済み）
+
+- 発端: CRM の通知が全部 TM（AAQAsxvbafY）に流れ、直近14日 886件中 545件が機械の投稿で人の相談が埋もれていた
+- 振り分け（判定 `functions/webhook-route.js`・テスト `scripts/test-webhook-route.mjs`）
+  - **受付通知**（`reception`・TM介護情報基盤_受付通知 AAQA9gpoW78）: LP問い合わせ（新規・追記）・見積作成（設定時のみ）・お申し込み・ご発注・受注確定・担当決定・承諾書の署名
+  - **今日の対応**（`daily`・TM介護情報基盤_今日の対応 AAQAGKG_gmg）: 毎朝9時の dailyFollowup
+  - 変えていない: 点検・送信数上限の警報（PM→空なら CRM）、出荷指示、経理
+  - 空欄なら CRM通知の投稿先（TM）へ回す。停止スイッチ false なら投稿しない
+- 本番: Functions 8個（webhookLpInquiry, webhookMitsumori, acceptQuote, staffAcceptQuote, dailyFollowup, onCaseAssigned, onConsentSigned, testChatNotify）→ admin 版 `4d036c982a0b6568` → `appConfig/settings` に Secret `CHAT_WEBHOOK_URL_RECEPTION`・`CHAT_WEBHOOK_URL_TODAY`（kjk-tadakayo）の値を入れて読み戻しで一致
+- 11/22 20:39 に2つのスペースへ試験投稿（Webhook へ直接）→ 読み取りで到着を確認。**関数経由のテスト送信と、設定画面のコントラスト走査は未確認**（ブラウザ画面でログインしていなかった）
+- admin は #110（育成コースの担当トレーナー）を合わせた版から出した（当時 #110 は未マージで本番に出ていた。11/22 夜に #110→#111 の順で main に入った）
+- 🏦 銀行CSV取込完了（送り主「お知らせ」）は CRM の Functions ではない（入金のスプレッドシートの Apps Script と見ている・未確認）。移すならそのスクリプトの Webhook を受付通知のものに差し替える
+- TM への周知を 11/22 夜に次田さんの名前で投稿済み（`chat_write.py`・message `XMmNy8CX3nw`）
+- 次: 11/23 9時の日次フォローアップが今日の対応に出るか確認
+
 ## 📝 2026-11-22 育成コースの一覧を広げた（PR #109・本番反映済み・読むだけ）
 
 - `/learning` の下（トレーナー・管理者だけ）の一覧に、育成（STEP1〜5）→ 独り立ち → トレーナー → トレーナーコース・伴走支援の実施記録（単独・見守り付き・見学）・担当の案件（伴走支援実施済以降）・次にやること を並べた。絞り込み7つ・絞り込み中の人だけの CSV（列名固定・メールと次にやることを含む＝Claude が読んで DM の宛先と文面を作る）

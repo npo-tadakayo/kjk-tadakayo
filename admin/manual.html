@@ -796,12 +796,14 @@
 </div>
 <div class="sec" id="s-chat" data-toc="Google Chat の投稿先（4つ・管理者のみ）"><h3>Google Chat の投稿先（4つ・管理者のみ） <span class="chip new">10/19 追加</span></h3>
 
-<p>設定画面の「<strong>Google Chat の投稿先</strong>」で、用途ごとに<strong>4つの投稿先</strong>を持てます。設定を変えられるのは管理者だけです。</p>
+<p>設定画面の「<strong>Google Chat の投稿先</strong>」で、用途ごとに<strong>6つの投稿先</strong>を持てます。設定を変えられるのは管理者だけです。</p>
 <div class="table-wrap"><table class="flow">
   <thead><tr><th>投稿先</th><th>何が投稿されるか</th></tr></thead>
   <tbody>
-    <tr><td><strong>CRM通知</strong></td><td>問い合わせ・見積・お申し込み・毎朝のまとめ</td></tr>
-    <tr><td><strong>PM</strong></td><td>PMに連絡したい内容（いまの投稿先を、そのまま取ってあります）</td></tr>
+    <tr><td><strong>CRM通知</strong></td><td>予備の投稿先。受付通知・今日の対応が空欄のときはここへ送ります。PM が空欄のときの点検・送信数の上限の警報もここへ（2026-11-22 までは、すべての CRM 通知がここに流れていました）</td></tr>
+    <tr><td><strong>受付通知</strong></td><td>LP問い合わせ・見積（設定したときだけ）・お申し込み・ご発注・受注確定・担当が決まった・承諾書のオンライン署名（TM介護情報基盤_受付通知）</td></tr>
+    <tr><td><strong>今日の対応</strong></td><td>毎朝9時のまとめ（全体と担当者ごとのメンション）（TM介護情報基盤_今日の対応）</td></tr>
+    <tr><td><strong>PM</strong></td><td>ログインの点検・見積書メールの送信数の上限の警報</td></tr>
     <tr><td><strong>出荷指示</strong></td><td>「出荷を依頼する」を押したときの出荷の指示（宛名の印刷リンクつき）。<strong>初めは空欄</strong></td></tr>
     <tr><td><strong>経理</strong></td><td>請求書の発行の報告</td></tr>
   </tbody>
@@ -854,7 +856,7 @@
 <details class="faq"><summary>メールはどのアドレスから送られますか？</summary><div><p>「タダカヨ事務局 &lt;kjk-staff@tadakayo.jp&gt;」から送信されます。設定画面で変更できます。</p></div></details>
 <details class="faq"><summary>「紹介元」と「流入元」は何が違うの？</summary><div><p><strong>流入元</strong>は、その案件が<strong>どの入口から入ってきたか</strong>（LP問い合わせ／見積もり作成／手動登録）です。システムが自動で付け、ダッシュボードやレポートの集計に使っています。<strong>紹介元</strong>は、その案件が<strong>誰の紹介で来たか</strong>（タダカヨ／直接（飛び込み）など）で、案件詳細で人が選んで記録します。案件一覧では隣り合って並ぶのでご注意ください。</p></div></details>
 <details class="faq"><summary>どの案件も担当営業が「未割当」のままなのはなぜ？</summary><div><p>2026-08-26 まで、担当営業を割り当てる操作そのものがありませんでした。今は案件詳細の上部（ステータスの隣）で選べます。これまでの案件は、開いて担当営業を選び直してください。</p></div></details>
-<details class="faq"><summary>通知先のChatを変えたい</summary><div><p>設定画面の「<strong>Google Chat の投稿先</strong>」で変えられます（管理者のみ・最大60秒で反映）。投稿先は<strong>CRM通知・PM・出荷指示・経理</strong>の4つで、それぞれに「有効」のチェックと「テスト送信」があります。→ <a href="#s-chat">くわしく</a></p></div></details>
+<details class="faq"><summary>通知先のChatを変えたい</summary><div><p>設定画面の「<strong>Google Chat の投稿先</strong>」で変えられます（管理者のみ・最大60秒で反映）。投稿先は<strong>CRM通知・受付通知・今日の対応・PM・出荷指示・経理</strong>の6つで、それぞれに「有効」のチェックと「テスト送信」があります。→ <a href="#s-chat">くわしく</a></p></div></details>
 <details class="faq"><summary>AIの文章はそのまま送って大丈夫？</summary><div><p>必ず内容を確認・修正してから送ってください。AIは下書きの補助です。</p></div></details>
 <details class="faq"><summary>「認定事業所」と「認定事業者」は違うものですか？</summary><div><p>同じものです。2026-09-06 に呼び名を「<strong>認定事業者</strong>」に統一しました（愛称「タダトモ」・認定番号 TDT-001 形式）。介護事業所と紛らわしかったためで、画面に出る言葉だけを変えており、登録済みのデータはそのままです。</p></div></details>
 <details class="faq"><summary>出荷を間違えて登録した。削除とキャンセル、どちらを使えばいい？</summary><div><p><strong>下書きなら「この出荷を削除」</strong>、<strong>発送済・請求済まで進んでいたら「キャンセルにする」</strong>を使ってください。入金済は返金の記録から取り消します。</p></div></details>

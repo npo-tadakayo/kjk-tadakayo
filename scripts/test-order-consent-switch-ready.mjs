@@ -102,7 +102,7 @@ t("staffAcceptQuote: 承諾書の道でメールが出ていなければ Chat �
   assert.match(b, /\(orderConsentMailProblem \? `\\n\$\{Flow\.orderConsentMailProblemText\(orderConsentMailProblem, done\.map\(\(r\) => \(\{ caseNumber: r\.q\.caseNumber, estNo: r\.q\.estNo \}\)\), \{ paper: true \}\)\}` : ""\)/);
   // 判定はメールの処理のあと・Chat の前
   assert.ok(b.indexOf("const orderConsentMailProblem") > b.indexOf("staffAcceptQuote mail error"));
-  assert.ok(b.indexOf("const orderConsentMailProblem") < b.indexOf("await notifyChat(await getWebhook(\"crm\")"));
+  assert.ok(b.indexOf("const orderConsentMailProblem") < b.indexOf("await notifyChat(await getWebhook(\"reception\")"));
   // 紙の道の確認メールは「ご署名」の文言
   assert.match(b, /const consentPaper = !!orderConsent;/);
   assert.match(b, /acceptMailText\(\{ q: first, agreedName: name, payKey, delivery: await deliveryFromOfficeForQuote\(first\), preferredDate, consentUrl, consentPaper \}\)/);
