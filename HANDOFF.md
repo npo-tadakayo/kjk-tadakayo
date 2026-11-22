@@ -3,12 +3,15 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
-## 📝 2026-11-22 育成コースの担当トレーナー（ブランチ `feat/learning-trainer-assign`）
+## 📝 2026-11-22 育成コースの担当トレーナー（PR #110・本番反映済み・ブランチ `feat/learning-trainer-assign`）
 
 - 発端: 蜂須賀さん（PM・11/22）「OJT に声がかかると思って待っている／譲り合って担当が未決定になる」→ 次田さん了承
 - `/learning` の一覧に「担当トレーナー」の列・操作（トレーナー＝引き受ける／管理者＝割り当てる・付け替える・外す／いまの担当＝付け替える・外す）・絞り込み「OJT待ち・担当なし」・CSV の列（担当トレーナー・メール・担当にした日）。本人の画面に「担当トレーナー：〇〇 さん」（未定なら調整中）
 - 置き場 `appConfig/trainerProgram/assignments/{メール}`・Callable `trainerAssign`・`trainerMyAssignment`（rules 変更なし）。詳細と独立レビューの対応は ENGINEERING_NOTES §C21
 - Chat の通知は作っていない。決まった担当を受講者に知らせるのは、CSV を元に次田さんの名前で DM する運用
+- **本番反映（11/22 20:34 JST）**: Functions `trainerAssign`・`trainerMyAssignment` を名指しで新規作成（既存の関数は不変・ログインなしは 403）→ プレビュー `assign-1122` から admin へ昇格（版 `ca29ffb232e47e85`）。本番の5ファイル（learning.html・learning.js・learning-core.js・trainer-rules.js・practice-stubs-trainer.js）が手元とハッシュ一致・ヘッダー全項目合格・承認済みドメインの4件そろい。戻すなら `firebase hosting:rollback` と関数2本の削除
+- **未確認**: 本番データでのログイン後の画面（次田さんの判断でプレビューの確認は省略して昇格）。画面の動きは手元のエミュレーター（架空データ）で確認済み。OJT待ち6人が「OJT待ち・担当なし」に並ぶか、名簿8人が選択肢に出るかは、次に本番を開いたときに見る
+- プレビューのドメインは承認済みドメインに残っている（11/29 に失効。必要なら `scripts/auth-domains.mjs remove`）
 
 ## 📝 2026-11-22 育成コースの一覧を広げた（PR #109・本番反映済み・読むだけ）
 
