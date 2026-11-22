@@ -431,7 +431,9 @@ let badgeOf = new Map();      // 小文字のメール → supportBadges（同�
 let filterKey = "all";
 const lowMail = (s) => String(s || "").toLowerCase();
 function detailHtml(row) {
-  const st = L.stepStates(progressOf.get(lowMail(row.email)) || null, { badge: badgeOf.get(lowMail(row.email)) || null }, QUIZZES);
+  // 育成（STEP1〜5）が済んでいない人は、独り立ち済でも STEP7 を済にしない（表の「次にやること」とそろえる）
+  const b = row.training.status === "done" ? badgeOf.get(lowMail(row.email)) || null : null;
+  const st = L.stepStates(progressOf.get(lowMail(row.email)) || null, { badge: b }, QUIZZES);
   return `<ul class="ls-mini">${st.map((s) => {
     const ic = s.state === "done" ? "ti-circle-check-filled" : s.state === "current" ? "ti-player-play" : s.state === "optional" ? "ti-circle-dashed" : "ti-circle";
     const q = s.quiz && s.quiz.best != null ? `・テスト最高 ${s.quiz.best}%` : "";
@@ -462,7 +464,7 @@ function courseCell(c) {
 }
 function supportCell(r) {
   const s = r.support;
-  const parts = [`単独 ${s.solo}`, `見守り付き ${s.training}`, `見学 ${s.observe}`];
+  const parts = [`単独 ${s.solo}`, `見守り付き（トレーニング） ${s.training}`, `見学 ${s.observe}`];
   return `<span class="ls-nums">${parts.map(esc).join("<br>")}</span>${r.assignedDone ? `<small class="ls-sub">担当の案件（伴走支援実施済以降）${r.assignedDone}件</small>` : ""}`;
 }
 function renderFilters() {
