@@ -167,4 +167,10 @@ export const TRAINER_PRACTICE_STUBS = {
     showPracticeNotice("トレーナー合格を取り消しました（練習用のデータです。本番の名簿は変わりません）");
     return { ok: true, id: cref.id };
   },
+
+  // 本物: trainerAssign（担当トレーナーの割り当て・2026-11-22）。育成コースの一覧は練習中も本番を見ているので、
+  // 練習DBに書くと画面と食い違う。練習中は割り当てない（画面も練習中は操作を出さない）
+  async trainerAssign() {
+    throw err("failed-precondition", "練習モードでは担当トレーナーを割り当てられません。本番に戻してから操作してください。");
+  },
 };

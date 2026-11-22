@@ -4605,6 +4605,8 @@ exports.trainerRecordTalk = trainer.trainerRecordTalk;
 exports.trainerCourseSubmit = trainer.trainerCourseSubmit;
 exports.trainerCertify = trainer.trainerCertify;
 exports.trainerRevoke = trainer.trainerRevoke;
+exports.trainerAssign = trainer.trainerAssign;
+exports.trainerMyAssignment = trainer.trainerMyAssignment;
 // ===== カードリーダーの発送の5段（依頼 → 受付 → 確認 → 発送準備 → 発送完了・2026-11-12）=====
 // 本体は functions/ship-steps.js（判定は ship-steps-rules.mjs＝正本 admin/js/ship-steps-rules.js のコピー）。
 // notifyShipment（依頼の必須項目の確認・短い文面）と warehouseShip / warehouseHandover（発送準備の段だけ・発送完了の知らせ）からも使う。

@@ -422,3 +422,100 @@ export function rosterAfter(users, rosterIds, change) {
   if (change.type === "revoke") return cur.filter((x) => low(x) !== low(id));
   return cur;
 }
+
+// ---------- 担当トレーナーの割り当て（appConfig/trainerProgram/assignments/{受講者のメール}・2026-11-22） ----------
+// 発端: 蜂須賀さん（PM・11/22）「受講する側は OJT に声がかかると思って待っている／譲り合って担当が未決定になる」→ 次田さん了承。
+// 権限（サーバーで確かめる）:
+//   割り当てる（assign）… 管理者は誰にでも、名簿のトレーナーを。トレーナーは「担当なしなら自分」「自分が担当ならほかのトレーナーへ付け替え」
+//   引き受ける（take）  … トレーナーが自分を担当にする（担当なしのときだけ。ほかの人が担当なら、管理者かその人に付け替えてもらう）
+//   外す（release）     … 管理者か、いまの担当トレーナー本人
+//   担当にできるのはトレーナー名簿にいて、有効なスタッフ・管理者だけ。受講者本人を自分の担当にはできない。
+// 文書は消さない（外したときは trainerId を空にして、履歴 history に足す。直近 ASSIGN_HISTORY_MAX 件）。
+export const ASSIGN_NOTE_MAX = 200;
+export const ASSIGN_HISTORY_MAX = 20;
+export const ASSIGN_ACTIONS = ["assign", "take", "release"];
+const ASSIGN_LEARNER_ROLES = ["", "staff", "admin", "trainee"];
+
+/** 保存されている割り当て → { trainerId, trainerName, at, byId, byName, note } か null（担当なし） */
+export function assignmentOf(doc) {
+  if (!doc || !str(doc.trainerId)) return null;
+  return {
+    trainerId: str(doc.trainerId), trainerName: str(doc.trainerName) || str(doc.trainerId),
+    at: toMs(doc.assignedAt), byId: str(doc.assignedById), byName: str(doc.assignedByName), note: str(doc.note),
+  };
+}
+
+/** 担当が名簿にいないか動けない（削除・無効・対象外のロール）＝実際には担当がいないのと同じ */
+export function assignmentStale(a, users, rosterIds) {
+  if (!a) return false;
+  if (!isTrainerId(a.trainerId, users, rosterIds)) return true;
+  const u = (users || []).find((x) => low(x._id) === low(a.trainerId));
+  return !isCandidateUser(u);
+}
+
+/**
+ * 割り当ての変更を組み立てる。
+ *   input: { action: "assign"|"take"|"release", userId, trainerId?, note? }
+ *   ctx:   { actor:{ id, name, isAdmin, isTrainer }, learner:{ id, name, active, role }|null,
+ *            trainer:{ id, name, active, role }|null（assign のときの相手）, trainerInRoster, current（いまの文書）,
+ *            currentStale（いまの担当が名簿にいない・動けない）, learnerHasBadge（独り立ち済）, now }
+ * 戻り値: { doc }（文書まるごと・set で書く）か { error }
+ */
+export function buildAssign(input, ctx) {
+  const i = input || {}, a = ctx.actor || {}, l = ctx.learner;
+  const action = str(i.action);
+  if (!ASSIGN_ACTIONS.includes(action)) return { error: "操作を指定してください。" };
+  if (!a.isAdmin && !a.isTrainer) return { error: "担当トレーナーを決められるのは、トレーナーと管理者だけです。" };
+  if (!l) return { error: "受講する方が見つかりません。画面を更新してください。" };
+  if (l.active === false || !ASSIGN_LEARNER_ROLES.includes(l.role == null ? "" : l.role)) {
+    return { error: "この方には担当トレーナーを付けられません（有効なスタッフ・練習生・管理者だけです）。" };
+  }
+  const cur = assignmentOf(ctx.current);
+  const isCur = !!cur && low(cur.trainerId) === low(a.id);
+  const note = str(i.note);
+  if (note.length > ASSIGN_NOTE_MAX) return { error: `メモは ${ASSIGN_NOTE_MAX}字以内で書いてください。` };
+  const prevHist = Array.isArray(ctx.current && ctx.current.history) ? ctx.current.history : [];
+  const by = { byId: a.id, byName: a.name || a.id, at: ctx.now };
+  const base = { userId: l.id, userName: l.name || l.id };
+  const hist = (ev) => [...prevHist, ev].slice(-ASSIGN_HISTORY_MAX);
+
+  // 独り立ち済の人には新しく付けない（画面も操作を出さない。外すことはできる・2026-11-22 レビュー低4）
+  if (action !== "release" && ctx.learnerHasBadge) return { error: "この方はすでに独り立ちしています（担当トレーナーは要りません）。" };
+  if (action === "release") {
+    if (!cur) return { error: "この方には担当トレーナーがいません。" };
+    if (!a.isAdmin && !isCur) return { error: `担当を外せるのは、管理者か、いまの担当の ${cur.trainerName} さんだけです。` };
+    return { doc: { ...base, trainerId: "", trainerName: "", assignedAt: null, assignedById: "", assignedByName: "", note: "",
+      history: hist({ type: "release", trainerId: cur.trainerId, trainerName: cur.trainerName, ...by, note }) } };
+  }
+
+  // take は「自分を担当に」。assign は相手を選ぶ
+  let t, inRoster;
+  if (action === "take") {
+    if (!a.isTrainer) return { error: "引き受けられるのはトレーナー名簿にいる方だけです。管理者は「割り当てる」でトレーナーを選んでください。" };
+    t = { id: a.id, name: a.name || a.id };
+    inRoster = true;
+  } else {
+    t = ctx.trainer;
+    inRoster = !!ctx.trainerInRoster;
+  }
+  if (!t) return { error: "担当にするトレーナーを選んでください。" };
+  if (!inRoster) return { error: "担当にできるのはトレーナー名簿にいる方だけです。" };
+  if (action === "assign" && !isCandidateUser(t)) return { error: "このトレーナーはいま担当にできません（無効・または対象外のロールです）。" };
+  if (low(t.id) === low(l.id)) return { error: "自分自身の担当トレーナーにはなれません。" };
+  if (cur && low(cur.trainerId) === low(t.id)) return { error: `すでに ${cur.trainerName} さんが担当です。` };
+  if (!a.isAdmin && !isCur) {
+    // 担当が動ける人なら、付け替えは管理者かその人だけ。担当なし（または名簿から外れた人）なら、トレーナーは自分だけを担当にできる
+    if (cur && !ctx.currentStale) return { error: `すでに ${cur.trainerName} さんが担当です。付け替えは、管理者か ${cur.trainerName} さんにお願いしてください。` };
+    if (low(t.id) !== low(a.id)) return { error: "ほかのトレーナーを担当にできるのは管理者だけです（担当がいないときは「引き受ける」で自分を担当にできます）。" };
+  }
+  return { doc: { ...base, trainerId: t.id, trainerName: t.name || t.id, assignedAt: ctx.now,
+    assignedById: a.id, assignedByName: a.name || a.id, note,
+    history: hist({ type: cur ? "change" : action, trainerId: t.id, trainerName: t.name || t.id,
+      fromTrainerId: cur ? cur.trainerId : "", ...by, note }) } };
+}
+
+/** 受講者本人の画面の1文（担当がいれば名前、いなければ調整中）。ready＝OJTに入れる段階か */
+export function assignmentText(a, ready) {
+  if (a) return `担当トレーナー：${a.trainerName} さん`;
+  return ready ? "担当トレーナーを調整中です。決まったらお知らせします。" : "";
+}
