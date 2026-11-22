@@ -450,6 +450,7 @@ export function evaluationLine(progress, badge, quizzes = {}) {
 // （isReadyForOjt・stepStates・reachedStep・lastProgressAt・nextAction／trainer-rules.js の courseDone・trainerIds）。
 // 新しいデータは作らない（読むだけ）。管理者が手で済みにした記録には manualClear（at・by・reason）が付いている。
 export const ROLE_LABEL = { admin: "管理者", staff: "スタッフ", viewer: "閲覧のみ", trainee: "練習生", warehouse: "倉庫" };
+export const MEMBER_EXCLUDED_ROLES = ["warehouse", "viewer"]; // 一覧に入れないロール（育成の記録か名簿があれば入れる）
 export const SUPPORT_MODES = ["solo", "training", "observe"]; // 単独・見守り付き・見学
 const lowMail = (s) => String(s || "").trim().toLowerCase();
 
@@ -528,7 +529,7 @@ export function earliestBadges(badges) {
 }
 
 /**
- * 一覧の行を組み立てる。対象は users の有効な人・learningProgress がある人・トレーナー名簿の人。無効（active:false）は出さない。
+ * 一覧の行を組み立てる。対象は users の有効な人（倉庫・閲覧のみは除く）・learningProgress がある人・トレーナー名簿の人。無効（active:false）は出さない。
  * input: { users:[{_id,name,role,active}], progresses:{ [メール]: 文書 }, badges:[supportBadges], rosterIds,
  *          courses:{ [メール]: 文書 }, checklists:{ [caseId]: supportChecklists }, cases:[{_id,status,assignedUserId}] }
  */
@@ -543,7 +544,8 @@ export function memberRows(input, quizzes = {}) {
   const assigned = countAssignedDone(i.cases);
   const badgeOf = earliestBadges(i.badges);
   const ids = new Set();
-  for (const u of users) if (u.active !== false) ids.add(lowMail(u._id));
+  // 倉庫・閲覧のみの人は伴走支援をしないので入れない（2026-11-22 次田さん）。育成の記録がある人・名簿の人は下で入る
+  for (const u of users) if (u.active !== false && !MEMBER_EXCLUDED_ROLES.includes(u.role)) ids.add(lowMail(u._id));
   for (const id of progOf.keys()) ids.add(id);
   for (const id of roster) ids.add(id);
   const rows = [];

@@ -471,12 +471,15 @@ t("memberRows: 対象・各列・絞り込み・並び", () => {
     { _id: "tr@x.jp", name: "トレーナー さん", role: "admin" },      // 名簿・育成完了・独り立ち済 → 候補ではない
     { _id: "new@x.jp", name: "新人 さん", role: "trainee" },        // 未開始
     { _id: "off@x.jp", name: "無効 さん", role: "staff", active: false }, // 出さない（進み具合があっても）
+    { _id: "wh@x.jp", name: "倉庫 さん", role: "warehouse" },       // 出さない（記録なし）
+    { _id: "vw@x.jp", name: "閲覧 さん", role: "viewer" },          // 出さない（記録なし）
+    { _id: "vw2@x.jp", name: "閲覧二 さん", role: "viewer" },       // 育成の記録があるので出す
   ];
   const full = progressThrough(5);
   const rows = L.memberRows({
     users,
     progresses: { "done@x.jp": full, "solo@x.jp": full, "gap@x.jp": progressThrough(2), "tr@x.jp": { ...full, manualClear: { at: 1, by: "x", reason: "r" } },
-      "off@x.jp": full, "ghost@x.jp": progressThrough(1) },
+      "off@x.jp": full, "ghost@x.jp": progressThrough(1), "vw2@x.jp": progressThrough(1) },
     badges: [{ userId: "solo@x.jp", grantedDate: "2026-11-10", grantedByName: "山田", basis: "evaluation" },
       { userId: "gap@x.jp", grantedDate: "2026-11-01", grantedByName: "次田", basis: "discretion" },
       { userId: "gap@x.jp", grantedDate: "2026-11-15", grantedByName: "別", basis: "evaluation" },
@@ -490,7 +493,9 @@ t("memberRows: 対象・各列・絞り込み・並び", () => {
   assert.ok(!by["off@x.jp"], "無効な人が出ている");
   assert.ok(by["ghost@x.jp"], "ユーザー管理にいないが進み具合がある人が出ていない");
   assert.equal(by["ghost@x.jp"].roleLabel, "（ユーザー管理にいない）");
-  assert.equal(rows.length, 6);
+  assert.ok(!by["wh@x.jp"] && !by["vw@x.jp"], "倉庫・閲覧のみの人が出ている");
+  assert.ok(by["vw2@x.jp"], "育成の記録がある閲覧のみの人が出ていない");
+  assert.equal(rows.length, 7);
   assert.equal(by["gap@x.jp"].badge.by, "次田"); assert.equal(by["gap@x.jp"].badge.basis, "特別裁量"); // いちばん早い認定
   assert.equal(by["solo@x.jp"].badge.basis, "評価シート");
   assert.equal(by["tr@x.jp"].trainer, true); assert.equal(by["tr@x.jp"].course.label, "修了"); assert.equal(by["tr@x.jp"].training.manual, true);
@@ -504,13 +509,13 @@ t("memberRows: 対象・各列・絞り込み・並び", () => {
   const names = (k) => L.filterMembers(rows, k).map((r) => r.email).sort();
   assert.deepEqual(names("done"), ["done@x.jp", "solo@x.jp", "tr@x.jp"]);
   assert.deepEqual(names("ojt"), ["done@x.jp"]);
-  assert.deepEqual(names("partial"), ["gap@x.jp", "ghost@x.jp"]);
+  assert.deepEqual(names("partial"), ["gap@x.jp", "ghost@x.jp", "vw2@x.jp"]);
   assert.deepEqual(names("none"), ["new@x.jp"]);
   assert.deepEqual(names("gap"), ["gap@x.jp"]);
   assert.deepEqual(names("cand"), ["solo@x.jp"]);
-  assert.equal(L.filterMembers(rows, "nope").length, 6);
+  assert.equal(L.filterMembers(rows, "nope").length, 7);
   // 並び: 完了 → 途中（進んだ順） → 未開始
-  assert.deepEqual(rows.map((r) => r.training.status), ["done", "done", "done", "partial", "partial", "none"]);
+  assert.deepEqual(rows.map((r) => r.training.status), ["done", "done", "done", "partial", "partial", "partial", "none"]);
   assert.equal(rows[3].email, "gap@x.jp");
 });
 t("memberCsv: 列名は固定・BOM・CRLF・引用・式の無効化", () => {
