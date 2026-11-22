@@ -353,6 +353,73 @@ t("画面（D）: 名簿に残っている人の欄と「名簿から取り消�
   assert.match(read("admin/js/practice-stubs-trainer.js"), /T\.revokeTargetOf\(users, ids, uid, events\)/);
 });
 
+t("担当トレーナー（2026-11-22）: 割り当て・引き受け・外す・付け替えの権限", () => {
+  const ADM = { id: "adm@tadakayo.jp", name: "管理", isAdmin: true, isTrainer: false };
+  const TA = { id: "ta@tadakayo.jp", name: "蜂須賀", isAdmin: false, isTrainer: true };
+  const TB = { id: "tb@tadakayo.jp", name: "藤田", isAdmin: false, isTrainer: true };
+  const STF = { id: "s@tadakayo.jp", name: "職員", isAdmin: false, isTrainer: false };
+  const L = { id: "new@tadakayo.jp", name: "新人", active: true, role: "trainee" };
+  const tb = { id: TB.id, name: TB.name, active: true, role: "staff" };
+  const ta = { id: TA.id, name: TA.name, active: true, role: "staff" };
+  const curA = { trainerId: TA.id, trainerName: "蜂須賀", history: [{ type: "take" }] };
+  const go = (input, ctx) => T.buildAssign({ userId: L.id, ...input }, { learner: L, now: NOW, ...ctx });
+  // 引き受ける
+  let r = go({ action: "take" }, { actor: TA, current: null });
+  assert.equal(r.doc.trainerId, TA.id); assert.equal(r.doc.assignedById, TA.id); assert.equal(r.doc.history.at(-1).type, "take");
+  assert.equal(r.doc.userId, L.id); assert.equal(r.doc.assignedAt, NOW);
+  assert.match(go({ action: "take" }, { actor: STF, current: null }).error, /トレーナーと管理者だけ/);
+  assert.match(go({ action: "take" }, { actor: ADM, current: null }).error, /名簿にいる方だけ/); // 管理者でも名簿にいなければ引き受けられない
+  assert.match(go({ action: "take" }, { actor: TB, current: curA }).error, /すでに 蜂須賀 さんが担当です。付け替えは/);
+  assert.match(go({ action: "take" }, { actor: TA, current: curA }).error, /すでに 蜂須賀 さんが担当です。$/);
+  assert.equal(go({ action: "take" }, { actor: TB, current: curA, currentStale: true }).doc.trainerId, TB.id); // 担当が名簿から外れていれば引き受けられる
+  // 割り当てる（管理者）
+  r = go({ action: "assign", trainerId: TB.id, note: "11/25 の OJT" }, { actor: ADM, trainer: tb, trainerInRoster: true, current: curA });
+  assert.equal(r.doc.trainerId, TB.id); assert.equal(r.doc.note, "11/25 の OJT");
+  assert.deepEqual(r.doc.history.map((h) => h.type), ["take", "change"]); assert.equal(r.doc.history.at(-1).fromTrainerId, TA.id);
+  assert.match(go({ action: "assign", trainerId: STF.id }, { actor: ADM, trainer: { ...STF, active: true, role: "staff" }, trainerInRoster: false, current: null }).error, /名簿にいる方だけ/);
+  assert.match(go({ action: "assign" }, { actor: ADM, trainer: null, current: null }).error, /選んでください/);
+  assert.match(go({ action: "assign", trainerId: TB.id }, { actor: ADM, trainer: { ...tb, active: false }, trainerInRoster: true, current: null }).error, /無効/);
+  // 割り当てる（トレーナー）: 担当なしなら自分だけ／自分が担当ならほかへ付け替えられる／ほかの人が担当なら不可
+  assert.match(go({ action: "assign", trainerId: TB.id }, { actor: TA, trainer: tb, trainerInRoster: true, current: null }).error, /管理者だけ/);
+  assert.equal(go({ action: "assign", trainerId: TA.id }, { actor: TA, trainer: ta, trainerInRoster: true, current: null }).doc.trainerId, TA.id);
+  assert.equal(go({ action: "assign", trainerId: TB.id }, { actor: TA, trainer: tb, trainerInRoster: true, current: curA }).doc.trainerId, TB.id);
+  assert.match(go({ action: "assign", trainerId: TB.id }, { actor: TB, trainer: tb, trainerInRoster: true, current: curA }).error, /付け替えは、管理者か 蜂須賀 さん/);
+  assert.match(go({ action: "assign", trainerId: TB.id }, { actor: STF, trainer: tb, trainerInRoster: true, current: null }).error, /トレーナーと管理者だけ/);
+  // 外す
+  r = go({ action: "release" }, { actor: TA, current: curA });
+  assert.equal(r.doc.trainerId, ""); assert.equal(T.assignmentOf(r.doc), null); assert.equal(r.doc.history.at(-1).type, "release");
+  assert.equal(go({ action: "release" }, { actor: ADM, current: curA }).doc.trainerId, "");
+  assert.match(go({ action: "release" }, { actor: TB, current: curA }).error, /管理者か、いまの担当の 蜂須賀 さんだけ/);
+  assert.match(go({ action: "release" }, { actor: ADM, current: { trainerId: "" } }).error, /担当トレーナーがいません/);
+  // 受講者の条件・自分自身・メモの長さ・操作名
+  assert.match(go({ action: "take" }, { actor: TA, learner: { ...L, active: false }, current: null }).error, /付けられません/);
+  assert.match(go({ action: "take" }, { actor: TA, learner: { ...L, role: "warehouse" }, current: null }).error, /付けられません/);
+  assert.match(go({ action: "take" }, { actor: TA, learner: null, current: null }).error, /見つかりません/);
+  assert.match(go({ action: "take" }, { actor: TA, learner: { ...ta }, current: null }).error, /自分自身/);
+  assert.match(go({ action: "take", note: "あ".repeat(T.ASSIGN_NOTE_MAX + 1) }, { actor: TA, current: null }).error, /200字以内/);
+  assert.match(go({ action: "delete" }, { actor: ADM, current: null }).error, /操作を指定/);
+  // 独り立ち済の人には付けない（外すことはできる）
+  assert.match(go({ action: "take" }, { actor: TA, current: null, learnerHasBadge: true }).error, /独り立ち/);
+  assert.match(go({ action: "assign", trainerId: TB.id }, { actor: ADM, trainer: tb, trainerInRoster: true, current: null, learnerHasBadge: true }).error, /独り立ち/);
+  assert.equal(go({ action: "release" }, { actor: ADM, current: curA, learnerHasBadge: true }).doc.trainerId, "");
+  // 履歴は直近 ASSIGN_HISTORY_MAX 件まで
+  const many = { ...curA, history: Array.from({ length: T.ASSIGN_HISTORY_MAX }, () => ({ type: "take" })) };
+  assert.equal(go({ action: "release" }, { actor: ADM, current: many }).doc.history.length, T.ASSIGN_HISTORY_MAX);
+});
+
+t("担当トレーナー: 名簿から外れた担当・本人の画面の文", () => {
+  const users = [{ _id: "ta@tadakayo.jp", name: "A", active: true, role: "staff" }, { _id: "off@tadakayo.jp", name: "B", active: false, role: "staff" }];
+  const a = T.assignmentOf({ trainerId: "ta@tadakayo.jp", trainerName: "A", assignedAt: NOW });
+  assert.equal(a.at, NOW);
+  assert.equal(T.assignmentStale(a, users, ["ta@tadakayo.jp"]), false);
+  assert.equal(T.assignmentStale(a, users, ["x@tadakayo.jp"]), true); // 名簿にいない
+  assert.equal(T.assignmentStale(T.assignmentOf({ trainerId: "off@tadakayo.jp" }), users, ["off@tadakayo.jp"]), true); // 無効
+  assert.equal(T.assignmentStale(null, users, null), false);
+  assert.equal(T.assignmentText(a, true), "担当トレーナー：A さん");
+  assert.equal(T.assignmentText(null, true), "担当トレーナーを調整中です。決まったらお知らせします。");
+  assert.equal(T.assignmentText(null, false), "");
+});
+
 t("Functions のコピーが正本と同じ（バイト単位）", () => {
   assert.equal(read("functions/trainer-rules.mjs"), read("admin/js/trainer-rules.js"));
   assert.match(read("scripts/check-shared-sync.sh"), /trainer-rules\.js functions\/trainer-rules\.mjs/);
@@ -360,7 +427,7 @@ t("Functions のコピーが正本と同じ（バイト単位）", () => {
 
 t("結線: index.js は末尾に require と exports を足すだけ・Callable は全部先頭で認可", () => {
   const idx = read("functions/index.js");
-  const names = ["trainerSaveCriteria", "trainerRecordTalk", "trainerCourseSubmit", "trainerCertify", "trainerRevoke"];
+  const names = ["trainerSaveCriteria", "trainerRecordTalk", "trainerCourseSubmit", "trainerCertify", "trainerRevoke", "trainerAssign", "trainerMyAssignment"];
   assert.match(idx, /const trainer = require\("\.\/trainer"\);/);
   for (const nm of names) assert.match(idx, new RegExp(`exports\\.${nm} = trainer\\.${nm};`));
   const src = read("functions/trainer.js");
@@ -368,7 +435,7 @@ t("結線: index.js は末尾に require と exports を足すだけ・Callable 
   assert.deepEqual(parts.map((p) => p.match(/^exports\.([A-Za-z]+)/)[1]).sort(), names.slice().sort());
   for (const p of parts) {
     const head = p.slice(0, p.indexOf("async (request) => {") + 120);
-    assert.match(head, /const me = await requireMember\(request, "(admin|editor|viewer)"\);/, p.slice(0, 40));
+    assert.match(head, /const me = await requireMember\(request, "(admin|editor|viewer)"(, \{ allowTrainee: true \})?\);/, p.slice(0, 40));
   }
   // 条件・取り消しは管理者だけ（サーバーで）
   assert.match(src, /exports\.trainerSaveCriteria = onCall\(OPTS, async \(request\) => \{\n\s+const me = await requireMember\(request, "admin"\)/);

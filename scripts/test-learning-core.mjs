@@ -518,6 +518,41 @@ t("memberRows: 対象・各列・絞り込み・並び", () => {
   assert.deepEqual(rows.map((r) => r.training.status), ["done", "done", "done", "partial", "partial", "partial", "none"]);
   assert.equal(rows[3].email, "gap@x.jp");
 });
+t("memberRows: 担当トレーナー（2026-11-22）・OJT待ち・担当なし・CSV の列", () => {
+  const users = [
+    { _id: "a@x.jp", name: "A さん", role: "trainee" }, { _id: "b@x.jp", name: "B さん", role: "staff" },
+    { _id: "c@x.jp", name: "C さん", role: "staff" }, { _id: "d@x.jp", name: "D さん", role: "staff" },
+    { _id: "tr@x.jp", name: "トレーナー", role: "staff" }, { _id: "old@x.jp", name: "元トレーナー", role: "staff" },
+  ];
+  const full = progressThrough(5);
+  const rows = L.memberRows({
+    users, rosterIds: ["tr@x.jp"],
+    progresses: { "a@x.jp": full, "b@x.jp": full, "c@x.jp": full, "d@x.jp": full },
+    badges: [{ userId: "d@x.jp", grantedDate: "2026-11-10" }],
+    assignments: {
+      "A@x.jp": { trainerId: "tr@x.jp", trainerName: "トレーナー", assignedAt: Date.parse("2026-11-22T01:00:00Z"), assignedByName: "管理" },
+      "b@x.jp": { trainerId: "old@x.jp", trainerName: "元トレーナー" },       // 名簿にいない → 担当なしと数える
+      "c@x.jp": { trainerId: "", trainerName: "", history: [{ type: "release" }] }, // 外した
+    },
+  }, QZ);
+  const by = Object.fromEntries(rows.map((r) => [r.email, r]));
+  assert.equal(by["a@x.jp"].assignment.trainerName, "トレーナー"); assert.equal(by["a@x.jp"].assignment.stale, false);
+  assert.equal(by["b@x.jp"].assignment.stale, true);
+  assert.equal(by["c@x.jp"].assignment, null);
+  assert.equal(L.hasTrainer(by["a@x.jp"]), true); assert.equal(L.hasTrainer(by["b@x.jp"]), false);
+  const names = (k) => L.filterMembers(rows, k).map((r) => r.email).sort();
+  assert.deepEqual(names("ojt"), ["a@x.jp", "b@x.jp", "c@x.jp"]);
+  assert.deepEqual(names("ojtNoTrainer"), ["b@x.jp", "c@x.jp"]); // 独り立ち済（d）・担当あり（a）は入らない
+  const ks = L.MEMBER_FILTERS.map((f) => f.key);
+  assert.equal(ks.indexOf("ojtNoTrainer"), ks.indexOf("ojt") + 1, "OJT待ちのすぐ後に置く");
+  const heads = L.MEMBER_CSV_COLUMNS.map(([h]) => h);
+  for (const h of ["担当トレーナー", "担当トレーナーのメール", "担当にした日"]) assert.ok(heads.includes(h), h);
+  const csv = L.memberCsv([by["a@x.jp"], by["b@x.jp"], by["c@x.jp"]]).slice(1).split("\r\n");
+  const col = (line, h) => line.split(",")[heads.indexOf(h)];
+  assert.equal(col(csv[1], "担当トレーナーのメール"), "tr@x.jp"); assert.equal(col(csv[1], "担当にした日"), "2026/11/22");
+  assert.equal(col(csv[2], "担当トレーナー"), "元トレーナー（名簿にいない）");
+  assert.equal(col(csv[3], "担当トレーナー"), "");
+});
 t("memberCsv: 列名は固定・BOM・CRLF・引用・式の無効化", () => {
   const heads = L.MEMBER_CSV_COLUMNS.map(([h]) => h);
   for (const h of ["名前", "メールアドレス", "次にやること", "育成", "独り立ち", "トレーナー", "トレーナーコース"]) assert.ok(heads.includes(h), h);
@@ -540,9 +575,10 @@ t("一覧の読み込み: 案件は伴走支援実施済以降だけ・画面は
   assert.match(js, /where\("status", "in", L\.STATUSES_FROM_DONE_SUPPORT\)/);
   assert.match(js, /where\("performance\.mode", "in", L\.SUPPORT_MODES\)/);
   // 一覧は練習生には出さない（いまと同じ条件）
-  assert.match(js, /if \(myRole\.role === "trainee"\) return;[\s\S]*if \(myRole\.role === "admin" \|\| isTrainer\(me\.email, users, rosterIds\)\)/);
-  // アプリから Chat を送らない
-  assert.doesNotMatch(js, /webhook|chat\.googleapis|httpsCallable|notify/i);
+  assert.match(js, /if \(myRole\.role === "trainee"\) return;[\s\S]*if \(myRole\.role === "admin" \|\| T\.isTrainerId\(me\.email, users, rosterIds\)\)/);
+  // アプリから Chat を送らない。Callable は担当トレーナーの2本だけ（2026-11-22）
+  assert.doesNotMatch(js, /webhook|chat\.googleapis|notify/i);
+  assert.deepEqual([...new Set([...js.matchAll(/[Cc]allable\([^,]+, "([A-Za-z]+)"\)/g)].map((m) => m[1]))].sort(), ["trainerAssign", "trainerMyAssignment"]);
   const html = src("../admin/learning.html");
   for (const id of ["memberFilters", "memberHint", "memberCsvBtn", "trainerBody"]) assert.match(html, new RegExp(`id="${id}"`), id);
 });

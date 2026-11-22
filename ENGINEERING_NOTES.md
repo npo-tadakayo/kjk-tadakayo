@@ -1031,3 +1031,42 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 | テスト | `scripts/test-data-purge-emu.mjs`（39・エミュレータ・`test-all.sh` の2段目）。対象の削除・期限内/猶予中・署名済み6種類（web・紙・order・pending のまま signed 付き・状態なし）が残る・dryRun は消さない・2回目は何もしない・署名済み900件が先頭を占めても署名のない5件に届く・1コレクションの失敗の切り分け・**検索のあとに署名されても残る（読み直しを外すとテストが落ちることを確認済み）**・1日の上限（capped）と翌日の続き・スイッチ（true だけが有効・"true"／1／文書なし／例外は無効） |
 | 本番の現状（2026-11-19 の数え） | 消す予定: `leadTokens` 36件（期限＋7日を過ぎたもの）。`_notifyLog`・`_rateLimit`・未署名の承諾書は 0件（まだ新しい）。**消すスイッチはオフのまま** |
 | 限界 | 消したデータは戻らない（Firestore のバックアップ設定は別）。`leadTokens` を消すと、期限切れの継続リンクは「見つからない」になる（期限切れと同じ扱い＝新しい見積もりの案内に落ちる）。事業所の統合（`mergeOffice`）とその取り消しは、`leadTokens` が消えていても付け替えの対象が減るだけで続く。ただし、統合・取り消しの最中（読んでから書くまでの間）に掃除が同じトークンを消すと、その実行は途中で失敗する（もう一度実行すれば続きから完了する・データの不整合は残らない）。掃除は 03:30 で、統合・取り消しは職員が日中にやるのでまず起きない。戻す記録が `leadTokens` だけで全部消えている取り消しは、「すべて別の事業所へ動いています」という事実と違う文で断られる（軽微・未対応） |
+
+## §C21 育成コースの担当トレーナー（2026-11-22・ブランチ `feat/learning-trainer-assign`）
+
+**発端**: 蜂須賀さん（PM スペース・11/22）「受講する側は OJT に声がかかると思って待っている／譲り合って担当が未決定になる」→ 次田さん了承。
+
+**置き場**: `appConfig/trainerProgram/assignments/{受講者のメール}`
+`{ userId, userName, trainerId, trainerName, assignedAt, assignedById, assignedByName, note, history:[{type, trainerId, trainerName, fromTrainerId, byId, byName, at, note}], updatedAt }`
+- **firestore.rules は変えていない**。2段目より下は catch-all で「登録スタッフは読める・誰も書けない」（§C13 の talks・certs・course と同じ）。書き込みは Callable（Admin SDK）だけ
+- **learningProgress には混ぜない**: 本人が書ける文書で、rules は本人の書き込みを項目で絞っていない（`guardPatch` は画面側の約束）。担当を本人が書き換えられてしまうため
+- 文書は消さない。外すと `trainerId` を空にし、`history` に1件足す（直近20件）
+
+**Callable**（`functions/trainer.js`・判定は `trainer-rules.js` の `buildAssign`・単体テスト `test-trainer-rules.mjs`・エミュレーター `test-trainer-emu.mjs` の「担当トレーナー」節）
+| 関数 | 誰が | 何を |
+|---|---|---|
+| `trainerAssign` action `take` | トレーナー名簿の人 | 自分を担当にする。担当なし、または担当が名簿から外れた・動けない人のときだけ |
+| `trainerAssign` action `assign` | 管理者＝誰にでも名簿のトレーナーを／トレーナー＝担当なしなら自分だけ、自分が担当ならほかのトレーナーへ付け替え | 割り当て・付け替え |
+| `trainerAssign` action `release` | 管理者か、いまの担当本人 | 外す |
+| `trainerMyAssignment` | 本人（**練習生も**） | 自分の担当の名前と日付だけを返す。名簿から外れた担当は null（＝調整中） |
+
+- 担当にできるのは名簿にいて有効なスタッフ・管理者。受講者は有効なスタッフ・練習生・管理者（ロール未設定も）。自分自身の担当にはなれない
+- `requireMember` に `allowTrainee` を足した（`trainerMyAssignment` だけが使う。有効な練習生だけ通す）。練習生は rules で appConfig を読めないため、本人の画面は Callable で読む
+- Chat の通知は作らない。連絡は次田さんの名前で Claude が DM する運用（一覧の CSV に「担当トレーナー」「担当トレーナーのメール」「担当にした日」を出す）
+
+**画面**（`admin/learning.html`・`admin/js/learning.js`・行と絞り込みは `learning-core.js` の `memberRows`・`MEMBER_FILTERS`・`hasTrainer`）
+- 一覧に「担当トレーナー」の列（独り立ちの右）。独り立ち前の人の行に操作: トレーナーは「引き受ける」、管理者は「割り当てる／付け替える（トレーナーを選ぶ）」「外す」、いまの担当トレーナーは「付け替える」「外す」。確認ダイアログあり。最後はサーバーが判定する
+- 絞り込み「OJT待ち・担当なし」（OJT待ちのすぐ後）: 育成完了・独り立ちまだ・担当なし（名簿から外れた担当も「なし」と数える）
+- 本人の画面: 「次にやること」の下に、OJTに入れる段階で「担当トレーナー：〇〇 さん」／未定なら「担当トレーナーを調整中です。決まったらお知らせします。」。STEP7 の案内文も同じ
+- **練習モード**: 一覧も本人の画面も本番の記録を出しているので、`trainerMyAssignment` は練習中も本物を呼ぶ（読むだけ。`settings.js` の `resetPractice` と同じ例外として `test-practice-mode.mjs` に明記）。`trainerAssign` は fn.js 経由で、練習中は代役（`practice-stubs-trainer.js`）が断る。画面も練習中は操作を出さない
+
+**独立レビュー（2026-11-22・別エージェント）**: 高・中なし。低6件のうち5件を直した
+- 低1 割り当てに失敗したとき（先にほかの人が引き受けていた等）、その方の割り当てを読み直して行を描き直す
+- 低2 操作で行が絞り込みから外れたら、フォーカスを一覧の見出しへ
+- 低3 本人の画面で担当を読み終えたとき、STEP7 の中の担当の1文だけを書き換える（段の全体を描き直さない）
+- 低4 独り立ち済（supportBadges あり）の人には、サーバーでも新しく付けない（外すことはできる）
+- 低6 一覧を出すかどうかの判定を `T.isTrainerId`（大文字小文字を区別しない）にそろえた
+- 低5（直していない・運用で）: 割り当ての文書（メモ・履歴）は登録スタッフ全員が読める（talks・course と同じ扱い）。**メモに受講者の個人的な事情を書かない**。画面にはメモの入力欄を出していない（Callable の引数だけ）
+- 画面の確認（ローカルのエミュレーター・架空データ）: トレーナーの「引き受ける」→ 担当の名前・付け替える／外す が出て「担当なし」6→5／練習生本人の画面に「担当トレーナー：〇〇 さん」・未定の人は「調整中」／管理者の「割り当てる」「外す」／先にほかの人が引き受けていた場合のエラーと描き直し／スマホ幅で横にはみ出さない。練習モード中は操作を出さず、一覧の上に案内を1行出す
+
+**デプロイ**: Functions `trainerAssign`・`trainerMyAssignment`（名指し）→ Hosting admin（`learning.html`・`js/learning.js`・`js/learning-core.js`・`js/trainer-rules.js`・`js/practice-stubs-trainer.js`）。rules は出さない

@@ -7,6 +7,9 @@
 //   trainerCertify      … トレーナー合格。通常＝トレーナーか管理者（条件を満たす人だけ）／特別裁量＝管理者だけ・理由必須。自分は不可
 //   trainerRevoke       … 合格の取り消し。管理者だけ・理由必須。名簿から外し、記録は消さず「取り消し」を足す
 //                         利用者一覧から消えた（削除）・無効・ロール変更の人も、名簿にいれば取り消せる（2026-11-13 #74 L9）
+//   trainerAssign       … 担当トレーナーの割り当て（action:"assign"・"take"・"release"）。管理者とトレーナー（2026-11-22）
+//                         置き場 appConfig/trainerProgram/assignments/{受講者のメール}（文書は消さず、外すと trainerId を空にする）
+//   trainerMyAssignment … 自分の担当トレーナーを読むだけ。練習生も呼べる（練習生は appConfig を読めないため）
 //
 // 置き場（firestore.rules は変えない）:
 //   appConfig/trainerCriteria・appConfig/supportTrainers（名簿）・appConfig/trainerProgram/{talks|certs|course}/{id}
@@ -37,10 +40,12 @@ const ref = {
   talks: () => fdb().collection("appConfig").doc("trainerProgram").collection("talks"),
   certs: () => fdb().collection("appConfig").doc("trainerProgram").collection("certs"),
   course: (email) => fdb().collection("appConfig").doc("trainerProgram").collection("course").doc(email),
+  assignment: (email) => fdb().collection("appConfig").doc("trainerProgram").collection("assignments").doc(email),
 };
 
 // ===== 認可（index.js の requireStaff と同じ考え方。練習生・倉庫・未登録・無効は通さない） =====
-async function requireMember(request, allow = "editor") {
+// allowTrainee: 練習生も通す（自分の記録を読むだけの Callable に限る。trainerMyAssignment）
+async function requireMember(request, allow = "editor", { allowTrainee = false } = {}) {
   const email = String(request.auth?.token?.email || "").trim();
   if (!email || !email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
   let snap;
@@ -52,6 +57,7 @@ async function requireMember(request, allow = "editor") {
     throw new HttpsError("internal", "権限の確認に失敗しました");
   }
   const user = snap.exists ? snap.data() : null;
+  if (user && user.role === "trainee" && allowTrainee && user.active === true) return { email: snap.id, user, name: user.name || email };
   if (user && user.role === "trainee") {
     throw new HttpsError("permission-denied", "練習生のアカウントでは本番の操作はできません（練習モードで操作してください）");
   }
@@ -223,4 +229,50 @@ exports.trainerRevoke = onCall(OPTS, async (request) => {
   });
   console.log("trainerRevoke", me.email, "→", out.userId, target && target.missing ? "(利用者一覧にいない人)" : "");
   return { ok: true, id: cref.id };
+});
+
+// ===== 担当トレーナー（2026-11-22・蜂須賀さんの要望・次田さん了承） =====
+// 入力 { action:"assign"|"take"|"release", userId（受講者のメール）, trainerId?（assign のとき）, note? } → { ok, assignment }
+// 権限の判定は trainer-rules の buildAssign（管理者は誰にでも／トレーナーは自分を担当に・自分が担当なら付け替えと外す）。
+// Chat への通知はしない（連絡は次田さんの名前で Claude が DM する運用。一覧の CSV に担当のメールを出す）。
+exports.trainerAssign = onCall(OPTS, async (request) => {
+  const me = await requireMember(request, "editor");
+  const tr = await loadRules();
+  const data = request.data || {};
+  const users = await loadUsers();
+  const learner = targetOf(users, data.userId);
+  const trainer = targetOf(users, data.trainerId);
+  // 独り立ち済か（supportBadges。メールの大文字小文字の違いも拾う）
+  const learnerHasBadge = !!learner && !(await fdb().collection("supportBadges")
+    .where("userId", "in", [...new Set([learner.id, learner.id.toLowerCase()])]).limit(1).get()).empty;
+  const now = Date.now();
+  const out = await fdb().runTransaction(async (tx) => {
+    const rosterIds = await loadRosterIds(tx);
+    const aref = learner ? ref.assignment(learner.id) : null;
+    const cur = aref ? await tx.get(aref) : null;
+    const current = cur && cur.exists ? cur.data() : null;
+    const actor = actorOf(me, users, rosterIds, tr);
+    const r = tr.buildAssign(data, {
+      actor, learner, trainer, now, current, learnerHasBadge,
+      trainerInRoster: !!trainer && tr.isTrainerId(trainer.id, users, rosterIds),
+      currentStale: tr.assignmentStale(tr.assignmentOf(current), users, rosterIds),
+    });
+    if (r.error) fail(r);
+    tx.set(ref.assignment(learner.id), { ...r.doc, updatedAt: FieldValue.serverTimestamp() });
+    return r.doc;
+  });
+  console.log("trainerAssign", data.action, me.email, "→", out.userId, out.trainerId || "(担当なし)");
+  return { ok: true, assignment: tr.assignmentOf(out) };
+});
+
+// 入力なし → { ok, assignment }（自分の担当。いなければ null。名簿から外れた・動けない担当も null＝調整中に見せる）
+exports.trainerMyAssignment = onCall(OPTS, async (request) => {
+  const me = await requireMember(request, "viewer", { allowTrainee: true });
+  const tr = await loadRules();
+  const s = await ref.assignment(me.email).get();
+  const a = tr.assignmentOf(s.exists ? s.data() : null);
+  if (!a) return { ok: true, assignment: null };
+  const [users, rosterIds] = await Promise.all([loadUsers(), loadRosterIds()]);
+  if (tr.assignmentStale(a, users, rosterIds)) return { ok: true, assignment: null };
+  return { ok: true, assignment: { trainerName: a.trainerName, at: a.at } }; // 本人に返すのは名前と日付だけ
 });

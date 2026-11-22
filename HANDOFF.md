@@ -3,6 +3,16 @@
 > 📁 **2026-09-13 に、9/11 までの完了済みの作業記録を `HANDOFF_ARCHIVE.md` へ移した**（承諾書・㉔セッション・メール送信元・Formspree・見積もり改修の一次/二次・申込モーダルの不具合）。
 > 経緯を追うときはそちらを見る。
 
+## 📝 2026-11-22 育成コースの担当トレーナー（PR #110・本番反映済み・ブランチ `feat/learning-trainer-assign`）
+
+- 発端: 蜂須賀さん（PM・11/22）「OJT に声がかかると思って待っている／譲り合って担当が未決定になる」→ 次田さん了承
+- `/learning` の一覧に「担当トレーナー」の列・操作（トレーナー＝引き受ける／管理者＝割り当てる・付け替える・外す／いまの担当＝付け替える・外す）・絞り込み「OJT待ち・担当なし」・CSV の列（担当トレーナー・メール・担当にした日）。本人の画面に「担当トレーナー：〇〇 さん」（未定なら調整中）
+- 置き場 `appConfig/trainerProgram/assignments/{メール}`・Callable `trainerAssign`・`trainerMyAssignment`（rules 変更なし）。詳細と独立レビューの対応は ENGINEERING_NOTES §C21
+- Chat の通知は作っていない。決まった担当を受講者に知らせるのは、CSV を元に次田さんの名前で DM する運用
+- **本番反映（11/22 20:34 JST）**: Functions `trainerAssign`・`trainerMyAssignment` を名指しで新規作成（既存の関数は不変・ログインなしは 403）→ プレビュー `assign-1122` から admin へ昇格（版 `ca29ffb232e47e85`）。本番の5ファイル（learning.html・learning.js・learning-core.js・trainer-rules.js・practice-stubs-trainer.js）が手元とハッシュ一致・ヘッダー全項目合格・承認済みドメインの4件そろい。戻すなら `firebase hosting:rollback` と関数2本の削除
+- **未確認**: 本番データでのログイン後の画面（次田さんの判断でプレビューの確認は省略して昇格）。画面の動きは手元のエミュレーター（架空データ）で確認済み。OJT待ち6人が「OJT待ち・担当なし」に並ぶか、名簿8人が選択肢に出るかは、次に本番を開いたときに見る
+- プレビューのドメインは承認済みドメインに残っている（11/29 に失効。必要なら `scripts/auth-domains.mjs remove`）
+
 ## 📝 2026-11-22 Chat 通知を「受付通知」「今日の対応」のスペースへ振り分けた（PR #111・本番反映済み）
 
 - 発端: CRM の通知が全部 TM（AAQAsxvbafY）に流れ、直近14日 886件中 545件が機械の投稿で人の相談が埋もれていた
@@ -13,10 +23,10 @@
   - 空欄なら CRM通知の投稿先（TM）へ回す。停止スイッチ false なら投稿しない
 - 本番: Functions 8個（webhookLpInquiry, webhookMitsumori, acceptQuote, staffAcceptQuote, dailyFollowup, onCaseAssigned, onConsentSigned, testChatNotify）→ admin 版 `4d036c982a0b6568` → `appConfig/settings` に Secret `CHAT_WEBHOOK_URL_RECEPTION`・`CHAT_WEBHOOK_URL_TODAY`（kjk-tadakayo）の値を入れて読み戻しで一致
 - 11/22 20:39 に2つのスペースへ試験投稿（Webhook へ直接）→ 読み取りで到着を確認。**関数経由のテスト送信と、設定画面のコントラスト走査は未確認**（ブラウザ画面でログインしていなかった）
-- ⚠️ admin は **#110（育成コースの担当トレーナー・未マージだが本番に出ている）を合わせた版**から出した。#110 より先に #111 を main に入れても、#110 のファイルは本番のまま
+- admin は #110（育成コースの担当トレーナー）を合わせた版から出した（当時 #110 は未マージで本番に出ていた。11/22 夜に #110→#111 の順で main に入った）
 - 🏦 銀行CSV取込完了（送り主「お知らせ」）は CRM の Functions ではない（入金のスプレッドシートの Apps Script と見ている・未確認）。移すならそのスクリプトの Webhook を受付通知のものに差し替える
 - TM への周知を 11/22 夜に次田さんの名前で投稿済み（`chat_write.py`・message `XMmNy8CX3nw`）
-- 次: 11/23 9時の日次フォローアップが今日の対応に出るか確認／PR #111 のマージ
+- 次: 11/23 9時の日次フォローアップが今日の対応に出るか確認
 
 ## 📝 2026-11-22 育成コースの一覧を広げた（PR #109・本番反映済み・読むだけ）
 

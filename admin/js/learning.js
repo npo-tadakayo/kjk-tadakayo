@@ -8,6 +8,8 @@
 //     （練習DBは毎晩3時・ログアウトで消えるため）。練習課題の判定だけ練習DB（getFirestore）を読む
 //   - 練習生は本番の supportBadges・users・appConfig を読めない。読めなければ黙って表示を省く
 //   - 判定・採点・更新値の組み立ては learning-core.js（scripts/test-learning-core.mjs）
+//   - 担当トレーナー（2026-11-22）: 一覧で割り当てる／引き受ける／外す（Callable trainerAssign・判定は trainer-rules.js の buildAssign）。
+//     本人の画面には、OJTに入れる段階で担当の名前（未定なら「調整中」）を出す（Callable trainerMyAssignment。練習生は appConfig を読めないため）
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, getProdFirestore, isPracticeMode, doc, getDoc, getDocs, setDoc, runTransaction, collection, query, where, serverTimestamp }
@@ -18,13 +20,18 @@ import { mountVideo } from "/js/video-player.js";
 import { findVideo } from "/js/video-catalog.js";
 import { STEPS, PRACTICE_TASKS, PLEDGE_ITEMS } from "/js/learning-catalog.js";
 import { QUIZZES } from "/js/learning-quiz.js";
-import { ITEMS, isTrainer } from "/js/support-evaluation.js";
+import { ITEMS } from "/js/support-evaluation.js";
 import * as L from "/js/learning-core.js";
+import * as T from "/js/trainer-rules.js";
+import { getFunctions, httpsCallable } from "/js/fn.js";
+// 自分の担当を読むだけの Callable は、練習モード中でも本物を呼ぶ（書き込みが無く、本人の画面は本番の進み具合を出しているため。settings.js と同じ前例）
+import { httpsCallable as realCallable } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);        // 練習モード中は練習DB（練習課題の判定にだけ使う）
 const prod = getProdFirestore(app);  // 進み具合・バッジ・名簿は常に本番DB
+const fns = getFunctions(app, "asia-northeast1");
 
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -40,6 +47,7 @@ const quizState = {};     // { S1: { choices: {問題ID: [{index,text}]}, answer
 let saved = null;        // サーバーに書けたと確かめた進み具合（画面の progress とは分ける。未保存分の送り直しの基準）
 let playSeq = 0;         // 動画の読み込みの通し番号（古い読み込みを捨てるため）
 let playing = null;       // { stepId, videoId, video, last: { maxPos, at } }
+let myTrainer = { loaded: false, a: null }; // 自分の担当トレーナー（trainerMyAssignment。読めなければ loaded のまま false＝何も出さない）
 
 // ---------- 保存（本番DB・変わったところだけ merge） ----------
 async function save(r) {
@@ -74,6 +82,9 @@ function states() { return L.stepStates(progress, { badge }, QUIZZES); }
 function renderTop() {
   const st = states();
   $("nextAction").textContent = L.nextAction(progress, { badge }, QUIZZES);
+  const mt = $("myTrainer");
+  const mtText = !badge && myTrainer.loaded ? T.assignmentText(myTrainer.a, L.isReadyForOjt(progress, QUIZZES)) : "";
+  mt.textContent = mtText; mt.hidden = !mtText;
   $("meter").innerHTML = st.map((s) => `<span class="${s.state}"></span>`).join("");
   const n = L.reachedStep(st);
   const ready = L.isReadyForOjt(progress, QUIZZES);
@@ -188,7 +199,12 @@ function ojtHtml(step) {
   const items = `<ol class="ls-pledge">${ITEMS.map((i) => `<li>${esc(i.label)}${i.n === 4 ? "（◎が必要）" : ""}</li>`).join("")}</ol>`;
   let st;
   if (badge) st = `<p><span class="ls-ok"><i class="ti ti-award" aria-hidden="true"></i> 独り立ち</span>（付与日 ${esc(L.fmtDate(badge.grantedDate) || badge.grantedDate)}・認定したトレーナー ${esc(badge.grantedByName || "")}）</p>`;
-  else if (ready) st = `<div class="ls-warn" style="background:#e8f5ec;border-left-color:#3d7a2a"><strong>OJTに入れます。</strong>トレーナーに連絡して、支援先でのOJTの日程を決めてください。</div>`;
+  else if (ready) {
+    const who = !myTrainer.loaded ? "トレーナーと、支援先でのOJTの日程を決めてください。"
+      : myTrainer.a ? `担当トレーナーは <strong>${esc(myTrainer.a.trainerName)} さん</strong>です。担当トレーナーと、支援先でのOJTの日程を決めてください。`
+        : "担当トレーナーを調整中です。決まったらお知らせします。";
+    st = `<div class="ls-warn" style="background:#e8f5ec;border-left-color:#3d7a2a"><strong>OJTに入れます。</strong><span class="ls-ojt-who">${who}</span></div>`;
+  }
   else st = `<p class="ls-note">STEP1〜5 が済むと「OJTに入れます」になります（評価シートの入力は、STEP1〜5 が済む前でもトレーナーが行えます）。</p>`;
   return `<div class="ls-h4"><i class="ti ti-clipboard-check" aria-hidden="true"></i>評価シートの8つの観点（◎ひとりでできる／○助言があればできる／△要練習／×未実施）</div>${items}
     <p>独り立ち可の基準は「④個人情報・安全が◎、ほかがすべて○以上、OJTで1回でも合格」です。トレーナーが立ち会わないOJT・見学は評価の対象になりません。バッジは、トレーナーのうち1名が付与します（バッジは単独で伴走支援を担当できる資格です）。</p>${st}`;
@@ -412,6 +428,7 @@ document.addEventListener("click", async (e) => {
     return;
   }
   if (t.dataset.who) { toggleDetail(t); return; }
+  if (t.dataset.asg) { await doAssign(t); return; }
 });
 document.addEventListener("change", (e) => {
   const r = e.target;
@@ -467,6 +484,88 @@ function supportCell(r) {
   const parts = [`単独 ${s.solo}`, `見守り付き（トレーニング） ${s.training}`, `見学 ${s.observe}`];
   return `<span class="ls-nums">${parts.map(esc).join("<br>")}</span>${r.assignedDone ? `<small class="ls-sub">担当の案件（伴走支援実施済以降）${r.assignedDone}件</small>` : ""}`;
 }
+// ---------- 担当トレーナー（2026-11-22） ----------
+// 出す操作は trainer-rules.js の buildAssign と同じ権限（最後はサーバーが判定する）。練習モード中は本番の一覧を見ているので操作は出さない
+let users = [], rosterIds = null;
+const meIsAdmin = () => myRole && myRole.role === "admin";
+const meIsTrainer = () => T.isTrainerId(me.email, users, rosterIds);
+function trainerOptions(exclude) {
+  return T.trainerIds(users, rosterIds)
+    .map((id) => users.find((u) => lowMail(u._id) === lowMail(id)))
+    .filter((u) => u && T.isCandidateUser(u) && !exclude.includes(lowMail(u._id)))
+    .map((u) => ({ id: u._id, name: u.name || u._id }));
+}
+function assignControls(r) {
+  if (isPracticeMode() || r.badge || !["", "staff", "admin", "trainee"].includes(r.role) || lowMail(r.email) === lowMail(me.email)) return "";
+  if (r.roleLabel === "（ユーザー管理にいない）") return "";
+  const a = r.assignment, has = L.hasTrainer(r);
+  const isCur = has && lowMail(a.trainerId) === lowMail(me.email);
+  const key = esc(r.email), nm = esc(r.name);
+  const sel = (label) => {
+    const opts = trainerOptions([lowMail(r.email), ...(has ? [lowMail(a.trainerId)] : [])]);
+    if (!opts.length) return "";
+    return `<span class="ls-asg-row"><select data-asg-sel="${key}" aria-label="${nm}さんの担当にするトレーナー"><option value="">トレーナーを選ぶ</option>${opts.map((o) => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join("")}</select>
+      <button type="button" class="btn btn-secondary" data-asg="assign" data-asg-user="${key}" aria-label="${nm}さんに、選んだトレーナーを${label}">${label}</button></span>`;
+  };
+  const release = `<button type="button" class="btn btn-secondary" data-asg="release" data-asg-user="${key}" aria-label="${nm}さんの担当トレーナーを外す">外す</button>`;
+  const take = `<button type="button" class="btn btn-primary" data-asg="take" data-asg-user="${key}" aria-label="${nm}さんの担当を引き受ける"><i class="ti ti-hand-stop" aria-hidden="true"></i>引き受ける</button>`;
+  const parts = [];
+  if (meIsTrainer() && !has) parts.push(take);
+  if (meIsAdmin()) { parts.push(sel(has ? "付け替える" : "割り当てる")); if (a) parts.push(release); }
+  else if (isCur) { parts.push(sel("付け替える")); parts.push(release); }
+  return parts.filter(Boolean).length ? `<div class="ls-asg-ops">${parts.join("")}</div>` : "";
+}
+function assignCell(r) {
+  const a = r.assignment;
+  let h;
+  if (!a) h = r.badge ? '<span class="ls-dash">—</span>' : '<span class="ls-chip no">未定</span>';
+  else {
+    h = `<strong>${esc(a.trainerName)}</strong>${a.stale ? '<small class="ls-sub" style="color:#9b1f1f">名簿にいない（担当なしと同じ）</small>' : ""}`
+      + `<small class="ls-sub">${esc(L.fmtDate(a.at) || "")}${a.byName ? `・${esc(a.byName)}` : ""}</small>${a.note ? `<small class="ls-sub">${esc(a.note)}</small>` : ""}`;
+  }
+  return h + assignControls(r);
+}
+async function doAssign(btn) {
+  const email = btn.dataset.asgUser, action = btn.dataset.asg;
+  const row = rows.find((x) => x.email === email);
+  if (!row) return;
+  const data = { action, userId: email };
+  if (action === "assign") {
+    const sel = [...document.querySelectorAll("[data-asg-sel]")].find((x) => x.dataset.asgSel === email);
+    if (!sel || !sel.value) { toast("担当にするトレーナーを選んでください"); sel?.focus(); return; }
+    data.trainerId = sel.value;
+    const tname = sel.options[sel.selectedIndex].text;
+    if (!confirm(`${row.name}さんの担当トレーナーを ${tname} さんにします。\n（Chat などでの連絡は自動では送られません）`)) return;
+  } else if (action === "take") {
+    if (!confirm(`${row.name}さんの担当トレーナーを引き受けます。\n${row.name}さんの画面に、あなたの名前が担当として出ます。`)) return;
+  } else if (!confirm(`${row.name}さんの担当トレーナー（${row.assignment?.trainerName || ""} さん）を外します。\n${row.name}さんの画面は「担当トレーナーを調整中です」に戻ります。`)) return;
+  btn.disabled = true;
+  try {
+    const res = (await httpsCallable(fns, "trainerAssign")(data)).data;
+    row.assignment = res.assignment ? { ...res.assignment, stale: false } : null;
+    toast(action === "release" ? `${row.name}さんの担当を外しました` : `${row.name}さんの担当トレーナーを ${res.assignment.trainerName} さんにしました`);
+    renderTrainer();
+    focusAfterAssign(email);
+  } catch (e) {
+    console.warn("[learning] trainerAssign", e);
+    alert((e && e.message) || "保存できませんでした。時間をおいてもう一度お試しください。");
+    // 先にほかの人が操作していた場合に備えて、その方の割り当てを読み直す（レビュー低1）
+    try {
+      const d = await getDoc(doc(prod, "appConfig", "trainerProgram", "assignments", email));
+      const a = T.assignmentOf(d.exists() ? d.data() : null);
+      row.assignment = a ? { ...a, stale: T.assignmentStale(a, users, rosterIds) } : null;
+      renderTrainer();
+      focusAfterAssign(email);
+    } catch (_) { btn.disabled = false; }
+  }
+}
+// 描き直すと押したボタンが消えるので、同じ方の操作へ。絞り込みから外れたら一覧の見出しへ（レビュー低2）
+function focusAfterAssign(email) {
+  const el = document.querySelector(`[data-asg-user="${CSS.escape(email)}"]`) || document.querySelector(`[data-asg-sel="${CSS.escape(email)}"]`);
+  if (el) { el.focus(); return; }
+  const h = $("trainerTitle"); h.setAttribute("tabindex", "-1"); h.focus();
+}
+
 function renderFilters() {
   const box = $("memberFilters");
   box.innerHTML = L.MEMBER_FILTERS.map((f) => {
@@ -483,12 +582,14 @@ function renderTrainer() {
   $("memberCsvBtn").disabled = !list.length;
   if (!rows.length) { body.innerHTML = `<p class="ls-note">まだ対象の方はいません。</p>`; return; }
   if (!list.length) { body.innerHTML = `<p class="ls-note">この絞り込みに当てはまる方はいません。</p>`; return; }
-  body.innerHTML = `<div class="ls-tbl-wrap"><table class="ls-tbl"><thead><tr><th scope="col">名前</th><th scope="col">ロール</th><th scope="col">育成（STEP1〜5）</th><th scope="col">独り立ち</th><th scope="col">トレーナー</th><th scope="col">トレーナーコース</th><th scope="col">伴走支援の実施記録</th><th scope="col">最後に進んだ日</th><th scope="col">次にやること</th><th scope="col"><span class="ls-sr">進み具合</span></th></tr></thead><tbody>
+  const practiceNote = isPracticeMode() ? '<p class="ls-note">いまは練習モードです。担当トレーナーの割り当ては、本番に戻すとできます（一覧は本番の記録です）。</p>' : "";
+  body.innerHTML = `${practiceNote}<div class="ls-tbl-wrap"><table class="ls-tbl"><thead><tr><th scope="col">名前</th><th scope="col">ロール</th><th scope="col">育成（STEP1〜5）</th><th scope="col">独り立ち</th><th scope="col">担当トレーナー</th><th scope="col">トレーナー</th><th scope="col">トレーナーコース</th><th scope="col">伴走支援の実施記録</th><th scope="col">最後に進んだ日</th><th scope="col">次にやること</th><th scope="col"><span class="ls-sr">進み具合</span></th></tr></thead><tbody>
     ${list.map((r, i) => `<tr>
       <td class="who"><strong>${esc(r.name)}</strong><small>${esc(r.email)}</small></td>
       <td data-k="ロール">${esc(r.roleLabel)}</td>
       <td data-k="育成">${trainingCell(r.training)}</td>
       <td data-k="独り立ち">${badgeCell(r.badge)}</td>
+      <td data-k="担当トレーナー" class="ls-asg">${assignCell(r)}</td>
       <td data-k="トレーナー">${r.trainer ? '<span class="ls-chip">○<span class="ls-sr">トレーナー</span></span>' : '<span class="ls-dash">—</span>'}</td>
       <td data-k="トレーナーコース">${courseCell(r.course)}</td>
       <td data-k="伴走支援の実施記録">${supportCell(r)}</td>
@@ -496,7 +597,7 @@ function renderTrainer() {
       <td data-k="次にやること" class="ls-next-cell">${esc(r.next)}</td>
       <td><button type="button" class="btn btn-secondary" data-who="${i}" aria-expanded="false" aria-controls="detail-${i}" aria-label="${esc(r.name)}さんの進み具合を見る"><i class="ti ti-chevron-down" aria-hidden="true"></i>見る</button></td>
     </tr>
-    <tr class="ls-detail" id="detail-${i}" hidden><td colspan="10">${detailHtml(r)}</td></tr>`).join("")}
+    <tr class="ls-detail" id="detail-${i}" hidden><td colspan="11">${detailHtml(r)}</td></tr>`).join("")}
     </tbody></table></div>`;
 }
 function downloadCsv() {
@@ -512,14 +613,15 @@ function downloadCsv() {
   toast(`${list.length}人分を書き出しました（${f.label}）`);
 }
 
-async function loadTrainer(users, grants, rosterIds) {
+async function loadTrainer(grants) {
   const safe = async (label, fn, fallback) => { try { return await fn(); } catch (e) { console.warn(`[learning] ${label}`, e.message); return fallback; } };
   const docsOf = (s) => s.docs.map((d) => ({ _id: d.id, ...d.data() }));
-  const [progs, courses, checks, cases] = await Promise.all([
+  const [progs, courses, checks, cases, asgs] = await Promise.all([
     safe("list", async () => docsOf(await getDocs(collection(prod, "learningProgress"))), []),
     safe("course", async () => docsOf(await getDocs(collection(prod, "appConfig", "trainerProgram", "course"))), []),
     safe("checklists", async () => docsOf(await getDocs(query(collection(prod, "supportChecklists"), where("performance.mode", "in", L.SUPPORT_MODES)))), []),
     safe("cases", async () => docsOf(await getDocs(query(collection(prod, "cases"), where("status", "in", L.STATUSES_FROM_DONE_SUPPORT)))), []),
+    safe("assignments", async () => docsOf(await getDocs(collection(prod, "appConfig", "trainerProgram", "assignments"))), []),
   ]);
   progressOf = new Map(progs.map((p) => [lowMail(p._id), p]));
   badgeOf = L.earliestBadges(grants);
@@ -528,6 +630,7 @@ async function loadTrainer(users, grants, rosterIds) {
     courses: Object.fromEntries(courses.map((c) => [c._id, c])),
     checklists: Object.fromEntries(checks.map((c) => [c._id, c])),
     cases: cases.map((c) => ({ _id: c._id, status: c.status, assignedUserId: c.assignedUserId || "" })),
+    assignments: Object.fromEntries(asgs.map((x) => [x._id, x])),
   }, QUIZZES);
   renderTrainer();
 }
@@ -566,15 +669,25 @@ onAuthStateChanged(auth, async (user) => {
   $("doc").style.display = "block";
   renderTop();
   buildSteps();
+  // 自分の担当トレーナー（独り立ち前の人だけ。読めなければ何も出さない）
+  if (!badge) {
+    realCallable(fns, "trainerMyAssignment")({}).then((r) => {
+      myTrainer = { loaded: true, a: r.data && r.data.assignment ? r.data.assignment : null };
+      renderTop();
+      // OJT の段は担当の1文だけ書き換える（ほかの部分を描き直さない・レビュー低3）
+      const ojt = STEPS.find((x) => x.ojt);
+      const box = ojt && $(`rest-${ojt.id}`)?.querySelector(".ls-ojt-who");
+      if (box) { const tmp = document.createElement("div"); tmp.innerHTML = restHtml(ojt, stepInfoOf(ojt.id)); const n = tmp.querySelector(".ls-ojt-who"); if (n) box.innerHTML = n.innerHTML; }
+    }).catch((e) => console.warn("[learning] trainerMyAssignment", e && e.message));
+  }
 
   // トレーナー（appConfig/supportTrainers・users の氏名）と管理者には一覧を出す
   if (myRole.role === "trainee") return;
-  let users = [], rosterIds = null;
   try { const s = await getDocs(collection(prod, "users")); users = s.docs.map((d) => ({ _id: d.id, ...d.data() })); } catch (_) {}
   try { const d = await getDoc(doc(prod, "appConfig", "supportTrainers")); if (d.exists()) rosterIds = d.data().ids || null; } catch (_) {}
-  if (myRole.role === "admin" || isTrainer(me.email, users, rosterIds)) {
+  if (myRole.role === "admin" || T.isTrainerId(me.email, users, rosterIds)) { // 大文字小文字を区別しない（操作の判定とそろえる）
     $("trainerSec").hidden = false;
-    await loadTrainer(users, grants, rosterIds);
+    await loadTrainer(grants);
   }
 });
 
