@@ -852,11 +852,43 @@
           <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">この場所の在庫に加算します。</p>
           <p id="receiveHint" style="font-size:12px;margin-top:4px;display:none"></p>
         </div>
+        <div class="form-group">
+          <label class="form-label" for="receiveArrivedDate">実際に届いた日 <span style="color:red">*</span></label>
+          <input class="form-control" type="date" id="receiveArrivedDate">
+          <p style="font-size:12px;color:var(--color-ink-muted);margin-top:4px">荷物が届いた日です（入荷登録をする今日とは限りません）。経理への期末報告の在庫・仕入はこの日で数えます。</p>
+        </div>
         <div class="field-error" id="receiveErr" role="alert"></div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" id="cancelReceiveBtn" type="button">キャンセル</button>
         <button class="btn btn-primary" id="doReceiveBtn" type="button"><i class="ti ti-check" aria-hidden="true"></i>入荷を登録</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 発注の到着日の修正（管理者だけ・在庫と状態は変えない・2026-11-24） -->
+  <div class="modal-overlay" id="arrivalModal" role="dialog" aria-modal="true" aria-labelledby="arrivalTitle">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header"><h2 id="arrivalTitle">到着日の修正</h2>
+        <button class="btn btn-secondary" id="arrCloseBtn" type="button" aria-label="閉じる"><i class="ti ti-x" aria-hidden="true"></i></button></div>
+      <div class="modal-body">
+        <p style="font-size:12px;color:var(--color-ink-muted);margin:0 0 12px;line-height:1.7">ここで直すのは到着の記録だけです。在庫の台数・発注の状態（発注済・入荷済）は変わりません。</p>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="arrDate">実際に届いた日</label><input class="form-control" type="date" id="arrDate"></div>
+          <div class="form-group"><label class="form-label" for="arrBasis">区分</label><select class="form-control" id="arrBasis"></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label" for="arrShipDate">先方の出荷日</label><input class="form-control" type="date" id="arrShipDate"></div>
+          <div class="form-group"><label class="form-label" for="arrCarrier">運送会社</label><input class="form-control" type="text" id="arrCarrier" maxlength="40" placeholder="佐川急便"></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="arrTracking">追跡番号</label><input class="form-control" type="text" id="arrTracking" maxlength="40"></div>
+        <div class="form-group"><label class="form-label" for="arrTo">届いた先</label><input class="form-control" type="text" id="arrTo" maxlength="100"></div>
+        <p id="arrMeta" style="font-size:12px;color:var(--color-ink-muted);margin:0;line-height:1.7"></p>
+        <div class="field-error" id="arrErr" role="alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="arrCancelBtn" type="button">キャンセル</button>
+        <button class="btn btn-primary" id="arrSaveBtn" type="button"><i class="ti ti-device-floppy" aria-hidden="true"></i>到着日を保存</button>
       </div>
     </div>
   </div>

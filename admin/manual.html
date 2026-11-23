@@ -717,6 +717,18 @@
           <li>Google Chatの仕様でチャットに<strong>ファイルそのものを添付することはできない</strong>ため、PDF本体はメールに添付し、ChatにはPDFを開くリンクを載せています</li>
         </ul>
 </div>
+<div class="sec" id="s-accounting" data-toc="経理への期末報告（決算の数字・管理者）"><h3>経理への期末報告（決算の数字・管理者だけ） <span class="chip new">11/24 追加</span></h3>
+        <p>決算のときに経理へ渡す数字を、締め日の時点でまとめる画面です。左メニュー「お金と物品」の「<strong>経理報告</strong>」から開きます（管理者だけに出ます）。この画面は記録を読むだけで、何も書き換えません。</p>
+        <div class="step"><span class="n">1</span><div>「<strong>締め日</strong>」を選ぶ（はじめは 2026年10月31日）。期首は自動で「翌日の1年前」（2025年11月1日）になります。必要なら直せます</div></div>
+        <div class="step"><span class="n">2</span><div>「<strong>集計する</strong>」を押す。いちばん上に8つの要約（売上・まだ入金されていないお金・請求していない出荷・在庫・届いていない発注・仕入・仕入先への未払い・返金）が出て、その下に明細が出ます</div></div>
+        <div class="step"><span class="n">3</span><div>「<strong>PDFで保存</strong>」（A4縦）か「<strong>CSVをすべて保存</strong>」（Excelで開けます）で経理に渡します。項目ごとの「CSV」ボタンで1つだけ保存もできます</div></div>
+        <ul>
+          <li>締め日の夜 23:59（日本時間）までの記録で数えます。練習モードの記録・キャンセル・下書きは入りません</li>
+          <li>在庫は「<strong>荷物が実際に届いた日</strong>」で数えます。入荷登録が締め日の後になっても、締め日までに届いていれば在庫に入ります</li>
+          <li>仕入先への支払いはまだ CRM に記録していないため、「仕入先への未払い」は「未確認」と出ます。経理の帳簿で確かめてください</li>
+          <li>発注の一覧（在庫・発注）で、管理者は「<strong>到着日を修正</strong>」から届いた日・区分（実績／推定／配達中）・追跡番号を直せます。在庫の台数や発注の状態は変わりません。「入荷登録」のときも「実際に届いた日」を入れてください</li>
+        </ul>
+</div>
 <div class="sec" id="s-invoice-mail" data-toc="請求書・領収証を事業所へメールで送る"><h3>請求書・領収証を事業所へメールで送る</h3>
         <div class="step"><span class="n">1</span><div>出荷の行から「<strong>請求書</strong>」または「<strong>領収証</strong>」を押して帳票を開く</div></div>
         <div class="step"><span class="n">2</span><div>内容を画面で確かめる（領収証は但し書き・明細をここで直せます）</div></div>

@@ -19,6 +19,8 @@
       ["/partner-admin.html", "ti-certificate", "認定事業者"],
       ["/pricing.html", "ti-coin", "料金・送料"],
       ["/simulator.html", "ti-calculator", "売上シミュレーター"],
+      // 4番目の "adminOnly" は管理者（role admin）にだけ出す（2026-11-24 経理への期末報告）。画面側も gateRole の adminOnly で止める
+      ["/accounting.html", "ti-report-money", "経理報告", "adminOnly"],
     ]},
     { title: "分析", items: [
       ["/analytics.html", "ti-chart-arcs", "アクセス解析"],
@@ -77,7 +79,10 @@
     var wh = currentRole() === "warehouse";
     (wh ? WAREHOUSE_GROUPS : GROUPS).forEach(function (g) {
       html += '<div class="nav-section">' + g.title + '</div>';
-      g.items.forEach(function (it) { html += link(it, path); });
+      g.items.forEach(function (it) {
+        if (it[3] === "adminOnly" && currentRole() !== "admin") return;
+        html += link(it, path);
+      });
     });
     if (!wh) {
       html += '<div class="nav-divider-line"></div>';

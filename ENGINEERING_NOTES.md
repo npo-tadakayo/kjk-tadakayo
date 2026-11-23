@@ -1070,3 +1070,37 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 - 画面の確認（ローカルのエミュレーター・架空データ）: トレーナーの「引き受ける」→ 担当の名前・付け替える／外す が出て「担当なし」6→5／練習生本人の画面に「担当トレーナー：〇〇 さん」・未定の人は「調整中」／管理者の「割り当てる」「外す」／先にほかの人が引き受けていた場合のエラーと描き直し／スマホ幅で横にはみ出さない。練習モード中は操作を出さず、一覧の上に案内を1行出す
 
 **デプロイ**: Functions `trainerAssign`・`trainerMyAssignment`（名指し）→ Hosting admin（`learning.html`・`js/learning.js`・`js/learning-core.js`・`js/trainer-rules.js`・`js/practice-stubs-trainer.js`）。rules は出さない
+
+## §C22 経理への期末報告（決算の数字・2026-11-24・ブランチ `feat/accounting-report`）
+
+締め日の時点の売上・売掛金・未請求出荷・在庫（棚卸）・未着品・仕入・買掛金・返金を、管理者が1画面で出して経理へ渡す（PDF A4 縦・項目ごとの CSV）。**画面は読むだけ**（書き込みなし。テストで addDoc/updateDoc 等が無いことを確かめる）。
+
+- 画面: `admin/accounting.html` ＋ `admin/js/accounting.js`。ナビ「お金と物品 → 経理報告」（`sidebar.js` の4番目の要素 `"adminOnly"`＝管理者にだけ出す）。ゲートは `gateRole(…, { adminOnly: true })`
+- 集計の正本: `admin/js/accounting-rules.js`（純粋 ESM・firebase を import しない）。金額は `invoiceTotals`（invoice-doc.js）、支払期限は `dueDateOf`（supply-rules.js）を通す
+- 読む先: 練習モード中でも **本番**（`getProdFirestore`）の shipments・purchaseOrders・inventoryMovements・locations・products。`_practiceBy` 付きの文書は集計でも除く
+- PDF は `/js/vendor/html2pdf.bundle.min.js`（自前ホスト・CDN を足していない）。CSV は BOM 付き UTF-8、ファイル名 `経理報告_YYYYMMDD_{項目}.csv`
+
+### 定義（締め日 23:59 JST 時点。日付はすべて JST の YYYY-MM-DD。timestamp は +9 時間）
+| # | 項目 | 定義 |
+|---|---|---|
+| 期間 | 期首 | 既定＝締め日の翌日の1年前（2026-10-31 → 2025-11-01） |
+| 1 | 売上 | 状態 invoiced/paid・`invoicedAt` が期首〜締め日。月別・直接（事業所）／直送（認定事業者＝`shipType:'dropship'` か `partnerEmail` あり＝`!priceIsTaxIncluded`）。税込合計・消費税 |
+| 2 | 未収金 | `invoicedAt` ≤ 締め日。請求額（税込−`creditApplied`）−（`payments[].date` ≤ 締め日の合計 − `refunds[].date` ≤ 締め日の合計）> 0。payments が無く `paidAt` ≤ 締め日なら全額入金扱い（旧形式 `paymentAmount` は1件の入金）。入金の日付が空なら `recordedAt` の JST 日付 |
+| 3 | 未請求出荷 | 状態 shipped/invoiced/paid・`shipDate` ≤ 締め日・`invoicedAt` が空か締め日より後。「締め日後に請求済」と「いまも未請求」に分ける。金額は見込み（invoiceTotals） |
+| 4 | 在庫 | `inventoryMovements` を数える日 ≤ 締め日で積み上げ。数える日＝`createdAt`、ただし reason `po_received` は発注（`refNo`）の `arrivedDate` があればその日。`location_assign` は合計を変えない（「保管場所未設定」から場所へ移す）。`transfer_out/in/canceled` の途中の分は「保管場所の間を移動中」の行。金額＝台数×仕入単価（締め日までの最新の発注明細の `unitPrice`。画面の表記は「仕入単価（発注書の単価）」） |
+| 5 | 未着品 | 発注（下書き・キャンセル以外）で `orderDate` ≤ 締め日、到着日（`arrivedDate`→無ければ `receivedAt` の JST 日付）が空か締め日より後。`supplierShipDate` ≤ 締め日＝「先方出荷済み・運送中」、それ以外＝「未出荷」。直送の発注も含む |
+| 6 | 仕入 | 仕入の日（到着日 → 入荷登録の日 → 発注日）が期首〜締め日。品代（Σ unitPrice×qty）と送料 `shippingFee` を別列（どちらも税別） |
+| 7 | 買掛金 | 発注に `supplierPaidDate`・`supplierPaidAmount` が1件も無いあいだは「支払いの記録は未登録」で件数・金額とも null（未確認）。記録が入れば、仕入の日 ≤ 締め日の（品代＋送料）−締め日までの支払い |
+| 8 | 返金・過入金 | `refunds[].date` ≤ 締め日、`creditApplied`（請求日 ≤ 締め日）、締め日時点で残高がマイナスの出荷（過入金） |
+
+### 発注の「実際の到着日」（供給管理の発注一覧）
+- 一覧のステータス欄に「先方出荷 … ／到着 …（実績/推定/配達中）／運送会社 追跡 …」（推定・配達中は橙）
+- 管理者だけ「到着日を修正」: `arrivedDate`・`arrivalBasis`・`supplierShipDate`・`arrivalCarrier`・`arrivalTracking`・`arrivedTo` と `arrivalRecordedAt`(serverTimestamp)・`arrivalRecordedBy` だけを書く。**在庫・status は動かさない**。配達中なら到着日は空、実績/推定なら到着日必須、先方出荷日 ≤ 到着日
+- 「入荷登録」（doReceive）の小窓に「実際に届いた日」（既定は記録済みの到着日→無ければ今日。未来日は不可）。保存時 `arrivedDate`・`arrivalBasis:'実績'`・`arrivalRecordedAt/By`
+- 閲覧のみ（viewer）で止めるボタンに `arrival-order` を追加（supply-rules.js の VIEWER_LOCK_SELECTOR）
+- **Firestore ルールは変えていない**: purchaseOrders は従来どおり登録スタッフ（viewer 以外）が書ける。到着日の修正を管理者だけに絞るのは画面側。サーバー側でも絞るなら案: catch-all の前に `match /purchaseOrders/{id}` を置き、`affectedKeys().hasAny(['arrivedDate','arrivalBasis',…])` の更新は `isAdmin()`、ただし入荷登録（status を received にする更新）は登録スタッフにも許す
+
+### テスト・答え合わせ
+- `scripts/test-accounting-rules.mjs`（21件・test-all.sh に自動で入る）: JST 変換の境界（UTC 14:59/15:00）・10/31 と 11/1・一部入金・締め日後の入金・返金・旧形式・充当・到着日での在庫（記録 11/1・到着 10/30 は入る）・割り当て・移動中・未着品の区分・仕入の日付・買掛金の未確認・CSV・画面の配線
+- `scripts/accounting-snapshot.mjs`: 本番を読むだけ（`scripts/lib/firestore-rest-readonly.mjs`＝GET の一覧だけ）で同じ rules を流す。`zsh -ic 'gcp run tadakayo node scripts/accounting-snapshot.mjs [--cutoff …] [--json] [--csv dir]'`
+- 2026-11-24 の答え合わせ（締め日 2026-10-31）: 売上 45件 5,104,779円（消費税 464,063円・8月4件／9月8件／10月33件）・未収金 15件 929,000円・未請求 22件 1,378,500円（後で請求済 16件／いまも未請求 6件）は手計算と一致。**在庫は 175台**（記録日だけなら 75台＋PO-2026-0051 の 100台を到着日 10/30 で）。手計算の 289台は `location_assign`（2026-09-12・計 214台）を入庫として足していたため。保管場所未設定は −2台（記録のずれ）。参考: 動きの記録の合計と products.stock の合計は今日時点で 5台ずれる（2026-08-31 の manual_adjust −5 など）。PO-2026-0049（50台・沖縄・8/19 着）には po_received の記録が無く、9/12 の割り当て 47台がその代わりになっている可能性がある（要確認）
