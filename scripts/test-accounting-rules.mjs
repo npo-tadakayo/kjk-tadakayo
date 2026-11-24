@@ -18,6 +18,12 @@ import {
   openOrdersOf, purchasesOf, payablesOf, refundsOf, unitCostsOf, buildReport, toCsv, reportCsvFiles, billsPartner, UNSET_LOCATION, IN_TRANSIT_LOCATION,
 } from "../admin/js/accounting-rules.js";
 import { invoiceTotals } from "../admin/js/invoice-doc.js";
+import { accountingPdfHtml, ACCOUNTING_PDF_OPTIONS, PDF_TABLES } from "../admin/js/accounting-pdf.js";
+import { zipStore, crc32 } from "../admin/js/zip-store.js";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 let n = 0;
 const t = (name, fn) => { try { fn(); n++; } catch (e) { console.error(`NG: ${name}`); throw e; } };
@@ -286,6 +292,47 @@ t("⑨ CSV: BOM・引用符・改行・ファイル名に締め日", () => {
   for (const f of files) { assert.ok(f.filename.startsWith("経理報告_20261031_")); assert.ok(f.csv.startsWith("﻿")); }
   assert.equal(rep.summary.length, 8);
   assert.equal(rep.summary[6].amount, null); // 買掛金は未確認
+});
+
+t("⑪ PDF: すべての表が列幅固定（合計 100%）で A4 縦の本文幅（186mm）に収まる作り", () => {
+  for (const [k, cols] of Object.entries(PDF_TABLES)) assert.equal(cols.reduce((a, c) => a + c[1], 0), 100, `${k} の列幅の合計`);
+  const rep = buildReport({ shipments: [ship({ company: "とても長い名前".repeat(20) })], purchaseOrders: [PO51], movements: [], locations: LOCS }, { cutoff: "2026-10-31" });
+  const html = accountingPdfHtml(rep, "2026-11-24 12:00");
+  assert.match(html, /^<div style="box-sizing:border-box;width:186mm;/);
+  const tables = html.match(/<table /g).length;
+  assert.equal((html.match(/table-layout:fixed/g) || []).length, tables);
+  assert.equal((html.match(/<colgroup>/g) || []).length, tables);
+  assert.ok(html.includes("1. 売上の明細") && html.includes("うち消費税"));
+  const opt = ACCOUNTING_PDF_OPTIONS("2026-10-31");
+  assert.deepEqual(opt.jsPDF, { unit: "mm", format: "a4", orientation: "portrait" });
+  assert.equal(210 - opt.margin[1] - opt.margin[3] >= 186, true);
+  assert.equal(opt.filename, "経理報告_20261031.pdf");
+});
+t("⑫ CSV一式の ZIP: 7本が日本語のファイル名のまま入り、壊れておらず中身が一致する", () => {
+  const rep = buildReport({ shipments: [ship({})], purchaseOrders: [PO51], movements: [], locations: LOCS }, { cutoff: "2026-10-31" });
+  const files = reportCsvFiles(rep);
+  const zip = zipStore(files.map((f) => ({ name: f.filename, data: f.csv })), new Date(2026, 10, 24, 12, 0, 0));
+  assert.equal(crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+  const dir = mkdtempSync(join(tmpdir(), "acct-zip-"));
+  try {
+    const zp = join(dir, "a.zip");
+    writeFileSync(zp, zip);
+    const test = execFileSync("unzip", ["-t", zp], { encoding: "utf8" });
+    assert.match(test, /No errors detected/);
+    // 名前と中身は Python の zipfile で読む（UTF-8 の印〔bit 11〕を見る。Windows のエクスプローラー・Mac の Finder と同じ読み方。
+    // macOS 付属の unzip コマンドはこの印を見ないので、日本語名の展開には使わない）
+    const py = "import sys,json,zipfile;z=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None;print(json.dumps({n:z.read(n).decode('utf-8') for n in z.namelist()}))";
+    const got = JSON.parse(execFileSync("python3", ["-c", py, zp], { encoding: "utf8" }));
+    assert.deepEqual(Object.keys(got), files.map((f) => f.filename));
+    for (const f of files) assert.equal(got[f.filename], f.csv);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+t("⑫ 画面: 「CSVをすべて保存」は ZIP 1本・項目ごとの CSV ボタンは1本ずつ", () => {
+  const js = readFileSync(new URL("../admin/js/accounting.js", import.meta.url), "utf8");
+  assert.match(js, /zipStore\(files\.map/);
+  assert.match(js, /CSV一式\.zip/);
+  assert.ok(!/setTimeout\(\(\) => saveFile/.test(js), "連続ダウンロードをしない");
+  assert.match(js, /accountingPdfHtml\(rep/);
 });
 
 // ⑩ 配線

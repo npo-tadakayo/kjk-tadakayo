@@ -6,6 +6,8 @@ import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/fi
 import { getProdFirestore, collection, getDocs, isPracticeMode } from "/js/fs.js";
 import { gateRole } from "/js/role.js";
 import { buildReport, reportCsvFiles, defaultPeriodStart, DEFAULT_CUTOFF, UNSET_LOCATION, IN_TRANSIT_LOCATION } from "/js/accounting-rules.js";
+import { accountingPdfHtml, ACCOUNTING_PDF_OPTIONS } from "/js/accounting-pdf.js";
+import { zipStore } from "/js/zip-store.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -141,85 +143,44 @@ function render() {
 }
 
 // ===== CSV =====
-function saveFile(filename, text, type) {
-  const blob = new Blob([text], { type });
+function saveFile(filename, data, type) {
+  const blob = new Blob([data], { type });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+// 項目ごとの CSV ボタン＝その1本。「CSVをすべて保存」＝7本を1つの ZIP にまとめて1回で保存する
+// （続けて7回ダウンロードすると、ブラウザが2本目以降を止める・2026-11-24 preview で確認）
 function downloadCsv(key) {
   if (!rep) return;
-  const files = reportCsvFiles(rep).filter((f) => !key || f.key === key);
-  files.forEach((f, i) => setTimeout(() => saveFile(f.filename, f.csv, "text/csv;charset=utf-8"), i * 400));
-  toast(`CSV を ${files.length}件 保存しました`);
+  const files = reportCsvFiles(rep);
+  if (key) {
+    const f = files.find((x) => x.key === key);
+    if (f) { saveFile(f.filename, f.csv, "text/csv;charset=utf-8"); toast(`${f.filename} を保存しました`); }
+    return;
+  }
+  const zip = zipStore(files.map((f) => ({ name: f.filename, data: f.csv })));
+  const name = `経理報告_${rep.cutoff.replace(/-/g, "")}_CSV一式.zip`;
+  saveFile(name, zip, "application/zip");
+  toast(`CSV ${files.length}本を ${name} にまとめて保存しました`);
 }
 
 // ===== PDF（A4 縦・要約＋明細）=====
-// 画面の表をそのまま写さず、印刷向けの素の表を画面外に組んでから html2pdf に渡す（invoice-doc.js の offscreenClone と同じ考え方）
-function pdfHtml() {
-  const r = rep;
-  const st = `font-family:'Noto Sans JP','Hiragino Sans',system-ui,sans-serif;color:#2C2416;font-size:9.5px;line-height:1.55;`;
-  const th = "border:1px solid #ccc;background:#F3F0EA;padding:3px 5px;text-align:left;font-weight:600;";
-  const td = "border:1px solid #ddd;padding:3px 5px;vertical-align:top;";
-  const tn = td + "text-align:right;white-space:nowrap;";
-  const tbl = (head, rows) => `<table style="width:100%;border-collapse:collapse;margin:4px 0 10px"><thead><tr>${head.map((h) => `<th style="${th}${h.startsWith("#") ? "text-align:right;" : ""}">${esc(h.replace(/^#/, ""))}</th>`).join("")}</tr></thead><tbody>${
-    rows.map((cells) => `<tr style="page-break-inside:avoid">${cells.map((c, i) => `<td style="${head[i] && head[i].startsWith("#") ? tn : td}">${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
-  const h2 = (t) => `<h2 style="font-size:12.5px;margin:14px 0 4px;padding-left:6px;border-left:3px solid #E33535;page-break-after:avoid">${esc(t)}</h2>`;
-  const none = (m) => `<p style="color:#6a5e48;margin:2px 0 8px">${esc(m)}</p>`;
-  let h = `<div style="${st}">`;
-  h += `<div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #E33535;padding-bottom:6px;margin-bottom:8px">
-    <div><div style="font-size:17px;font-weight:700">経理への期末報告</div><div>期首 ${esc(r.start)} 〜 締め日 ${esc(r.cutoff)}（締め日 23:59 JST 時点）</div></div>
-    <div style="text-align:right;color:#6a5e48">NPO法人タダカヨ 介護情報基盤 伴走支援<br>作成 ${esc(new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace("T", " "))} JST</div></div>`;
-  h += h2("要約") + tbl(["", "項目", "#件数・台数", "#金額", "メモ"], r.summary.map((s) => [s.no, esc(s.title),
-    s.count == null ? "未確認" : `${s.count.toLocaleString("ja-JP")}${s.unit || "件"}`, yen(s.amount), esc(s.note)]));
-  h += `<p style="color:#6a5e48;margin:0 0 6px">金額は請求書と同じ計算（税込）。仕入・未着品は発注書の金額（税別）。練習モードのデータ・キャンセル・下書きは含みません。</p>`;
-  const S = r.sales;
-  h += h2("1. 売上（期中・月別）") + tbl(["月", "#件数", "#税込合計", "#うち消費税", "#直接（事業所）", "#直送（認定事業者）"],
-    [...S.byMonth, { month: "合計", ...S }].map((m) => [esc(m.month), m.count, yen(m.total), yen(m.tax), `${m.direct.count}件 ${yen(m.direct.total)}`, `${m.partner.count}件 ${yen(m.partner.total)}`]));
-  h += h2("1. 売上の明細") + (S.count ? tbl(["請求日", "出荷番号", "請求先", "種類", "#税込", "#うち消費税"],
-    S.rows.map((x) => [esc(x.invoicedAt), esc(x.soNumber), esc(x.billTo), esc(x.kind), yen(x.total), yen(x.tax)])) : none("ありません"));
-  const R = r.receivables;
-  h += h2(`2. 未収金（売掛金） ${R.count}件 ${yen(R.total)}`) + (R.count ? tbl(["出荷番号", "請求日", "請求先", "#請求額", "#締め日までの入金", "#残高", "支払期限", "実際の入金日"],
-    R.rows.map((x) => [esc(x.soNumber), esc(x.invoicedAt), esc(x.billTo), yen(x.billed), yen(x.paid), yen(x.balance), esc(x.dueDate), esc(x.paidDate || "—")])) : none("ありません"));
-  const U = r.unbilled;
-  h += h2(`3. 請求していない出荷 ${U.count}件 ${yen(U.total)}（締め日後に請求済 ${U.later.count}件／いまも未請求 ${U.still.count}件）`) + (U.count ? tbl(["出荷番号", "出荷日", "請求先", "#見込み金額", "区分", "請求日"],
-    U.rows.map((x) => [esc(x.soNumber), esc(x.shipDate), esc(x.billTo), yen(x.total), x.later ? "締め日後に請求済" : "いまも未請求", esc(x.invoicedAt || "—")])) : none("ありません"));
-  const I = r.inventory;
-  h += h2(`4. 在庫（棚卸） ${qty(I.total)} ${yen(I.amount)}`) + (I.rows.length ? tbl(["保管場所", "品目", "#台数", "#仕入単価（発注書の単価）", "#金額"],
-    I.rows.map((x) => [esc(x.location), esc(x.name), qty(x.qty), x.unitCost == null ? "—" : yen(x.unitCost), x.amount == null ? "—" : yen(x.amount)])) : none("ありません"))
-    + `<p style="color:#6a5e48;margin:0 0 6px">発注の入荷は実際に届いた日で数えています（${I.adjusted}件）。${I.unset ? `${UNSET_LOCATION} ${I.unset}台${I.unset < 0 ? "（記録のずれ）" : ""}。` : ""}</p>`;
-  const O = r.openOrders;
-  h += h2(`5. 届いていない発注（未着品） ${O.count}件 ${qty(O.qty)} ${yen(O.amount)}`) + (O.count ? tbl(["発注番号", "発注日", "区分", "先方出荷日", "到着日", "届け先", "#台数", "#金額（税別）"],
-    O.rows.map((x) => [esc(x.poNumber), esc(x.orderDate), esc(x.state), esc(x.supplierShipDate || "—"), esc(`${x.arrivedDate || "—"}${x.arrivalBasis ? `（${x.arrivalBasis}）` : ""}`), esc(x.arrivedTo), qty(x.qty), yen(x.amount)])) : none("ありません"));
-  const P = r.purchases;
-  h += h2(`6. 仕入（期中） ${P.count}件 品代 ${yen(P.goods)}・送料 ${yen(P.shippingFee)}（税別）`) + (P.count ? tbl(["発注番号", "発注日", "仕入の日", "日付の根拠", "#台数", "#品代", "#送料"],
-    P.rows.map((x) => [esc(x.poNumber), esc(x.orderDate), esc(x.date), esc(x.dateBasis), qty(x.qty), yen(x.goods), yen(x.shippingFee)])) : none("ありません"));
-  const Y = r.payables;
-  h += h2("7. 仕入先への未払い（買掛金）") + (Y.recorded ? (Y.count ? tbl(["発注番号", "仕入の日", "#金額", "#支払い", "#未払い"],
-    Y.rows.map((x) => [esc(x.poNumber), esc(x.date), yen(x.owed), yen(x.paid), yen(x.balance)])) : none("ありません")) : none("支払いの記録は未登録です（未払いの一覧・金額は未確認）。"));
-  const F = r.refunds;
-  const frows = [...F.refunds.map((x) => ["返金", x]), ...F.credits.map((x) => ["過入金の充当", x]), ...F.overpaid.map((x) => ["締め日時点の過入金", x])];
-  h += h2("8. 返金・過入金") + (frows.length ? tbl(["種類", "日付", "出荷番号", "請求先", "#金額"], frows.map(([k, x]) => [k, esc(x.date), esc(x.soNumber), esc(x.billTo), yen(x.amount)])) : none("ありません"));
-  return h + "</div>";
-}
+// 中身は accounting-pdf.js（表は列幅を固定して A4 縦の幅に収める）。画面外に組んでから html2pdf に渡す
 async function savePdf() {
   if (!rep) return;
   if (typeof window.html2pdf !== "function") { alert("PDFの部品を読み込めませんでした。画面を読み込み直してください"); return; }
   const btn = $("pdfBtn"); btn.disabled = true;
   const holder = document.createElement("div");
-  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:190mm;background:#fff";
-  holder.innerHTML = pdfHtml();
+  holder.style.cssText = "position:fixed;left:-10000px;top:0;width:186mm;background:#fff";
+  holder.innerHTML = accountingPdfHtml(rep, new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 16).replace("T", " "));
   document.body.appendChild(holder);
   const sx = window.scrollX, sy = window.scrollY;
   window.scrollTo(0, 0); // 画面を下へスクロールしたままだと白紙になる（invoice-doc.js の buildOnePagePdf と同じ手当て）
   try {
-    await window.html2pdf().set({
-      margin: [10, 10, 12, 10], filename: `経理報告_${rep.cutoff.replace(/-/g, "")}.pdf`,
-      image: { type: "jpeg", quality: 0.95 }, html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" }, pagebreak: { mode: ["css", "legacy"], avoid: "tr" },
-    }).from(holder.firstElementChild).save();
+    await window.html2pdf().set(ACCOUNTING_PDF_OPTIONS(rep.cutoff)).from(holder.firstElementChild).save();
     toast("PDF を保存しました");
   } catch (e) { alert(`PDF を作れませんでした: ${e.message}`); }
   finally { window.scrollTo(sx, sy); holder.remove(); btn.disabled = false; }
