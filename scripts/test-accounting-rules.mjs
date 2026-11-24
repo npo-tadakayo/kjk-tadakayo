@@ -153,12 +153,15 @@ t("⑤ 在庫: 割り当て（location_assign）は合計を変えない・未�
   assert.equal(after.total, 190); assert.equal(after.transit, 0);
   assert.equal(Object.fromEntries(after.rows.map((x) => [x.location, x.qty]))["沖縄"], 30);
 });
-t("⑤ 在庫: 仕入単価は締め日までのいちばん新しい発注の単価・単価が無い品目は金額なし", () => {
-  const pos = [{ poNumber: "PO-1", status: "received", orderDate: "2026-05-01", items: [{ sku: "a", qty: 1, unitPrice: 7000 }] },
-    { poNumber: "PO-2", status: "sent", orderDate: "2026-10-01", items: [{ sku: "a", qty: 1, unitPrice: 7050 }] },
+t("⑤ 在庫: 仕入単価は締め日までに届いた発注のうち、いちばん新しく届いた発注の単価・単価が無い品目は金額なし", () => {
+  const pos = [{ poNumber: "PO-1", status: "received", orderDate: "2026-05-01", receivedAt: ts("2026-05-03T01:00:00Z"), items: [{ sku: "a", qty: 1, unitPrice: 7000 }] },
+    { poNumber: "PO-2", status: "received", orderDate: "2026-09-01", arrivedDate: "2026-10-10", items: [{ sku: "a", qty: 1, unitPrice: 7050 }] },
+    { poNumber: "PO-5", status: "sent", orderDate: "2026-10-20", arrivedDate: "2026-11-02", items: [{ sku: "a", qty: 1, unitPrice: 8000 }] }, // 締め日後に着
+    { poNumber: "PO-6", status: "sent", orderDate: "2026-10-25", items: [{ sku: "a", qty: 1, unitPrice: 8500 }] },                         // まだ届いていない
     { poNumber: "PO-3", status: "sent", orderDate: "2026-11-05", items: [{ sku: "a", qty: 1, unitPrice: 9999 }] },
-    { poNumber: "PO-4", status: "draft", orderDate: "2026-10-20", items: [{ sku: "a", qty: 1, unitPrice: 1 }] }];
+    { poNumber: "PO-4", status: "draft", orderDate: "2026-10-20", arrivedDate: "2026-10-21", items: [{ sku: "a", qty: 1, unitPrice: 1 }] }];
   assert.deepEqual(unitCostsOf(pos, "2026-10-31"), { a: 7050 });
+  assert.deepEqual(unitCostsOf(pos, "2026-09-30"), { a: 7000 });
   const r = inventoryAt([mv("manual_in", 3, "2026-10-01T00:00:00Z", { sku: "zzz" })], pos, { cutoff: "2026-10-31", locations: LOCS });
   assert.equal(r.rows[0].amount, null); assert.deepEqual(r.missingCost, ["zzz"]);
 });
@@ -171,7 +174,7 @@ t("⑥ 未着品: 運送中（先方出荷 ≤ 締め日）と未出荷", () => 
   const r = openOrdersOf([
     po({ poNumber: "PO-50", supplierShipDate: "2026-10-29", arrivedDate: "2026-11-02", arrivalBasis: "実績", status: "received" }),
     po({ poNumber: "PO-54", orderDate: "2026-10-30", supplierShipDate: "2026-11-02", arrivedDate: "2026-11-04", items: [{ sku: "c", qty: 1, unitPrice: 3770 }], shippingFee: 900, dropship: true }),
-    po({ poNumber: "PO-51", supplierShipDate: "2026-10-29", arrivedDate: "2026-10-30" }),       // 締め日までに届いた
+    po({ poNumber: "PO-51", supplierShipDate: "2026-10-29", arrivedDate: "2026-10-30", status: "received" }), // 締め日までに届いて入荷登録済み
     po({ poNumber: "PO-99", orderDate: "2026-11-01" }),                                          // 締め日後の発注
     po({ poNumber: "PO-D", status: "draft" }),
     po({ poNumber: "PO-R", arrivedDate: "", receivedAt: ts("2026-10-31T10:00:00Z"), status: "received" }), // 到着日なし・入荷登録 10/31
@@ -206,12 +209,72 @@ t("⑧ 買掛金: 支払いの記録が無ければ未確認・あれば締め�
 t("⑨ 返金・充当・締め日時点の過入金", () => {
   const r = refundsOf([
     ship({ soNumber: "a", status: "paid", payments: [{ amount: 33093, date: "2026-07-31" }], refunds: [{ amount: 93, date: "2026-08-01", method: "振込" }], invoicedAt: "2026-07-30" }),
-    ship({ soNumber: "b", creditApplied: 500, creditFrom: [{ soNumber: "SH-1" }] }),
+    ship({ soNumber: "b", creditApplied: 500, creditFrom: [{ soNumber: "SH-1", amount: 500 }] }),
     ship({ soNumber: "c", status: "paid", payments: [{ amount: 34000, date: "2026-10-28" }], refunds: [{ amount: 1000, date: "2026-11-03" }] }),
   ], P);
   assert.deepEqual(r.refunds.map((x) => [x.soNumber, x.amount, x.inPeriod]), [["a", 93, true]]);
   assert.deepEqual(r.credits.map((x) => [x.soNumber, x.amount, x.from]), [["b", 500, "SH-1"]]);
   assert.deepEqual(r.overpaid.map((x) => [x.soNumber, x.amount]), [["c", 1000]]);
+});
+t("⑨ 充当: 充当元の過入金は、締め日までに他の請求へ回した分（overpayUsed・creditFrom）を除く＝二重に出さない", () => {
+  const src = ship({ _id: "S1", soNumber: "SRC", status: "paid", payments: [{ amount: 40000, date: "2026-10-10" }], invoicedAt: "2026-10-05", overpayUsed: 7000 });
+  const tgt = ship({ _id: "T1", soNumber: "TGT", invoicedAt: "2026-10-20", creditApplied: 7000,
+    creditFrom: [{ shipmentId: "S1", soNumber: "SRC", amount: 7000, date: "2026-10-25" }] });
+  const r = refundsOf([src, tgt], P);
+  assert.deepEqual(r.overpaid, []);                                   // 7,000 の過入金は充当済み
+  assert.deepEqual(r.credits.map((x) => [x.soNumber, x.date, x.amount, x.from]), [["TGT", "2026-10-25", 7000, "SRC"]]);
+  assert.equal(receivablesOf([src, tgt], P).total, 26000);            // 充当先は 33,000 − 7,000
+  // overpayUsed だけ（creditFrom が見つからない古い記録）も充当済みとして扱う
+  assert.deepEqual(refundsOf([src], P).overpaid, []);
+  // 充当していなければ過入金として出る
+  assert.deepEqual(refundsOf([{ ...src, overpayUsed: 0 }], P).overpaid.map((x) => x.amount), [7000]);
+});
+t("⑨ 充当: 締め日後の充当は、締め日時点の未収金からも過入金からも引かない", () => {
+  const src = ship({ _id: "S1", soNumber: "SRC", status: "paid", payments: [{ amount: 40000, date: "2026-10-10" }], invoicedAt: "2026-10-05", overpayUsed: 7000 });
+  const tgt = ship({ _id: "T1", soNumber: "TGT", invoicedAt: "2026-10-20", creditApplied: 7000,
+    creditFrom: [{ shipmentId: "S1", soNumber: "SRC", amount: 7000, date: "2026-11-05" }] });
+  const rc = receivablesOf([src, tgt], P);
+  assert.equal(rc.total, 33000);                                      // 締め日時点ではまだ充当していない
+  const r = refundsOf([src, tgt], P);
+  assert.deepEqual(r.overpaid.map((x) => [x.soNumber, x.amount]), [["SRC", 7000]]);
+  assert.deepEqual(r.credits, []);
+  // 11/5 締めなら充当済み
+  assert.equal(receivablesOf([src, tgt], { cutoff: "2026-11-05" }).total, 26000);
+  assert.deepEqual(refundsOf([src, tgt], { start: "2025-11-06", cutoff: "2026-11-05" }).overpaid, []);
+  // date の無い古い充当は充当先の請求日で数える／内訳の無い creditApplied も請求日で数える
+  assert.equal(settlementAt({ ...tgt, creditFrom: [{ soNumber: "SRC", amount: 7000 }] }, "2026-10-31").credit, 7000);
+  assert.equal(settlementAt({ ...tgt, creditFrom: [] }, "2026-10-19").credit, 0);
+});
+t("⑨ 日付不明: 日付の無い入金・請求日の無い入金済は、黙って未収金・未請求に出さず注記へ", () => {
+  const legacy = ship({ soNumber: "OLD", status: "paid", paymentAmount: 33000, paidAt: "" });
+  const noRec = ship({ soNumber: "NOREC", status: "invoiced", payments: [{ amount: 10000 }] });
+  const rc = receivablesOf([legacy, noRec, ship({ soNumber: "OK" })], P);
+  assert.deepEqual(rc.rows.map((x) => x.soNumber), ["OK"]);
+  assert.deepEqual(rc.undated, ["NOREC", "OLD"]);
+  const ub = unbilledOf([ship({ soNumber: "PAIDNOINV", status: "paid", invoicedAt: "" }), ship({ soNumber: "SH", status: "shipped", invoicedAt: "" })], P);
+  assert.deepEqual(ub.rows.map((x) => x.soNumber), ["SH"]);
+  assert.deepEqual(ub.paidNoInvoice, ["PAIDNOINV"]);
+  const rep = buildReport({ shipments: [legacy, ship({ soNumber: "PAIDNOINV", status: "paid", invoicedAt: "", paidAt: "2026-10-01" })] }, { cutoff: "2026-10-31" });
+  assert.match(rep.summary[1].note, /日付不明で除いた 1件（OLD）/);
+  assert.match(rep.summary[2].note, /請求日が空で除いた 1件（PAIDNOINV）/);
+});
+t("⑥ 未着品: 到着日 ≤ 締め日なのに入荷登録前（保管場所へ納品・status sent）は「届いたが入荷登録前」", () => {
+  const r = openOrdersOf([
+    po({ poNumber: "PO-A", supplierShipDate: "2026-10-28", arrivedDate: "2026-10-30", status: "sent" }),
+    po({ poNumber: "PO-B", supplierShipDate: "2026-10-28", arrivedDate: "2026-10-30", status: "sent", dropship: true }), // 直送は入荷登録が無い
+    po({ poNumber: "PO-C", supplierShipDate: "2026-10-28", arrivedDate: "2026-10-30", status: "received" }),
+  ], P);
+  assert.deepEqual(r.rows.map((x) => [x.poNumber, x.state]), [["PO-A", "届いたが入荷登録前"]]);
+  assert.equal(r.arrivedUnregistered.count, 1); assert.equal(r.inTransit.count, 0);
+  const rep = buildReport({ purchaseOrders: [po({ poNumber: "PO-A", arrivedDate: "2026-10-30", status: "sent" })] }, { cutoff: "2026-10-31" });
+  assert.match(rep.summary[4].note, /届いたが入荷登録前 1件/);
+});
+t("⑨ 要約の8番: 件数と金額の対象をそろえる（返金＋充当＋過入金）", () => {
+  const rep = buildReport({ shipments: [
+    ship({ soNumber: "a", status: "paid", payments: [{ amount: 33093, date: "2026-10-01" }], refunds: [{ amount: 93, date: "2026-10-02" }] }),
+    ship({ soNumber: "c", status: "paid", payments: [{ amount: 34000, date: "2026-10-28" }] }),
+  ] }, { cutoff: "2026-10-31" });
+  assert.equal(rep.summary[7].count, 2); assert.equal(rep.summary[7].amount, 93 + 1000);
 });
 t("⑨ CSV: BOM・引用符・改行・ファイル名に締め日", () => {
   const csv = toCsv([{ a: 'x,"y"', b: 1 }], [["見出しA", (r) => r.a], ["B", (r) => r.b]]);
@@ -253,6 +316,7 @@ t("⑩ supply.js: 到着日の表示・管理者だけの修正（在庫・状�
   assert.match(save, /arrivalRecordedBy/);
   assert.ok(!/stockPatch|inventoryMovements|status\s*:/.test(save), "到着日の修正は在庫・状態を動かさない");
   assert.match(save, /isAdminUser/);
+  assert.match(save, /arrivalBasis==="実績" && arrivedDate > today\(\)/, "到着日の修正でも未来の日付を「実績」にできない");
 });
 
 console.log(`合計: ${n}/${n} 合格（accounting-rules）`);

@@ -77,29 +77,81 @@ function payList(s) {
 // 入金・返金の日付（date が空なら記録した日時 recordedAt の JST 日付）
 const entryDate = (p) => ymdJst(p && p.date) || ymdJst(p && p.recordedAt);
 
+// ===== 過入金の充当（2026-11-24 独立レビュー【重大】）=====
+// supply.js の充当（3767 付近）は、充当元に overpayUsed を積み、充当先に creditApplied と creditFrom[]
+//   （{ shipmentId, soNumber, amount, date, … }）を残す。締め日時点で数えるには充当の日付 creditFrom[].date を見る。
+//   ・充当先: 差し引くのは date ≤ 締め日の分だけ（date が無い古い記録は充当先の請求日で代用）。
+//     creditApplied のうち creditFrom に内訳の無い分（さらに古い記録）は、請求日 ≤ 締め日なら差し引く
+//   ・充当元: 全出荷の creditFrom から、充当元ごと（shipmentId か soNumber）に date ≤ 締め日の合計を出す。
+//     overpayUsed のうち creditFrom で見つからない分（日付の分からない充当）は、充当済みとして差し引く
+const sourceKeys = (c) => [c && c.shipmentId ? `id:${c.shipmentId}` : "", c && c.soNumber ? `so:${c.soNumber}` : ""].filter(Boolean);
+const creditDate = (c, target) => ymdJst(c && c.date) || ymdJst(target && target.invoicedAt);
+/** 全出荷の creditFrom から、充当元ごとの「締め日までの充当額」と「日付を問わない充当額」を作る（鍵は id: と so: の両方に積む） */
+export function creditIndexOf(shipments, cutoff) {
+  const upToCut = {}, all = {};
+  for (const t of shipments) {
+    if (isPracticeDoc(t) || shipStatus(t) === "canceled" || shipStatus(t) === "draft") continue;
+    for (const c of (Array.isArray(t.creditFrom) ? t.creditFrom : [])) {
+      const dated = upTo(creditDate(c, t), cutoff);
+      for (const key of sourceKeys(c)) {
+        all[key] = (all[key] || 0) + num(c.amount);
+        if (dated) upToCut[key] = (upToCut[key] || 0) + num(c.amount);
+      }
+    }
+  }
+  return { cutoff, upToCut, all };
+}
+/** 充当先として、締め日までに差し引かれた額 */
+export function creditAppliedAt(s, cutoff) {
+  const list = Array.isArray(s.creditFrom) ? s.creditFrom : [];
+  let at = 0, listed = 0;
+  for (const c of list) { listed += num(c.amount); if (upTo(creditDate(c, s), cutoff)) at += num(c.amount); }
+  const rest = Math.max(0, num(s.creditApplied) - listed); // 内訳の無い古い充当
+  if (rest > 0 && upTo(ymdJst(s.invoicedAt), cutoff)) at += rest;
+  return at;
+}
+/** 充当元として、締め日までに他の請求へ回した額（idx が無ければ overpayUsed をそのまま使う） */
+export function overpayUsedAt(s, cutoff, idx) {
+  if (!idx) return num(s.overpayUsed);
+  // 同じ充当が id: と so: の両方に積まれているので、出荷 ID で見つかればそれ、無ければ出荷番号を使う
+  const k = [s._id ? `id:${s._id}` : "", s.soNumber ? `so:${s.soNumber}` : ""].find((x) => x && idx.all[x] != null);
+  const dated = k ? (idx.upToCut[k] || 0) : 0;
+  const known = k ? (idx.all[k] || 0) : 0;
+  return dated + Math.max(0, num(s.overpayUsed) - known);
+}
+
 /**
  * 締め日時点の入金・返金・残高。
- *   請求額 billable = 税込合計 − 過入金の充当（creditApplied）
+ *   請求額 billable = 税込合計 − 締め日までに充当された過入金（creditAppliedAt）
  *   入金 paid = payments[].date ≤ 締め日の合計（payments が無く paidAt ≤ 締め日なら全額入金扱い）
  *   返金 refunded = refunds[].date ≤ 締め日の合計
  *   残高 balance = billable − (paid − refunded)（マイナス＝過入金）
+ *   過入金 overpaid = max(0, −balance − 締め日までに他の請求へ回した額)（idx＝creditIndexOf を渡したとき）
+ *   日付不明 undated = 日付（date も recordedAt も）の無い入金の件数。状態が入金済なのに入金の記録も paidAt も無いときも 1
  */
-export function settlementAt(s, cutoff) {
+export function settlementAt(s, cutoff, idx) {
   const t = invoiceTotals(s);
-  const billable = Math.max(0, t.total - num(s.creditApplied));
+  const credit = creditAppliedAt(s, cutoff);
+  const billable = Math.max(0, t.total - credit);
   const list = payList(s);
-  let paid = 0, lastPaid = "";
+  let paid = 0, lastPaid = "", undated = 0;
   if (list.length) {
     for (const p of list) {
       const d = entryDate(p);
+      if (!d) { undated++; continue; }
       if (upTo(d, cutoff)) { paid += num(p.amount); if (d > lastPaid) lastPaid = d; }
     }
-  } else if (upTo(ymdJst(s.paidAt), cutoff)) {
-    paid = billable; lastPaid = ymdJst(s.paidAt);
+  } else if (ymdJst(s.paidAt)) {
+    if (upTo(ymdJst(s.paidAt), cutoff)) { paid = billable; lastPaid = ymdJst(s.paidAt); }
+  } else if (shipStatus(s) === "paid" && billable > 0) {
+    undated = 1;
   }
   let refunded = 0;
   for (const r of (Array.isArray(s.refunds) ? s.refunds : [])) if (upTo(entryDate(r), cutoff)) refunded += num(r.amount);
-  return { total: t.total, tax: t.tax, credit: num(s.creditApplied), billable, paid, refunded, balance: billable - (paid - refunded), lastPaid };
+  const balance = billable - (paid - refunded);
+  const used = overpayUsedAt(s, cutoff, idx);
+  return { total: t.total, tax: t.tax, credit, billable, paid, refunded, balance, lastPaid, undated,
+    used, overpaid: Math.max(0, -balance - used) };
 }
 /** 実際に全額入金された日（いまの記録で。未入金なら ""） */
 function actualPaidDate(s) {
@@ -127,36 +179,40 @@ export function salesOf(shipments, { start, cutoff }) {
 
 // ===== 2. 未収金（売掛金）=====
 export function receivablesOf(shipments, { cutoff }) {
-  const rows = [];
+  const rows = [], undated = [];
   for (const s of shipments) {
     if (isPracticeDoc(s) || !BILLED_STATUSES.includes(shipStatus(s))) continue;
     const inv = ymdJst(s.invoicedAt);
     if (!upTo(inv, cutoff)) continue;
     const st = settlementAt(s, cutoff);
+    // 日付の分からない入金がある出荷は、黙って未収金に入れない（件数と出荷番号を注記に出す）
+    if (st.undated) { undated.push(s.soNumber || s._id || ""); continue; }
     if (st.balance <= 0) continue;
     rows.push({ soNumber: s.soNumber || "", invoicedAt: inv, billTo: billToForReportOf(s), kind: billKindLabel(s),
       billed: st.billable, paid: st.paid - st.refunded, balance: st.balance, dueDate: dueDateOf(s) || "", paidDate: actualPaidDate(s) });
   }
   rows.sort((a, b) => a.invoicedAt.localeCompare(b.invoicedAt) || a.soNumber.localeCompare(b.soNumber));
-  return { rows, count: rows.length, total: rows.reduce((a, r) => a + r.balance, 0) };
+  return { rows, count: rows.length, total: rows.reduce((a, r) => a + r.balance, 0), undated: undated.sort() };
 }
 
 // ===== 3. 請求していない出荷 =====
 export function unbilledOf(shipments, { cutoff }) {
-  const rows = [];
+  const rows = [], paidNoInvoice = [];
   for (const s of shipments) {
     if (isPracticeDoc(s) || !SHIPPED_STATUSES.includes(shipStatus(s))) continue;
     const sd = ymdJst(s.shipDate);
     if (!upTo(sd, cutoff)) continue;
     const inv = ymdJst(s.invoicedAt);
     if (inv && inv <= cutoff) continue;
+    // 入金済なのに請求日が空＝いつ請求したか分からない。黙って未請求に入れず、注記に出す
+    if (!inv && shipStatus(s) === "paid") { paidNoInvoice.push(s.soNumber || s._id || ""); continue; }
     const t = invoiceTotals(s);
     rows.push({ soNumber: s.soNumber || "", shipDate: sd, billTo: billToForReportOf(s), kind: billKindLabel(s),
       total: t.total, invoicedAt: inv, later: !!inv, status: shipStatus(s) });
   }
   rows.sort((a, b) => a.shipDate.localeCompare(b.shipDate) || a.soNumber.localeCompare(b.soNumber));
   const part = (arr) => ({ count: arr.length, total: arr.reduce((a, r) => a + r.total, 0) });
-  return { rows, ...part(rows), later: part(rows.filter((r) => r.later)), still: part(rows.filter((r) => !r.later)) };
+  return { rows, ...part(rows), later: part(rows.filter((r) => r.later)), still: part(rows.filter((r) => !r.later)), paidNoInvoice: paidNoInvoice.sort() };
 }
 
 // ===== 発注（仕入）=====
@@ -168,11 +224,12 @@ export function poPurchaseYmd(o) { return poArrivalYmd(o) || ymdJst(o && o.order
 export function poGoodsOf(o) { return (o.items || []).reduce((a, i) => a + num(i.unitPrice) * num(i.qty), 0); }
 export function poQtyOf(o) { return (o.items || []).reduce((a, i) => a + num(i.qty), 0); }
 
-/** 品目ごとの仕入単価（締め日までの発注のうち、いちばん新しい発注の明細の unitPrice） */
+/** 品目ごとの仕入単価（締め日までに届いた発注〔到着日か入荷登録の日 ≤ 締め日〕のうち、いちばん新しく届いた発注の明細の unitPrice） */
 export function unitCostsOf(purchaseOrders, cutoff) {
   const best = {};
-  const list = purchaseOrders.filter((o) => PO_LIVE(o) && upTo(ymdJst(o.orderDate), cutoff))
-    .sort((a, b) => ymdJst(a.orderDate).localeCompare(ymdJst(b.orderDate)) || String(a.poNumber || "").localeCompare(String(b.poNumber || "")));
+  const list = purchaseOrders.filter((o) => PO_LIVE(o) && upTo(poArrivalYmd(o), cutoff))
+    .sort((a, b) => poArrivalYmd(a).localeCompare(poArrivalYmd(b)) || ymdJst(a.orderDate).localeCompare(ymdJst(b.orderDate))
+      || String(a.poNumber || "").localeCompare(String(b.poNumber || "")));
   for (const o of list) for (const it of o.items || []) if (it.sku && num(it.unitPrice) > 0) best[it.sku] = num(it.unitPrice);
   return best;
 }
@@ -248,17 +305,22 @@ export function openOrdersOf(purchaseOrders, { cutoff }) {
     const od = ymdJst(o.orderDate);
     if (!upTo(od, cutoff)) continue;
     const arr = poArrivalYmd(o);
-    if (arr && arr <= cutoff) continue;
+    // 到着日 ≤ 締め日でも、保管場所へ納品する発注でまだ入荷登録していない（status が received でない）ものは
+    // 在庫の記録が無い＝在庫にも出ない。未着品の表に「届いたが入荷登録前」として別に出す（2026-11-24 独立レビュー【中】）
+    const arrivedUnregistered = !!arr && arr <= cutoff && !o.dropship && o.status !== "received";
+    if (arr && arr <= cutoff && !arrivedUnregistered) continue;
     const ssd = ymdJst(o.supplierShipDate);
-    const inTransit = upTo(ssd, cutoff);
+    const inTransit = !arrivedUnregistered && upTo(ssd, cutoff);
+    const kind = arrivedUnregistered ? "arrived" : inTransit ? "transit" : "notShipped";
     rows.push({ poNumber: o.poNumber || "", orderDate: od, supplierShipDate: ssd, arrivedDate: arr, arrivalBasis: o.arrivalBasis || "",
       arrivedTo: o.arrivedTo || o.deliverLocationName || o.receivedLocationName || "", qty: poQtyOf(o), goods: poGoodsOf(o),
-      shippingFee: num(o.shippingFee), amount: poGoodsOf(o) + num(o.shippingFee), inTransit, state: inTransit ? "先方出荷済み・運送中" : "未出荷",
-      dropship: !!o.dropship });
+      shippingFee: num(o.shippingFee), amount: poGoodsOf(o) + num(o.shippingFee), inTransit, kind,
+      state: { arrived: "届いたが入荷登録前", transit: "先方出荷済み・運送中", notShipped: "未出荷" }[kind], dropship: !!o.dropship });
   }
   rows.sort((a, b) => a.orderDate.localeCompare(b.orderDate) || a.poNumber.localeCompare(b.poNumber));
   const part = (arr) => ({ count: arr.length, qty: arr.reduce((a, r) => a + r.qty, 0), amount: arr.reduce((a, r) => a + r.amount, 0) });
-  return { rows, ...part(rows), inTransit: part(rows.filter((r) => r.inTransit)), notShipped: part(rows.filter((r) => !r.inTransit)) };
+  return { rows, ...part(rows), inTransit: part(rows.filter((r) => r.kind === "transit")), notShipped: part(rows.filter((r) => r.kind === "notShipped")),
+    arrivedUnregistered: part(rows.filter((r) => r.kind === "arrived")) };
 }
 
 // ===== 6. 仕入（期中）=====
@@ -295,6 +357,7 @@ export function payablesOf(purchaseOrders, { cutoff }) {
 // ===== 8. 返金・過入金 =====
 export function refundsOf(shipments, { start, cutoff }) {
   const refunds = [], credits = [], overpaid = [];
+  const idx = creditIndexOf(shipments, cutoff);
   for (const s of shipments) {
     if (isPracticeDoc(s) || shipStatus(s) === "canceled" || shipStatus(s) === "draft") continue;
     for (const r of (Array.isArray(s.refunds) ? s.refunds : [])) {
@@ -303,13 +366,22 @@ export function refundsOf(shipments, { start, cutoff }) {
         method: r.method || "", inPeriod: inRange(d, start, cutoff) });
     }
     const inv = ymdJst(s.invoicedAt);
-    if (num(s.creditApplied) > 0 && upTo(inv, cutoff)) {
-      credits.push({ soNumber: s.soNumber || "", date: inv, billTo: billToForReportOf(s), amount: num(s.creditApplied),
-        from: (Array.isArray(s.creditFrom) ? s.creditFrom : []).map((c) => c.soNumber).filter(Boolean).join("・"), inPeriod: inRange(inv, start, cutoff) });
+    // 充当は creditFrom の1件ずつ、充当した日（date。無ければ充当先の請求日）で数える
+    const list = Array.isArray(s.creditFrom) ? s.creditFrom : [];
+    let listed = 0;
+    for (const c of list) {
+      listed += num(c.amount);
+      const d = creditDate(c, s);
+      if (num(c.amount) > 0 && upTo(d, cutoff)) credits.push({ soNumber: s.soNumber || "", date: d, billTo: billToForReportOf(s), amount: num(c.amount),
+        from: c.soNumber || "", inPeriod: inRange(d, start, cutoff) });
     }
+    const rest = Math.max(0, num(s.creditApplied) - listed);
+    if (rest > 0 && upTo(inv, cutoff)) credits.push({ soNumber: s.soNumber || "", date: inv, billTo: billToForReportOf(s), amount: rest,
+      from: "（充当元の記録なし）", inPeriod: inRange(inv, start, cutoff) });
     if (BILLED_STATUSES.includes(shipStatus(s)) && upTo(inv, cutoff)) {
-      const st = settlementAt(s, cutoff);
-      if (st.balance < 0) overpaid.push({ soNumber: s.soNumber || "", date: inv, billTo: billToForReportOf(s), amount: -st.balance });
+      const st = settlementAt(s, cutoff, idx);
+      // 他の請求へ充当済みの分（締め日まで）は除く＝「充当」と二重に出さない
+      if (st.overpaid > 0) overpaid.push({ soNumber: s.soNumber || "", date: inv, billTo: billToForReportOf(s), amount: st.overpaid });
     }
   }
   const by = (a, b) => a.date.localeCompare(b.date) || a.soNumber.localeCompare(b.soNumber);
@@ -340,14 +412,16 @@ export function buildReport({ shipments = [], purchaseOrders = [], movements = [
   const refunds = refundsOf(shipments, p);
   const summary = [
     { no: 1, title: "売上（期中・請求日で数える）", count: sales.count, amount: sales.total, note: `うち消費税 ${sales.tax.toLocaleString("ja-JP")}円` },
-    { no: 2, title: "未収金（売掛金）", count: receivables.count, amount: receivables.total, note: "締め日までの入金・返金を差し引いた残り" },
-    { no: 3, title: "請求していない出荷", count: unbilled.count, amount: unbilled.total, note: `締め日後に請求済 ${unbilled.later.count}件／いまも未請求 ${unbilled.still.count}件` },
+    { no: 2, title: "未収金（売掛金）", count: receivables.count, amount: receivables.total,
+      note: `締め日までの入金・返金・充当を差し引いた残り${receivables.undated.length ? `・入金の日付不明で除いた ${receivables.undated.length}件（${receivables.undated.join("・")}）` : ""}` },
+    { no: 3, title: "請求していない出荷", count: unbilled.count, amount: unbilled.total,
+      note: `締め日後に請求済 ${unbilled.later.count}件／いまも未請求 ${unbilled.still.count}件${unbilled.paidNoInvoice.length ? `・入金済なのに請求日が空で除いた ${unbilled.paidNoInvoice.length}件（${unbilled.paidNoInvoice.join("・")}）` : ""}` },
     { no: 4, title: "在庫（棚卸）", count: inventory.total, unit: "台", amount: inventory.amount, note: `仕入単価（発注書の単価）で計算${inventory.unset ? `・保管場所未設定 ${inventory.unset}台` : ""}` },
-    { no: 5, title: "届いていない発注（未着品）", count: openOrders.count, amount: openOrders.amount, note: `運送中 ${openOrders.inTransit.count}件／未出荷 ${openOrders.notShipped.count}件・${openOrders.qty}台` },
+    { no: 5, title: "届いていない発注（未着品）", count: openOrders.count, amount: openOrders.amount, note: `運送中 ${openOrders.inTransit.count}件／未出荷 ${openOrders.notShipped.count}件／届いたが入荷登録前 ${openOrders.arrivedUnregistered.count}件・${openOrders.qty}台` },
     { no: 6, title: "仕入（期中）", count: purchases.count, amount: purchases.goods + purchases.shippingFee, note: `品代 ${purchases.goods.toLocaleString("ja-JP")}円＋送料 ${purchases.shippingFee.toLocaleString("ja-JP")}円（税別）` },
     { no: 7, title: "仕入先への未払い（買掛金）", count: payables.count, amount: payables.total, note: payables.recorded ? "締め日までに届いた発注 − 支払い" : "支払いの記録は未登録（未確認）" },
     { no: 8, title: "返金・過入金", count: refunds.refunds.length + refunds.credits.length + refunds.overpaid.length,
-      amount: refunds.refundTotal, note: `返金 ${refunds.refundTotal.toLocaleString("ja-JP")}円・充当 ${refunds.creditTotal.toLocaleString("ja-JP")}円・締め日時点の過入金 ${refunds.overpaidTotal.toLocaleString("ja-JP")}円` },
+      amount: refunds.refundTotal + refunds.creditTotal + refunds.overpaidTotal, note: `返金 ${refunds.refundTotal.toLocaleString("ja-JP")}円・充当 ${refunds.creditTotal.toLocaleString("ja-JP")}円・締め日時点の過入金 ${refunds.overpaidTotal.toLocaleString("ja-JP")}円` },
   ];
   return { ...p, sales, receivables, unbilled, inventory, openOrders, purchases, payables, refunds, summary };
 }

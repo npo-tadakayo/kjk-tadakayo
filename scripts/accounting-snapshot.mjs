@@ -54,6 +54,18 @@ if (asJson) {
   console.log(`\n[6] 仕入: ${rep.purchases.count}件 ${rep.purchases.qty}台 品代 ${y(rep.purchases.goods)} 送料 ${y(rep.purchases.shippingFee)}`);
   for (const r of rep.purchases.rows) console.log(`    ${r.poNumber} ${r.date}（${r.dateBasis}）${r.qty}台 ${y(r.goods)}＋${y(r.shippingFee)}${r.dropship ? " 直送" : ""}`);
   console.log(`\n[7] 買掛金: ${rep.payables.recorded ? `${rep.payables.count}件 ${y(rep.payables.total)}` : "支払いの記録は未登録（未確認）"}`);
+  // 点検（独立レビュー 2026-11-24）: 締め日に関係なく、記録そのものの件数
+  const live = shipments.filter((x) => !x._practiceBy && x.status !== "canceled" && x.status !== "draft");
+  const used = live.filter((x) => (Number(x.overpayUsed) || 0) > 0);
+  const credited = live.filter((x) => (Number(x.creditApplied) || 0) > 0 || (Array.isArray(x.creditFrom) && x.creditFrom.length));
+  const undatedPay = live.filter((x) => {
+    const list = Array.isArray(x.payments) && x.payments.length ? x.payments : (Number(x.paymentAmount) > 0 ? [{ date: x.paidAt || "" }] : []);
+    return list.some((p) => !p.date && !p.recordedAt) || (x.status === "paid" && !list.length && !x.paidAt);
+  });
+  const paidNoInv = live.filter((x) => x.status === "paid" && !x.invoicedAt);
+  const fmt = (arr) => `${arr.length}件${arr.length ? `（${arr.map((x) => x.soNumber).join("・")}）` : ""}`;
+  console.log(`\n[点検] overpayUsed>0: ${fmt(used)}／充当先（creditApplied か creditFrom あり）: ${fmt(credited)}／日付の無い入金: ${fmt(undatedPay)}／invoicedAt が空の入金済: ${fmt(paidNoInv)}`);
+  console.log(`  集計で除いた: 未収金（入金の日付不明）${rep.receivables.undated.length}件／未請求（入金済で請求日なし）${rep.unbilled.paidNoInvoice.length}件／未着品のうち届いたが入荷登録前 ${rep.openOrders.arrivedUnregistered.count}件`);
   console.log(`\n[8] 返金 ${rep.refunds.refunds.length}件 ${y(rep.refunds.refundTotal)}／充当 ${rep.refunds.credits.length}件 ${y(rep.refunds.creditTotal)}／締め日時点の過入金 ${rep.refunds.overpaid.length}件 ${y(rep.refunds.overpaidTotal)}`);
 }
 if (csvDir) {

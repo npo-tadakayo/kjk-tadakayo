@@ -54,7 +54,7 @@ function render() {
   const S = r.sales;
   const mrow = (label, m) => `<tr><td>${esc(label)}</td><td class="num">${m.count}件</td><td class="num">${yen(m.total)}</td><td class="num">${yen(m.tax)}</td>
     <td class="num">${m.direct.count}件 ${yen(m.direct.total)}</td><td class="num">${m.partner.count}件 ${yen(m.partner.total)}</td></tr>`;
-  html += section(1, "売上（期中）", "請求日（請求済にした日）が期首〜締め日の出荷です。直接＝事業所への請求、直送＝認定事業者への請求。金額は税込。",
+  html += section(1, "売上（期中）", "請求日（請求済にした日）が期首〜締め日の出荷です。直接＝事業所への請求、直送＝認定事業者への請求。金額は税込。請求したあとにキャンセルにした出荷は、ここ（過去の月の売上）からも消えます（経理へ報告済みの数字と合わないときは、キャンセルした出荷を確かめてください）。",
     S.count ? table(["月", "#件数", "#税込合計", "#うち消費税", "#直接（事業所）", "#直送（認定事業者）"],
       S.byMonth.map((m) => mrow(m.month, m)).join(""), `<tr class="acc-tot">${mrow("合計", S).replace(/^<tr>|<\/tr>$/g, "")}</tr>`)
       + `<details style="margin:0 16px 14px"><summary class="acc-sub" style="cursor:pointer">明細（${S.count}件）</summary>`
@@ -64,7 +64,8 @@ function render() {
 
   // 2 未収金
   const R = r.receivables;
-  html += section(2, "未収金（売掛金）", "締め日までに請求し、締め日までの入金・返金を差し引いても残っているお金です。「実際の入金日」はいまの記録で全額入金された日（締め日後に入金されたもの）。",
+  html += section(2, "未収金（売掛金）", "締め日までに請求し、締め日までの入金・返金・過入金の充当を差し引いても残っているお金です。「実際の入金日」はいまの記録で全額入金された日（締め日後に入金されたもの）。"
+    + (R.undated.length ? `<br><strong>入金の日付が分からないため除いた出荷 ${R.undated.length}件</strong>: ${esc(R.undated.join("・"))}（入金の記録に日付を入れてから数え直してください）` : ""),
     R.count ? table(["出荷番号", "請求日", "請求先", "#請求額", "#締め日までの入金", "#残高", "支払期限", "実際の入金日"],
       R.rows.map((x) => `<tr><td>${esc(x.soNumber)}</td><td>${esc(x.invoicedAt)}</td><td>${esc(x.billTo)}</td><td class="num">${yen(x.billed)}</td>
         <td class="num">${yen(x.paid)}</td><td class="num">${yen(x.balance)}</td><td>${esc(x.dueDate)}</td><td>${esc(x.paidDate || "—")}</td></tr>`).join(""),
@@ -73,7 +74,8 @@ function render() {
 
   // 3 未請求出荷
   const U = r.unbilled;
-  html += section(3, "請求していない出荷", `締め日までに発送したのに、締め日の時点で請求していない出荷です（金額は見込み・税込）。締め日後に請求済 ${U.later.count}件 ${yen(U.later.total)}／いまも未請求 ${U.still.count}件 ${yen(U.still.total)}。`,
+  html += section(3, "請求していない出荷", `締め日までに発送したのに、締め日の時点で請求していない出荷です（金額は見込み・税込）。締め日後に請求済 ${U.later.count}件 ${yen(U.later.total)}／いまも未請求 ${U.still.count}件 ${yen(U.still.total)}。`
+    + (U.paidNoInvoice.length ? `<br><strong>入金済なのに請求日が空のため除いた出荷 ${U.paidNoInvoice.length}件</strong>: ${esc(U.paidNoInvoice.join("・"))}` : ""),
     U.count ? table(["出荷番号", "出荷日", "請求先", "種類", "#見込み金額", "区分", "請求日"],
       U.rows.map((x) => `<tr><td>${esc(x.soNumber)}</td><td>${esc(x.shipDate)}</td><td>${esc(x.billTo)}</td><td>${esc(x.kind)}</td><td class="num">${yen(x.total)}</td>
         <td>${x.later ? "締め日後に請求済" : '<span class="badge badge-4">いまも未請求</span>'}</td><td>${esc(x.invoicedAt || "—")}</td></tr>`).join(""),
@@ -95,7 +97,8 @@ function render() {
 
   // 5 未着品
   const O = r.openOrders;
-  html += section(5, "届いていない発注（未着品・発注残）", `締め日までに発注し、締め日の時点でまだ届いていない発注です。先方出荷済み・運送中 ${O.inTransit.count}件 ${qty(O.inTransit.qty)}／未出荷 ${O.notShipped.count}件 ${qty(O.notShipped.qty)}。金額は税別（品代＋送料）。`,
+  html += section(5, "届いていない発注（未着品・発注残）", `締め日までに発注し、締め日の時点でまだ届いていない発注です。先方出荷済み・運送中 ${O.inTransit.count}件 ${qty(O.inTransit.qty)}／未出荷 ${O.notShipped.count}件 ${qty(O.notShipped.qty)}。金額は税別（品代＋送料）。`
+    + (O.arrivedUnregistered.count ? `<br><strong>届いたが入荷登録前 ${O.arrivedUnregistered.count}件 ${qty(O.arrivedUnregistered.qty)}</strong>: 締め日までに届いているのに入荷登録していないため、在庫の表に入っていません。入荷登録をしてから数え直してください。` : ""),
     O.count ? table(["発注番号", "発注日", "区分", "先方出荷日", "到着日", "届け先", "#台数", "#金額"],
       O.rows.map((x) => `<tr><td>${esc(x.poNumber)}</td><td>${esc(x.orderDate)}</td><td>${esc(x.state)}</td><td>${esc(x.supplierShipDate || "—")}</td>
         <td>${esc(x.arrivedDate || "—")}${x.arrivalBasis ? `<div class="acc-sub">${esc(x.arrivalBasis)}</div>` : ""}</td><td>${esc(x.arrivedTo)}${x.dropship ? '<div class="acc-sub">直送</div>' : ""}</td>
@@ -128,7 +131,7 @@ function render() {
     ...F.credits.map((x) => ["過入金の充当", x.date, x.soNumber, x.billTo, x.amount, x.from ? `充当元 ${x.from}` : ""]),
     ...F.overpaid.map((x) => ["締め日時点の過入金（未返金・未充当）", x.date, x.soNumber, x.billTo, x.amount, ""]),
   ];
-  html += section(8, "返金・過入金", "締め日までの返金と、過入金を次の請求に充てた分、締め日の時点で多く入金されたままの分です。",
+  html += section(8, "返金・過入金", "締め日までの返金と、過入金を次の請求に充てた分（充てた日で数える）、締め日の時点で多く入金されたまま（返金も充当もしていない）分です。要約の金額はこの3つの合計です。",
     frows.length ? table(["種類", "日付", "出荷番号", "請求先", "#金額", "メモ"],
       frows.map((x) => `<tr><td>${esc(x[0])}</td><td>${esc(x[1])}</td><td>${esc(x[2])}</td><td>${esc(x[3])}</td><td class="num">${yen(x[4])}</td><td class="acc-sub">${esc(x[5])}</td></tr>`).join(""))
       : empty("返金・過入金はありません"), "refunds");

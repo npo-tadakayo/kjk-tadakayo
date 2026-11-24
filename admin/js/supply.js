@@ -659,6 +659,8 @@ async function saveArrival(){
   const supplierShipDate = document.getElementById("arrShipDate").value || "";
   if(arrivalBasis==="配達中" && arrivedDate){ err.textContent = "「配達中」のときは到着日を空にしてください（届いたら「実績」にして日付を入れます）"; return; }
   if((arrivalBasis==="実績" || arrivalBasis==="推定") && !arrivedDate){ err.textContent = "到着日を入れてください"; return; }
+  // 入荷登録の画面と同じく、まだ来ていない日を「実績」にはできない（予定なら「推定」で入れる）
+  if(arrivalBasis==="実績" && arrivedDate > today()){ err.textContent = "未来の日付は「実績」にできません。届く予定の日なら区分を「推定」にしてください"; return; }
   if(supplierShipDate && arrivedDate && supplierShipDate > arrivedDate){ err.textContent = "先方の出荷日が到着日より後になっています"; return; }
   const btn = document.getElementById("arrSaveBtn"); btn.disabled = true;
   try{
