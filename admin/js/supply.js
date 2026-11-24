@@ -594,18 +594,20 @@ function renderOrders(orders){
     const deliverLoc = !o.dropship && (o.deliverLocationId || o.receivedLocationId);
     const deliverInfo = deliverLoc ? `<div style="font-size:12px;color:var(--color-ink-muted)">${o.status==="received"?"入荷先":"納品先"} ${esc(locationName(o.receivedLocationId||o.deliverLocationId)||o.receivedLocationName||o.deliverLocationName||"")}</div>` : "";
     const dropInfo = o.dropship ? `<div style="font-size:12px;color:var(--color-ink-muted)">直送（入荷なし）${o.dropshipPartnerName?`／請求先 ${esc(o.dropshipPartnerName)}`:""}</div>` : "";
+    const arrInfo = arrivalInfoHtml(o); // 実際の到着日（実績/推定/配達中）・追跡番号（2026-11-24 経理への期末報告）
     return `<tr>
       <td><strong>${esc(o.poNumber)}</strong></td>
       <td>${esc(o.orderDate||"")}${o.desiredDate?`<div style="font-size:12px;color:var(--color-ink-muted)">納期希望 ${esc(o.desiredDate)}</div>`:""}</td>
       <td style="font-size:12px">${esc(summary)}</td>
       <td class="num">${yen(o.total)}</td>
-      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}${dropInfo}${deliverInfo}</td>
+      <td><span class="badge badge-${badgeN}">${statusLabel}</span>${sentInfo}${dropInfo}${deliverInfo}${arrInfo}</td>
       <td style="white-space:nowrap">
         <a class="btn btn-secondary" href="/supply-print.html?type=po&id=${o._id}" target="_blank" rel="noopener" style="font-size:12px;padding:4px 8px"><i class="ti ti-file-text"></i>発注書</a>
         ${isDraft?`<button class="btn btn-secondary edit-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-edit"></i>編集</button>
         <button class="btn btn-primary confirm-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-check"></i>確定</button>
         <button class="btn btn-danger del-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px" aria-label="削除"><i class="ti ti-trash"></i></button>`:""}
         ${o.status==="sent"&&!o.dropship?`<button class="btn btn-secondary recv-btn" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-package-import"></i>入荷登録</button>`:""}
+        ${isAdminUser&&!isDraft?`<button class="btn btn-secondary arrival-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px" data-tip="実際に届いた日・区分（実績/推定/配達中）・運送会社・追跡番号・先方の出荷日を直します。在庫と状態は変わりません（管理者だけ）。"><i class="ti ti-calendar-event"></i>到着日を修正</button>`:""}
         ${o.status==="sent"?`<button class="btn btn-secondary undo-order" data-id="${o._id}" style="font-size:12px;padding:4px 8px"><i class="ti ti-arrow-back-up"></i>下書きに戻す</button>`:""}
       </td></tr>`;
   }).join("");
@@ -614,7 +616,68 @@ function renderOrders(orders){
   document.querySelectorAll(".edit-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) openOrder(o); }));
   document.querySelectorAll(".confirm-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) confirmOrder(o); }));
   document.querySelectorAll(".del-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) deleteOrder(o); }));
+  document.querySelectorAll(".arrival-order").forEach(b=>b.addEventListener("click",()=>{ const o=orders.find(x=>x._id===b.dataset.id); if(o) openArrival(o); }));
 }
+// ===== 発注の「実際の到着日」（2026-11-24 経理への期末報告）=====
+// purchaseOrders.arrivedDate(YYYY-MM-DD)・arrivalBasis('実績'|'推定'|'配達中')・arrivalCarrier・arrivalTracking・supplierShipDate・arrivedTo。
+// 経理報告（accounting-rules.js）は在庫・未着品・仕入をこの到着日で数える。ここで直しても在庫・状態は動かさない。
+const ARRIVAL_BASES = ["実績", "推定", "配達中"];
+function arrivalInfoHtml(o){
+  if(!o.arrivedDate && !o.arrivalBasis && !o.supplierShipDate && !o.arrivalTracking) return "";
+  const parts=[];
+  if(o.supplierShipDate) parts.push(`先方出荷 ${esc(o.supplierShipDate)}`);
+  parts.push(o.arrivedDate ? `到着 ${esc(o.arrivedDate)}${o.arrivalBasis?`（${esc(o.arrivalBasis)}）`:""}` : `到着 未${o.arrivalBasis?`（${esc(o.arrivalBasis)}）`:""}`);
+  if(o.arrivalTracking) parts.push(`${esc(o.arrivalCarrier||"")} 追跡 ${esc(o.arrivalTracking)}`.trim());
+  const warn = o.arrivalBasis==="推定" || o.arrivalBasis==="配達中";
+  return `<div style="font-size:12px;color:${warn?"#c87a1f":"var(--color-ink-muted)"}">${parts.join("／")}</div>`;
+}
+let arrivalPO = null;
+function closeArrival(){ document.getElementById("arrivalModal").classList.remove("open"); arrivalPO=null; }
+function openArrival(o){
+  if(!isAdminUser) return;
+  arrivalPO = o;
+  document.getElementById("arrivalTitle").textContent = `到着日の修正（${o.poNumber||""}）`;
+  document.getElementById("arrDate").value = o.arrivedDate || "";
+  const bsel = document.getElementById("arrBasis");
+  bsel.innerHTML = '<option value="">（区分なし）</option>' + ARRIVAL_BASES.map(b=>`<option value="${b}">${b}</option>`).join("");
+  bsel.value = ARRIVAL_BASES.includes(o.arrivalBasis) ? o.arrivalBasis : "";
+  document.getElementById("arrCarrier").value = o.arrivalCarrier || "";
+  document.getElementById("arrTracking").value = o.arrivalTracking || "";
+  document.getElementById("arrShipDate").value = o.supplierShipDate || "";
+  document.getElementById("arrTo").value = o.arrivedTo || "";
+  const by = o.arrivalRecordedBy ? `最後に記録: ${esc(o.arrivalRecordedBy)}${o.arrivalRecordedAt?`（${fmtDate(o.arrivalRecordedAt)}）`:""}` : "";
+  document.getElementById("arrMeta").innerHTML = [by, o.arrivalSource?`根拠: ${esc(o.arrivalSource)}`:""].filter(Boolean).join("<br>");
+  document.getElementById("arrErr").textContent = "";
+  document.getElementById("arrivalModal").classList.add("open");
+}
+async function saveArrival(){
+  const o = arrivalPO; if(!o) return;
+  const err = document.getElementById("arrErr");
+  if(!isAdminUser){ err.textContent = "到着日を直せるのは管理者だけです"; return; }
+  const arrivedDate = document.getElementById("arrDate").value || "";
+  const arrivalBasis = document.getElementById("arrBasis").value || "";
+  const supplierShipDate = document.getElementById("arrShipDate").value || "";
+  if(arrivalBasis==="配達中" && arrivedDate){ err.textContent = "「配達中」のときは到着日を空にしてください（届いたら「実績」にして日付を入れます）"; return; }
+  if((arrivalBasis==="実績" || arrivalBasis==="推定") && !arrivedDate){ err.textContent = "到着日を入れてください"; return; }
+  // 入荷登録の画面と同じく、まだ来ていない日を「実績」にはできない（予定なら「推定」で入れる）
+  if(arrivalBasis==="実績" && arrivedDate > today()){ err.textContent = "未来の日付は「実績」にできません。届く予定の日なら区分を「推定」にしてください"; return; }
+  if(supplierShipDate && arrivedDate && supplierShipDate > arrivedDate){ err.textContent = "先方の出荷日が到着日より後になっています"; return; }
+  const btn = document.getElementById("arrSaveBtn"); btn.disabled = true;
+  try{
+    // 到着日まわりの項目だけを書く（status・在庫・入荷先は触らない）
+    await updateDoc(doc(db,"purchaseOrders",o._id), {
+      arrivedDate, arrivalBasis, supplierShipDate,
+      arrivalCarrier: document.getElementById("arrCarrier").value.trim(),
+      arrivalTracking: document.getElementById("arrTracking").value.trim(),
+      arrivedTo: document.getElementById("arrTo").value.trim(),
+      arrivalRecordedAt: serverTimestamp(), arrivalRecordedBy: currentUser.displayName||currentUser.email,
+    });
+    toast(`${o.poNumber} の到着日を保存しました`);
+    closeArrival();
+  }catch(e){ err.textContent = `保存できませんでした: ${e.message}`; }
+  finally{ btn.disabled = false; }
+}
+// ===== 到着日の修正ここまで =====
 // 案件から出荷を作ったときに、その案件のIDを保存するため覚えておく
 // （請求書メールの宛先や、支援報告書の紐付けに使う）
 let prefillCaseId = null;
@@ -640,6 +703,8 @@ async function receiveOrder(id, orders){
     else if(guessed && chosen===guessed){ msg=`「${locationName(chosen)}」を選んでいます（発注の届け先の都道府県から選びました。違っていれば変えてください）`; warn=true; }
     hint.textContent=msg; hint.style.color = warn ? "#c87a1f" : "var(--color-ink-muted)"; hint.style.display = msg ? "" : "none";
   }
+  // 実際に届いた日（2026-11-24）。既に記録された到着日があればそれ、無ければ今日
+  document.getElementById("receiveArrivedDate").value = o.arrivedDate || today();
   document.getElementById("receiveErr").textContent="";
   document.getElementById("receiveModal").classList.add("open");
 }
@@ -648,6 +713,8 @@ async function doReceive(){
   const locId=document.getElementById("receiveLocation").value;
   const err=document.getElementById("receiveErr");
   if(!locId){ err.textContent="入荷先の保管場所を選んでください（未登録なら在庫タブから追加できます）"; return; }
+  const arrivedDate=document.getElementById("receiveArrivedDate").value||today();
+  if(arrivedDate > today()){ err.textContent="実際に届いた日に、未来の日付は入れられません"; return; }
   const btn=document.getElementById("doReceiveBtn"); btn.disabled=true;
   try{
     for(const it of (o.items||[])){
@@ -655,8 +722,10 @@ async function doReceive(){
       await updateDoc(doc(db,"products",it.sku), stockPatch(locId, q));
       await addDoc(collection(db,"inventoryMovements"), movement(it.sku, q, "po_received", o.poNumber, locId));
     }
+    // 実際に届いた日も残す（経理報告の在庫・仕入はこの日で数える。入荷登録が後日になっても締め日をまたがない）
     await updateDoc(doc(db,"purchaseOrders",o._id),{status:"received",receivedAt:serverTimestamp(),
-      receivedLocationId:locId, receivedLocationName:locationName(locId)});
+      receivedLocationId:locId, receivedLocationName:locationName(locId),
+      arrivedDate, arrivalBasis:"実績", arrivalRecordedAt:serverTimestamp(), arrivalRecordedBy:currentUser.displayName||currentUser.email});
     toast(`${o.poNumber} を ${locationName(locId)} に入荷登録しました`);
     closeReceiveModal();
   }catch(e){ err.textContent=`入荷登録に失敗しました: ${e.message}`; }
@@ -4566,6 +4635,9 @@ onAuthStateChanged(auth, async (user)=>{
   document.getElementById("closeArriveBtn").addEventListener("click",closeArriveModal);
   document.getElementById("cancelArriveBtn").addEventListener("click",closeArriveModal);
   document.getElementById("closeReceiveBtn").addEventListener("click",closeReceiveModal);
+  document.getElementById("arrSaveBtn").addEventListener("click",saveArrival);
+  document.getElementById("arrCloseBtn").addEventListener("click",closeArrival);
+  document.getElementById("arrCancelBtn").addEventListener("click",closeArrival);
   document.getElementById("cancelReceiveBtn").addEventListener("click",closeReceiveModal);
   document.getElementById("shipOrigin").addEventListener("change",updateShipOriginHint);
   ["shipMethod","shipLetterPack"].forEach(id=>document.getElementById(id).addEventListener("change",updateShipLpNotice));

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>経理への期末報告 — タダカヨ CRM</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.24.0/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="/css/crm.css">
+  <style>
+    .acc-sec { margin-bottom: var(--space-5); }
+    .acc-sec h2 { font-family: 'Noto Serif JP', serif; font-size: 17px; margin: 0; }
+    .acc-sub { font-size: 12px; color: var(--color-ink-muted); line-height: 1.7; }
+    .acc-tot td { font-weight: 700; background: var(--color-bg, #FAFAF8); }
+    .acc-neg { color: var(--color-danger); }
+    .acc-note { font-size: 12px; color: var(--color-ink-muted); margin: 8px 16px 14px; line-height: 1.7; }
+    .acc-empty { font-size: 13px; color: var(--color-ink-muted); padding: 12px 16px; }
+    .acc-csv { font-size: 12px; padding: 4px 10px; margin-left: auto; }
+    .acc-controls { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .acc-controls .form-group { margin-bottom: 0; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand"><div class="app-name">タダカヨ CRM</div><div class="app-sub">介護情報基盤伴走支援</div></div>
+      <nav class="sidebar-nav" id="nav"></nav>
+      <div class="sidebar-footer"><div class="user-info" id="userEmail"></div>
+        <button class="btn-logout" id="logoutBtn" type="button"><i class="ti ti-logout" aria-hidden="true"></i>ログアウト</button></div>
+    </aside>
+    <main class="main-content">
+      <div class="page-header">
+        <h1 class="page-title">経理への期末報告</h1>
+      </div>
+      <p class="page-intro">締め日の時点で、売上・まだ入金されていないお金・請求していない出荷・在庫・届いていない発注などを数えて、経理に渡す表を作ります。この画面は記録を読むだけで、何も書き換えません。管理者だけが使えます。</p>
+      <div id="gate" class="loading"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 認証確認中...</div>
+      <div id="main" style="display:none">
+        <div class="card acc-sec">
+          <div class="card-body">
+            <div class="acc-controls">
+              <div class="form-group"><label class="form-label" for="cutoff">締め日</label><input class="form-control" type="date" id="cutoff" value="2026-10-31"></div>
+              <div class="form-group"><label class="form-label" for="start">期首（締め日を変えると、翌日の1年前に合わせます）</label><input class="form-control" type="date" id="start" value="2025-11-01"></div>
+              <button class="btn btn-primary" id="runBtn" type="button" style="min-height:44px" data-tip="締め日と期首で数え直します。最新の記録を読み直します。"><i class="ti ti-refresh" aria-hidden="true"></i>集計する</button>
+              <button class="btn btn-secondary" id="pdfBtn" type="button" style="min-height:44px" disabled data-tip="要約と明細を A4 縦の PDF にして保存します。"><i class="ti ti-file-type-pdf" aria-hidden="true"></i>PDFで保存</button>
+              <button class="btn btn-secondary" id="csvAllBtn" type="button" style="min-height:44px" disabled data-tip="項目ごとの CSV（Excel で開けます）をまとめて保存します。"><i class="ti ti-download" aria-hidden="true"></i>CSVをすべて保存</button>
+            </div>
+            <p class="acc-sub" style="margin:10px 0 0">締め日の 23:59（日本時間）までの記録で数えます。練習モードのデータ・キャンセル・下書きは数えません。金額は請求書と同じ計算です。</p>
+            <p class="acc-sub" id="practiceNote" style="margin:6px 0 0;display:none;color:var(--color-warn,#c87a1f)">いま練習モードですが、この画面は本番の記録だけを読みます（読むだけで、書き込みはしません）。</p>
+            <p id="runErr" role="alert" style="font-size:13px;color:var(--color-danger);margin:8px 0 0"></p>
+          </div>
+        </div>
+        <div id="loading" class="loading" style="display:none"><i class="ti ti-loader-2 ti-spin" aria-hidden="true"></i> 記録を読んで数えています...</div>
+        <div id="report"></div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"
+    style="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#2C2416;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;display:none;z-index:100"></div>
+  <script src="/js/sidebar.js"></script>
+  <script src="/js/mobilenav.js"></script>
+  <script src="/js/firebase-config.js"></script>
+  <script src="/js/vendor/html2pdf.bundle.min.js"></script>
+  <script src="/js/accounting.js" type="module"></script>
+  <script src="/js/tooltip.js" type="module"></script><!-- ボタンの説明の吹き出し（data-tip） -->
+</body>
+</html>
