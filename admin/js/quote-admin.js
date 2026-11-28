@@ -37,6 +37,8 @@ import { RECEIVED_VIA_OPTIONS, buildPaperConsentPayload, buildOrderConsentPrintH
 import { CONSENT_DOCUMENT } from "/js/consent-document.js";
 // 伴走支援費の PM 値引き（2026-11-13・管理者だけ。判定の正本は pm-discount.js、書き込みはサーバーの setQuoteDiscount）
 import { standardFeeOfAmounts, validatePmDiscount, FLOOR, MAX_REASON, PM_DISCOUNT_NAME } from "/js/pm-discount.js";
+// カードリーダーは事業所が自分で購入（0台・伴走支援費だけを請求）の見積もり（2026-11-28）。金額はサーバーの calcFromInput が出す
+import { ownReaderNoteText } from "/js/support-fee-names.js";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -80,7 +82,10 @@ function productDisplayName(sku) {
   return label ? `${esc(name)}（${esc(label)}）` : esc(name);
 }
 
-function itemsLine(items) {
+function itemsLine(items, amounts, basis = "") {
+  const own = Number(amounts?.ownReaderIncl) || 0;
+  if (own > 0) return `${esc(ownReaderNoteText(own))}・伴走支援費のみ（タダカヨから出すカードリーダーは0台）`
+    + (basis ? `<div style="font-size:12px;color:var(--color-ink-muted)">購入額の根拠: ${esc(basis)}</div>` : "");
   if (!Array.isArray(items) || !items.length) return "—";
   return items.map((it) => {
     const subsidyQty = Number(it?.subsidyQty) || 0;
@@ -221,7 +226,7 @@ function rowHtml(q, isLatest) {
         <span style="font-size:12px;color:var(--color-ink-muted)">発行日 ${esc(ymdJst(q.createdAt)) || "—"}</span>
         <span style="font-size:12px;color:var(--color-ink-muted)">プラン: ${esc(plan)}</span>
       </div>
-      <div style="font-size:13px;margin-bottom:8px">${itemsLine(q.items)}</div>
+      <div style="font-size:13px;margin-bottom:8px">${itemsLine(q.items, q.amounts, q.ownReaderBasis || "")}</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:8px">
         <span>合計（税込） <strong>${yen(q.amounts?.totalIncl)}</strong></span>
         <span>自己負担 <strong>${yen(q.amounts?.selfPay)}</strong></span>
@@ -399,6 +404,91 @@ async function resend(quoteId) {
 const PLAN_MAX = { houmon: 3, kyojyu: 2, other: 1 };
 let revising = null;
 
+// ---- 「カードリーダーは事業所が自分で購入（0台）」の入力欄（作る・変更するの両方で使う・2026-11-28）----
+// 金額はこの画面では計算しない（伴走支援費＝助成区分の上限 − 入れた金額 は、保存時にサーバーの calcFromInput が出す）。
+// チェックを入れると台数の欄を0台にして止め、金額の欄を出す
+function ownReaderBlockHtml(prefix, own, basis = "") {
+  const on = Number(own) > 0;
+  return `
+          <div style="border:1px solid var(--color-border);border-radius:8px;padding:10px 12px;display:grid;gap:8px">
+            <label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:44px">
+              <input type="checkbox" id="${prefix}Own" ${on ? "checked" : ""}> カードリーダーは事業所が自分で購入（0台・伴走支援費だけを請求）
+            </label>
+            <div id="${prefix}OwnBody" style="display:${on ? "grid" : "none"};gap:6px">
+              <label class="form-label" for="${prefix}OwnAmt" style="margin:0">事業所が購入したカードリーダーの金額（税込・円）<span style="color:var(--color-primary)">必須</span></label>
+              <input class="form-control" id="${prefix}OwnAmt" inputmode="numeric" placeholder="例: 11800" value="${on ? esc(own) : ""}">
+              <label class="form-label" for="${prefix}OwnBasis" style="margin:0">購入額の根拠<span id="${prefix}OwnBasisReq" style="color:var(--color-ink-muted)">（任意）</span></label>
+              <input class="form-control" id="${prefix}OwnBasis" maxlength="200" placeholder="例: 自費で購入 11,800円・領収書あり" value="${esc(on ? basis : "")}">
+              <p id="${prefix}OwnFloor" role="status" style="display:none;font-size:12.5px;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:8px 10px;margin:0;line-height:1.7"></p>
+              <p style="font-size:12px;color:var(--color-ink-muted);margin:0;line-height:1.7">
+                伴走支援費 ＝ 助成区分の上限 − この金額（保存時にサーバーで計算します）。自己負担は0円です。<br>
+                申し込むと、出荷は「物の出荷なし」として登録され（倉庫への依頼・在庫の動きはありません）、そのまま請求書を出せます。
+              </p>
+            </div>
+          </div>`;
+}
+function wireOwnReader(prefix, qtyIds) {
+  const cb = document.getElementById(`${prefix}Own`);
+  const apply = () => {
+    const on = cb.checked;
+    document.getElementById(`${prefix}OwnBody`).style.display = on ? "grid" : "none";
+    for (const id of qtyIds) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (on && el.tagName === "SELECT" && id !== `${prefix}Conn`) el.value = "0";
+      el.disabled = on;
+    }
+  };
+  cb.addEventListener("change", apply);
+  apply();
+  // 伴走支援費が ¥15,000 を下回るときの注意（管理者だけ・根拠必須）。判定は料金の正本（estimate-pricing.js）と同じ関数。最終判断はサーバー
+  const planEl = document.getElementById(`${prefix}Plan`);
+  const upd = () => updateOwnReaderFloor(prefix);
+  document.getElementById(`${prefix}OwnAmt`).addEventListener("input", upd);
+  if (planEl) planEl.addEventListener("change", upd);
+  cb.addEventListener("change", upd);
+  upd();
+}
+// 入れた購入額で伴走支援費が下限（¥15,000）を下回るか。下回るなら注意を出し、根拠の欄を「必須」にする。戻り値は判定（無ければ null）
+function ownReaderFloorState(prefix) {
+  const EP = typeof window !== "undefined" ? window.EstimatePricing : null;
+  const cb = document.getElementById(`${prefix}Own`);
+  const amt = ownReaderAmountOf(prefix);
+  const plan = (document.getElementById(`${prefix}Plan`) || {}).value;
+  if (!EP || typeof EP.calcFromInput !== "function" || !cb || !cb.checked || amt == null) return null;
+  const ci = EP.calcFromInput(plan, { ownReader: true, ownReaderIncl: amt });
+  if (!ci.ok) return null;
+  return { fee: ci.calc.accFeeIncl, below: ci.calc.accFeeIncl < EP.OWN_READER_FLOOR, floor: EP.OWN_READER_FLOOR };
+}
+function updateOwnReaderFloor(prefix) {
+  const st = ownReaderFloorState(prefix);
+  const box = document.getElementById(`${prefix}OwnFloor`), req = document.getElementById(`${prefix}OwnBasisReq`);
+  if (!box || !req) return;
+  if (st && st.below) {
+    box.style.display = "block";
+    box.textContent = `伴走支援費は ${yen(st.fee)} になり、${yen(st.floor)} を下回ります。この見積もりは管理者だけが作成・変更できます（購入額の根拠が必須）。`
+      + (isAdminNow() ? "" : "購入額をもう一度確かめるか、管理者に依頼してください。");
+    req.textContent = "必須"; req.style.color = "var(--color-primary)";
+  } else {
+    box.style.display = "none"; box.textContent = "";
+    req.textContent = "（任意）"; req.style.color = "var(--color-ink-muted)";
+  }
+}
+// 送る前の確認（画面）。サーバー（staffCreateQuote・reviseQuote の checkOwnReaderPolicy）と同じ条件。問題が無ければ ""
+function ownReaderFloorError(prefix) {
+  const st = ownReaderFloorState(prefix);
+  if (!st || !st.below) return "";
+  if (!isAdminNow()) return `伴走支援費が ${yen(st.floor)} を下回る見積もり（伴走支援費 ${yen(st.fee)}）は、管理者だけが作成・変更できます。購入額をもう一度確かめるか、管理者に依頼してください`;
+  if (!String(document.getElementById(`${prefix}OwnBasis`).value || "").trim()) return `伴走支援費が ${yen(st.floor)} を下回るため、購入額の根拠（例: 自費で購入 11,800円・領収書あり）を入れてください`;
+  return "";
+}
+// 入力の形だけ確かめる（1円以上の整数）。読めなければ null
+function ownReaderAmountOf(prefix) {
+  const raw = String(document.getElementById(`${prefix}OwnAmt`).value || "").trim()
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[,，円¥￥\s]/g, "");
+  return /^\d{1,9}$/.test(raw) && Number(raw) >= 1 ? Number(raw) : null;
+}
+
 function qtyOptions(max, sel) {
   let o = "";
   for (let i = 0; i <= max; i++) o += `<option value="${i}"${Number(sel) === i ? " selected" : ""}>${i}台</option>`;
@@ -455,6 +545,7 @@ function openRevise(quoteId) {
               <select class="form-control" id="rvUsbx">${qtyOptions(10, usbx)}</select>
             </div>
           </div>
+          ${ownReaderBlockHtml("rv", q.amounts?.ownReaderIncl, q.ownReaderBasis || "")}
           <div>
             <label class="form-label" for="rvConn">USBの口の形</label>
             <select class="form-control" id="rvConn">
@@ -478,6 +569,7 @@ function openRevise(quoteId) {
         </div>
       </div>
     </div>`;
+  wireOwnReader("rv", ["rvBt", "rvBtx", "rvUsb", "rvUsbx", "rvConn"]);
   document.getElementById("reviseCancel").addEventListener("click", closeRevise);
   document.getElementById("reviseSubmit").addEventListener("click", submitRevise);
   document.getElementById("reviseModal").addEventListener("click", (e) => {
@@ -500,16 +592,21 @@ async function submitRevise() {
   const bt = num("rvBt"), usb = num("rvUsb");
   const reason = (document.getElementById("rvReason").value || "").trim();
   if (!reason) { show("変更の理由をご入力ください（あとから経緯を追えるようにするためです）"); return; }
-  if (bt + usb < 1) { show("補助対象のカードリーダーを1台以上にしてください"); return; }
-  if (bt + usb > (PLAN_MAX[plan] || 1)) { show(`このプランの補助対象は最大${PLAN_MAX[plan]}台です`); return; }
+  const own = document.getElementById("rvOwn").checked;
+  const ownAmt = own ? ownReaderAmountOf("rv") : null;
+  if (own && ownAmt == null) { show("事業所が購入したカードリーダーの金額（税込）を、1円以上の整数で入れてください"); return; }
+  if (own && ownReaderFloorError("rv")) { show(ownReaderFloorError("rv")); return; }
+  if (!own && bt + usb < 1) { show("補助対象のカードリーダーを1台以上にしてください（事業所が自分で購入した場合は、上のチェックを入れてください）"); return; }
+  if (!own && bt + usb > (PLAN_MAX[plan] || 1)) { show(`このプランの補助対象は最大${PLAN_MAX[plan]}台です`); return; }
   const btn = document.getElementById("reviseSubmit");
   btn.disabled = true; btn.textContent = "変更中...";
   try {
     const fn = httpsCallable(ctx.functions, "reviseQuote");
     const r = await fn({
-      quoteId: revising._id, plan, btQty: bt, usbQty: usb,
-      btExtra: num("rvBtx"), usbExtra: num("rvUsbx"),
-      usbConnector: document.getElementById("rvConn").value || null,
+      quoteId: revising._id, plan,
+      ...(own ? { btQty: 0, usbQty: 0, btExtra: 0, usbExtra: 0, usbConnector: null, ownReader: true, ownReaderIncl: ownAmt,
+        ownReaderBasis: String(document.getElementById("rvOwnBasis").value || "").trim() }
+        : { btQty: bt, usbQty: usb, btExtra: num("rvBtx"), usbExtra: num("rvUsbx"), usbConnector: document.getElementById("rvConn").value || null }),
       reason, sendMail: document.getElementById("rvMail").checked,
     });
     const d = r.data || {};
@@ -674,6 +771,7 @@ function openCreate() {
               <select class="form-control" id="cqUsbx">${qtyOptions(10, 0)}</select>
             </div>
           </div>
+          ${ownReaderBlockHtml("cq", 0)}
           <div>
             <label class="form-label" for="cqConn">USBの口の形</label>
             <select class="form-control" id="cqConn">
@@ -698,6 +796,7 @@ function openCreate() {
         </div>
       </div>
     </div>`;
+  wireOwnReader("cq", ["cqBt", "cqBtx", "cqUsb", "cqUsbx", "cqConn"]);
   document.getElementById("createCancel").addEventListener("click", closeCreate);
   document.getElementById("createSubmit").addEventListener("click", submitCreate);
   document.getElementById("createModal").addEventListener("click", (e) => {
@@ -716,16 +815,21 @@ async function submitCreate() {
   const num = (id) => Number(document.getElementById(id).value) || 0;
   const plan = document.getElementById("cqPlan").value;
   const bt = num("cqBt"), usb = num("cqUsb");
-  if (bt + usb < 1) { show("補助対象のカードリーダーを1台以上にしてください"); return; }
-  if (bt + usb > (PLAN_MAX[plan] || 1)) { show(`このプランの補助対象は最大${PLAN_MAX[plan]}台です`); return; }
+  const own = document.getElementById("cqOwn").checked;
+  const ownAmt = own ? ownReaderAmountOf("cq") : null;
+  if (own && ownAmt == null) { show("事業所が購入したカードリーダーの金額（税込）を、1円以上の整数で入れてください"); return; }
+  if (own && ownReaderFloorError("cq")) { show(ownReaderFloorError("cq")); return; }
+  if (!own && bt + usb < 1) { show("補助対象のカードリーダーを1台以上にしてください（事業所が自分で購入した場合は、上のチェックを入れてください）"); return; }
+  if (!own && bt + usb > (PLAN_MAX[plan] || 1)) { show(`このプランの補助対象は最大${PLAN_MAX[plan]}台です`); return; }
   const btn = document.getElementById("createSubmit");
   btn.disabled = true; btn.textContent = "作成中...";
   try {
     const fn = httpsCallable(ctx.functions, "staffCreateQuote");
     const r = await fn({
-      caseId: ctx.caseId, plan, btQty: bt, usbQty: usb,
-      btExtra: num("cqBtx"), usbExtra: num("cqUsbx"),
-      usbConnector: document.getElementById("cqConn").value || null,
+      caseId: ctx.caseId, plan,
+      ...(own ? { btQty: 0, usbQty: 0, btExtra: 0, usbExtra: 0, usbConnector: null, ownReader: true, ownReaderIncl: ownAmt,
+        ownReaderBasis: String(document.getElementById("cqOwnBasis").value || "").trim() }
+        : { btQty: bt, usbQty: usb, btExtra: num("cqBtx"), usbExtra: num("cqUsbx"), usbConnector: document.getElementById("cqConn").value || null }),
       note: (document.getElementById("cqNote").value || "").trim(),
       sendMail: document.getElementById("cqMail").checked,
     });
@@ -1068,7 +1172,9 @@ function showAcceptResult(sum) {
       <p style="font-size:13px;margin:0;line-height:1.8">出荷番号: ${soLinks || "—"}</p>
       ${sum.consentNo ? `<p style="font-size:13px;margin:0;line-height:1.8"><i class="ti ti-signature" aria-hidden="true"></i> 承諾書の記録: ${esc(sum.consentNo)}（受注確定と同時に入れました。画面を読み込み直すと、見積もりカードの上に出ます）</p>` : ""}
       ${orderConfirmFollowupText(sum) ? `<div role="alert" style="font-size:13px;line-height:1.8;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:10px 12px"><strong><i class="ti ti-phone" aria-hidden="true"></i> 受注確認のご連絡がまだです</strong><br>${esc(orderConfirmFollowupText(sum))}</div>` : ""}
-      <p style="font-size:13px;margin:0;line-height:1.8"><strong>供給管理で出荷を依頼してください。</strong>（出荷の下書きができています）</p>
+      ${sum.noGoods
+        ? `<p style="font-size:13px;margin:0;line-height:1.8"><strong>物の出荷はありません（カードリーダーは事業所で購入済み）。</strong>出荷は「出荷なし」として登録しました（倉庫への依頼・在庫の動きはありません）。供給管理の出荷の行の「請求済にする」から請求書を出してください。</p>`
+        : `<p style="font-size:13px;margin:0;line-height:1.8"><strong>供給管理で出荷を依頼してください。</strong>（出荷の下書きができています）</p>`}
       ${sum.mail === "sent" ? `<p style="font-size:13px;margin:0;line-height:1.8"><i class="ti ti-mail-check" aria-hidden="true"></i> 事業所へ確認メールを送りました</p>` : ""}
       ${sum.mail === "failed" ? `
         <div id="acMailWarn" role="alert" style="font-size:13px;line-height:1.8;color:#8a5a1f;background:#FFF4E0;border:1px solid #E8B86A;border-radius:8px;padding:10px 12px">

@@ -254,6 +254,8 @@ export function summarizeAcceptResult(r, opt = {}) {
     ok,
     partial: !!d.partial || (results.length > 0 && errors.length > 0),
     soNumbers,
+    // すべて物の出荷なし（カードリーダーは事業所が自分で購入・2026-11-28）＝出荷の依頼は要らず、次は請求書。無いときは項目を足さない
+    ...(results.length > 0 && results.every((x) => x && x.noGoods === true) ? { noGoods: true } : {}),
     errors,
     mail,
     mailWarning: mail === "failed"

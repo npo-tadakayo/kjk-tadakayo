@@ -25,8 +25,11 @@ export const NOTIFY_STATUSES = ["requested", "shipped", "invoiced", "paid"];
 // 持ち出しでも状態の値は "shipped" のまま（在庫・請求の扱いは発送済と同じ）。表示の言い方だけ「受け渡し済」にする
 export function isPickup(s) { return !!s && s.deliveryMode === "pickup"; }
 // 状態の表示名。持ち出しの発送済だけ「受け渡し済」
+// 物の出荷が無い出荷（伴走支援費だけ・noGoods。カードリーダーは事業所が自分で購入など）の発送済は「出荷なし」（2026-11-28）。
+// 状態の値は "shipped" のまま（請求済にする・未請求の数え方はそのまま）。発送していないのに「発送済」と見えないようにするだけ
 export function shipStatusLabelOf(s) {
   const st = shipStatusOf(s);
+  if (st === "shipped" && s && s.noGoods) return "出荷なし";
   return st === "shipped" && isPickup(s) ? "受け渡し済" : SHIP_STATUS_LABEL[st] || st;
 }
 // 「発送済にする」「すでに発送済（記録のみ）」の表示名（持ち出しは受け渡し）
