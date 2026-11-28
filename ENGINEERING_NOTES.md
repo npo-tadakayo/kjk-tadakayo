@@ -1070,3 +1070,30 @@ PM への提案（標準額＝上限−機器代・PM 判断で値引き可）�
 - 画面の確認（ローカルのエミュレーター・架空データ）: トレーナーの「引き受ける」→ 担当の名前・付け替える／外す が出て「担当なし」6→5／練習生本人の画面に「担当トレーナー：〇〇 さん」・未定の人は「調整中」／管理者の「割り当てる」「外す」／先にほかの人が引き受けていた場合のエラーと描き直し／スマホ幅で横にはみ出さない。練習モード中は操作を出さず、一覧の上に案内を1行出す
 
 **デプロイ**: Functions `trainerAssign`・`trainerMyAssignment`（名指し）→ Hosting admin（`learning.html`・`js/learning.js`・`js/learning-core.js`・`js/trainer-rules.js`・`js/practice-stubs-trainer.js`）。rules は出さない
+
+## §C22 カードリーダーは事業所が自分で購入（0台・伴走支援費だけを請求）の見積もり（2026-11-28・ブランチ `feat/quote-zero-readers`）
+
+**なぜ**: 事業所が自分でカードリーダーを買った案件（実例: 株式会社ナガヨシ・その他＝上限42,000・購入 11,800）で、見積もりに「0台」を入れられず止まっていた。出荷の側には2026-11-09 から「伴走支援費を任意の金額で入れる行」と「物の出荷なし（noGoods）は発送済で登録」があるので、**見積もり → 受注確定 → 請求** をそこへつないだ。
+
+**料金（正本 `functions/estimate-pricing.js`＝`js/`・`admin/js/` の写し・`check-pricing-sync.sh`）**
+- `computeOwnReaderAmounts(plan, own)`: 伴走支援費＝上限−購入額（0未満にしない）・機器0・金額調整0・合計＝助成金充当＝伴走支援費・自己負担0。`ownReaderIncl` を返す
+- `calcFromInput(plan, d)`: 画面の入力を確かめて計算（`ownReader:true` のときは台数がすべて0・購入額は1円以上の整数・伴走支援費が1円以上。そうでなければ今までの台数の検査）。`staffCreateQuote`・`reviseQuote`・練習の代役が通す
+- `quoteAmounts(calc)`: `quotes.amounts` の形。**購入額のある見積もりだけ `amounts.ownReaderIncl` を持つ**（1台以上の見積もりの形は今までと同じ）。これが「事業所が購入した見積もり」の唯一の印（`quotes.items` は空配列）
+- `calcOfSavedQuote(q)`: 保存済みの見積もりの値引き前の金額（`setQuoteDiscount`）。購入額があれば上限−購入額
+
+**見積もり → 出荷**（`functions/index.js`）
+- `shipmentItemsFromQuote`: `amounts.ownReaderIncl>0` なら、伴走支援費を**任意の金額の行の形**（`manual:true`・`priorBuyerReaderCost`＝購入額・名前「接続サポート等経費（伴走支援費）」・`ownReader:true`＝見積もりから作った印）で1行。供給管理の「送付先・数量を直す」で開いても、上限（区分の上限−購入額）の検査と入力欄の復元がそのまま効く（`manual-support-fee.js`）
+- `acceptTxWrite`: 明細が在庫を使わない行だけ（`isNoGoodsItems`）なら、出荷は**下書きにせず、その場で `status:"shipped"`・`noGoods:true`**（`supply.js` の手で作る noGoods と同じ形: 送料0・`shippingMethod:"none"`・出荷元なし・`shipNotifyStatus:"skipped"`・`dueRule:"net14"`・`shippedAt/By`）。在庫は動かさない・出荷指示は投稿しない。使い直す出荷が依頼済のときは拒否（出荷指示を投稿済みのため）
+- 戻り値・対応記録・Chat・確認メール: `noGoods` を返し「物の出荷なし・次は請求書」と書く。メールは「カードリーダーの発送と」を出さず、購入済みの1行を足す（`ownReaderLine`。`test-order-consent-web` が区間を切り出して動かすので、呼び名は直書き・`test-own-reader` が正本と照合）
+- `warehouseList`: `noGoods` の出荷はどの倉庫の一覧にも出さない（以前は出荷元が空だと既定の倉庫の「発送済」に出ていた）
+- 承諾書に焼き込む見積もり（`orderConsentQuoteEntry`・写し `order-consent-rules.js`）に `ownReaderIncl` を足す（あるときだけ）
+
+**請求書と出荷の関係（設計）**: 請求書はいまも**出荷（shipments）1件＝請求書1枚**のまま。0台は「物の出荷なし」の出荷を**請求の入れ物**として作り、最初から発送済（表示は「出荷なし」＝`ship-flow.js` の `shipStatusLabelOf`）にする。そのため「請求済にする」（`markInvoicedPlanOf` の `requireShipped`）・未請求の数え方・毎朝の「伴走支援が終わったのに請求書を出していない」はそのまま効く（請求がまだなのは本当なので、警告として正しい）。出荷の5段・倉庫・在庫・出荷指示には乗らない。新しい状態・遷移は作っていない
+- 受注後に見積もりを直すのは、出荷が発送済のため `reviseQuote`・`setQuoteDiscount` では止まる（今までどおり「出荷の修正」・出荷の「値引きを入れる」）
+
+**画面**: 見積もりカード（`quote-admin.js`）の「見積もりを作る」「内容を変更する」にチェックと金額の欄（金額は画面で計算しない）。一覧の品目の欄は「カードリーダーは事業所さまで購入済み（¥…）・伴走支援費のみ」。受注確定の結果に「出荷なし・請求済にするから請求書」。見積書（`quote-doc.js`）は伴走支援費の1行＋購入済みの注記・カードリーダーの行なし。請求書（`invoice-doc.js`）は**任意の金額の行に購入額（`priorBuyerReaderCost>0`）があれば注記**（手で入れた任意の行にも出る）。承諾書の印刷（`order-consent.js`）も同じ言い方。注記の文言は `support-fee-names.js` の `ownReaderNoteText`
+- 練習の代役（`practice-stubs.js`）も同じ計算・同じ出荷の扱い
+
+**テスト**: `scripts/test-own-reader.mjs`（料金・1台以上の回帰〔全区分・全台数〕・見積書／請求書／承諾書の HTML が 1台以上は origin/main と一字一句同じ・0台の明細・確認メール・画面の判定）／`scripts/test-own-reader-emu.mjs`（作成・検査・受注確定→出荷なし→請求済・倉庫の一覧・値引き・1台⇄0台の改版・1台以上の回帰。`test-all.sh` の2段目）
+
+**デプロイ順**: Functions（`staffCreateQuote`・`reviseQuote`・`setQuoteDiscount`・`staffAcceptQuote`・`acceptQuote`・`warehouseList`）→ Hosting admin（画面が新しい引数 `ownReader` を送るため。逆だと古い Functions が0台を「1台以上にしてください」で拒否するだけで、壊れはしない）→ Hosting 公開サイト（`js/estimate-pricing.js` は関数を足しただけ・見え方は変わらない）

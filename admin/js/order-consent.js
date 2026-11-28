@@ -189,7 +189,10 @@ export function buildOrderConsentPrintHtml({ document: d, quotes, printedYmd = "
       <tr>
         <td>${escH(q.estNo || "")}<br><span class="sub">第${escH(q.version ?? "—")}版${ymdOf(q.validUntil) ? `・有効期限 ${escH(ymdOf(q.validUntil))}` : ""}</span></td>
         <td>${escH(q.officeName || "")}</td>
-        <td>${escH(itemsText(q.items, nameOf))}</td>
+        <td>${escH(Number(q.amounts && q.amounts.ownReaderIncl) > 0
+          // カードリーダーは事業所が自分で購入（0台・2026-11-28）。品目の欄に購入済みと伴走支援費だけであることを書く
+          ? `カードリーダーは事業所で購入済み（${yenH(q.amounts.ownReaderIncl)}・税込）・接続サポート等経費（伴走支援費）のみ`
+          : itemsText(q.items, nameOf))}</td>
         <td class="num">${yenH(q.amounts && q.amounts.totalIncl)}<br><span class="sub">自己負担 ${yenH(q.amounts && q.amounts.selfPay)}</span></td>
       </tr>`).join("");
   const sections = (d && Array.isArray(d.sections) ? d.sections : [])

@@ -1,7 +1,7 @@
 // 請求書（INV）の描画を supply-print（印刷ページ）と経理報告のPDF生成（供給管理）で共有する共通モジュール。
 // po-doc.js と同じ役割・同じ作法。CSS は supply-print.html の <style> 内 .inv-* と内容を一致させること
 // （あちらは送付状・領収書等と同居のため別管理。こちらは .inv 配下で完結する自己完結版）。
-import { displaySupportFeeName } from "./support-fee-names.js"; // 旧い品名を表示のとき新しい呼び名にそろえる（保存値は変えない・2026-11-15）
+import { displaySupportFeeName, ownReaderNoteText } from "./support-fee-names.js"; // 旧い品名を表示のとき新しい呼び名にそろえる（保存値は変えない・2026-11-15）
 function esc(s){ return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 function yen(n){ const v=Number(n||0); return (v<0?"−":"")+"¥"+Math.abs(v).toLocaleString("ja-JP"); }
 
@@ -148,7 +148,10 @@ export function renderInvoiceHtml(s, st, opts){
     return cn || conn;
   };
   const rows2 = items.map(i=>{
-    const sub = [ connOf(i) ? `つなぎ方: ${esc(connOf(i))}` : "", esc(itemPurposeNote(i.sku)) ]
+    // 伴走支援費を任意の金額で入れた行で、事業所が買ったカードリーダーの金額があれば注記する
+    // （カードリーダーは事業所が自分で購入＝0台の見積もりから作った行など・2026-11-28。カードリーダーの行は出ない）
+    const own = String(i&&i.sku||"")==="support-fee" && i.manual && Number(i.priorBuyerReaderCost)>0 ? ownReaderNoteText(i.priorBuyerReaderCost) : "";
+    const sub = [ connOf(i) ? `つなぎ方: ${esc(connOf(i))}` : "", esc(itemPurposeNote(i.sku)), own ? esc(own) : "" ]
       .filter(Boolean).map(x=>`<div style="font-size:11px;color:#6a5e48">${x}</div>`).join("");
     return `<tr><td>${esc(displaySupportFeeName(i))}${sub}</td><td class="num">10%</td><td class="num">${i.qty}</td><td class="num">${yen(i.unitPrice)}</td><td class="num">${yen((Number(i.unitPrice)||0)*(Number(i.qty)||0))}</td></tr>`;
   }).join("")

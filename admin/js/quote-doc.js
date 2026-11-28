@@ -13,7 +13,7 @@
 import { doc, getDoc, collection, getDocs } from "/js/fs.js";
 import { connectionLabel, findProduct } from "/js/product-label.js";
 import { PM_DISCOUNT_NAME } from "/js/pm-discount.js"; // 伴走支援費の PM 値引きの行の名前（2026-11-13）
-import { SUPPORT_FEE_LABEL } from "/js/support-fee-names.js"; // 事業所向けの呼び名「接続サポート等経費（伴走支援費）」（2026-11-15）
+import { SUPPORT_FEE_LABEL, ownReaderNoteText } from "/js/support-fee-names.js"; // 事業所向けの呼び名「接続サポート等経費（伴走支援費）」（2026-11-15）
 
 function esc(s) { return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); }
 function yen(n) { return `¥${(Number(n) || 0).toLocaleString("ja-JP")}`; }
@@ -75,6 +75,7 @@ export async function loadQuoteDocData(db, quoteId) {
 function detailedQuoteRows(q, products) {
   const EP = (typeof window !== "undefined" && window.EstimatePricing) || null;
   if (!EP || !EP.PLANS[q.plan]) return null;
+  if (Number(q.amounts?.ownReaderIncl) > 0) return ownReaderQuoteRows(q, EP);
   let bt = 0, btx = 0, usb = 0, usbx = 0, usbSku = null;
   for (const it of (Array.isArray(q.items) ? q.items : [])) {
     const sub = Number(it?.subsidyQty) || 0, ext = Number(it?.extraQty) || 0;
@@ -101,6 +102,26 @@ function detailedQuoteRows(q, products) {
   if (pm > 0) r.push(row(`<strong>${esc(PM_DISCOUNT_NAME)}</strong>`, "", "1式", `−${yen(pm)}`, `−${yen(pm)}`, "color:#c02828"));
   if (btx > 0) r.push(row(btName, `補助対象外 ${btx}台（自己負担で追加）`, `${btx}台`, yen(EP.BT_PRICE), yen(c.btExtraSubtotal), "background:#fff8e1"));
   if (usbx > 0) r.push(row(usbName, `補助対象外 ${usbx}台（自己負担で追加）`, `${usbx}台`, yen(EP.USB_PRICE), yen(c.usbExtraSubtotal), "background:#fff8e1"));
+  return r.join("");
+}
+
+// カードリーダーは事業所が自分で購入（0台・2026-11-28）の見積もりの明細: 伴走支援費の1行（＋値引き）だけ。カードリーダーの行は出さない。
+// 金額は料金の正本（computeOwnReaderAmounts）で出し直し、保存値（値引き前に戻した合計）と合わなければ null（簡易の形）
+function ownReaderQuoteRows(q, EP) {
+  if (typeof EP.computeOwnReaderAmounts !== "function") return null;
+  const a = q.amounts || {};
+  const c = EP.computeOwnReaderAmounts(q.plan, a.ownReaderIncl);
+  const pm = Number(a.pmDiscount) || 0;
+  if (c.totalIncl - pm !== Number(a.totalIncl) || c.accFeeIncl !== Number(a.accompanyFee) || Number(a.selfPay) !== 0) return null;
+  const limit = EP.PLANS[q.plan].limit;
+  const row = (name, note, qty, unit, amount, style = "") =>
+    `<tr${style ? ` style="${style}"` : ""}><td>${name}${note ? `<div class="qdoc-sub-note">${note}</div>` : ""}</td><td>${qty}</td><td class="qdoc-num">${unit}</td><td class="qdoc-num">${amount}</td></tr>`;
+  const r = [];
+  r.push(row(`${SUPPORT_FEE_LABEL}<span class="qdoc-badge-free">申請手続きの支援を含む</span>`,
+    "初期登録・機器接続・マイナ資格確認アプリ設定・介護DX証明書設定・申請手続きの支援・導入後の運用相談"
+    + `<br>${esc(ownReaderNoteText(c.ownReaderIncl))}。助成金の上限 ${yen(limit)} から差し引いた額です`,
+    "1式", yen(c.accFeeIncl), yen(c.accFeeIncl)));
+  if (pm > 0) r.push(row(`<strong>${esc(PM_DISCOUNT_NAME)}</strong>`, "", "1式", `−${yen(pm)}`, `−${yen(pm)}`, "color:#c02828"));
   return r.join("");
 }
 
@@ -156,6 +177,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
   const detailRows = detailedQuoteRows(q, products);
   const a = q.amounts || {};
+  const ownReader = Number(a.ownReaderIncl) > 0; // カードリーダーは事業所が自分で購入（0台・2026-11-28）
   const zeroBadge = Number(a.selfPay) === 0 ? `<span class="qdoc-badge-zero">自己負担 ¥0</span>` : "";
   const extraRow = Number(a.extraPartTotal) > 0
     ? `<div class="qdoc-total-row sub" style="color:#b27800"><span>補助対象外（自己負担）合計</span><span>${yen(a.extraPartTotal)}</span></div>` : "";
@@ -228,7 +250,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
 
       <div class="qdoc-totals-wrap">
         <div class="qdoc-totals">
-          ${detailRows ? "" : `<div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>
+          ${detailRows ? "" : `${ownReader ? `<div class="qdoc-total-row sub"><span>${esc(ownReaderNoteText(a.ownReaderIncl))}</span><span>—</span></div>` : `<div class="qdoc-total-row sub"><span>補助対象パート 機器小計（税込・定価）</span><span>${yen(a.readers)}</span></div>`}
           <div class="qdoc-total-row sub"><span>${SUPPORT_FEE_LABEL}・税込</span><span>${yen(a.accompanyFee)}</span></div>
           ${discountRow}`}
           ${pmRow}
@@ -244,7 +266,7 @@ export function renderQuoteDocHtml({ quote: q, kase, office, products }) {
         ・プラン：<strong>${esc(planLabel)}</strong><br>
         ・本見積書の金額はすべて消費税10%を含む税込金額で表示しています。<br>
         ・本見積書の有効期限は<strong>${esc(ymdJp(q.validUntil)) || "—"}</strong>までです。<br>
-        ・申し込み後も、支援の日程調整の際に台数や機種の変更ができます。<br>
+        ${ownReader ? `・${esc(ownReaderNoteText(a.ownReaderIncl))}のため、本見積書にカードリーダーは含みません（${SUPPORT_FEE_LABEL}のみ）。<br>` : "・申し込み後も、支援の日程調整の際に台数や機種の変更ができます。<br>"}
         ・助成金の支給には、事業所さまが申請の要件を満たしている必要があります。タダカヨは申請手続きの支援を行います（代行はいたしません）。
         ${createdByLine}
       </div>

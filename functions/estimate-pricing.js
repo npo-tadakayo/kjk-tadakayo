@@ -80,5 +80,76 @@
     return items;
   }
 
-  return { PLANS, BT_LABEL, USB_LABEL, BT_PRICE, USB_PRICE, ACCOMPANY_FEE, SKU, usbSku, computeAmounts, buildItems };
+  // ===== カードリーダーは事業所が自分で購入（タダカヨから機器を出さない＝0台）の見積もり（2026-11-28）=====
+  // 伴走支援費 ＝ 助成区分の上限 − 事業所が買ったカードリーダーの金額（税込）。0未満にはしない。自己負担は0円（助成金の範囲内）。
+  // 戻り値は computeAmounts と同じ形（台数・機器代は0）に ownReaderIncl（事業所が買った金額）を足したもの。
+  // 例: その他（上限42,000）で事業所が11,800円で購入 → 伴走支援費 30,200・合計 30,200・助成金充当 30,200・自己負担 0
+  function parseOwnReaderIncl(v) {
+    if (typeof v === "number") return Number.isInteger(v) && v >= 0 ? v : NaN;
+    if (typeof v !== "string") return NaN;
+    const s = v.trim().replace(/[,，円¥￥\s]/g, "");
+    return /^\d{1,9}$/.test(s) ? Number(s) : NaN;
+  }
+  function computeOwnReaderAmounts(planKey, ownReaderIncl) {
+    const plan = PLANS[planKey];
+    if (!plan) throw new Error(`unknown plan: ${planKey}`);
+    const own = Math.max(0, Math.round(Number(ownReaderIncl) || 0));
+    const accFeeIncl = Math.max(0, plan.limit - own);
+    return {
+      plan, btQty: 0, usbQty: 0, btExtra: 0, usbExtra: 0, subsidyTotal: 0, extraTotal: 0,
+      btSubtotal: 0, usbSubtotal: 0, devSubsidyIncl: 0, accFeeIncl,
+      subsidyPartSubtotal: accFeeIncl, discount: 0, subsidyPartTotal: accFeeIncl,
+      btExtraSubtotal: 0, usbExtraSubtotal: 0, extraPartTotal: 0,
+      totalIncl: accFeeIncl, grantAmt: accFeeIncl, selfPay: 0, ownReaderIncl: own,
+    };
+  }
+  // 見積もりの入力（台数、または「事業所が購入」＋金額）を確かめて金額を出す。画面の計算は信じず、サーバー
+  // （staffCreateQuote・reviseQuote）と練習の代役がここを通す。d … { btQty, usbQty, btExtra, usbExtra, ownReader, ownReaderIncl }
+  // 戻り値 { ok:true, calc, ownReader } ／ { ok:false, error }
+  function calcFromInput(planKey, d) {
+    const plan = PLANS[planKey];
+    if (!plan) return { ok: false, error: "プランの指定が不正です" };
+    const x = d || {};
+    if (x.ownReader === true) {
+      const qty = (Number(x.btQty) || 0) + (Number(x.usbQty) || 0) + (Number(x.btExtra) || 0) + (Number(x.usbExtra) || 0);
+      if (qty !== 0) return { ok: false, error: "「カードリーダーは事業所が自分で購入」のときは、カードリーダーの台数をすべて0台にしてください" };
+      const own = parseOwnReaderIncl(x.ownReaderIncl);
+      if (!(own >= 1)) return { ok: false, error: "事業所が購入したカードリーダーの金額（税込）を、1円以上の整数で入れてください" };
+      const calc = computeOwnReaderAmounts(planKey, own);
+      if (calc.accFeeIncl < 1) {
+        return { ok: false, error: `カードリーダーの金額が助成金の上限（¥${plan.limit.toLocaleString("ja-JP")}）以上のため、伴走支援費が0円になります。この見積もりは作れません` };
+      }
+      return { ok: true, calc, ownReader: true };
+    }
+    const calc = computeAmounts(planKey, x.btQty, x.usbQty, x.btExtra, x.usbExtra);
+    if (calc.subsidyTotal < 1) return { ok: false, error: "補助対象のカードリーダーを1台以上にしてください" };
+    if (calc.subsidyTotal > plan.maxQty) return { ok: false, error: `${plan.label}の補助対象は最大${plan.maxQty}台です` };
+    return { ok: true, calc, ownReader: false };
+  }
+  // 計算結果 → quotes.amounts の形。事業所が購入した見積もりだけ ownReaderIncl を持つ（無い見積もりの形は今までと同じ）
+  function quoteAmounts(calc) {
+    const a = {
+      readers: calc.devSubsidyIncl, accompanyFee: calc.accFeeIncl, discount: calc.discount,
+      subsidyPartTotal: calc.subsidyPartTotal, extraPartTotal: calc.extraPartTotal,
+      totalIncl: calc.totalIncl, grantAmt: calc.grantAmt, selfPay: calc.selfPay,
+    };
+    if (Number(calc.ownReaderIncl) > 0) a.ownReaderIncl = Number(calc.ownReaderIncl);
+    return a;
+  }
+  // 保存済みの見積もり（plan・items・amounts）の値引き前の金額を、料金の正本で出し直す（値引き・見積書の照合用）
+  function calcOfSavedQuote(q) {
+    const own = Number(q && q.amounts && q.amounts.ownReaderIncl) || 0;
+    if (own > 0) return computeOwnReaderAmounts(q.plan, own);
+    let bt = 0, usb = 0, btx = 0, usbx = 0;
+    const items = q && Array.isArray(q.items) ? q.items : [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i] || {};
+      if (it.sku === SKU.BT) { bt += Number(it.subsidyQty) || 0; btx += Number(it.extraQty) || 0; }
+      else { usb += Number(it.subsidyQty) || 0; usbx += Number(it.extraQty) || 0; }
+    }
+    return computeAmounts(q && q.plan, bt, usb, btx, usbx);
+  }
+
+  return { PLANS, BT_LABEL, USB_LABEL, BT_PRICE, USB_PRICE, ACCOMPANY_FEE, SKU, usbSku, computeAmounts, buildItems,
+    parseOwnReaderIncl, computeOwnReaderAmounts, calcFromInput, quoteAmounts, calcOfSavedQuote };
 });

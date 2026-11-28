@@ -193,6 +193,8 @@ function orderConsentQuoteEntry(q) {
       totalIncl: num(a.totalIncl), grantAmt: num(a.grantAmt), selfPay: num(a.selfPay),
       // 伴走支援費の PM 値引き（2026-11-13）。入っているときだけ焼き込む（無い見積もりの記録の形は今までと同じ）
       ...(num(a.pmDiscount) > 0 ? { pmDiscount: num(a.pmDiscount) } : {}),
+      // カードリーダーは事業所が自分で購入した見積もり（2026-11-28）の購入額。入っているときだけ焼き込む
+      ...(num(a.ownReaderIncl) > 0 ? { ownReaderIncl: num(a.ownReaderIncl) } : {}),
     },
   };
 }

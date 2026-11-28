@@ -1,0 +1,254 @@
+// カードリーダーは事業所が自分で購入（0台・伴走支援費だけを請求）の見積もり（2026-11-28）の、エミュレータの要らないテスト。
+//   ① 料金（estimate-pricing.js）: computeOwnReaderAmounts・calcFromInput・quoteAmounts・calcOfSavedQuote。3つの写しが同じ
+//   ② 回帰: 1台以上の計算・金額の形は今までと同じ（calcFromInput＝computeAmounts・quoteAmounts＝今までの形）
+//   ③ 見積書（quote-doc.js）・請求書（invoice-doc.js）・承諾書の印刷（order-consent.js）: 0台は伴走支援費の1行＋購入済みの注記・
+//      カードリーダーの行なし。1台以上の見積もり・出荷の HTML は origin/main と一字一句同じ
+//   ④ 受注確定の確認メール: 0台は購入済みの1行・「カードリーダーの発送と」を出さない。直書きの呼び名が正本と同じ
+//   ⑤ 画面の判定: 状態の表示「出荷なし」・受注確定の結果のまとめ
+//
+// 実行: node scripts/test-own-reader.mjs
+import assert from "node:assert/strict";
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+const read = (p) => readFileSync(path.join(root, p), "utf8");
+let n = 0;
+const t = (name, fn) => { try { fn(); n++; } catch (e) { console.error(`NG ${name}`); throw e; } };
+const ta = async (name, fn) => { try { await fn(); n++; } catch (e) { console.error(`NG ${name}`); throw e; } };
+
+const P = require(path.join(root, "functions/estimate-pricing.js"));
+let mainSrc = (p) => { try { return execFileSync("git", ["-C", root, "show", `origin/main:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }); } catch { return ""; } };
+
+// ---------- ① 料金 ----------
+t("3つの写しが同じ（functions・公開ページ・管理画面）", () => {
+  const a = read("functions/estimate-pricing.js");
+  assert.equal(read("js/estimate-pricing.js"), a);
+  assert.equal(read("admin/js/estimate-pricing.js"), a);
+});
+t("ナガヨシの実例: その他・購入 11,800 → 伴走支援費 30,200・自己負担 0", () => {
+  const c = P.computeOwnReaderAmounts("other", 11800);
+  assert.equal(c.accFeeIncl, 30200); assert.equal(c.totalIncl, 30200); assert.equal(c.grantAmt, 30200);
+  assert.equal(c.selfPay, 0); assert.equal(c.discount, 0); assert.equal(c.devSubsidyIncl, 0); assert.equal(c.subsidyTotal, 0);
+  assert.equal(c.ownReaderIncl, 11800);
+  assert.deepEqual(P.quoteAmounts(c), { readers: 0, accompanyFee: 30200, discount: 0, subsidyPartTotal: 30200, extraPartTotal: 0,
+    totalIncl: 30200, grantAmt: 30200, selfPay: 0, ownReaderIncl: 11800 });
+});
+t("区分ごとの上限 − 購入額（訪問通所 64,000・居住入所 55,000・その他 42,000）", () => {
+  assert.equal(P.computeOwnReaderAmounts("houmon", 14500).accFeeIncl, 49500);
+  assert.equal(P.computeOwnReaderAmounts("kyojyu", 6500).accFeeIncl, 48500);
+  assert.equal(P.computeOwnReaderAmounts("other", 6500).accFeeIncl, 35500);
+});
+t("0未満にはしない（購入額が上限以上なら伴走支援費は0）", () => {
+  assert.equal(P.computeOwnReaderAmounts("other", 42000).accFeeIncl, 0);
+  assert.equal(P.computeOwnReaderAmounts("other", 99999).accFeeIncl, 0);
+  assert.equal(P.computeOwnReaderAmounts("other", 99999).totalIncl, 0);
+});
+t("calcFromInput: 0台＋購入額は通る・検査", () => {
+  const ok = P.calcFromInput("other", { ownReader: true, ownReaderIncl: 11800 });
+  assert.equal(ok.ok, true); assert.equal(ok.ownReader, true); assert.equal(ok.calc.accFeeIncl, 30200);
+  assert.equal(P.calcFromInput("other", { ownReader: true, ownReaderIncl: "11,800円" }).calc.accFeeIncl, 30200);
+  for (const [d, re] of [
+    [{ btQty: 1, ownReaderIncl: 11800 }, /0台/], [{ btExtra: 2, ownReaderIncl: 11800 }, /0台/],
+    [{ ownReaderIncl: 0 }, /1円以上/], [{ ownReaderIncl: 1.5 }, /1円以上/], [{ ownReaderIncl: "-5" }, /1円以上/],
+    [{ ownReaderIncl: null }, /1円以上/], [{ ownReaderIncl: [11800] }, /1円以上/], [{ ownReaderIncl: true }, /1円以上/],
+    [{ ownReaderIncl: 42000 }, /0円/],
+  ]) {
+    const r = P.calcFromInput("other", { ownReader: true, ...d });
+    assert.equal(r.ok, false, JSON.stringify(d)); assert.match(r.error, re);
+  }
+  assert.match(P.calcFromInput("nope", { ownReader: true, ownReaderIncl: 1 }).error, /プラン/);
+  // ownReader は true（真偽値）のときだけ。"true" の文字などは通常の台数の見積もりとして扱う（0台なら拒否）
+  assert.match(P.calcFromInput("other", { ownReader: "true", ownReaderIncl: 11800 }).error, /1台以上/);
+});
+
+// ---------- ② 回帰 ----------
+t("1台以上: calcFromInput の計算は computeAmounts と同じ・quoteAmounts は今までの形（全区分・全台数）", () => {
+  for (const plan of ["houmon", "kyojyu", "other"]) {
+    for (let bt = 0; bt <= 3; bt++) for (let usb = 0; usb <= 3; usb++) for (const btx of [0, 2]) for (const usbx of [0, 1]) {
+      const r = P.calcFromInput(plan, { btQty: bt, usbQty: usb, btExtra: btx, usbExtra: usbx });
+      const c = P.computeAmounts(plan, bt, usb, btx, usbx);
+      if (bt + usb < 1 || bt + usb > P.PLANS[plan].maxQty) { assert.equal(r.ok, false); continue; }
+      assert.equal(r.ok, true); assert.equal(r.ownReader, false); assert.deepEqual(r.calc, c);
+      const old = { readers: c.devSubsidyIncl, accompanyFee: c.accFeeIncl, discount: c.discount, subsidyPartTotal: c.subsidyPartTotal,
+        extraPartTotal: c.extraPartTotal, totalIncl: c.totalIncl, grantAmt: c.grantAmt, selfPay: c.selfPay };
+      assert.equal(JSON.stringify(P.quoteAmounts(c)), JSON.stringify(old));
+      // 保存済みの見積もりからの出し直し（値引き）も今までの数え方と同じ
+      const items = P.buildItems({ btQty: bt, usbQty: usb, btExtra: btx, usbExtra: usbx, usbConnector: "C" });
+      assert.deepEqual(P.calcOfSavedQuote({ plan, items, amounts: old }), c);
+    }
+  }
+});
+t("calcOfSavedQuote: 購入額のある見積もりは上限 − 購入額", () => {
+  assert.equal(P.calcOfSavedQuote({ plan: "other", items: [], amounts: { ownReaderIncl: 11800 } }).accFeeIncl, 30200);
+});
+t("料金の正本の既存の関数・定数は変えていない（origin/main の computeAmounts・buildItems と同じ結果）", () => {
+  const src = mainSrc("functions/estimate-pricing.js");
+  if (!src) { console.log("  （origin/main が無いので飛ばした）"); return; }
+  const mod = { exports: {} };
+  new Function("module", "exports", "self", src)(mod, mod.exports, undefined);
+  const M = mod.exports;
+  for (const k of ["PLANS", "BT_PRICE", "USB_PRICE", "ACCOMPANY_FEE", "SKU"]) assert.deepEqual(P[k], M[k], k);
+  for (const plan of ["houmon", "kyojyu", "other"]) for (let bt = 0; bt <= 3; bt++) for (let usb = 0; usb <= 3; usb++) {
+    assert.deepEqual(P.computeAmounts(plan, bt, usb, 1, 0), M.computeAmounts(plan, bt, usb, 1, 0));
+  }
+});
+
+// ---------- ③ 帳票 ----------
+// ブラウザ向けの ESM（/js/... の絶対パスを import する）を、node で読めるように import 先を書き換えて一時フォルダに置く
+const tmp = mkdtempSync(path.join(os.tmpdir(), "kjk-own-reader-"));
+process.on("exit", () => { try { rmSync(tmp, { recursive: true, force: true }); } catch { /* 片付けの失敗は無視 */ } });
+writeFileSync(path.join(tmp, "fs-stub.mjs"), "export const doc=()=>{};export const getDoc=async()=>({exists:()=>false});export const collection=()=>{};export const getDocs=async()=>({docs:[]});\n");
+const adminUrl = (f) => pathToFileURL(path.join(root, "admin/js", f)).href;
+function loadable(src, name) {
+  const s = src.replace(/from "\/js\/fs\.js"/g, `from "${pathToFileURL(path.join(tmp, "fs-stub.mjs")).href}"`)
+    .replace(/from "\/js\/([\w-]+\.js)"/g, (_, f) => `from "${adminUrl(f)}"`)
+    .replace(/from "\.\/([\w-]+\.js)"/g, (_, f) => `from "${adminUrl(f)}"`);
+  const p = path.join(tmp, name);
+  writeFileSync(p, s);
+  return import(pathToFileURL(p).href);
+}
+globalThis.window = { EstimatePricing: P };
+const QD = await loadable(read("admin/js/quote-doc.js"), "quote-doc-new.mjs");
+const qdMainSrc = mainSrc("admin/js/quote-doc.js");
+const QDM = qdMainSrc ? await loadable(qdMainSrc, "quote-doc-main.mjs") : null;
+const ID = await import(adminUrl("invoice-doc.js"));
+const idMainSrc = mainSrc("admin/js/invoice-doc.js");
+const IDM = idMainSrc ? await loadable(idMainSrc, "invoice-doc-main.mjs") : null;
+const OC = await import(adminUrl("order-consent.js"));
+const ocMainSrc = mainSrc("admin/js/order-consent.js");
+const OCM = ocMainSrc ? await loadable(ocMainSrc, "order-consent-main.mjs") : null;
+const { SUPPORT_FEE_LABEL } = await import(adminUrl("support-fee-names.js"));
+
+const created = new Date("2026-11-28T00:00:00+09:00"), until = new Date("2026-12-28T00:00:00+09:00");
+const ownQ = { _id: "q1", estNo: "EST-2026-0999", version: 1, plan: "other", planLabel: "その他", items: [],
+  amounts: P.quoteAmounts(P.computeOwnReaderAmounts("other", 11800)), createdAt: created, validUntil: until,
+  corpName: "株式会社ナガヨシ", officeName: "ナガヨシ福祉用具", contactName: "長吉", createdVia: "staff", createdBy: "staff@tadakayo.jp" };
+const normalQs = [
+  ["houmon", 3, 0, 0, 0], ["houmon", 1, 1, 1, 0], ["kyojyu", 2, 0, 0, 0], ["other", 1, 0, 0, 0], ["other", 0, 1, 0, 2],
+].map(([plan, bt, usb, btx, usbx], i) => ({ ...ownQ, _id: `n${i}`, plan, planLabel: P.PLANS[plan].label,
+  items: P.buildItems({ btQty: bt, usbQty: usb, btExtra: btx, usbExtra: usbx, usbConnector: "A" }),
+  amounts: P.quoteAmounts(P.computeAmounts(plan, bt, usb, btx, usbx)) }));
+// 値引き（PM）の入った1台の見積もり
+normalQs.push({ ...normalQs[0], _id: "npm", amounts: { ...normalQs[0].amounts, pmDiscount: 3000, totalIncl: normalQs[0].amounts.totalIncl - 3000, subsidyPartTotal: normalQs[0].amounts.subsidyPartTotal - 3000, grantAmt: normalQs[0].amounts.grantAmt - 3000 } });
+const rowsOf = (html) => (html.match(/<tbody>([\s\S]*?)<\/tbody>/) || [])[1] || "";
+
+t("見積書: 0台は伴走支援費の1行（30,200）＋購入済みの注記・カードリーダーの行なし・自己負担 ¥0", () => {
+  const h = QD.renderQuoteDocHtml({ quote: ownQ, kase: null, office: null, products: [] });
+  const body = rowsOf(h);
+  assert.equal((body.match(/<tr/g) || []).length, 1, body);
+  assert.ok(body.includes(SUPPORT_FEE_LABEL) && body.includes("¥30,200"));
+  assert.ok(body.includes("カードリーダーは事業所さまで購入済み（¥11,800・税込）"), body);
+  assert.ok(body.includes("助成金の上限 ¥42,000 から差し引いた額"));
+  assert.ok(!/CIR|カードリーダ CIR|補助対象 \d台/.test(body), body);
+  assert.ok(h.includes("自己負担 ¥0") && h.includes("−¥30,200"), "助成金充当と自己負担");
+  assert.ok(h.includes("本見積書にカードリーダーは含みません"));
+  assert.ok(!h.includes("台数や機種の変更ができます"));
+});
+t("見積書: 0台＋値引きは値引きの行も出す", () => {
+  const a = { ...ownQ.amounts, pmDiscount: 5000, totalIncl: 25200, subsidyPartTotal: 25200, grantAmt: 25200 };
+  const body = rowsOf(QD.renderQuoteDocHtml({ quote: { ...ownQ, amounts: a }, kase: null, office: null, products: [] }));
+  assert.equal((body.match(/<tr/g) || []).length, 2); assert.ok(body.includes("−¥5,000"));
+});
+t("見積書: 1台以上（値引きありも）の HTML は origin/main と一字一句同じ", () => {
+  if (!QDM) { console.log("  （origin/main が無いので飛ばした）"); return; }
+  for (const q of normalQs) {
+    assert.equal(QD.renderQuoteDocHtml({ quote: q, kase: null, office: null, products: [] }),
+      QDM.renderQuoteDocHtml({ quote: q, kase: null, office: null, products: [] }), q._id);
+  }
+});
+
+const ownShip = { soNumber: "SH-2026-0701", shipType: "direct", company: "株式会社ナガヨシ", officeName: "ナガヨシ福祉用具", status: "shipped",
+  noGoods: true, shipDate: "2026-11-28", shippingFee: 0, dueRule: "net14",
+  items: [{ sku: "support-fee", name: SUPPORT_FEE_LABEL, qty: 1, unitPrice: 30200, nonStock: true, manual: true, manualBy: "x", manualAt: "2026-11-28T00:00:00Z", priorBuyerReaderCost: 11800, ownReader: true }] };
+t("請求書: 0台は伴走支援費の1行・購入済みの注記・カードリーダーの行なし・合計 30,200", () => {
+  const h = ID.renderInvoiceHtml(ownShip, {}, { issueDate: "2026年11月28日" });
+  const body = rowsOf(h);
+  assert.equal((body.match(/<tr/g) || []).length, 1, body);
+  assert.ok(body.includes(SUPPORT_FEE_LABEL) && body.includes("¥30,200"));
+  assert.ok(body.includes("カードリーダーは事業所さまで購入済み（¥11,800・税込）"), body);
+  assert.ok(!/CIR|つなぎ方/.test(body));
+  assert.equal(ID.invoiceTotals(ownShip).total, 30200);
+});
+t("請求書: 1台以上の出荷（自動の伴走支援費・金額調整・値引き・送料）は origin/main と一字一句同じ", () => {
+  if (!IDM) { console.log("  （origin/main が無いので飛ばした）"); return; }
+  const ships = [
+    { ...ownShip, noGoods: false, items: [{ sku: "cir415a-01", name: "介護情報基盤 汎用カードリーダ CIR415A", qty: 1, unitPrice: 14500, connection: "Bluetooth／USB Type-C" },
+      { sku: "support-fee", name: "接続サポート等経費（伴走支援費・補助対象1台）", qty: 1, unitPrice: 60000, nonStock: true },
+      { sku: "discount", name: "金額調整", qty: 1, unitPrice: -32500, nonStock: true }] },
+    { ...ownShip, noGoods: false, shippingFee: 370, shippingLabel: "送料", items: [{ sku: "cir315a-02", name: "CIR315A", qty: 3, unitPrice: 6500 },
+      { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000, nonStock: true },
+      { sku: "discount", name: "接続サポート等経費（伴走支援費）の値引き", qty: 1, unitPrice: -2000, nonStock: true, pm: true }] },
+    { ...ownShip, noGoods: false, shipType: "dropship", partnerEmail: "p@example.com", partnerName: "認定", items: [{ sku: "cir415a-01", name: "CIR415A", qty: 2, unitPrice: 9000 }] },
+    // 購入額の無い任意の行（今までどおり注記なし）
+    { ...ownShip, items: [{ sku: "support-fee", name: SUPPORT_FEE_LABEL, qty: 1, unitPrice: 30000, nonStock: true, manual: true }] },
+  ];
+  for (const s of ships) assert.equal(ID.renderInvoiceHtml(s, {}, { issueDate: "2026年11月28日" }), IDM.renderInvoiceHtml(s, {}, { issueDate: "2026年11月28日" }));
+});
+t("承諾書の印刷: 0台は購入済みと伴走支援費のみ・1台以上は origin/main と同じ", () => {
+  const doc = { title: "承諾書", sections: [{ title: "第1条", body: "本文" }] };
+  const h = OC.buildOrderConsentPrintHtml({ document: doc, quotes: [ownQ], printedYmd: "2026-11-28" });
+  assert.ok(h.includes("カードリーダーは事業所で購入済み（¥11,800・税込）・接続サポート等経費（伴走支援費）のみ"), h.slice(0, 500));
+  if (!OCM) return;
+  for (const q of normalQs) {
+    assert.equal(OC.buildOrderConsentPrintHtml({ document: doc, quotes: [q], printedYmd: "2026-11-28" }),
+      OCM.buildOrderConsentPrintHtml({ document: doc, quotes: [q], printedYmd: "2026-11-28" }), q._id);
+  }
+});
+
+// ---------- ④ 確認メール ----------
+const idx = read("functions/index.js");
+function mailFns(src, FlowMod) {
+  const i = src.indexOf("function acceptMailText(");
+  const j = src.indexOf("// 出荷の「使い直し・重複」の Chat 用の注記");
+  assert.ok(i > 0 && j > i, "acceptMailText が見つからない");
+  const fmt = src.slice(src.indexOf("function fmtNum("), src.indexOf("\n}\n", src.indexOf("function fmtNum(")) + 2);
+  const pay = /const PAY_LABELS = \{[^}]*\};/.exec(src)[0];
+  return new Function("Flow", `${fmt}\n${pay}\n${src.slice(i, j)}\nreturn { acceptMailText, acceptMailTextGroup };`)(FlowMod);
+}
+const Flow = require(path.join(root, "functions/accept-flow.js"));
+const M = mailFns(idx, Flow);
+t("確認メール: 0台は購入済みの1行・「カードリーダーの発送と」を出さない", () => {
+  const m = M.acceptMailText({ q: ownQ, agreedName: "長吉", payKey: "after", delivery: {}, preferredDate: "" });
+  assert.ok(m.body.includes("カードリーダー: 事業所さまでご購入済み（¥11,800・税込）。タダカヨからのご請求は接続サポート等経費（伴走支援費）のみです"), m.body);
+  assert.ok(m.body.includes("担当スタッフから、伴走支援の日程について"));
+  assert.ok(!m.body.includes("カードリーダーの発送と"));
+  const g = M.acceptMailTextGroup({ items: [{ q: ownQ, soNumber: "SH-1" }, { q: normalQs[0], soNumber: "SH-2" }], agreedName: "x", payKey: "after", preferredDate: "" });
+  assert.ok(g.body.includes("カードリーダーの発送と"), "1件でもカードリーダーがあれば発送の案内を残す");
+});
+t("確認メールの直書きの呼び名が正本（support-fee-names.js）と同じ", () => {
+  const m = /function ownReaderLine\(q\) \{[\s\S]*?\n\}/.exec(idx);
+  assert.ok(m && m[0].includes(`ご請求は${SUPPORT_FEE_LABEL}のみです`));
+});
+
+// ---------- ⑤ 画面の判定 ----------
+const F = await import(adminUrl("ship-flow.js"));
+const SR = await import(adminUrl("screen-rules.js"));
+t("状態の表示: 物の出荷なしの発送済は「出荷なし」・請求済は「請求済」・普通の発送済は「発送済」", () => {
+  assert.equal(F.shipStatusLabelOf({ status: "shipped", noGoods: true }), "出荷なし");
+  assert.equal(F.shipStatusLabelOf({ status: "invoiced", noGoods: true }), "請求済");
+  assert.equal(F.shipStatusLabelOf({ status: "shipped" }), "発送済");
+  assert.equal(F.nextStatus("shipped", "invoice"), "invoiced");
+});
+t("受注確定の結果のまとめ: すべて物の出荷なしのときだけ noGoods", () => {
+  assert.equal(SR.summarizeAcceptResult({ ok: true, results: [{ soNumber: "SH-1", noGoods: true }] }).noGoods, true);
+  assert.equal("noGoods" in SR.summarizeAcceptResult({ ok: true, results: [{ soNumber: "SH-1", noGoods: true }, { soNumber: "SH-2" }] }), false);
+  assert.equal("noGoods" in SR.summarizeAcceptResult({ ok: true, results: [{ soNumber: "SH-1" }] }), false);
+});
+t("練習の代役も同じ計算（calcFromInput・calcOfSavedQuote・quoteAmounts）と同じ出荷の扱い", () => {
+  const ps = read("admin/js/practice-stubs.js");
+  assert.match(ps, /P\.calcFromInput\(planKey, d\)/);
+  assert.match(ps, /P\.calcOfSavedQuote\(base\)/);
+  assert.match(ps, /priorBuyerReaderCost: ownReader, ownReader: true/);
+  assert.match(ps, /status: "shipped", noGoods: true/);
+});
+t("倉庫の一覧（warehouseList）は物の出荷なしを除く", () => {
+  assert.match(idx, /const atLoc = \(s\) => s\.fulfillment !== "direct" && !s\.noGoods &&/);
+});
+
+console.log(`OK test-own-reader: 合計 ${n} 件合格`);

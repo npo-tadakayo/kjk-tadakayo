@@ -25,6 +25,14 @@ export const SUPPORT_FEE_TOTAL_LABEL = "接続サポート等経費（伴走支�
 /** 社内（CRM の管理画面・活動の記録）の呼び名。事業所向けの出力には使わない */
 export const SUPPORT_FEE_INTERNAL = "伴走支援費";
 
+/**
+ * カードリーダーは事業所が自分で購入した（タダカヨからは機器を出さない＝0台）ときの、事業所向けの注記（2026-11-28）。
+ * 見積書・請求書・承諾書・見積もりカードで同じ言い方にする。n＝事業所が購入したカードリーダーの金額（税込）
+ */
+export function ownReaderNoteText(n) {
+  return `カードリーダーは事業所さまで購入済み（¥${Math.round(Number(n) || 0).toLocaleString("ja-JP")}・税込）`;
+}
+
 /** 自動の伴走支援費の行の品名（請求書・領収証にそのまま出る）。n＝補助対象の台数 */
 export function supportFeeItemName(n) {
   return `接続サポート等経費（伴走支援費・補助対象${n}台）`;
