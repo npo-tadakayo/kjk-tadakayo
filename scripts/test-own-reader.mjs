@@ -91,6 +91,30 @@ t("1台以上: calcFromInput の計算は computeAmounts と同じ・quoteAmount
     }
   }
 });
+await ta("下限（¥15,000）を下回る0台の見積もり: 管理者だけ・根拠必須／30,200円（ナガヨシ）はスタッフでも可（中4・2026-11-28 次田さん決定）", async () => {
+  const PM = await import(pathToFileURL(path.join(root, "admin/js/pm-discount.js")).href);
+  assert.equal(P.OWN_READER_FLOOR, PM.FLOOR, "下限は pm-discount.js の FLOOR と同じ");
+  const c = (own, plan = "other") => P.calcFromInput(plan, { ownReader: true, ownReaderIncl: own }).calc;
+  // ナガヨシ: 30,200 は下限以上 → スタッフ・根拠なしで可
+  let r = P.checkOwnReaderPolicy({ calc: c(11800), isAdmin: false, basis: "" });
+  assert.equal(r.ok, true); assert.equal(r.belowFloor, false);
+  // ちょうど 15,000（42,000 − 27,000）は下回らない → スタッフ可
+  assert.equal(P.checkOwnReaderPolicy({ calc: c(27000), isAdmin: false }).ok, true);
+  // 14,999（42,000 − 27,001）は下回る → スタッフは拒否
+  r = P.checkOwnReaderPolicy({ calc: c(27001), isAdmin: false, basis: "領収書あり" });
+  assert.equal(r.ok, false); assert.equal(r.belowFloor, true); assert.match(r.error, /管理者だけ/); assert.match(r.error, /¥15,000/);
+  // 管理者でも根拠が空・空白だけなら拒否
+  for (const b of ["", "   ", null, undefined, 123]) {
+    r = P.checkOwnReaderPolicy({ calc: c(27001), isAdmin: true, basis: b });
+    assert.equal(r.ok, false, String(b)); assert.match(r.error, /根拠/);
+  }
+  // 管理者＋根拠で可。根拠は改行を空白に・前後の空白を除き・200字まで
+  r = P.checkOwnReaderPolicy({ calc: c(27001), isAdmin: true, basis: "  自費で購入\n領収書あり  " });
+  assert.equal(r.ok, true); assert.equal(r.basis, "自費で購入 領収書あり");
+  assert.equal(P.cleanOwnReaderBasis("あ".repeat(250)).length, 200);
+  // 台数の見積もり（0台でない）は対象外
+  assert.equal(P.checkOwnReaderPolicy({ calc: P.computeAmounts("other", 1, 0, 0, 0), isAdmin: false }).ok, true);
+});
 t("calcOfSavedQuote: 購入額のある見積もりは上限 − 購入額", () => {
   assert.equal(P.calcOfSavedQuote({ plan: "other", items: [], amounts: { ownReaderIncl: 11800 } }).accFeeIncl, 30200);
 });
@@ -280,7 +304,8 @@ t("練習の代役も同じ計算（calcFromInput・calcOfSavedQuote・quoteAmou
   const ps = read("admin/js/practice-stubs.js");
   assert.match(ps, /P\.calcFromInput\(planKey, d\)/);
   assert.match(ps, /P\.calcOfSavedQuote\(base\)/);
-  assert.match(ps, /priorBuyerReaderCost: ownReader, ownReader: true/);
+  assert.match(ps, /priorBuyerReaderCost: ownReader,/);
+  assert.match(ps, /P\.checkOwnReaderPolicy\(\{ calc, isAdmin: isAdm, basis: d\.ownReaderBasis \}\)/);
   assert.match(ps, /status: "shipped", noGoods: true/);
 });
 t("倉庫の一覧（warehouseList）は物の出荷なしを除く", () => {

@@ -127,6 +127,32 @@
     if (calc.subsidyTotal > plan.maxQty) return { ok: false, error: `${plan.label}の補助対象は最大${plan.maxQty}台です` };
     return { ok: true, calc, ownReader: false };
   }
+  // ===== 0台の見積もりで伴走支援費が報酬の下限を下回るとき（2026-11-28 次田さん決定・レビュー中4）=====
+  // 伴走支援費（＝上限 − 購入額）が OWN_READER_FLOOR 円を下回る見積もりは、管理者だけが作成・改定できる。そのときは購入額の根拠が必須。
+  // 下限は PM 値引きの報酬の下限（FLOOR・税込）と同じ値（scripts/test-own-reader.mjs が一致を確かめる）
+  const OWN_READER_FLOOR = 15000;
+  const OWN_READER_BASIS_MAX = 200;
+  // 購入額の根拠（任意の短い文。例「自費で購入 11,800円・領収書あり」）。前後の空白を除き、改行は空白にして200字まで
+  function cleanOwnReaderBasis(v) {
+    return typeof v === "string" ? v.replace(/[\r\n\t]+/g, " ").trim().slice(0, OWN_READER_BASIS_MAX) : "";
+  }
+  // calc … calcFromInput の calc（0台のときだけ判定する）。isAdmin … 操作する人が管理者か。basis … 根拠の欄の値
+  // 戻り値 { ok, error, belowFloor, basis }
+  function checkOwnReaderPolicy({ calc, isAdmin, basis } = {}) {
+    const b = cleanOwnReaderBasis(basis);
+    if (!calc || !(Number(calc.ownReaderIncl) > 0)) return { ok: true, belowFloor: false, basis: "" };
+    const fee = Number(calc.accFeeIncl) || 0;
+    const belowFloor = fee < OWN_READER_FLOOR;
+    const floorText = `¥${OWN_READER_FLOOR.toLocaleString("ja-JP")}`;
+    if (belowFloor && !isAdmin) {
+      return { ok: false, belowFloor, basis: b, error: `伴走支援費（接続サポート等経費）が ${floorText} を下回る見積もり（伴走支援費 ¥${fee.toLocaleString("ja-JP")}）は、管理者だけが作成・変更できます。購入額をもう一度確かめるか、管理者に依頼してください` };
+    }
+    if (belowFloor && !b) {
+      return { ok: false, belowFloor, basis: b, error: `伴走支援費が ${floorText} を下回るため、購入額の根拠（例: 自費で購入 11,800円・領収書あり）を入れてください` };
+    }
+    return { ok: true, belowFloor, basis: b };
+  }
+
   // 計算結果 → quotes.amounts の形。事業所が購入した見積もりだけ ownReaderIncl を持つ（無い見積もりの形は今までと同じ）
   function quoteAmounts(calc) {
     const a = {
@@ -152,5 +178,6 @@
   }
 
   return { PLANS, BT_LABEL, USB_LABEL, BT_PRICE, USB_PRICE, ACCOMPANY_FEE, SKU, usbSku, computeAmounts, buildItems,
-    parseOwnReaderIncl, computeOwnReaderAmounts, calcFromInput, quoteAmounts, calcOfSavedQuote };
+    parseOwnReaderIncl, computeOwnReaderAmounts, calcFromInput, quoteAmounts, calcOfSavedQuote,
+    OWN_READER_FLOOR, OWN_READER_BASIS_MAX, cleanOwnReaderBasis, checkOwnReaderPolicy };
 });

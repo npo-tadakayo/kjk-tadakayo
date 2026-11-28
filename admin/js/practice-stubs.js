@@ -240,7 +240,8 @@ function shipmentItemsFromQuote(P, q) {
     // カードリーダーは事業所が自分で購入（0台・2026-11-28）: 本番の ownReaderSupportItem と同じ形（任意の金額の伴走支援費の行）
     items.push({ sku: "support-fee", name: SUPPORT_FEE_LABEL, qty: 1, unitPrice: fee, nonStock: true,
       manual: true, manualBy: String(q.createdBy || "見積もり"), manualAt: new Date().toISOString(),
-      priorBuyerReaderCost: ownReader, ownReader: true });
+      priorBuyerReaderCost: ownReader,
+      ...(String(q.ownReaderBasis || "").trim() ? { manualMemo: `購入額の根拠: ${String(q.ownReaderBasis).trim().slice(0, 200)}` } : {}), ownReader: true });
   } else if (fee > 0) {
     const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
     items.push({ sku: "support-fee", name: supportFeeItemName(n), qty: 1, unitPrice: fee, nonStock: true });
@@ -260,6 +261,12 @@ async function quoteCalc(planKey, d) {
   const ci = P.calcFromInput(planKey, d);
   if (!ci.ok) throw fail(ci.error);
   const calc = ci.calc;
+  // 0台で伴走支援費が ¥15,000 を下回るときは管理者だけ・購入額の根拠が必須（本番の checkOwnReaderPolicy と同じ・2026-11-28）
+  let isAdm = false;
+  if (ci.ownReader && calc.accFeeIncl < P.OWN_READER_FLOOR) { try { await practiceAdmin(); isAdm = true; } catch (_) { isAdm = false; } }
+  const pol = P.checkOwnReaderPolicy({ calc, isAdmin: isAdm, basis: d.ownReaderBasis });
+  if (!pol.ok) throw fail(pol.error);
+  const basis = ci.ownReader ? pol.basis : "";
   const connector = ["A", "C"].includes(d.usbConnector) && !ci.ownReader ? d.usbConnector : null;
   const items = ci.ownReader ? [] : P.buildItems({ btQty: d.btQty, usbQty: d.usbQty, btExtra: d.btExtra, usbExtra: d.usbExtra, usbConnector: connector });
   const amounts = P.quoteAmounts(calc);
@@ -267,7 +274,7 @@ async function quoteCalc(planKey, d) {
   const bt = Number(d.btQty) || 0, usb = Number(d.usbQty) || 0, btx = Number(d.btExtra) || 0, usbx = Number(d.usbExtra) || 0;
   if (bt > 0 || btx > 0) cardReaders.push({ type: "BT", subsidyQty: bt, extraQty: btx });
   if (usb > 0 || usbx > 0) cardReaders.push({ type: "USB", subsidyQty: usb, extraQty: usbx, connector });
-  return { P, calc, connector, items, amounts, cardReaders };
+  return { P, calc, connector, items, amounts, cardReaders, basis };
 }
 
 async function nextQuoteNumber() {
@@ -721,7 +728,7 @@ export const PRACTICE_STUBS = {
     const caseSnap = await getDoc(doc(db(), "cases", String(caseId)));
     if (!caseSnap.exists()) throw fail("案件が見つかりません");
     const kase = { id: caseSnap.id, ...caseSnap.data() };
-    const { calc, connector, items, amounts, cardReaders } = await quoteCalc(planKey, d);
+    const { calc, connector, items, amounts, cardReaders, basis } = await quoteCalc(planKey, d);
 
     const sib = await getDocs(query(collection(db(), "quotes"), where("caseId", "==", kase.id)));
     const siblings = sib.docs.map((x) => ({ id: x.id, ...x.data() })).sort((a, b) => (b.version || 0) - (a.version || 0));
@@ -749,12 +756,14 @@ export const PRACTICE_STUBS = {
       contactEmail, contactName, officeName, corpName,
       accessToken: newToken(), pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
       note: String(note || "").slice(0, 1000),
+      ...(basis ? { ownReaderBasis: basis } : {}),
     });
     const caseUpdate = {
       latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
       subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
+      ownReaderBasis: basis ? basis : deleteField(),
     };
     if (Number(kase.status) === 1) { caseUpdate.status = 2; Object.assign(caseUpdate, statusChangePatch(2, now)); } // 新規受信 → 確認中（本番と同じ・進み具合の帯の2項目も）
     b.update(doc(db(), "cases", kase.id), caseUpdate);
@@ -762,6 +771,7 @@ export const PRACTICE_STUBS = {
       caseId: kase.id, type: "memo", occurredAt: now, userId: u.uid, userName: u.email,
       subject: `見積もりを作成（${estNo}・v${version}・スタッフ）`,
       body: `プラン: ${calc.plan.label}\n構成: ${calc.ownReaderIncl > 0 ? `カードリーダーは事業所が自分で購入（¥${fmtNum(calc.ownReaderIncl)}・税込）・伴走支援費のみ ¥${fmtNum(calc.accFeeIncl)}` : cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${connector ? `（USB ${connector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${fmtNum(calc.totalIncl)}／自己負担: ¥${fmtNum(calc.selfPay)}`
+        + (basis ? `\n購入額の根拠: ${basis}` : "")
         + (note ? `\nメモ: ${String(note).trim()}` : ""),
       attachmentUrls: [],
     });
@@ -786,7 +796,7 @@ export const PRACTICE_STUBS = {
     if (!baseSnap.exists()) throw fail("見積もりが見つかりません");
     const base = { id: baseSnap.id, ...baseSnap.data() };
     const planKey = ["houmon", "kyojyu", "other"].includes(plan) ? plan : base.plan;
-    const { P, calc, items, amounts, cardReaders } = await quoteCalc(planKey, d);
+    const { P, calc, items, amounts, cardReaders, basis } = await quoteCalc(planKey, d);
 
     let shipmentId = base.shipmentId || null, shipStatus = null, shipPm = 0;
     if (shipmentId) {
@@ -842,8 +852,10 @@ export const PRACTICE_STUBS = {
       shipmentId: shipmentId || null, shipmentNo: base.shipmentNo || null,
       payMethod: base.payMethod || null, delivery: base.delivery || null,
       acceptedAt: base.acceptedAt || null, acceptedBy: base.acceptedBy || null,
+      ...(basis ? { ownReaderBasis: basis } : {}),
     });
     b.update(doc(db(), "cases", base.caseId), {
+      ownReaderBasis: basis ? basis : deleteField(),
       latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
       subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
@@ -852,8 +864,14 @@ export const PRACTICE_STUBS = {
       ...(consentClearReason ? { orderConsentStaleReason: deleteField() } : {}),
     });
     if (shipmentId && shipStatus === "draft") {
+      const shipItemsR = shipmentItemsFromQuote(P, { items, amounts, ownReaderBasis: basis, createdBy: u.email });
+      // 受注後に 1台 → 0台 で明細が在庫を使わない行だけになったら「出荷なし」の発送済（本番の writeQuoteVersion と同じ・2026-11-28）
+      const ng = shipItemsR.length > 0 && shipItemsR.every((i) => i && i.nonStock);
       b.update(doc(db(), "shipments", shipmentId), {
-        items: shipmentItemsFromQuote(P, { items, amounts }), quoteId: quoteRef.id, estNo,
+        ...(ng ? { status: "shipped", noGoods: true, deliveryMode: "ship", shippingMethod: "none", shippingFee: 0, shippingLabel: "",
+          originLocationId: "", originLocationName: "", shipDate: todayJst(), shippedBy: u.email, shippedByEmail: u.email, shippedAt: now,
+          dueRule: "net14", confirmedAt: now, shipNotifyStatus: "skipped", shipNotifySkippedBy: u.email, shipNotifySkippedAt: now } : {}),
+        items: shipItemsR, quoteId: quoteRef.id, estNo,
         subsidyCategory: planKey || null, subsidyQty: subsidyQtyFromItems(items, P.SKU.BT),
         pmDiscount: deleteField(),
         updatedAt: now, updatedBy: u.email,

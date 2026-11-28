@@ -10,6 +10,8 @@
 //   F. 改版（reviseQuote）: 受注後に 1台 → 0台 → 下書きの出荷が伴走支援費だけになり「出荷なし」の発送済になる（倉庫の一覧に出ない）。
 //      そのあとの改版は出荷が発送済なので止まる（出荷の修正へ）。受注前の 0台 → 1台 は元の形に戻る
 //   G. 回帰: 1台の見積もりの金額・形は今までと同じ（ownReaderIncl を持たない）・受注確定の出荷は下書き
+//   H. 伴走支援費が ¥15,000 を下回る0台の見積もりは管理者だけ・購入額の根拠が必須（中4・2026-11-28 次田さん決定）。
+//      30,200 円（ナガヨシ）はスタッフでも作れる・根拠は見積もり・案件・出荷の任意の行のメモ・活動に残る
 //
 // 実行: firebase emulators:exec --only firestore --project demo-own-reader-test "node scripts/test-own-reader-emu.mjs"
 //   （bash scripts/test-all.sh の2段目でも動く）
@@ -126,8 +128,8 @@ for (const [d, re] of bad) {
 r = await call("staffCreateQuote", STAFF, { caseId: "cB", plan: "other", btQty: 0, usbQty: 0, sendMail: false });
 check("チェックなしの0台は今までどおり拒否", !r.ok && /1台以上/.test(r.msg), JSON.stringify(r));
 check("拒否のあいだ見積もりは作られていない", (await quotesOf("cB")).length === 0);
-r = await call("staffCreateQuote", STAFF, { caseId: "cB", plan: "other", ownReader: true, ownReaderIncl: 41999, sendMail: false });
-check("上限ぎりぎり（41,999）は伴走支援費 1 円で作れる", r.ok && r.r.totalIncl === 1, JSON.stringify(r).slice(0, 200));
+r = await call("staffCreateQuote", ADMIN, { caseId: "cB", plan: "other", ownReader: true, ownReaderIncl: 41999, ownReaderBasis: "テスト", sendMail: false });
+check("上限ぎりぎり（41,999）は管理者＋根拠なら伴走支援費 1 円で作れる", r.ok && r.r.totalIncl === 1, JSON.stringify(r).slice(0, 200));
 
 // ---------- C ----------
 section("C. 受注確定 → 物の出荷なし（発送済）→ 請求済");
@@ -238,6 +240,47 @@ const [sG] = await shipsOf("cG");
 check("出荷は下書き・noGoods なし・自動の伴走支援費の行（補助対象3台）", sG.status === "draft" && !sG.noGoods && !sG.shipNotifyStatus
   && sG.items.some((i) => i.sku === "support-fee" && !i.manual && i.name === "接続サポート等経費（伴走支援費・補助対象3台）"), JSON.stringify(sG.items));
 check("結果に noGoods は付かない", r.ok && !("noGoods" in r.r.results[0]));
+
+// ---------- H ----------
+section("H. 下限 ¥15,000 を下回る0台の見積もり（管理者だけ・根拠必須）");
+await seed([[cd("cH1"), { status: 2, caseNumber: 809 }], [cd("cH2"), { status: 2, caseNumber: 810 }]]);
+// その他（上限 42,000）で購入 30,000 → 伴走支援費 12,000（下限を下回る）
+r = await call("staffCreateQuote", STAFF, { caseId: "cH1", plan: "other", ownReader: true, ownReaderIncl: 30000, ownReaderBasis: "領収書あり", sendMail: false });
+check("スタッフは拒否（管理者だけ・分かる日本語）", !r.ok && r.code === "permission-denied" && /管理者だけが作成・変更できます/.test(r.msg) && /¥15,000/.test(r.msg) && /¥12,000/.test(r.msg), JSON.stringify(r));
+check("拒否のあいだ見積もりは作られていない", (await quotesOf("cH1")).length === 0);
+r = await call("staffCreateQuote", ADMIN, { caseId: "cH1", plan: "other", ownReader: true, ownReaderIncl: 30000, sendMail: false });
+check("管理者でも根拠なしは拒否", !r.ok && r.code === "invalid-argument" && /根拠/.test(r.msg), JSON.stringify(r));
+r = await call("staffCreateQuote", ADMIN, { caseId: "cH1", plan: "other", ownReader: true, ownReaderIncl: 30000, ownReaderBasis: "  自費で購入 30,000円・領収書あり ", sendMail: false });
+check("管理者＋根拠なら作れる（伴走支援費 12,000）", r.ok && r.r.totalIncl === 12000, JSON.stringify(r).slice(0, 200));
+const qH1 = await latestOf("cH1");
+check("根拠は見積もりと案件に保存（前後の空白を除く）", qH1.ownReaderBasis === "自費で購入 30,000円・領収書あり"
+  && (await get(cd("cH1"))).ownReaderBasis === "自費で購入 30,000円・領収書あり", JSON.stringify(qH1.ownReaderBasis));
+const actH = (await actsOf("cH1")).find((a) => /見積もりを作成/.test(a.subject));
+check("活動に根拠と ⚠（下限を下回る）", actH && /購入額の根拠: 自費で購入 30,000円・領収書あり/.test(actH.body) && /⚠ 伴走支援費 ¥12,000 は ¥15,000 を下回ります/.test(actH.body), JSON.stringify(actH));
+// 改定もスタッフは拒否・管理者は根拠つきで可
+r = await call("reviseQuote", STAFF, { quoteId: qH1.id, plan: "other", ownReader: true, ownReaderIncl: 29000, ownReaderBasis: "x", reason: "購入額の訂正", sendMail: false });
+check("改定もスタッフは拒否", !r.ok && r.code === "permission-denied" && /管理者だけ/.test(r.msg), JSON.stringify(r));
+r = await call("reviseQuote", ADMIN, { quoteId: qH1.id, plan: "other", ownReader: true, ownReaderIncl: 29000, reason: "購入額の訂正", sendMail: false });
+check("改定も管理者で根拠なしは拒否", !r.ok && /根拠/.test(r.msg), JSON.stringify(r));
+r = await call("reviseQuote", ADMIN, { quoteId: qH1.id, plan: "other", ownReader: true, ownReaderIncl: 29000, ownReaderBasis: "領収書で訂正 29,000円", reason: "購入額の訂正", sendMail: false });
+const qH2 = await latestOf("cH1");
+check("管理者＋根拠で改定できる（13,000）・根拠も新しい版と案件に", r.ok && r.r.totalIncl === 13000 && qH2.ownReaderBasis === "領収書で訂正 29,000円"
+  && (await get(cd("cH1"))).ownReaderBasis === "領収書で訂正 29,000円", JSON.stringify(r).slice(0, 200));
+// 下限以上へ直せばスタッフでも改定できる（根拠は任意）
+r = await call("reviseQuote", STAFF, { quoteId: qH2.id, plan: "other", ownReader: true, ownReaderIncl: 11800, reason: "購入額の再確認", sendMail: false });
+const qH3 = await latestOf("cH1");
+check("下限以上（30,200）へはスタッフでも改定でき、根拠なしなら根拠は消える", r.ok && r.r.totalIncl === 30200 && !("ownReaderBasis" in qH3)
+  && !("ownReaderBasis" in (await get(cd("cH1")))), JSON.stringify(qH3));
+// ナガヨシ（30,200）はスタッフでも作れる。根拠を入れれば出荷の任意の行のメモにも残る
+r = await call("staffCreateQuote", STAFF, { caseId: "cH2", plan: "other", ownReader: true, ownReaderIncl: 11800, ownReaderBasis: "自費で購入 11,800円・領収書あり", sendMail: false });
+check("30,200 円はスタッフでも作れる（根拠は任意だが入れたら残る）", r.ok && r.r.totalIncl === 30200 && (await latestOf("cH2")).ownReaderBasis === "自費で購入 11,800円・領収書あり", JSON.stringify(r).slice(0, 200));
+r = await accept((await latestOf("cH2")).id);
+const [sH2] = await shipsOf("cH2");
+check("受注確定の出荷の任意の行のメモに根拠", r.ok && sH2.items[0].manualMemo === "購入額の根拠: 自費で購入 11,800円・領収書あり", JSON.stringify(sH2 && sH2.items));
+// 1台（0台でない）見積もりは対象外（スタッフが作れる・根拠を送っても保存しない）
+await seed([[cd("cH3"), { status: 2, caseNumber: 811 }]]);
+r = await call("staffCreateQuote", STAFF, { caseId: "cH3", plan: "other", btQty: 1, ownReaderBasis: "無関係", sendMail: false });
+check("台数の見積もりには根拠を保存しない", r.ok && !("ownReaderBasis" in (await latestOf("cH3"))));
 
 console.log(results.join("\n"));
 console.log(`\ntest-own-reader-emu: 合計 ${pass + fail} 件中 ${pass} 件合格・${fail} 件不合格`);

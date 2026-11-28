@@ -1217,7 +1217,7 @@ function shipmentItemsFromQuote(q) {
     // カードリーダーは事業所が自分で購入（0台・2026-11-28）: 出荷の「伴走支援費を任意の金額で入れる行」（manual-support-fee.js）と
     // 同じ形の1行にする。供給管理の「送付先・数量を直す」で開いても、助成区分の上限 − 事業所の購入費（priorBuyerReaderCost）の
     // 上限の検査と入力欄の復元がそのまま効く。ownReader:true は「見積もりから作った」印（請求書に購入済みの注記を出す）
-    items.push(ownReaderSupportItem({ fee, ownReader, by: q.createdBy }));
+    items.push(ownReaderSupportItem({ fee, ownReader, by: q.createdBy, basis: q.ownReaderBasis }));
   } else if (fee > 0) {
     const n = (q.items || []).reduce((a, i) => a + (Number(i.subsidyQty) || 0), 0);
     items.push({ sku: "support-fee", name: supportFeeItemName(n), qty: 1, unitPrice: fee, nonStock: true });
@@ -1238,10 +1238,12 @@ function shipmentItemsFromQuote(q) {
   return items;
 }
 // カードリーダーは事業所が自分で購入した見積もりの、伴走支援費の1行（練習の代役 practice-stubs.js にも同じ形の写し）
-function ownReaderSupportItem({ fee, ownReader, by }) {
+function ownReaderSupportItem({ fee, ownReader, by, basis }) {
+  // 購入額の根拠（あれば）は任意の行のメモ（manualMemo・200字まで）に入れる＝「送付先・数量を直す」で開いたときも見える
+  const memo = String(basis || "").trim().slice(0, 200);
   return { sku: "support-fee", name: SUPPORT_FEE_LABEL, qty: 1, unitPrice: Number(fee) || 0, nonStock: true,
     manual: true, manualBy: String(by || "見積もり"), manualAt: new Date().toISOString(),
-    priorBuyerReaderCost: Number(ownReader) || 0, ownReader: true };
+    priorBuyerReaderCost: Number(ownReader) || 0, ...(memo ? { manualMemo: `購入額の根拠: ${memo}` } : {}), ownReader: true };
 }
 // 物の出荷が無い（明細が在庫を使わない行だけ＝伴走支援費・金額調整・値引き）か。供給管理 supply.js の noGoods と同じ考え方
 function isNoGoodsItems(items) {
@@ -2157,10 +2159,10 @@ exports.staffAcceptQuote = onCall(
 exports.reviseQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
+    const me = await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    const { quoteId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, reason, sendMail, ownReader, ownReaderIncl } = request.data || {};
+    const { quoteId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, reason, sendMail, ownReader, ownReaderIncl, ownReaderBasis } = request.data || {};
     if (!quoteId) throw new HttpsError("invalid-argument", "quoteId は必須です");
     if (!reason || !String(reason).trim()) throw new HttpsError("invalid-argument", "変更の理由をご入力ください（あとから経緯を追えるようにするためです）");
 
@@ -2173,6 +2175,10 @@ exports.reviseQuote = onCall(
     const ci = Pricing.calcFromInput(planKey, { btQty, usbQty, btExtra, usbExtra, ownReader, ownReaderIncl });
     if (!ci.ok) throw new HttpsError("invalid-argument", ci.error);
     const calc = ci.calc;
+    // 0台で伴走支援費が ¥15,000 を下回るときは管理者だけ・購入額の根拠が必須（2026-11-28 次田さん決定）
+    const pol = Pricing.checkOwnReaderPolicy({ calc, isAdmin: !!(me.user && me.user.role === "admin"), basis: ownReaderBasis });
+    if (!pol.ok) throw new HttpsError(pol.belowFloor && !(me.user && me.user.role === "admin") ? "permission-denied" : "invalid-argument", pol.error);
+    const basis = ci.ownReader ? pol.basis : "";
     const connector = ["A", "C"].includes(usbConnector) && !ci.ownReader ? usbConnector : null;
     // 事業所が購入（0台）のときは台数を0に固定して渡す（入力の台数は使わない・2026-11-28 レビュー中3）
     const items = ci.ownReader ? [] : Pricing.buildItems({ btQty, usbQty, btExtra, usbExtra, usbConnector: connector });
@@ -2193,11 +2199,16 @@ exports.reviseQuote = onCall(
     const after = quoteItemsSummary(items, amounts);
     const { quoteRef, version, estNo, shipNoGoods } = await writeQuoteVersion({
       base, planKey, calc, items, amounts, cardReaders, reason, email, uid: request.auth.uid, vc,
+      // 購入額の根拠（0台のときだけ・2026-11-28）。0台でなくなった版では消す
+      quoteExtra: basis ? { ownReaderBasis: basis } : {},
+      caseExtra: { ownReaderBasis: basis ? basis : admin.firestore.FieldValue.delete() },
       activity: (v) => ({
         subject: `見積もりを変更（${base.estNo} v${base.version} → v${v}）`,
         body: `理由: ${String(reason).trim()}\n変更前: ${before}（¥${fmtNum(Number(base.amounts?.totalIncl || 0))}）\n`
           + `変更後: ${after}（¥${fmtNum(calc.totalIncl)}）`
           + (shipmentId && shipStatus === "draft" ? `\n出荷 ${base.shipmentNo || ""} の下書きも新しい内容に更新しました。` : "")
+          + (basis ? `\n購入額の根拠: ${basis}` : "")
+          + (pol.belowFloor ? `\n⚠ 伴走支援費 ¥${fmtNum(calc.accFeeIncl)} は ¥${fmtNum(Pricing.OWN_READER_FLOOR)} を下回ります（管理者が変更）` : "")
           + pmNote
           + (consentStale !== true ? "" : consentClearReason
             ? "\n⚠️ 承諾書に署名いただいた内容と変わったため、新しい版で承諾書の取り直しが要ります（出荷は止めていません）。"
@@ -2272,7 +2283,7 @@ async function quoteVersionContext(base, { items, amounts }, { shipLockedMsg = n
 // 新しい版を書く（前の版は superseded・案件の金額・下書きの出荷の作り直し・対応記録）。1つの batch で書く。
 // quoteExtra … 新しい版に足す項目（値引きの記録など）。activity(version) … 対応記録の {subject, body}
 // tx を渡すと、兄弟の版の読み取りと書き込みをそのトランザクションで行い、commit はしない（呼び出し側のトランザクションが確定する）
-async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardReaders, reason, email, uid, vc, quoteExtra = {}, shipExtra = {}, activity, tx = null }) {
+async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardReaders, reason, email, uid, vc, quoteExtra = {}, shipExtra = {}, caseExtra = {}, activity, tx = null }) {
   const { shipmentId, shipStatus, consentStale, consentClearReason } = vc;
   const now = admin.firestore.FieldValue.serverTimestamp();
   const estNo = base.estNo; // 番号は引き継ぎ、版だけ上げる
@@ -2309,11 +2320,12 @@ async function writeQuoteVersion({ base, planKey, calc, items, amounts, cardRead
     specialDiscount: calc.discount, selfPay: amounts.selfPay,
     ...(consentStale == null ? {} : { orderConsentStale: consentStale }),
     ...(consentClearReason ? { orderConsentStaleReason: admin.firestore.FieldValue.delete() } : {}),
+    ...caseExtra,
   });
   // 下書きの出荷は最新の内容に作り直す（数量・品番・金額）。値引きの行は amounts.pmDiscount から出る（shipmentItemsFromQuote）
   let shipNoGoods = false;
   if (shipmentId && shipStatus === "draft") {
-    const shipItems = shipmentItemsFromQuote({ items, amounts, pmDiscount: quoteExtra.pmDiscount || null });
+    const shipItems = shipmentItemsFromQuote({ items, amounts, pmDiscount: quoteExtra.pmDiscount || null, ownReaderBasis: quoteExtra.ownReaderBasis || "", createdBy: email });
     // 受注後に 1台 → 0台（事業所が購入）へ変えて、明細が在庫を使わない行だけになったら、受注確定と同じく「出荷なし」の発送済にする
     // （下書きのまま残すと「すでに発送済（記録のみ）」で倉庫の一覧・レターパックの欄に出てしまう・2026-11-28 レビュー中1）
     shipNoGoods = isNoGoodsItems(shipItems);
@@ -2419,7 +2431,7 @@ exports.setQuoteDiscount = onCall(
         base, planKey: base.plan, calc, items: base.items || [], amounts, cardReaders: null,
         reason: newPm ? `伴走支援費の値引き: ${v.reason}` : `伴走支援費の値引きを外す: ${v.reason}`,
         email: me.email, uid: request.auth.uid, vc, tx,
-        quoteExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
+        quoteExtra: { ...(rec ? { pmDiscount: { ...rec, at: now } } : {}), ...(base.ownReaderBasis ? { ownReaderBasis: base.ownReaderBasis } : {}) },
         shipExtra: rec ? { pmDiscount: { ...rec, at: now } } : {},
         activity: () => ({
           subject: txt.subject,
@@ -2546,10 +2558,10 @@ exports.resendQuoteMail = onCall(
 exports.staffCreateQuote = onCall(
   { region: "asia-northeast1", timeoutSeconds: 120, memory: "512MiB", serviceAccount: SA_MAIL },
   async (request) => {
-    await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
+    const me = await requireStaff(request, { allow: "editor" }); // 登録・有効・ロール（設計 §4）＋練習生（trainee）の拒否（2026-10-20 テストモード）を1か所で
     const email = request.auth?.token?.email || "";
     if (!email.endsWith("@tadakayo.jp")) throw new HttpsError("permission-denied", "このアプリの利用権限がありません");
-    const { caseId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, note, sendMail, ownReader, ownReaderIncl } = request.data || {};
+    const { caseId, plan, btQty, usbQty, btExtra, usbExtra, usbConnector, note, sendMail, ownReader, ownReaderIncl, ownReaderBasis } = request.data || {};
     if (!caseId) throw new HttpsError("invalid-argument", "caseId は必須です");
 
     const caseSnap = await db.collection("cases").doc(String(caseId)).get();
@@ -2562,6 +2574,10 @@ exports.staffCreateQuote = onCall(
     const ci = Pricing.calcFromInput(planKey, { btQty, usbQty, btExtra, usbExtra, ownReader, ownReaderIncl });
     if (!ci.ok) throw new HttpsError("invalid-argument", ci.error);
     const calc = ci.calc;
+    // 0台で伴走支援費が ¥15,000 を下回るときは管理者だけ・購入額の根拠が必須（2026-11-28 次田さん決定）
+    const pol = Pricing.checkOwnReaderPolicy({ calc, isAdmin: !!(me.user && me.user.role === "admin"), basis: ownReaderBasis });
+    if (!pol.ok) throw new HttpsError(pol.belowFloor && !(me.user && me.user.role === "admin") ? "permission-denied" : "invalid-argument", pol.error);
+    const basis = ci.ownReader ? pol.basis : "";
     const connector = ["A", "C"].includes(usbConnector) && !ci.ownReader ? usbConnector : null;
     // 事業所が購入（0台）のときは台数を0に固定して渡す（入力の台数は使わない・2026-11-28 レビュー中3）
     const items = ci.ownReader ? [] : Pricing.buildItems({ btQty, usbQty, btExtra, usbExtra, usbConnector: connector });
@@ -2609,12 +2625,14 @@ exports.staffCreateQuote = onCall(
       contactEmail, contactName, officeName, corpName,
       accessToken, pdfPath: null, pdfUrl: null, mailedAt: null, mailedTo: null,
       note: String(note || "").slice(0, 1000),
+      ...(basis ? { ownReaderBasis: basis } : {}),
     });
     const caseUpdate = {
       latestQuoteId: quoteRef.id, quoteIssuedAt: now, updatedAt: now,
       subsidyPlan: calc.plan.label, cardReaders, subsidyCategory: planKey,
       expectedSubsidyAmount: calc.grantAmt, totalAmount: calc.totalIncl,
       specialDiscount: calc.discount, selfPay: calc.selfPay,
+      ownReaderBasis: basis ? basis : admin.firestore.FieldValue.delete(), // 購入額の根拠（0台のときだけ・2026-11-28）
     };
     if (kase.status === STATUS.NEW) {
       caseUpdate.status = STATUS.CONFIRMING;
@@ -2625,6 +2643,8 @@ exports.staffCreateQuote = onCall(
       caseId: kase.id, type: "memo", occurredAt: now, userId: request.auth.uid, userName: email,
       subject: `見積もりを作成（${estNo}・v${version}・スタッフ）`,
       body: `プラン: ${calc.plan.label}\n構成: ${ci.ownReader ? `カードリーダーは事業所が自分で購入（¥${fmtNum(calc.ownReaderIncl)}・税込）・伴走支援費のみ ¥${fmtNum(calc.accFeeIncl)}` : cardReaders.map((cr) => `${cr.type}×${cr.subsidyQty + cr.extraQty}台`).join(", ")}${connector ? `（USB ${connector === "C" ? "Type-C" : "Type-A"}）` : ""}\n合計（税込）: ¥${fmtNum(calc.totalIncl)}／自己負担: ¥${fmtNum(calc.selfPay)}`
+        + (basis ? `\n購入額の根拠: ${basis}` : "")
+        + (pol.belowFloor ? `\n⚠ 伴走支援費 ¥${fmtNum(calc.accFeeIncl)} は ¥${fmtNum(Pricing.OWN_READER_FLOOR)} を下回ります（管理者が作成）` : "")
         + (note ? `\nメモ: ${String(note).trim()}` : ""),
       attachmentUrls: [],
     });
