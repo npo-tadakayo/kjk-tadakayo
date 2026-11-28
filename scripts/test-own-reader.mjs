@@ -1,8 +1,11 @@
 // カードリーダーは事業所が自分で購入（0台・伴走支援費だけを請求）の見積もり（2026-11-28）の、エミュレータの要らないテスト。
 //   ① 料金（estimate-pricing.js）: computeOwnReaderAmounts・calcFromInput・quoteAmounts・calcOfSavedQuote。3つの写しが同じ
 //   ② 回帰: 1台以上の計算・金額の形は今までと同じ（calcFromInput＝computeAmounts・quoteAmounts＝今までの形）
-//   ③ 見積書（quote-doc.js）・請求書（invoice-doc.js）・承諾書の印刷（order-consent.js）: 0台は伴走支援費の1行＋購入済みの注記・
-//      カードリーダーの行なし。1台以上の見積もり・出荷の HTML は origin/main と一字一句同じ
+//   ③ 見積書（quote-doc.js）・請求書（invoice-doc.js）・承諾書の印刷（order-consent.js）・承諾書のページ（order-consent-view.js）:
+//      0台は伴走支援費の1行＋購入済みの注記・カードリーダーの行なし。1台以上の見積もり・出荷・手で入れた任意の行の HTML は、
+//      この機能の前（2026-11-28 時点の main）の出力を固定した scripts/fixtures/own-reader-regression.json と一字一句同じ
+//      （マージ後も回帰を見張れるよう、比べ先は git ではなく固定のファイル。作り直すのは意図して見た目を変えたときだけ:
+//       node scripts/test-own-reader.mjs --update-snapshot <git の版>  例: --update-snapshot 236c356）
 //   ④ 受注確定の確認メール: 0台は購入済みの1行・「カードリーダーの発送と」を出さない。直書きの呼び名が正本と同じ
 //   ⑤ 画面の判定: 状態の表示「出荷なし」・受注確定の結果のまとめ
 //
@@ -23,7 +26,11 @@ const t = (name, fn) => { try { fn(); n++; } catch (e) { console.error(`NG ${nam
 const ta = async (name, fn) => { try { await fn(); n++; } catch (e) { console.error(`NG ${name}`); throw e; } };
 
 const P = require(path.join(root, "functions/estimate-pricing.js"));
-let mainSrc = (p) => { try { return execFileSync("git", ["-C", root, "show", `origin/main:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }); } catch { return ""; } };
+// --update-snapshot <版> のときだけ git からその版の帳票の部品を読み、固定の出力（fixture）を作り直す
+const updIdx = process.argv.indexOf("--update-snapshot");
+const SNAP_REV = updIdx > 0 ? (process.argv[updIdx + 1] || "") : "";
+const gitSrc = (p) => execFileSync("git", ["-C", root, "show", `${SNAP_REV}:${p}`], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const FIXTURE = path.join(root, "scripts/fixtures/own-reader-regression.json");
 
 // ---------- ① 料金 ----------
 t("3つの写しが同じ（functions・公開ページ・管理画面）", () => {
@@ -87,16 +94,18 @@ t("1台以上: calcFromInput の計算は computeAmounts と同じ・quoteAmount
 t("calcOfSavedQuote: 購入額のある見積もりは上限 − 購入額", () => {
   assert.equal(P.calcOfSavedQuote({ plan: "other", items: [], amounts: { ownReaderIncl: 11800 } }).accFeeIncl, 30200);
 });
-t("料金の正本の既存の関数・定数は変えていない（origin/main の computeAmounts・buildItems と同じ結果）", () => {
-  const src = mainSrc("functions/estimate-pricing.js");
-  if (!src) { console.log("  （origin/main が無いので飛ばした）"); return; }
-  const mod = { exports: {} };
-  new Function("module", "exports", "self", src)(mod, mod.exports, undefined);
-  const M = mod.exports;
-  for (const k of ["PLANS", "BT_PRICE", "USB_PRICE", "ACCOMPANY_FEE", "SKU"]) assert.deepEqual(P[k], M[k], k);
-  for (const plan of ["houmon", "kyojyu", "other"]) for (let bt = 0; bt <= 3; bt++) for (let usb = 0; usb <= 3; usb++) {
-    assert.deepEqual(P.computeAmounts(plan, bt, usb, 1, 0), M.computeAmounts(plan, bt, usb, 1, 0));
+t("calcFromInput: 台数は1つずつ0か確かめる（1 と −1 で合計0にしても通さない）", () => {
+  for (const d of [{ btQty: 1, usbQty: -1 }, { btExtra: 2, usbExtra: -2 }, { btQty: "abc" }, { usbQty: 0.5 }]) {
+    const r = P.calcFromInput("other", { ownReader: true, ownReaderIncl: 11800, ...d });
+    assert.equal(r.ok, false, JSON.stringify(d)); assert.match(r.error, /0台/);
   }
+  for (const d of [{ btQty: 0, usbQty: "0" }, { btQty: "", usbQty: null }, {}]) {
+    assert.equal(P.calcFromInput("other", { ownReader: true, ownReaderIncl: 11800, ...d }).ok, true, JSON.stringify(d));
+  }
+  // サーバーは0台のとき品目を空に固定する（入力の台数を buildItems に渡さない）
+  const idx0 = read("functions/index.js");
+  assert.equal((idx0.match(/const items = ci\.ownReader \? \[\] : Pricing\.buildItems\(/g) || []).length, 2);
+  assert.match(read("admin/js/practice-stubs.js"), /const items = ci\.ownReader \? \[\] : P\.buildItems\(/);
 });
 
 // ---------- ③ 帳票 ----------
@@ -115,14 +124,9 @@ function loadable(src, name) {
 }
 globalThis.window = { EstimatePricing: P };
 const QD = await loadable(read("admin/js/quote-doc.js"), "quote-doc-new.mjs");
-const qdMainSrc = mainSrc("admin/js/quote-doc.js");
-const QDM = qdMainSrc ? await loadable(qdMainSrc, "quote-doc-main.mjs") : null;
 const ID = await import(adminUrl("invoice-doc.js"));
-const idMainSrc = mainSrc("admin/js/invoice-doc.js");
-const IDM = idMainSrc ? await loadable(idMainSrc, "invoice-doc-main.mjs") : null;
 const OC = await import(adminUrl("order-consent.js"));
-const ocMainSrc = mainSrc("admin/js/order-consent.js");
-const OCM = ocMainSrc ? await loadable(ocMainSrc, "order-consent-main.mjs") : null;
+const OCV = await import(adminUrl("order-consent-view.js"));
 const { SUPPORT_FEE_LABEL } = await import(adminUrl("support-fee-names.js"));
 
 const created = new Date("2026-11-28T00:00:00+09:00"), until = new Date("2026-12-28T00:00:00+09:00");
@@ -137,6 +141,46 @@ const normalQs = [
 // 値引き（PM）の入った1台の見積もり
 normalQs.push({ ...normalQs[0], _id: "npm", amounts: { ...normalQs[0].amounts, pmDiscount: 3000, totalIncl: normalQs[0].amounts.totalIncl - 3000, subsidyPartTotal: normalQs[0].amounts.subsidyPartTotal - 3000, grantAmt: normalQs[0].amounts.grantAmt - 3000 } });
 const rowsOf = (html) => (html.match(/<tbody>([\s\S]*?)<\/tbody>/) || [])[1] || "";
+const CONSENT_DOC = { title: "承諾書", sections: [{ title: "第1条", body: "本文" }] };
+
+// ---- 回帰の材料（1台以上の見積もり・出荷・手で入れた任意の行）と、その出力 ----
+const RShip = { soNumber: "SH-2026-0701", shipType: "direct", company: "株式会社ナガヨシ", officeName: "ナガヨシ福祉用具", status: "shipped",
+  shipDate: "2026-11-28", shippingFee: 0, dueRule: "net14", items: [] };
+const regressionShips = [
+  { ...RShip, items: [{ sku: "cir415a-01", name: "介護情報基盤 汎用カードリーダ CIR415A", qty: 1, unitPrice: 14500, connection: "Bluetooth／USB Type-C" },
+    { sku: "support-fee", name: "接続サポート等経費（伴走支援費・補助対象1台）", qty: 1, unitPrice: 60000, nonStock: true },
+    { sku: "discount", name: "金額調整", qty: 1, unitPrice: -32500, nonStock: true }] },
+  { ...RShip, shippingFee: 370, shippingLabel: "送料", items: [{ sku: "cir315a-02", name: "CIR315A", qty: 3, unitPrice: 6500 },
+    { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000, nonStock: true },
+    { sku: "discount", name: "接続サポート等経費（伴走支援費）の値引き", qty: 1, unitPrice: -2000, nonStock: true, pm: true }] },
+  { ...RShip, shipType: "dropship", partnerEmail: "p@example.com", partnerName: "認定", items: [{ sku: "cir415a-01", name: "CIR415A", qty: 2, unitPrice: 9000 }] },
+  // 手で入れた任意の行（2026-11-09〜）: 購入額なし／購入額あり（物の出荷なし）／購入額あり＋カードリーダーの行。どれも注記は出さない（今までと同じ）
+  { ...RShip, noGoods: true, items: [{ sku: "support-fee", name: "接続サポート等経費（伴走支援費）", qty: 1, unitPrice: 30000, nonStock: true, manual: true }] },
+  { ...RShip, noGoods: true, items: [{ sku: "support-fee", name: "接続サポート等経費（伴走支援費）", qty: 1, unitPrice: 30200, nonStock: true, manual: true, priorBuyerReaderCost: 11800 }] },
+  { ...RShip, items: [{ sku: "cir415a-01", name: "CIR415A", qty: 1, unitPrice: 14500 },
+    { sku: "support-fee", name: "伴走支援費", qty: 1, unitPrice: 15700, nonStock: true, manual: true, priorBuyerReaderCost: 11800 }] },
+];
+function regressionOutputs(QDx, IDx, OCx, OCVx) {
+  return {
+    quoteDoc: normalQs.map((q) => QDx.renderQuoteDocHtml({ quote: q, kase: null, office: null, products: [] })),
+    invoice: regressionShips.map((x) => IDx.renderInvoiceHtml(x, {}, { issueDate: "2026年11月28日" })),
+    consentPrint: normalQs.map((q) => OCx.buildOrderConsentPrintHtml({ document: CONSENT_DOC, quotes: [q], printedYmd: "2026-11-28" })),
+    consentView: normalQs.map((q) => OCVx.orderQuotesTableHtml({ quotes: [{ ...q, items: q.items, amounts: q.amounts }] })),
+  };
+}
+if (SNAP_REV) {
+  const QDM = await loadable(gitSrc("admin/js/quote-doc.js"), "quote-doc-snap.mjs");
+  const IDM = await loadable(gitSrc("admin/js/invoice-doc.js"), "invoice-doc-snap.mjs");
+  await loadable(gitSrc("admin/js/order-consent-rules.js"), "order-consent-rules.js");
+  const OCM = await loadable(gitSrc("admin/js/order-consent.js").replace(/from "\.\/order-consent-rules\.js"/, `from "${pathToFileURL(path.join(tmp, "order-consent-rules.js")).href}"`), "order-consent-snap.mjs");
+  writeFileSync(path.join(tmp, "order-consent.js"), readFileSync(path.join(tmp, "order-consent-snap.mjs")));
+  const OCVM = await loadable(gitSrc("admin/js/order-consent-view.js").replace(/from "\.\/order-consent\.js"/, `from "${pathToFileURL(path.join(tmp, "order-consent-snap.mjs")).href}"`), "order-consent-view-snap.mjs");
+  writeFileSync(FIXTURE, JSON.stringify({ note: `test-own-reader.mjs の回帰の比べ先。${SNAP_REV} の帳票の部品で作った出力（作り直すのは意図して見た目を変えたときだけ）`,
+    rev: SNAP_REV, ...regressionOutputs(QDM, IDM, OCM, OCVM) }, null, 1) + "\n");
+  console.log(`fixture を作り直した: ${FIXTURE}（${SNAP_REV}）`);
+}
+const SNAP = JSON.parse(readFileSync(FIXTURE, "utf8"));
+const NOW = regressionOutputs(QD, ID, OC, OCV);
 
 t("見積書: 0台は伴走支援費の1行（30,200）＋購入済みの注記・カードリーダーの行なし・自己負担 ¥0", () => {
   const h = QD.renderQuoteDocHtml({ quote: ownQ, kase: null, office: null, products: [] });
@@ -155,12 +199,9 @@ t("見積書: 0台＋値引きは値引きの行も出す", () => {
   const body = rowsOf(QD.renderQuoteDocHtml({ quote: { ...ownQ, amounts: a }, kase: null, office: null, products: [] }));
   assert.equal((body.match(/<tr/g) || []).length, 2); assert.ok(body.includes("−¥5,000"));
 });
-t("見積書: 1台以上（値引きありも）の HTML は origin/main と一字一句同じ", () => {
-  if (!QDM) { console.log("  （origin/main が無いので飛ばした）"); return; }
-  for (const q of normalQs) {
-    assert.equal(QD.renderQuoteDocHtml({ quote: q, kase: null, office: null, products: [] }),
-      QDM.renderQuoteDocHtml({ quote: q, kase: null, office: null, products: [] }), q._id);
-  }
+t("見積書: 1台以上（値引きありも）の HTML は固定の出力（fixture）と一字一句同じ", () => {
+  assert.equal(SNAP.quoteDoc.length, normalQs.length);
+  NOW.quoteDoc.forEach((h, i) => assert.equal(h, SNAP.quoteDoc[i], normalQs[i]._id));
 });
 
 const ownShip = { soNumber: "SH-2026-0701", shipType: "direct", company: "株式会社ナガヨシ", officeName: "ナガヨシ福祉用具", status: "shipped",
@@ -175,30 +216,25 @@ t("請求書: 0台は伴走支援費の1行・購入済みの注記・カード�
   assert.ok(!/CIR|つなぎ方/.test(body));
   assert.equal(ID.invoiceTotals(ownShip).total, 30200);
 });
-t("請求書: 1台以上の出荷（自動の伴走支援費・金額調整・値引き・送料）は origin/main と一字一句同じ", () => {
-  if (!IDM) { console.log("  （origin/main が無いので飛ばした）"); return; }
-  const ships = [
-    { ...ownShip, noGoods: false, items: [{ sku: "cir415a-01", name: "介護情報基盤 汎用カードリーダ CIR415A", qty: 1, unitPrice: 14500, connection: "Bluetooth／USB Type-C" },
-      { sku: "support-fee", name: "接続サポート等経費（伴走支援費・補助対象1台）", qty: 1, unitPrice: 60000, nonStock: true },
-      { sku: "discount", name: "金額調整", qty: 1, unitPrice: -32500, nonStock: true }] },
-    { ...ownShip, noGoods: false, shippingFee: 370, shippingLabel: "送料", items: [{ sku: "cir315a-02", name: "CIR315A", qty: 3, unitPrice: 6500 },
-      { sku: "support-fee", name: "伴走支援費（補助対象3台）", qty: 1, unitPrice: 50000, nonStock: true },
-      { sku: "discount", name: "接続サポート等経費（伴走支援費）の値引き", qty: 1, unitPrice: -2000, nonStock: true, pm: true }] },
-    { ...ownShip, noGoods: false, shipType: "dropship", partnerEmail: "p@example.com", partnerName: "認定", items: [{ sku: "cir415a-01", name: "CIR415A", qty: 2, unitPrice: 9000 }] },
-    // 購入額の無い任意の行（今までどおり注記なし）
-    { ...ownShip, items: [{ sku: "support-fee", name: SUPPORT_FEE_LABEL, qty: 1, unitPrice: 30000, nonStock: true, manual: true }] },
-  ];
-  for (const s of ships) assert.equal(ID.renderInvoiceHtml(s, {}, { issueDate: "2026年11月28日" }), IDM.renderInvoiceHtml(s, {}, { issueDate: "2026年11月28日" }));
+t("請求書: 1台以上の出荷・手で入れた任意の行（購入額あり・カードリーダーの行ありも）は固定の出力と一字一句同じ（注記は出ない）", () => {
+  assert.equal(SNAP.invoice.length, regressionShips.length);
+  NOW.invoice.forEach((h, i) => { assert.equal(h, SNAP.invoice[i], `ship ${i}`); assert.ok(!h.includes("購入済み"), `ship ${i}`); });
 });
-t("承諾書の印刷: 0台は購入済みと伴走支援費のみ・1台以上は origin/main と同じ", () => {
-  const doc = { title: "承諾書", sections: [{ title: "第1条", body: "本文" }] };
-  const h = OC.buildOrderConsentPrintHtml({ document: doc, quotes: [ownQ], printedYmd: "2026-11-28" });
+t("請求書: 見積もり由来の行でも、カードリーダーの行と並ぶ出荷には注記を出さない", () => {
+  const s2 = { ...ownShip, items: [{ sku: "cir415a-01", name: "CIR415A", qty: 1, unitPrice: 14500 }, ...ownShip.items] };
+  assert.ok(!ID.renderInvoiceHtml(s2, {}, { issueDate: "2026年11月28日" }).includes("購入済み"));
+});
+t("承諾書の印刷: 0台は購入済みと伴走支援費のみ・1台以上は固定の出力と同じ", () => {
+  const h = OC.buildOrderConsentPrintHtml({ document: CONSENT_DOC, quotes: [ownQ], printedYmd: "2026-11-28" });
   assert.ok(h.includes("カードリーダーは事業所で購入済み（¥11,800・税込）・接続サポート等経費（伴走支援費）のみ"), h.slice(0, 500));
-  if (!OCM) return;
-  for (const q of normalQs) {
-    assert.equal(OC.buildOrderConsentPrintHtml({ document: doc, quotes: [q], printedYmd: "2026-11-28" }),
-      OCM.buildOrderConsentPrintHtml({ document: doc, quotes: [q], printedYmd: "2026-11-28" }), q._id);
-  }
+  NOW.consentPrint.forEach((x, i) => assert.equal(x, SNAP.consentPrint[i], normalQs[i]._id));
+});
+t("承諾書のページ（事業所が開く consent.html）: 0台は 0台・購入済み・伴走支援費のみ／1台以上は固定の出力と同じ", () => {
+  const entry = { estNo: ownQ.estNo, version: 1, corpName: ownQ.corpName, officeName: ownQ.officeName, items: [],
+    amounts: { readers: 0, accompanyFee: 30200, discount: 0, totalIncl: 30200, grantAmt: 30200, selfPay: 0, ownReaderIncl: 11800 } };
+  const h = OCV.orderQuotesTableHtml({ quotes: [entry] });
+  assert.ok(h.includes("カードリーダー 0台（事業所さまで購入済み・¥11,800・税込）・接続サポート等経費（伴走支援費）のみ"), h);
+  NOW.consentView.forEach((x, i) => assert.equal(x, SNAP.consentView[i], normalQs[i]._id));
 });
 
 // ---------- ④ 確認メール ----------

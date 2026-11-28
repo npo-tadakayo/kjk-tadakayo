@@ -7,7 +7,8 @@
 //      → 「請求済にする」（supply-rules の markInvoicedPlanOf）で請求済。請求額は 30,200
 //   D. 倉庫の一覧（warehouseList）に出ない
 //   E. 値引き（setQuoteDiscount）: 標準額は 30,200。受注確定で出荷に伴走支援費の行と値引きの行
-//   F. 改版（reviseQuote）: 1台 → 0台（下書きの出荷が伴走支援費だけに作り直る）／0台 → 1台（元の形に戻る）
+//   F. 改版（reviseQuote）: 受注後に 1台 → 0台 → 下書きの出荷が伴走支援費だけになり「出荷なし」の発送済になる（倉庫の一覧に出ない）。
+//      そのあとの改版は出荷が発送済なので止まる（出荷の修正へ）。受注前の 0台 → 1台 は元の形に戻る
 //   G. 回帰: 1台の見積もりの金額・形は今までと同じ（ownReaderIncl を持たない）・受注確定の出荷は下書き
 //
 // 実行: firebase emulators:exec --only firestore --project demo-own-reader-test "node scripts/test-own-reader-emu.mjs"
@@ -108,6 +109,8 @@ await seed([[cd("cB"), { status: 2, caseNumber: 804 }]]);
 const bad = [
   [{ btQty: 1, ownReaderIncl: 11800 }, /台数をすべて0台/],
   [{ usbExtra: 1, ownReaderIncl: 11800 }, /台数をすべて0台/],
+  [{ btQty: 1, usbQty: -1, ownReaderIncl: 11800 }, /台数をすべて0台/],
+  [{ btExtra: 3, usbExtra: -3, ownReaderIncl: 11800 }, /台数をすべて0台/],
   [{ ownReaderIncl: "" }, /1円以上の整数/],
   [{ ownReaderIncl: 0 }, /1円以上の整数/],
   [{ ownReaderIncl: 1180.5 }, /1円以上の整数/],
@@ -192,19 +195,33 @@ r = await accept(qF1.id);
 let [sF] = await shipsOf("cF");
 check("1台の受注確定は今までどおり下書き（カードリーダーの行あり）", sF.status === "draft" && !sF.noGoods && sF.items.some((i) => i.sku === Pricing.SKU.BT));
 r = await call("reviseQuote", STAFF, { quoteId: qF1.id, plan: "other", btQty: 0, usbQty: 0, btExtra: 0, usbExtra: 0, ownReader: true, ownReaderIncl: 11800, reason: "事業所が自分で購入済みと判明", sendMail: false });
-check("0台へ改版できる・下書きも更新", r.ok && r.r.totalIncl === 30200 && r.r.shipmentUpdated === true, JSON.stringify(r).slice(0, 300));
+check("0台へ改版できる・出荷も更新・出荷なしになった印", r.ok && r.r.totalIncl === 30200 && r.r.shipmentUpdated === true && r.r.shipmentNoGoods === true, JSON.stringify(r).slice(0, 300));
 [sF] = await shipsOf("cF");
-check("下書きの出荷は伴走支援費の1行だけになる（30,200・購入額 11,800）", sF.status === "draft" && sF.items.length === 1
-  && sF.items[0].sku === "support-fee" && sF.items[0].unitPrice === 30200 && sF.items[0].priorBuyerReaderCost === 11800, JSON.stringify(sF.items));
+check("出荷は伴走支援費の1行だけ（30,200・購入額 11,800・見積もり由来）", sF.items.length === 1
+  && sF.items[0].sku === "support-fee" && sF.items[0].unitPrice === 30200 && sF.items[0].priorBuyerReaderCost === 11800 && sF.items[0].ownReader === true, JSON.stringify(sF.items));
+check("出荷は下書きのまま残らず「出荷なし」の発送済（受注確定と同じ項目）", sF.status === "shipped" && sF.noGoods === true && sF.shippingMethod === "none"
+  && sF.shipNotifyStatus === "skipped" && sF.originLocationId === "" && sF.dueRule === "net14" && sF.shippedAt instanceof TS && shipStatusLabelOf(sF) === "出荷なし",
+  JSON.stringify(sF).slice(0, 400));
+check("在庫の動きなし", (await movesCount()) === moves0);
+r = await call("warehouseList", STAFF, { locationId: "L1" });
+check("倉庫の一覧に出ない", r.ok && !JSON.stringify(r.r).includes(sF.soNumber));
+check("そのまま請求済にできる（請求額 30,200）", nextStatus(sF.status, "invoice") === "invoiced" && invoiceTotals(sF).total === 30200);
 const actF = (await actsOf("cF")).find((a) => /見積もりを変更/.test(a.subject));
-check("活動: 変更後は「カードリーダーは事業所で購入（¥11,800）」", actF && /変更後: カードリーダーは事業所で購入（¥11,800）/.test(actF.body), JSON.stringify(actF));
+check("活動: 変更後は「カードリーダーは事業所で購入（¥11,800）」・出荷なしにした", actF && /変更後: カードリーダーは事業所で購入（¥11,800）/.test(actF.body)
+  && /発送済（出荷なし）にしました/.test(actF.body), JSON.stringify(actF));
 const qF2 = await latestOf("cF");
 r = await call("reviseQuote", STAFF, { quoteId: qF2.id, plan: "other", btQty: 1, usbQty: 0, btExtra: 0, usbExtra: 0, reason: "やはりタダカヨから購入", sendMail: false });
-const qF3 = await latestOf("cF");
-[sF] = await shipsOf("cF");
-check("1台へ戻すと元の形（購入額を持たない・カードリーダー＋伴走支援費＋金額調整）", r.ok && !("ownReaderIncl" in qF3.amounts)
-  && qF3.amounts.totalIncl === 42000 && sF.items.some((i) => i.sku === Pricing.SKU.BT) && sF.items.some((i) => i.sku === "support-fee" && !i.manual),
-  JSON.stringify({ a: qF3.amounts, items: sF.items }));
+check("出荷なしになったあとの改版は止まる（出荷の修正へ案内）", !r.ok && r.code === "failed-precondition" && /出荷の修正/.test(r.msg), JSON.stringify(r));
+// 受注前の 0台 → 1台
+await seed([[cd("cF2"), { status: 2, caseNumber: 808 }]]);
+r = await call("staffCreateQuote", STAFF, { caseId: "cF2", plan: "other", ownReader: true, ownReaderIncl: 11800, sendMail: false });
+const qF21 = await latestOf("cF2");
+r = await call("reviseQuote", STAFF, { quoteId: qF21.id, plan: "other", btQty: 1, usbQty: 0, btExtra: 0, usbExtra: 0, reason: "タダカヨから購入に変更", sendMail: false });
+const qF22 = await latestOf("cF2");
+check("受注前の 0台 → 1台 は元の形（購入額を持たない・合計 42,000・品目 BT1）", r.ok && !("ownReaderIncl" in qF22.amounts) && qF22.amounts.totalIncl === 42000
+  && qF22.items.length === 1 && qF22.items[0].sku === Pricing.SKU.BT, JSON.stringify(qF22.amounts));
+r = await call("reviseQuote", STAFF, { quoteId: qF22.id, plan: "other", btQty: 1, usbQty: -1, ownReader: true, ownReaderIncl: 11800, reason: "x", sendMail: false });
+check("改版でも 1 と −1 は拒否", !r.ok && r.code === "invalid-argument" && /0台/.test(r.msg), JSON.stringify(r));
 
 // ---------- G ----------
 section("G. 回帰: 1台以上の見積もりは今までと同じ");

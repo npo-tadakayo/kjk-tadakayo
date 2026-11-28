@@ -71,7 +71,10 @@ export function orderQuotesTableHtml(data) {
     return `<tr>
         <td data-h="見積番号・版"><b>${esc(q.estNo || "")}</b><br><span class="sub">第${esc(q.version ?? "—")}版</span></td>
         <td data-h="事業所">${esc([q.corpName, q.officeName].filter(Boolean).join(" "))}</td>
-        <td data-h="品目・台数">${esc(itemsText(q.items))}</td>
+        <td data-h="品目・台数">${esc(Number(a.ownReaderIncl) > 0
+          // カードリーダーは事業所が自分で購入（0台・2026-11-28）。焼き込んだ購入額から、購入済みと伴走支援費のみであることを書く
+          ? `カードリーダー 0台（事業所さまで購入済み・${yen(a.ownReaderIncl)}・税込）・接続サポート等経費（伴走支援費）のみ`
+          : itemsText(q.items))}</td>
         <td data-h="金額（税込）" class="num"><b>${yen(a.totalIncl)}</b><br><span class="sub">助成金充当 ${yen(a.grantAmt)}／自己負担 ${yen(a.selfPay)}</span></td>
       </tr>`;
   }).join("");

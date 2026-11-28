@@ -111,8 +111,9 @@
     if (!plan) return { ok: false, error: "プランの指定が不正です" };
     const x = d || {};
     if (x.ownReader === true) {
-      const qty = (Number(x.btQty) || 0) + (Number(x.usbQty) || 0) + (Number(x.btExtra) || 0) + (Number(x.usbExtra) || 0);
-      if (qty !== 0) return { ok: false, error: "「カードリーダーは事業所が自分で購入」のときは、カードリーダーの台数をすべて0台にしてください" };
+      // 台数は1つずつ0か確かめる（合計で見ると 1 と −1 で0になってしまう・2026-11-28 レビュー中3）。未入力（空）は0とみなす
+      const nonZero = ["btQty", "usbQty", "btExtra", "usbExtra"].some((k) => x[k] != null && x[k] !== "" && Number(x[k]) !== 0);
+      if (nonZero) return { ok: false, error: "「カードリーダーは事業所が自分で購入」のときは、カードリーダーの台数をすべて0台にしてください" };
       const own = parseOwnReaderIncl(x.ownReaderIncl);
       if (!(own >= 1)) return { ok: false, error: "事業所が購入したカードリーダーの金額（税込）を、1円以上の整数で入れてください" };
       const calc = computeOwnReaderAmounts(planKey, own);

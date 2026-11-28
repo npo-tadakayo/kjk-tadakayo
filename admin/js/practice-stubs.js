@@ -261,7 +261,7 @@ async function quoteCalc(planKey, d) {
   if (!ci.ok) throw fail(ci.error);
   const calc = ci.calc;
   const connector = ["A", "C"].includes(d.usbConnector) && !ci.ownReader ? d.usbConnector : null;
-  const items = P.buildItems({ btQty: d.btQty, usbQty: d.usbQty, btExtra: d.btExtra, usbExtra: d.usbExtra, usbConnector: connector });
+  const items = ci.ownReader ? [] : P.buildItems({ btQty: d.btQty, usbQty: d.usbQty, btExtra: d.btExtra, usbExtra: d.usbExtra, usbConnector: connector });
   const amounts = P.quoteAmounts(calc);
   const cardReaders = [];
   const bt = Number(d.btQty) || 0, usb = Number(d.usbQty) || 0, btx = Number(d.btExtra) || 0, usbx = Number(d.usbExtra) || 0;
